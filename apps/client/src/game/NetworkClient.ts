@@ -7,7 +7,7 @@ export class NetworkClient {
   private pingTimer: number | null = null;
   private attackTimer: number | null = null;
 
-  constructor(private world: WorldState) {}
+  constructor(private world: WorldState) { }
 
   connect(sessionToken: string, characterId: string) {
     this.disconnect();

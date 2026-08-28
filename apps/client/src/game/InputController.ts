@@ -8,7 +8,7 @@ export class InputController {
   private lastMove = 0;
   private heldKeys = new Set<string>();
   private movementTimer: number | null = null;
-  constructor(private world: WorldState, private network: NetworkClient) {}
+  constructor(private world: WorldState, private network: NetworkClient) { }
 
   attach() {
     window.addEventListener("keydown", this.onKeyDown);

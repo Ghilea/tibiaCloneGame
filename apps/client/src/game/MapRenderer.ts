@@ -260,7 +260,13 @@ export class MapRenderer {
     // Sparse authored details stay above the animated base textures.
     for (const key of water) {
       const [x, y] = key.split(":").map(Number);
-      if ((x + y) % 3 === 0) details.moveTo(x * TILE + 8, y * TILE + 35).lineTo(x * TILE + 5, y * TILE + 19).lineTo(x * TILE + 12, y * TILE + 30).stroke({ color: 0x668054, width: 2, alpha: 0.65 });
+      if ((x + y) % 3 === 0) {
+        const px = x * TILE; const py = y * TILE;
+        details.moveTo(px + 8, py + 35).lineTo(px + 5, py + 19).lineTo(px + 12, py + 30).lineTo(px + 8, py + 35);
+      }
+    }
+    if (details.numPoints > 0) {
+      details.stroke({ color: 0x668054, width: 2, alpha: 0.65 });
     }
     for (const stairs of world.map.stairs.filter((entry) => entry.from.z === activeFloor)) {
       const px = stairs.from.x * TILE; const py = stairs.from.y * TILE;
