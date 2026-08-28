@@ -1,0 +1,27 @@
+CREATE TABLE IF NOT EXISTS accounts (
+    id UUID PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS characters (
+    id UUID PRIMARY KEY,
+    account_id UUID NOT NULL REFERENCES accounts(id),
+    name TEXT NOT NULL UNIQUE,
+    level INTEGER NOT NULL DEFAULT 1 CHECK (level > 0),
+    experience BIGINT NOT NULL DEFAULT 0 CHECK (experience >= 0),
+    health INTEGER NOT NULL DEFAULT 150,
+    mana INTEGER NOT NULL DEFAULT 50,
+    position_x INTEGER NOT NULL DEFAULT 10,
+    position_y INTEGER NOT NULL DEFAULT 8,
+    position_z SMALLINT NOT NULL DEFAULT 7,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS server_state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

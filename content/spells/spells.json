@@ -1,0 +1,13 @@
+[
+  {
+    "id": "ember_bolt",
+    "name": "Ember Bolt",
+    "description": "Hurl a focused ember at one creature. A reliable first spell that consumes mana but no physical supplies.",
+    "vocations": ["mage", "druid", "adventurer"],
+    "price": 15,
+    "manaCost": 18,
+    "damage": 7,
+    "range": 4,
+    "cooldownMs": 900
+  }
+]

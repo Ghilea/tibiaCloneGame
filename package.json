@@ -1,0 +1,12 @@
+{
+  "name": "embers-of-aldoria",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix apps/client run dev",
+    "editor": "npm --prefix apps/client run editor",
+    "desktop": "npm --prefix apps/client run desktop",
+    "build": "npm --prefix apps/client run build",
+    "test": "npm --prefix apps/client run test",
+    "check": "npm --prefix apps/client run check"
+  }
+}
