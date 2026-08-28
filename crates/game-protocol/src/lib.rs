@@ -4,7 +4,7 @@ use game_types::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u16 = 14;
+pub const PROTOCOL_VERSION: u16 = 17;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -266,13 +266,28 @@ pub struct MapView {
     pub floor: i16,
     pub blocked: Vec<Position>,
     pub water: Vec<Position>,
+    pub bridges: Vec<Position>,
+    pub trees: Vec<Position>,
     pub roads: Vec<Position>,
     pub floors: Vec<Position>,
     pub house_walls: Vec<Position>,
     pub castle_walls: Vec<Position>,
+    #[serde(default)]
+    pub windows: Vec<Position>,
+    #[serde(default)]
+    pub torches: Vec<Position>,
+    #[serde(default)]
+    pub terrain_materials: Vec<TerrainMaterialView>,
     pub buildings: Vec<BuildingView>,
     pub doors: Vec<DoorView>,
     pub stairs: Vec<StairView>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerrainMaterialView {
+    pub position: Position,
+    pub material: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -42,6 +42,7 @@ export class WorldState {
   ping = 0;
   revision = 0;
   private listeners = new Set<WorldListener>();
+  private pendingLocalMoves = new Map<number, Position>();
 
   subscribe(listener: WorldListener) {
     this.listeners.add(listener);
@@ -65,6 +66,7 @@ export class WorldState {
         this.spellCooldownMs = 0;
         this.incomingTrade = null;
         this.trade = null;
+        this.pendingLocalMoves.clear();
         for (const player of [...message.players, message.player]) this.players.set(player.id, player);
         this.localPlayerId = message.player.id;
         this.selectedPlayerId = null;
@@ -100,11 +102,20 @@ export class WorldState {
         break;
       case "player_moved": {
         const player = this.players.get(message.player_id);
-        if (player) this.players.set(player.id, { ...player, position: message.position });
+        if (player) {
+          if (message.player_id === this.localPlayerId) {
+            for (const sequence of this.pendingLocalMoves.keys()) if (sequence <= message.sequence) this.pendingLocalMoves.delete(sequence);
+            const latestPrediction = [...this.pendingLocalMoves.entries()].sort(([left], [right]) => left - right).at(-1)?.[1];
+            this.players.set(player.id, { ...player, position: latestPrediction ?? message.position });
+          } else {
+            this.players.set(player.id, { ...player, position: message.position });
+          }
+        }
         break;
       }
       case "move_rejected": {
         if (this.localPlayerId === message.player_id) {
+          this.pendingLocalMoves.clear();
           const player = this.players.get(this.localPlayerId);
           if (player) this.players.set(player.id, { ...player, position: message.position });
         }
@@ -214,10 +225,11 @@ export class WorldState {
     this.notify();
   }
 
-  predictLocalMove(position: Position) {
+  predictLocalMove(position: Position, sequence: number) {
     if (!this.localPlayerId) return;
     const player = this.players.get(this.localPlayerId);
     if (player) {
+      this.pendingLocalMoves.set(sequence, position);
       this.players.set(player.id, { ...player, position });
       this.notify();
     }

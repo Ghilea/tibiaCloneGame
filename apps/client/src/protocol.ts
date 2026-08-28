@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = 14;
+export const PROTOCOL_VERSION = 17;
 export const CLIENT_VERSION = "0.1.0";
 
 export type Position = { x: number; y: number; z: number };
@@ -29,14 +29,21 @@ export type MapView = {
   floor: number;
   blocked: Position[];
   water: Position[];
+  bridges: Position[];
+  trees: Position[];
   roads: Position[];
   floors: Position[];
   houseWalls: Position[];
   castleWalls: Position[];
+  windows: Position[];
+  torches: Position[];
+  terrainMaterials: TerrainMaterialView[];
   buildings: BuildingView[];
   doors: DoorView[];
   stairs: StairView[];
 };
+export type TerrainMaterialId = "packed_earth" | "moss_stone" | "sandstone";
+export type TerrainMaterialView = { position: Position; material: TerrainMaterialId };
 export type BuildingView = { id: string; name: string; kind: "keep" | "house"; x: number; y: number; width: number; height: number; floor: number };
 export type DoorView = { id: string; position: Position; open: boolean };
 export type StairView = { id: string; from: Position; to: Position };

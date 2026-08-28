@@ -41,7 +41,7 @@ export class NetworkClient {
 
   move(position: Position) {
     const sequence = ++this.sequence;
-    this.world.predictLocalMove(position);
+    this.world.predictLocalMove(position, sequence);
     this.send({ type: "move_request", sequence, position });
   }
 
