@@ -198,27 +198,31 @@ export function ShutterWindow({
   const transform = windowTransform(window, building, side);
   useFrame((_, delta) => {
     const angle = window.open ? 1.42 : 0;
-    if (left.current) left.current.rotation.y = THREE.MathUtils.damp(left.current.rotation.y, angle, 11, delta);
-    if (right.current) right.current.rotation.y = THREE.MathUtils.damp(right.current.rotation.y, -angle, 11, delta);
+    if (left.current) left.current.rotation.y = THREE.MathUtils.damp(left.current.rotation.y, -angle, 11, delta);
+    if (right.current) right.current.rotation.y = THREE.MathUtils.damp(right.current.rotation.y, angle, 11, delta);
   });
   return (
-    <group position={[transform.x, wallHeight * 0.58, transform.z]} rotation={[0, transform.rotation, 0]} onClick={(event) => { event.stopPropagation(); onClick(); }}>
+    <group position={[transform.x, wallHeight * 0.58, transform.z]} rotation={[0, transform.rotation, 0]}>
+      <mesh position={[0, 0, 0.16]} onPointerDown={(event) => { event.stopPropagation(); onClick(); }}>
+        <planeGeometry args={[0.78, 0.92]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
+      </mesh>
       <group ref={left} position={[-0.33, 0, 0.09]}>
-        <ShutterLeaf offset={-0.15} />
+        <ShutterLeaf offset={0.15} braceDirection={-1} />
       </group>
       <group ref={right} position={[0.33, 0, 0.09]}>
-        <ShutterLeaf offset={0.15} />
+        <ShutterLeaf offset={-0.15} braceDirection={1} />
       </group>
     </group>
   );
 }
 
-function ShutterLeaf({ offset }: { offset: number }) {
+function ShutterLeaf({ offset, braceDirection }: { offset: number; braceDirection: -1 | 1 }) {
   return (
     <group position={[offset, 0, 0]}>
       <mesh castShadow><boxGeometry args={[0.3, 0.72, 0.075]} /><meshStandardMaterial color="#5c3822" roughness={0.97} /></mesh>
       {[-0.23, 0, 0.23].map((y) => <mesh key={y} position={[0, y, 0.045]}><boxGeometry args={[0.32, 0.045, 0.035]} /><meshStandardMaterial color="#2f2118" /></mesh>)}
-      <mesh position={[0, 0, 0.05]} rotation={[0, 0, offset < 0 ? -0.62 : 0.62]}><boxGeometry args={[0.72, 0.045, 0.035]} /><meshStandardMaterial color="#39271b" /></mesh>
+      <mesh position={[0, 0, 0.05]} rotation={[0, 0, braceDirection * 0.62]}><boxGeometry args={[0.72, 0.045, 0.035]} /><meshStandardMaterial color="#39271b" /></mesh>
     </group>
   );
 }

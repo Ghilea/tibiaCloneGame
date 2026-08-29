@@ -50,21 +50,37 @@ export class InputController {
     this.world.openNpc(npcId);
   }
 
+  toggleDoor(doorId: string, position: Position) {
+    const player = this.world.localPlayerId ? this.world.players.get(this.world.localPlayerId) : null;
+    if (!player) return;
+    const nearby = Math.abs(player.position.x - position.x) <= 1
+      && Math.abs(player.position.y - position.y) <= 1
+      && player.position.z === position.z;
+    if (nearby) this.network.toggleDoor(doorId);
+    else this.world.addSystemMessage("Move closer to use that door.");
+  }
+
+  toggleWindow(windowId: string, position: Position) {
+    const player = this.world.localPlayerId ? this.world.players.get(this.world.localPlayerId) : null;
+    if (!player) return;
+    const nearby = Math.abs(player.position.x - position.x) <= 1
+      && Math.abs(player.position.y - position.y) <= 1
+      && player.position.z === position.z;
+    if (nearby) this.network.toggleWindow(windowId);
+    else this.world.addSystemMessage("Move closer to use those shutters.");
+  }
+
   interactAt(target: Position) {
     const player = this.world.localPlayerId ? this.world.players.get(this.world.localPlayerId) : null;
     if (!player) return;
     const door = this.world.map?.doors.find((entry) => entry.position.x === target.x && entry.position.y === target.y && entry.position.z === target.z);
     if (door) {
-      const nearby = Math.abs(player.position.x - target.x) <= 1 && Math.abs(player.position.y - target.y) <= 1;
-      if (nearby) this.network.toggleDoor(door.id);
-      else this.world.addSystemMessage("Move closer to use that door.");
+      this.toggleDoor(door.id, door.position);
       return;
     }
     const window = this.world.map?.windows.find((entry) => samePosition(entry.position, target));
     if (window) {
-      const nearby = Math.abs(player.position.x - target.x) <= 1 && Math.abs(player.position.y - target.y) <= 1;
-      if (nearby) this.network.toggleWindow(window.id);
-      else this.world.addSystemMessage("Move closer to use those shutters.");
+      this.toggleWindow(window.id, window.position);
       return;
     }
     const creature = [...this.world.creatures.values()].find((entry) => entry.position.x === target.x && entry.position.y === target.y && entry.position.z === target.z);

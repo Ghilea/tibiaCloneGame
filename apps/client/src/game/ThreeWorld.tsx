@@ -17,7 +17,7 @@ import { WorldState } from "./WorldState";
 const TILE_HEIGHT = 0.12;
 const WALL_HEIGHT = 2.75;
 const CASTLE_HEIGHT = 3.25;
-const CAMERA_ZOOM = 100;
+const CAMERA_ZOOM = 135;
 
 type ThreeWorldProps = {
   world: WorldState;
@@ -253,7 +253,7 @@ const Structures = memo(function Structures({ map, input, floor }: { map: NonNul
       <ConnectedWalls positions={map.castleWalls.filter((tile) => tile.z === floor)} castle />
       {map.trees.filter((tile) => tile.z === floor).map((tile) => <Tree key={tileKey(tile)} position={tile} />)}
       {map.torches.filter((tile) => tile.z === floor).map((tile) => <Torch key={tileKey(tile)} position={tile} />)}
-      {map.doors.filter((door) => door.position.z === floor && !insideAnyBuilding(door.position, buildings)).map((door) => <Door key={door.id} door={door} />)}
+      {map.doors.filter((door) => door.position.z === floor && !insideAnyBuilding(door.position, buildings)).map((door) => <Door key={door.id} door={door} input={input} />)}
     </group>
   );
 });
@@ -291,8 +291,8 @@ function Building({ building, doors, windows, input }: { building: BuildingView;
         ))}
         <GabledRoof building={building} wallHeight={height} />
         <HangingSign building={building} wallHeight={height} />
-        {matchingDoors.map((door) => <Door key={door.id} door={door} building={building} tall={height} />)}
-        {matchingWindows.map((window) => <ShutterWindow key={window.id} window={window} building={building} wallHeight={height} onClick={() => input.interactAt(window.position)} />)}
+        {matchingDoors.map((door) => <Door key={door.id} door={door} building={building} input={input} tall={height} />)}
+        {matchingWindows.map((window) => <ShutterWindow key={window.id} window={window} building={building} wallHeight={height} onClick={() => input.toggleWindow(window.id, window.position)} />)}
         {building.kind === "keep" && <Battlements building={building} height={height} />}
       </group>
     </group>
@@ -334,7 +334,7 @@ function Battlements({ building, height }: { building: BuildingView; height: num
   return <>{points.map((point, index) => <mesh key={index} position={point} castShadow><boxGeometry args={[0.28, 0.4, 0.28]} /><meshStandardMaterial color="#87908c" roughness={0.96} /></mesh>)}</>;
 }
 
-function Door({ door, building, tall = WALL_HEIGHT }: { door: DoorView; building?: BuildingView; tall?: number }) {
+function Door({ door, input, building, tall = WALL_HEIGHT }: { door: DoorView; input: InputController; building?: BuildingView; tall?: number }) {
   const group = useRef<THREE.Group>(null);
   const transform = doorTransform(door, building);
   const leafHeight = Math.min(tall - 0.15, 1.85);
@@ -344,7 +344,7 @@ function Door({ door, building, tall = WALL_HEIGHT }: { door: DoorView; building
     group.current.rotation.y = THREE.MathUtils.damp(group.current.rotation.y, target, 12, delta);
   });
   return (
-    <group position={[transform.x, 0, transform.z]} rotation={[0, transform.rotation, 0]}>
+    <group position={[transform.x, 0, transform.z]} rotation={[0, transform.rotation, 0]} onPointerDown={(event) => { event.stopPropagation(); input.toggleDoor(door.id, door.position); }}>
       <mesh position={[-0.49, leafHeight / 2, 0]} castShadow><boxGeometry args={[0.1, leafHeight + 0.12, 0.16]} /><meshStandardMaterial color="#49301f" roughness={0.9} /></mesh>
       <mesh position={[0.49, leafHeight / 2, 0]} castShadow><boxGeometry args={[0.1, leafHeight + 0.12, 0.16]} /><meshStandardMaterial color="#49301f" roughness={0.9} /></mesh>
       <mesh position={[0, leafHeight + 0.04, 0]} castShadow><boxGeometry args={[1.08, 0.12, 0.16]} /><meshStandardMaterial color="#49301f" roughness={0.9} /></mesh>
@@ -662,13 +662,13 @@ function doorTransform(door: DoorView, building?: BuildingView) {
     x: building.x,
     z: door.position.y + 0.5,
     rotation: Math.PI / 2,
-    openAngle: -Math.PI / 2,
+    openAngle: Math.PI / 2,
   };
   return {
     x: maxX,
     z: door.position.y + 0.5,
     rotation: -Math.PI / 2,
-    openAngle: -Math.PI / 2,
+    openAngle: Math.PI / 2,
   };
 }
 

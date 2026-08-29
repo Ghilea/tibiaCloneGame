@@ -39,3 +39,22 @@ describe("local movement reconciliation", () => {
     expect(world.players.get("local")?.position).toEqual(position(10, 8));
   });
 });
+
+describe("authored shutter synchronization", () => {
+  it("applies the server state to a window id generated from an editor position", () => {
+    const world = new WorldState();
+    world.map = {
+      width: 4, height: 4, floor: 7, blocked: [], water: [], bridges: [], trees: [],
+      roads: [], floors: [], houseWalls: [], castleWalls: [], torches: [],
+      terrainMaterials: [], buildings: [], doors: [], stairs: [],
+      windows: [{ id: "window_7_1_0", position: position(1, 0), open: false }],
+    };
+
+    world.apply({
+      type: "window_changed",
+      window: { id: "window_7_1_0", position: position(1, 0), open: true },
+    });
+
+    expect(world.map.windows[0].open).toBe(true);
+  });
+});

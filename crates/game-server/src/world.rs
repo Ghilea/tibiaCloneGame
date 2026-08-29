@@ -4949,6 +4949,7 @@ mod tests {
           "floors": [{"x":1,"y":1,"z":8}],
           "houseWalls": [],
           "castleWalls": [],
+          "windows": [{"x":1,"y":0,"z":7}],
           "buildings": [],
           "doors": [],
           "stairs": [{"id":"down","from":{"x":1,"y":1,"z":7},"to":{"x":1,"y":1,"z":8}}],
@@ -4974,6 +4975,19 @@ mod tests {
             map.stair_destination(Position { x: 1, y: 1, z: 7 }),
             Some(Position { x: 1, y: 1, z: 8 })
         );
+        assert_eq!(map.view.windows[0].id, "window_7_1_0");
+        let player_id = Uuid::new_v4();
+        let mut player = test_player(player_id, 100.0);
+        player.view.position = Position { x: 1, y: 1, z: 7 };
+        let mut world = World::with_map(
+            ContentCatalog::load().unwrap(),
+            vec![],
+            map,
+            Some(spawns),
+            Some(npcs),
+        );
+        world.insert_player(player);
+        assert!(world.toggle_window(player_id, "window_7_1_0").unwrap().open);
     }
 
     #[test]
