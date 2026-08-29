@@ -8,6 +8,7 @@ from **Medieval Village MegaKit [Standard]** by Quaternius:
 - `Wall_Plaster_Window_Wide_Flat`
 - `WindowShutters_Wide_Flat_Closed`
 - `WindowShutters_Wide_Flat_Open`
+- `Door_1_Flat`
 
 Source: https://quaternius.com/packs/medievalvillagemegakit.html
 

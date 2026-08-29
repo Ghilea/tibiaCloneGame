@@ -1,8 +1,7 @@
-import { useFrame } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import type { BuildingView, WindowView } from "../protocol";
-import { MedievalHouseWallAsset } from "./MedievalAssetModels";
+import { MedievalHouseWallAsset, MedievalWindowShuttersAsset } from "./MedievalAssetModels";
 
 export function MedievalWall({
   position,
@@ -140,39 +139,7 @@ export function ShutterWindow({
   wallHeight: number;
   onClick: () => void;
 }) {
-  const left = useRef<THREE.Group>(null);
-  const right = useRef<THREE.Group>(null);
-  const side = windowSide(window, building);
-  const transform = windowTransform(window, building, side);
-  useFrame((_, delta) => {
-    const angle = window.open ? 1.42 : 0;
-    if (left.current) left.current.rotation.y = THREE.MathUtils.damp(left.current.rotation.y, -angle, 11, delta);
-    if (right.current) right.current.rotation.y = THREE.MathUtils.damp(right.current.rotation.y, angle, 11, delta);
-  });
-  return (
-    <group position={[transform.x, wallHeight * 0.58, transform.z]} rotation={[0, transform.rotation, 0]} onPointerDown={(event) => { event.stopPropagation(); onClick(); }}>
-      <mesh position={[0, 0, 0.16]}>
-        <planeGeometry args={[0.78, 0.92]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
-      </mesh>
-      <group ref={left} position={[-0.33, 0, 0.09]}>
-        <ShutterLeaf offset={0.15} braceDirection={-1} />
-      </group>
-      <group ref={right} position={[0.33, 0, 0.09]}>
-        <ShutterLeaf offset={-0.15} braceDirection={1} />
-      </group>
-    </group>
-  );
-}
-
-function ShutterLeaf({ offset, braceDirection }: { offset: number; braceDirection: -1 | 1 }) {
-  return (
-    <group position={[offset, 0, 0]}>
-      <mesh castShadow><boxGeometry args={[0.3, 0.72, 0.075]} /><meshStandardMaterial color="#5c3822" roughness={0.97} /></mesh>
-      {[-0.23, 0, 0.23].map((y) => <mesh key={y} position={[0, y, 0.045]}><boxGeometry args={[0.32, 0.045, 0.035]} /><meshStandardMaterial color="#2f2118" /></mesh>)}
-      <mesh position={[0, 0, 0.05]} rotation={[0, 0, braceDirection * 0.62]}><boxGeometry args={[0.72, 0.045, 0.035]} /><meshStandardMaterial color="#39271b" /></mesh>
-    </group>
-  );
+  return <MedievalWindowShuttersAsset window={window} building={building} wallHeight={wallHeight} onClick={onClick} />;
 }
 
 export function HangingSign({ building, wallHeight }: { building: BuildingView; wallHeight: number }) {
@@ -184,18 +151,4 @@ export function HangingSign({ building, wallHeight }: { building: BuildingView; 
       <mesh position={[0.2, -0.34, 0]} castShadow><boxGeometry args={[0.52, 0.34, 0.07]} /><meshStandardMaterial color="#785331" roughness={0.92} /></mesh>
     </group>
   );
-}
-
-function windowSide(window: WindowView, building: BuildingView) {
-  if (window.position.y === building.y) return "north";
-  if (window.position.y === building.y + building.height - 1) return "south";
-  if (window.position.x === building.x) return "west";
-  return "east";
-}
-
-function windowTransform(window: WindowView, building: BuildingView, side: ReturnType<typeof windowSide>) {
-  if (side === "north") return { x: window.position.x + 0.5, z: building.y - 0.075, rotation: Math.PI };
-  if (side === "south") return { x: window.position.x + 0.5, z: building.y + building.height + 0.075, rotation: 0 };
-  if (side === "west") return { x: building.x - 0.075, z: window.position.y + 0.5, rotation: -Math.PI / 2 };
-  return { x: building.x + building.width + 0.075, z: window.position.y + 0.5, rotation: Math.PI / 2 };
 }

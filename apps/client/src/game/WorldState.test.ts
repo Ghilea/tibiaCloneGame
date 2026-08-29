@@ -38,6 +38,22 @@ describe("local movement reconciliation", () => {
 
     expect(world.players.get("local")?.position).toEqual(position(10, 8));
   });
+
+  it("keeps movement off the global UI render path and ignores an identical acknowledgement", () => {
+    const world = new WorldState();
+    world.localPlayerId = "local";
+    world.players.set("local", player(position(10, 8)));
+    let worldUpdates = 0;
+    let visualUpdates = 0;
+    world.subscribe(() => { worldUpdates += 1; });
+    world.subscribeVisual(() => { visualUpdates += 1; });
+
+    world.predictLocalMove(position(11, 8), 1);
+    expect({ worldUpdates, visualUpdates }).toEqual({ worldUpdates: 0, visualUpdates: 1 });
+
+    world.apply({ type: "player_moved", player_id: "local", position: position(11, 8), sequence: 1 });
+    expect({ worldUpdates, visualUpdates }).toEqual({ worldUpdates: 0, visualUpdates: 1 });
+  });
 });
 
 describe("authored shutter synchronization", () => {

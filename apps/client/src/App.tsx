@@ -22,6 +22,8 @@ import type { GroundItem, ItemInstance } from "./protocol";
 const world = new WorldState();
 const network = new NetworkClient(world);
 const input = new InputController(world, network);
+const subscribeWorldVisual = (listener: () => void) => world.subscribeVisual(listener);
+const worldVisualSnapshot = () => world.visualRevision;
 
 const vocations = [
   {
@@ -374,15 +376,6 @@ function Game({ onLeave }: { onLeave: () => void }) {
   const local = world.localPlayerId
     ? world.players.get(world.localPlayerId)
     : null;
-  const nearbyCorpses = local
-    ? world.groundItems.filter(
-        (ground) =>
-          ground.contents.length > 0 &&
-          ground.position.z === local.position.z &&
-          Math.abs(ground.position.x - local.position.x) <= 1 &&
-          Math.abs(ground.position.y - local.position.y) <= 1,
-      )
-    : [];
   const titles: Record<Panel, string> = {
     inventory: "Inventory & Equipment",
     crafting: "Crafting & Production",
@@ -424,7 +417,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
       </section>
       {(world.attackTargetId || world.selectedPlayerId) && <TargetFrame />}
       {world.playerContext && <PlayerContextMenu />}
-      {nearbyCorpses.length > 0 && <LootWindow corpses={nearbyCorpses} />}
+      <NearbyLootWindow />
       <Chat />
       <nav className="action-dock" aria-label="Combat hotbar and game panels">
         <button
@@ -1168,6 +1161,19 @@ function TradeItem({ item }: { item: ItemInstance }) {
     </span>
   );
 }
+function NearbyLootWindow() {
+  useSyncExternalStore(subscribeWorldVisual, worldVisualSnapshot);
+  const local = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
+  if (!local) return null;
+  const corpses = world.groundItems.filter(
+    (ground) => ground.contents.length > 0
+      && ground.position.z === local.position.z
+      && Math.abs(ground.position.x - local.position.x) <= 1
+      && Math.abs(ground.position.y - local.position.y) <= 1,
+  );
+  return corpses.length > 0 ? <LootWindow corpses={corpses} /> : null;
+}
+
 function LootWindow({ corpses }: { corpses: GroundItem[] }) {
   return (
     <section className="loot-window">

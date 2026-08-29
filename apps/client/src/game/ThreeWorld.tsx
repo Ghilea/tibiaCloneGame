@@ -1,5 +1,5 @@
 import { Canvas, type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
-import { memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type MutableRefObject } from "react";
 import * as THREE from "three";
 import type {
   BuildingView,
@@ -10,7 +10,9 @@ import type {
   Position,
   WindowView,
 } from "../protocol";
+import { AnimatedCharacter, type CharacterKind } from "./AnimatedCharacter";
 import { InputController } from "./InputController";
+import { MedievalDoorLeafAsset } from "./MedievalAssetModels";
 import { GabledRoof, HangingSign, MedievalDoorWall, MedievalWall, MedievalWindowWall, ShutterWindow } from "./MedievalModels";
 import { WorldState } from "./WorldState";
 
@@ -46,8 +48,12 @@ export function ThreeWorld({ world, input }: ThreeWorldProps) {
 }
 
 function WorldScene({ world, input }: ThreeWorldProps) {
+  const subscribeVisual = useCallback((listener: () => void) => world.subscribeVisual(listener), [world]);
+  const visualSnapshot = useCallback(() => world.visualRevision, [world]);
+  useSyncExternalStore(subscribeVisual, visualSnapshot);
   const map = world.map;
   const local = world.localPlayerId ? world.players.get(world.localPlayerId) : undefined;
+  const localVisualPosition = useRef(new THREE.Vector3(Number.NaN, 0.05, Number.NaN));
   const floor = local?.position.z ?? map?.floor ?? 0;
   const players = [...world.players.values()].filter((entry) => entry.position.z === floor);
   const creatures = [...world.creatures.values()].filter((entry) => entry.position.z === floor);
@@ -68,7 +74,7 @@ function WorldScene({ world, input }: ThreeWorldProps) {
   return (
     <>
       <Atmosphere torches={map.torches.filter((tile) => tile.z === floor)} local={local?.position} />
-      <FollowCamera target={local?.position} mapWidth={map.width} mapHeight={map.height} />
+      <FollowCamera target={local?.position} visualTarget={localVisualPosition} mapWidth={map.width} mapHeight={map.height} />
       <Terrain map={map} floor={floor} onGround={onGround} />
       <Suspense fallback={null}>
         <Structures map={map} input={input} floor={floor} />
@@ -79,6 +85,7 @@ function WorldScene({ world, input }: ThreeWorldProps) {
           key={player.id}
           player={player}
           local={player.id === world.localPlayerId}
+          visualPosition={player.id === world.localPlayerId ? localVisualPosition : undefined}
           selected={player.id === world.selectedPlayerId}
           onClick={(event) => {
             event.stopPropagation();
@@ -340,21 +347,28 @@ function Door({ door, input, building, tall = WALL_HEIGHT }: { door: DoorView; i
   const group = useRef<THREE.Group>(null);
   const transform = doorTransform(door, building);
   const leafHeight = Math.min(tall - 0.15, 1.85);
-  const modelledHouseOpening = building?.kind === "house";
-  const leafWidth = modelledHouseOpening ? 0.63 : 0.88;
+  const leafWidth = 0.88;
   const hingeX = -leafWidth / 2;
   useFrame((_, delta) => {
     if (!group.current) return;
     const target = door.open ? transform.openAngle : 0;
     group.current.rotation.y = THREE.MathUtils.damp(group.current.rotation.y, target, 12, delta);
   });
+  if (building?.kind === "house") return (
+    <MedievalDoorLeafAsset
+      door={door}
+      building={building}
+      wallHeight={tall}
+      onClick={() => input.toggleDoor(door.id, door.position)}
+    />
+  );
   return (
     <group position={[transform.x, 0, transform.z]} rotation={[0, transform.rotation, 0]} onPointerDown={(event) => { event.stopPropagation(); input.toggleDoor(door.id, door.position); }}>
-      {!modelledHouseOpening && <>
+      <>
         <mesh position={[-0.49, leafHeight / 2, 0]} castShadow><boxGeometry args={[0.1, leafHeight + 0.12, 0.16]} /><meshStandardMaterial color="#49301f" roughness={0.9} /></mesh>
         <mesh position={[0.49, leafHeight / 2, 0]} castShadow><boxGeometry args={[0.1, leafHeight + 0.12, 0.16]} /><meshStandardMaterial color="#49301f" roughness={0.9} /></mesh>
         <mesh position={[0, leafHeight + 0.04, 0]} castShadow><boxGeometry args={[1.08, 0.12, 0.16]} /><meshStandardMaterial color="#49301f" roughness={0.9} /></mesh>
-      </>}
+      </>
       <group ref={group} position={[hingeX, 0, 0]}>
         <mesh position={[leafWidth / 2, leafHeight / 2, 0]} castShadow>
           <boxGeometry args={[leafWidth, leafHeight, 0.09]} />
@@ -395,23 +409,32 @@ function Torch({ position }: { position: Position }) {
 
 type ActorClick = (event: ThreeEvent<MouseEvent>) => void;
 
-function PlayerActor({ player, local, selected, onClick }: { player: PlayerView; local: boolean; selected: boolean; onClick: ActorClick }) {
-  const color = player.vocation === "mage" ? "#4d6fb5" : player.vocation === "ranger" ? "#557b45" : "#8a4135";
+type PlayerActorProps = { player: PlayerView; local: boolean; visualPosition?: MutableRefObject<THREE.Vector3>; selected: boolean; onClick: ActorClick };
+
+const PlayerActor = memo(function PlayerActor({ player, local, visualPosition, selected, onClick }: PlayerActorProps) {
+  const kind: CharacterKind = player.vocation === "mage" ? "mage" : player.vocation === "ranger" ? "ranger" : "knight";
+  const moving = useRef(false);
   return (
-    <SmoothActor id={player.id} position={player.position}>
+    <SmoothActor id={player.id} position={player.position} visualPosition={visualPosition} moving={moving}>
       <group onClick={onClick}>
         <SelectionRing active={selected || local} color={local ? "#65b9e8" : "#e2be65"} />
-        <Humanoid color={color} local={local} />
+        <AnimatedCharacter kind={kind} position={player.position} moving={moving} />
       </group>
     </SmoothActor>
   );
-}
+}, actorPropsEqual);
 
-function NpcActor({ npc, onClick }: { npc: NpcView; onClick: ActorClick }) {
-  return <SmoothActor id={npc.id} position={npc.position}><group onClick={onClick}><SelectionRing active color="#d6b65e" /><Humanoid color="#836eab" /><mesh position={[0, 2.18, 0]}><octahedronGeometry args={[0.11]} /><meshStandardMaterial color="#e7c45f" emissive="#b17f23" emissiveIntensity={1.3} /></mesh></group></SmoothActor>;
-}
+type NpcActorProps = { npc: NpcView; onClick: ActorClick };
 
-function CreatureActor({ creature, selected, onClick }: { creature: CreatureView; selected: boolean; onClick: ActorClick }) {
+const NpcActor = memo(function NpcActor({ npc, onClick }: NpcActorProps) {
+  const kind: CharacterKind = npc.service === "spell_trainer" ? "mage" : npc.service === "depot" ? "knight" : "rogue";
+  const moving = useRef(false);
+  return <SmoothActor id={npc.id} position={npc.position} moving={moving}><group onClick={onClick}><SelectionRing active color="#d6b65e" /><AnimatedCharacter kind={kind} position={npc.position} moving={moving} /><mesh position={[0, 2.18, 0]}><octahedronGeometry args={[0.11]} /><meshStandardMaterial color="#e7c45f" emissive="#b17f23" emissiveIntensity={1.3} /></mesh></group></SmoothActor>;
+}, (previous, next) => previous.npc === next.npc);
+
+type CreatureActorProps = { creature: CreatureView; selected: boolean; onClick: ActorClick };
+
+const CreatureActor = memo(function CreatureActor({ creature, selected, onClick }: CreatureActorProps) {
   const group = useRef<THREE.Group>(null);
   const phase = stablePhase(creature.id);
   useFrame(({ clock }) => {
@@ -428,62 +451,60 @@ function CreatureActor({ creature, selected, onClick }: { creature: CreatureView
       </group>
     </SmoothActor>
   );
+}, (previous, next) => previous.creature === next.creature && previous.selected === next.selected);
+
+function actorPropsEqual(previous: PlayerActorProps, next: PlayerActorProps) {
+  return previous.player === next.player
+    && previous.local === next.local
+    && previous.visualPosition === next.visualPosition
+    && previous.selected === next.selected;
 }
 
-function Humanoid({ color, local = false }: { color: string; local?: boolean }) {
-  const legs = useRef<THREE.Group>(null);
-  useFrame(({ clock }) => {
-    if (legs.current) legs.current.rotation.x = Math.sin(clock.elapsedTime * 7) * 0.05;
-  });
-  return (
-    <group>
-      <group ref={legs}>
-        <mesh position={[-0.13, 0.34, 0]} castShadow><capsuleGeometry args={[0.1, 0.45, 4, 8]} /><meshStandardMaterial color="#282d35" /></mesh>
-        <mesh position={[0.13, 0.34, 0]} castShadow><capsuleGeometry args={[0.1, 0.45, 4, 8]} /><meshStandardMaterial color="#282d35" /></mesh>
-      </group>
-      <mesh position={[0, 0.98, 0]} castShadow renderOrder={local ? 10 : 0}><capsuleGeometry args={[0.31, 0.62, 6, 12]} /><meshStandardMaterial color={color} roughness={0.75} emissive={local ? color : "#000000"} emissiveIntensity={local ? 0.12 : 0} /></mesh>
-      <mesh position={[0, 1.58, 0]} castShadow renderOrder={local ? 10 : 0}><sphereGeometry args={[0.27, 16, 12]} /><meshStandardMaterial color="#c9976c" roughness={0.85} /></mesh>
-      <mesh position={[0, 1.79, 0]} castShadow><coneGeometry args={[0.34, 0.36, 10]} /><meshStandardMaterial color="#45362a" /></mesh>
-    </group>
-  );
-}
-
-function SmoothActor({ id, position, children }: { id: string; position: Position; children: React.ReactNode }) {
+function SmoothActor({ id, position, visualPosition, moving, children }: { id: string; position: Position; visualPosition?: MutableRefObject<THREE.Vector3>; moving?: MutableRefObject<boolean>; children: React.ReactNode }) {
   const group = useRef<THREE.Group>(null);
   const current = useRef(new THREE.Vector3(position.x + 0.5, 0.05, position.y + 0.5));
-  const velocity = useRef(new THREE.Vector3());
-  const previousTarget = useRef(current.current.clone());
+  const segmentStart = useRef(current.current.clone());
+  const segmentTarget = useRef(current.current.clone());
+  const segmentStartedAt = useRef(performance.now());
+  const segmentDurationMs = useRef(170);
+  const lastTargetAt = useRef(performance.now());
   const target = useMemo(() => new THREE.Vector3(position.x + 0.5, 0.05, position.y + 0.5), [position.x, position.y]);
-  useFrame((_, delta) => {
-    if (!group.current) return;
-    if (!target.equals(previousTarget.current)) {
-      const dx = target.x - previousTarget.current.x;
-      const dz = target.z - previousTarget.current.z;
-      if (Math.abs(dx) + Math.abs(dz) > 0.01) group.current.rotation.y = Math.atan2(dx, dz);
-      previousTarget.current.copy(target);
-    }
-    const frameDelta = Math.min(delta, 0.05);
+  useLayoutEffect(() => {
+    if (target.equals(segmentTarget.current)) return;
+    const now = performance.now();
+    const dx = target.x - segmentTarget.current.x;
+    const dz = target.z - segmentTarget.current.z;
     const distance = current.current.distanceTo(target);
+    if (Math.abs(dx) + Math.abs(dz) > 0.01 && group.current) group.current.rotation.y = Math.atan2(dx, dz);
     if (distance > 3) {
       current.current.copy(target);
-      velocity.current.set(0, 0, 0);
+      segmentStart.current.copy(target);
+      segmentTarget.current.copy(target);
+      if (group.current) group.current.position.copy(target);
+      visualPosition?.current.copy(target);
+      if (moving) moving.current = false;
     } else {
-      const stiffness = 105;
-      const damping = 17;
-      velocity.current.x += ((target.x - current.current.x) * stiffness - velocity.current.x * damping) * frameDelta;
-      velocity.current.z += ((target.z - current.current.z) * stiffness - velocity.current.z * damping) * frameDelta;
-      const speed = Math.hypot(velocity.current.x, velocity.current.z);
-      if (speed > 8.2) velocity.current.multiplyScalar(8.2 / speed);
-      current.current.x += velocity.current.x * frameDelta;
-      current.current.z += velocity.current.z * frameDelta;
-      if (distance < 0.002 && speed < 0.02) {
-        current.current.copy(target);
-        velocity.current.set(0, 0, 0);
-      }
+      segmentStart.current.copy(current.current);
+      segmentTarget.current.copy(target);
+      segmentStartedAt.current = now;
+      segmentDurationMs.current = actorSegmentDuration(now - lastTargetAt.current);
     }
+    lastTargetAt.current = now;
+  }, [target, visualPosition]);
+  useFrame(() => {
+    if (!group.current) return;
+    const progress = THREE.MathUtils.clamp((performance.now() - segmentStartedAt.current) / segmentDurationMs.current, 0, 1);
+    current.current.lerpVectors(segmentStart.current, segmentTarget.current, progress);
     group.current.position.copy(current.current);
-  });
+    visualPosition?.current.copy(current.current);
+    if (moving) moving.current = progress < 1;
+  }, -1);
   return <group ref={group} name={id} position={current.current}>{children}</group>;
+}
+
+export function actorSegmentDuration(updateIntervalMs: number) {
+  const cadence = updateIntervalMs >= 70 && updateIntervalMs <= 600 ? updateIntervalMs : 158;
+  return THREE.MathUtils.clamp(cadence * 1.36, 215, 500);
 }
 
 function SelectionRing({ active, color }: { active: boolean; color: string }) {
@@ -502,15 +523,15 @@ function GroundItemActor({ position, corpse, onClick }: { position: Position; co
   );
 }
 
-function FollowCamera({ target, mapWidth, mapHeight }: { target?: Position; mapWidth: number; mapHeight: number }) {
+function FollowCamera({ target, visualTarget, mapWidth, mapHeight }: { target?: Position; visualTarget: MutableRefObject<THREE.Vector3>; mapWidth: number; mapHeight: number }) {
   const { camera } = useThree();
-  const focus = useRef(new THREE.Vector3(target?.x ?? mapWidth / 2, 0, target?.y ?? mapHeight / 2));
-  useFrame((_, delta) => {
-    const next = new THREE.Vector3(target?.x ?? mapWidth / 2, 0, target?.y ?? mapHeight / 2);
-    focus.current.x = THREE.MathUtils.damp(focus.current.x, next.x + 0.5, 7.5, delta);
-    focus.current.z = THREE.MathUtils.damp(focus.current.z, next.z + 0.5, 7.5, delta);
-    camera.position.set(focus.current.x + 12, 16, focus.current.z + 12);
-    camera.lookAt(focus.current.x, 0, focus.current.z);
+  useFrame(() => {
+    const rendered = visualTarget.current;
+    const hasRenderedTarget = Number.isFinite(rendered.x) && Number.isFinite(rendered.z);
+    const x = hasRenderedTarget ? rendered.x : (target?.x ?? mapWidth / 2) + 0.5;
+    const z = hasRenderedTarget ? rendered.z : (target?.y ?? mapHeight / 2) + 0.5;
+    camera.position.set(x + 12, 16, z + 12);
+    camera.lookAt(x, 0, z);
     camera.updateMatrixWorld();
   });
   return null;

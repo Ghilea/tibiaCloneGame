@@ -41,7 +41,9 @@ export class WorldState {
   connection: "offline" | "connecting" | "online" | "error" = "offline";
   ping = 0;
   revision = 0;
+  visualRevision = 0;
   private listeners = new Set<WorldListener>();
+  private visualListeners = new Set<WorldListener>();
   private pendingLocalMoves = new Map<number, Position>();
 
   subscribe(listener: WorldListener) {
@@ -49,12 +51,23 @@ export class WorldState {
     return () => { this.listeners.delete(listener); };
   }
 
+  subscribeVisual(listener: WorldListener) {
+    this.visualListeners.add(listener);
+    return () => { this.visualListeners.delete(listener); };
+  }
+
   notify() {
     this.revision += 1;
     for (const listener of this.listeners) listener();
   }
 
+  notifyVisual() {
+    this.visualRevision += 1;
+    for (const listener of this.visualListeners) listener();
+  }
+
   apply(message: ServerMessage) {
+    let notification: "world" | "visual" | "none" = "world";
     switch (message.type) {
       case "welcome":
         this.players.clear();
@@ -101,23 +114,35 @@ export class WorldState {
         if (this.playerContext?.playerId === message.player_id) this.playerContext = null;
         break;
       case "player_moved": {
+        notification = "none";
         const player = this.players.get(message.player_id);
         if (player) {
           if (message.player_id === this.localPlayerId) {
             for (const sequence of this.pendingLocalMoves.keys()) if (sequence <= message.sequence) this.pendingLocalMoves.delete(sequence);
             const latestPrediction = [...this.pendingLocalMoves.entries()].sort(([left], [right]) => left - right).at(-1)?.[1];
-            this.players.set(player.id, { ...player, position: latestPrediction ?? message.position });
+            const nextPosition = latestPrediction ?? message.position;
+            if (!samePosition(player.position, nextPosition)) {
+              this.players.set(player.id, { ...player, position: nextPosition });
+              notification = "visual";
+            }
           } else {
-            this.players.set(player.id, { ...player, position: message.position });
+            if (!samePosition(player.position, message.position)) {
+              this.players.set(player.id, { ...player, position: message.position });
+              notification = "visual";
+            }
           }
         }
         break;
       }
       case "move_rejected": {
+        notification = "none";
         if (this.localPlayerId === message.player_id) {
           this.pendingLocalMoves.clear();
           const player = this.players.get(this.localPlayerId);
-          if (player) this.players.set(player.id, { ...player, position: message.position });
+          if (player && !samePosition(player.position, message.position)) {
+            this.players.set(player.id, { ...player, position: message.position });
+            notification = "visual";
+          }
         }
         break;
       }
@@ -186,8 +211,12 @@ export class WorldState {
         this.creatures.set(message.creature.id, message.creature);
         break;
       case "creature_moved": {
+        notification = "none";
         const creature = this.creatures.get(message.creature_id);
-        if (creature) this.creatures.set(creature.id, { ...creature, position: message.position });
+        if (creature && !samePosition(creature.position, message.position)) {
+          this.creatures.set(creature.id, { ...creature, position: message.position });
+          notification = "visual";
+        }
         break;
       }
       case "creature_state_changed": {
@@ -225,7 +254,8 @@ export class WorldState {
         this.chat.push({ id: crypto.randomUUID(), speaker: "Server", text: message.message });
         break;
     }
-    this.notify();
+    if (notification === "world") this.notify();
+    else if (notification === "visual") this.notifyVisual();
   }
 
   predictLocalMove(position: Position, sequence: number) {
@@ -234,7 +264,7 @@ export class WorldState {
     if (player) {
       this.pendingLocalMoves.set(sequence, position);
       this.players.set(player.id, { ...player, position });
-      this.notify();
+      this.notifyVisual();
     }
   }
 
@@ -290,6 +320,10 @@ export class WorldState {
     };
     this.notify();
   }
+}
+
+function samePosition(left: Position, right: Position) {
+  return left.x === right.x && left.y === right.y && left.z === right.z;
 }
 
 function tradeCloseMessage(reason: string) {
