@@ -2,6 +2,7 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { BuildingView, WindowView } from "../protocol";
+import { MedievalHouseWallAsset } from "./MedievalAssetModels";
 
 export function MedievalWall({
   position,
@@ -12,32 +13,8 @@ export function MedievalWall({
   size: [number, number, number];
   keep: boolean;
 }) {
-  const horizontal = size[0] > size[2];
   if (keep) return <CastleMasonry position={position} size={size} />;
-  const faceOffset = horizontal ? [0, 0, size[2] * 0.54] as const : [size[0] * 0.54, 0, 0] as const;
-  const beamSize = horizontal ? [0.075, size[1] + 0.05, 0.055] as const : [0.055, size[1] + 0.05, 0.075] as const;
-  return (
-    <group position={position}>
-      <mesh castShadow receiveShadow>
-        <boxGeometry args={size} />
-        <meshStandardMaterial color="#aa987c" roughness={0.96} />
-      </mesh>
-      <mesh position={faceOffset} castShadow>
-        <boxGeometry args={horizontal ? [size[0] + 0.04, 0.09, 0.055] : [0.055, 0.09, size[2] + 0.04]} />
-        <meshStandardMaterial color="#4b3020" roughness={0.92} />
-      </mesh>
-      {[-0.46, 0.46].map((offset) => (
-        <mesh key={offset} position={horizontal ? [offset * size[0], 0, faceOffset[2]] : [faceOffset[0], 0, offset * size[2]]} castShadow>
-          <boxGeometry args={beamSize} />
-          <meshStandardMaterial color="#563522" roughness={0.94} />
-        </mesh>
-      ))}
-      <mesh position={faceOffset} rotation={horizontal ? [0, 0, 0.54] : [0.54, 0, Math.PI / 2]} castShadow>
-        <boxGeometry args={[Math.min(1.05, Math.max(size[0], size[2]) * 1.1), 0.065, 0.05]} />
-        <meshStandardMaterial color="#68412a" roughness={0.94} />
-      </mesh>
-    </group>
-  );
+  return <MedievalHouseWallAsset kind="solid" position={position} size={size} />;
 }
 
 export function MedievalWindowWall({
@@ -47,37 +24,7 @@ export function MedievalWindowWall({
   position: [number, number, number];
   size: [number, number, number];
 }) {
-  const horizontal = size[0] > size[2];
-  const openingWidth = 0.68;
-  const openingHeight = 0.8;
-  const openingY = size[1] * 0.58;
-  const lowerHeight = openingY - openingHeight / 2;
-  const upperHeight = size[1] - openingY - openingHeight / 2;
-  const sideWidth = (Math.max(size[0], size[2]) - openingWidth) / 2;
-  const wallColor = "#aa987c";
-  const timber = "#4b3020";
-  const longAxis = Math.max(size[0], size[2]);
-  const section = (key: string, offset: [number, number, number], dimensions: [number, number, number]) => (
-    <mesh key={key} position={offset} castShadow receiveShadow><boxGeometry args={dimensions} /><meshStandardMaterial color={wallColor} roughness={0.96} /></mesh>
-  );
-  return (
-    <group position={[position[0], 0, position[2]]}>
-      {horizontal ? <>
-        {section("left", [-openingWidth / 2 - sideWidth / 2, size[1] / 2, 0], [sideWidth, size[1], size[2]])}
-        {section("right", [openingWidth / 2 + sideWidth / 2, size[1] / 2, 0], [sideWidth, size[1], size[2]])}
-        {section("bottom", [0, lowerHeight / 2, 0], [openingWidth, lowerHeight, size[2]])}
-        {section("top", [0, openingY + openingHeight / 2 + upperHeight / 2, 0], [openingWidth, upperHeight, size[2]])}
-      </> : <>
-        {section("left", [0, size[1] / 2, -openingWidth / 2 - sideWidth / 2], [size[0], size[1], sideWidth])}
-        {section("right", [0, size[1] / 2, openingWidth / 2 + sideWidth / 2], [size[0], size[1], sideWidth])}
-        {section("bottom", [0, lowerHeight / 2, 0], [size[0], lowerHeight, openingWidth])}
-        {section("top", [0, openingY + openingHeight / 2 + upperHeight / 2, 0], [size[0], upperHeight, openingWidth])}
-      </>}
-      {[-openingWidth / 2, openingWidth / 2].map((offset) => <mesh key={offset} position={horizontal ? [offset, openingY, size[2] * 0.58] : [size[0] * 0.58, openingY, offset]} castShadow><boxGeometry args={horizontal ? [0.055, openingHeight + 0.12, 0.06] : [0.06, openingHeight + 0.12, 0.055]} /><meshStandardMaterial color={timber} roughness={0.94} /></mesh>)}
-      {[-openingHeight / 2, openingHeight / 2].map((offset) => <mesh key={offset} position={horizontal ? [0, openingY + offset, size[2] * 0.58] : [size[0] * 0.58, openingY + offset, 0]} castShadow><boxGeometry args={horizontal ? [openingWidth + 0.12, 0.055, 0.06] : [0.06, 0.055, openingWidth + 0.12]} /><meshStandardMaterial color={timber} roughness={0.94} /></mesh>)}
-      <mesh position={horizontal ? [0, size[1], size[2] * 0.56] : [size[0] * 0.56, size[1], 0]}><boxGeometry args={horizontal ? [longAxis, 0.08, 0.055] : [0.055, 0.08, longAxis]} /><meshStandardMaterial color={timber} roughness={0.94} /></mesh>
-    </group>
-  );
+  return <MedievalHouseWallAsset kind="window" position={position} size={size} />;
 }
 
 export function MedievalDoorWall({
@@ -91,6 +38,7 @@ export function MedievalDoorWall({
   keep: boolean;
   openingHeight: number;
 }) {
+  if (!keep) return <MedievalHouseWallAsset kind="door" position={position} size={size} />;
   const horizontal = size[0] > size[2];
   const openingWidth = 0.98;
   const sideWidth = Math.max(0.08, (Math.max(size[0], size[2]) - openingWidth) / 2);

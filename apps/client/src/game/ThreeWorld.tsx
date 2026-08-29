@@ -1,5 +1,5 @@
 import { Canvas, type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type {
   BuildingView,
@@ -70,7 +70,9 @@ function WorldScene({ world, input }: ThreeWorldProps) {
       <Atmosphere torches={map.torches.filter((tile) => tile.z === floor)} local={local?.position} />
       <FollowCamera target={local?.position} mapWidth={map.width} mapHeight={map.height} />
       <Terrain map={map} floor={floor} onGround={onGround} />
-      <Structures map={map} input={input} floor={floor} />
+      <Suspense fallback={null}>
+        <Structures map={map} input={input} floor={floor} />
+      </Suspense>
       <OcclusionController target={local?.position} />
       {players.map((player) => (
         <PlayerActor
@@ -338,6 +340,9 @@ function Door({ door, input, building, tall = WALL_HEIGHT }: { door: DoorView; i
   const group = useRef<THREE.Group>(null);
   const transform = doorTransform(door, building);
   const leafHeight = Math.min(tall - 0.15, 1.85);
+  const modelledHouseOpening = building?.kind === "house";
+  const leafWidth = modelledHouseOpening ? 0.63 : 0.88;
+  const hingeX = -leafWidth / 2;
   useFrame((_, delta) => {
     if (!group.current) return;
     const target = door.open ? transform.openAngle : 0;
@@ -345,15 +350,17 @@ function Door({ door, input, building, tall = WALL_HEIGHT }: { door: DoorView; i
   });
   return (
     <group position={[transform.x, 0, transform.z]} rotation={[0, transform.rotation, 0]} onPointerDown={(event) => { event.stopPropagation(); input.toggleDoor(door.id, door.position); }}>
-      <mesh position={[-0.49, leafHeight / 2, 0]} castShadow><boxGeometry args={[0.1, leafHeight + 0.12, 0.16]} /><meshStandardMaterial color="#49301f" roughness={0.9} /></mesh>
-      <mesh position={[0.49, leafHeight / 2, 0]} castShadow><boxGeometry args={[0.1, leafHeight + 0.12, 0.16]} /><meshStandardMaterial color="#49301f" roughness={0.9} /></mesh>
-      <mesh position={[0, leafHeight + 0.04, 0]} castShadow><boxGeometry args={[1.08, 0.12, 0.16]} /><meshStandardMaterial color="#49301f" roughness={0.9} /></mesh>
-      <group ref={group} position={[-0.44, 0, 0]}>
-        <mesh position={[0.44, leafHeight / 2, 0]} castShadow>
-          <boxGeometry args={[0.88, leafHeight, 0.09]} />
+      {!modelledHouseOpening && <>
+        <mesh position={[-0.49, leafHeight / 2, 0]} castShadow><boxGeometry args={[0.1, leafHeight + 0.12, 0.16]} /><meshStandardMaterial color="#49301f" roughness={0.9} /></mesh>
+        <mesh position={[0.49, leafHeight / 2, 0]} castShadow><boxGeometry args={[0.1, leafHeight + 0.12, 0.16]} /><meshStandardMaterial color="#49301f" roughness={0.9} /></mesh>
+        <mesh position={[0, leafHeight + 0.04, 0]} castShadow><boxGeometry args={[1.08, 0.12, 0.16]} /><meshStandardMaterial color="#49301f" roughness={0.9} /></mesh>
+      </>}
+      <group ref={group} position={[hingeX, 0, 0]}>
+        <mesh position={[leafWidth / 2, leafHeight / 2, 0]} castShadow>
+          <boxGeometry args={[leafWidth, leafHeight, 0.09]} />
           <meshStandardMaterial color="#654128" roughness={0.8} />
         </mesh>
-        <mesh position={[0.75, leafHeight * 0.52, 0.07]}><sphereGeometry args={[0.045, 10, 8]} /><meshStandardMaterial color="#d6aa54" metalness={0.65} /></mesh>
+        <mesh position={[leafWidth * 0.84, leafHeight * 0.52, 0.07]}><sphereGeometry args={[0.045, 10, 8]} /><meshStandardMaterial color="#d6aa54" metalness={0.65} /></mesh>
       </group>
     </group>
   );
