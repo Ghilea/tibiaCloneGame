@@ -11,14 +11,18 @@ import type {
   WindowView,
 } from "../protocol";
 import { AnimatedCharacter, type CharacterKind } from "./AnimatedCharacter";
-import { InputController } from "./InputController";
+import { CLIENT_STEP_MS, InputController } from "./InputController";
 import { MedievalDoorLeafAsset } from "./MedievalAssetModels";
 import { GabledRoof, HangingSign, MedievalDoorWall, MedievalWall, MedievalWindowWall, ShutterWindow } from "./MedievalModels";
 import { WorldState } from "./WorldState";
 
 const TILE_HEIGHT = 0.12;
-const WALL_HEIGHT = 2.75;
-const CASTLE_HEIGHT = 3.25;
+// The KayKit actors have broad, rounded silhouettes. The environment uses a
+// slightly larger architectural scale so openings and landmarks frame them
+// naturally while every footprint still occupies the same gameplay tiles.
+const WALL_HEIGHT = 3.2;
+const CASTLE_HEIGHT = 4.1;
+const DOOR_HEIGHT = 2.2;
 const CAMERA_ZOOM = 135;
 
 type ThreeWorldProps = {
@@ -59,8 +63,6 @@ function WorldScene({ world, input }: ThreeWorldProps) {
   const creatures = [...world.creatures.values()].filter((entry) => entry.position.z === floor);
   const npcs = [...world.npcs.values()].filter((entry) => entry.position.z === floor);
 
-  useEffect(() => input.attach(), [input]);
-
   if (!map) return null;
   const onGround = useCallback((event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
@@ -79,7 +81,7 @@ function WorldScene({ world, input }: ThreeWorldProps) {
       <Suspense fallback={null}>
         <Structures map={map} input={input} floor={floor} />
       </Suspense>
-      <OcclusionController target={local?.position} />
+      <OcclusionController target={local?.position} visualTarget={localVisualPosition} />
       {players.map((player) => (
         <PlayerActor
           key={player.id}
@@ -293,7 +295,7 @@ function Building({ building, doors, windows, input }: { building: BuildingView;
       <group userData={{ occluder: true }}>
         {wallSegments.map((wall) => (
           wall.door
-            ? <MedievalDoorWall key={wall.key} position={wall.position} size={wall.size} keep={building.kind === "keep"} openingHeight={Math.min(height - 0.15, 1.85) + 0.1} />
+            ? <MedievalDoorWall key={wall.key} position={wall.position} size={wall.size} keep={building.kind === "keep"} openingHeight={Math.min(height - 0.15, DOOR_HEIGHT) + 0.1} />
             : wall.window && building.kind === "house"
             ? <MedievalWindowWall key={wall.key} position={wall.position} size={wall.size} />
             : <MedievalWall key={wall.key} position={wall.position} size={wall.size} keep={building.kind === "keep"} />
@@ -315,14 +317,14 @@ function ConnectedWalls({ positions, castle }: { positions: readonly Position[];
     <group>
       {positions.map((tile) => {
         const arms = [
-          { key: "west", present: set.has(`${tile.x - 1}:${tile.y}:${tile.z}`), position: [-0.32, height / 2, 0] as [number, number, number], size: [0.42, height, 0.18] as [number, number, number] },
-          { key: "east", present: set.has(`${tile.x + 1}:${tile.y}:${tile.z}`), position: [0.32, height / 2, 0] as [number, number, number], size: [0.42, height, 0.18] as [number, number, number] },
-          { key: "north", present: set.has(`${tile.x}:${tile.y - 1}:${tile.z}`), position: [0, height / 2, -0.32] as [number, number, number], size: [0.18, height, 0.42] as [number, number, number] },
-          { key: "south", present: set.has(`${tile.x}:${tile.y + 1}:${tile.z}`), position: [0, height / 2, 0.32] as [number, number, number], size: [0.18, height, 0.42] as [number, number, number] },
+          { key: "west", present: set.has(`${tile.x - 1}:${tile.y}:${tile.z}`), position: [-0.32, height / 2, 0] as [number, number, number], size: [0.42, height, castle ? 0.28 : 0.18] as [number, number, number] },
+          { key: "east", present: set.has(`${tile.x + 1}:${tile.y}:${tile.z}`), position: [0.32, height / 2, 0] as [number, number, number], size: [0.42, height, castle ? 0.28 : 0.18] as [number, number, number] },
+          { key: "north", present: set.has(`${tile.x}:${tile.y - 1}:${tile.z}`), position: [0, height / 2, -0.32] as [number, number, number], size: [castle ? 0.28 : 0.18, height, 0.42] as [number, number, number] },
+          { key: "south", present: set.has(`${tile.x}:${tile.y + 1}:${tile.z}`), position: [0, height / 2, 0.32] as [number, number, number], size: [castle ? 0.28 : 0.18, height, 0.42] as [number, number, number] },
         ];
         return (
           <group key={tileKey(tile)} position={[tile.x + 0.5, 0, tile.y + 0.5]} userData={{ occluder: true }}>
-            <MedievalWall position={[0, height / 2, 0]} size={[0.24, height, 0.24]} keep={castle} />
+            <MedievalWall position={[0, height / 2, 0]} size={[castle ? 0.3 : 0.24, height, castle ? 0.3 : 0.24]} keep={castle} />
             {arms.filter((arm) => arm.present).map((arm) => <MedievalWall key={arm.key} position={arm.position} size={arm.size} keep={castle} />)}
             {castle && <mesh position={[0, height + 0.18, 0]} castShadow><boxGeometry args={[0.25, 0.36, 0.25]} /><meshStandardMaterial color="#87908c" roughness={0.95} /></mesh>}
           </group>
@@ -335,19 +337,19 @@ function ConnectedWalls({ positions, castle }: { positions: readonly Position[];
 function Battlements({ building, height }: { building: BuildingView; height: number }) {
   const points: [number, number, number][] = [];
   for (let x = building.x; x <= building.x + building.width; x += 0.65) {
-    points.push([x, height + 0.2, building.y], [x, height + 0.2, building.y + building.height]);
+    points.push([x, height + 0.24, building.y], [x, height + 0.24, building.y + building.height]);
   }
   for (let y = building.y + 0.65; y < building.y + building.height; y += 0.65) {
-    points.push([building.x, height + 0.2, y], [building.x + building.width, height + 0.2, y]);
+    points.push([building.x, height + 0.24, y], [building.x + building.width, height + 0.24, y]);
   }
-  return <>{points.map((point, index) => <mesh key={index} position={point} castShadow><boxGeometry args={[0.28, 0.4, 0.28]} /><meshStandardMaterial color="#87908c" roughness={0.96} /></mesh>)}</>;
+  return <>{points.map((point, index) => <mesh key={index} position={point} castShadow><boxGeometry args={[0.34, 0.48, 0.34]} /><meshStandardMaterial color="#87908c" roughness={0.96} /></mesh>)}</>;
 }
 
 function Door({ door, input, building, tall = WALL_HEIGHT }: { door: DoorView; input: InputController; building?: BuildingView; tall?: number }) {
   const group = useRef<THREE.Group>(null);
   const transform = doorTransform(door, building);
-  const leafHeight = Math.min(tall - 0.15, 1.85);
-  const leafWidth = 0.88;
+  const leafHeight = Math.min(tall - 0.15, DOOR_HEIGHT);
+  const leafWidth = 0.98;
   const hingeX = -leafWidth / 2;
   useFrame((_, delta) => {
     if (!group.current) return;
@@ -383,7 +385,7 @@ function Door({ door, input, building, tall = WALL_HEIGHT }: { door: DoorView; i
 function Tree({ position }: { position: Position }) {
   const phase = stablePhase(tileKey(position));
   return (
-    <group position={[position.x + 0.5, 0, position.y + 0.5]} rotation={[0, phase, 0]} userData={{ occluder: true }}>
+    <group position={[position.x + 0.5, 0, position.y + 0.5]} rotation={[0, phase, 0]} scale={[1.18, 1.22, 1.18]} userData={{ occluder: true }}>
       <mesh position={[0, 0.72, 0]} castShadow receiveShadow><cylinderGeometry args={[0.14, 0.2, 1.45, 8]} /><meshStandardMaterial color="#604128" roughness={1} /></mesh>
       <mesh position={[0, 1.75, 0]} castShadow><coneGeometry args={[0.82, 1.75, 9]} /><meshStandardMaterial color="#315c38" roughness={0.95} /></mesh>
       <mesh position={[0, 2.35, 0]} castShadow><coneGeometry args={[0.61, 1.35, 9]} /><meshStandardMaterial color="#3b7043" roughness={0.95} /></mesh>
@@ -400,7 +402,7 @@ function Torch({ position }: { position: Position }) {
     flame.current.scale.set(flicker, 1 / flicker, flicker);
   });
   return (
-    <group position={[position.x + 0.5, 0, position.y + 0.5]}>
+    <group position={[position.x + 0.5, 0, position.y + 0.5]} scale={1.15}>
       <mesh position={[0, 0.62, 0]} castShadow><cylinderGeometry args={[0.035, 0.055, 1.24, 7]} /><meshStandardMaterial color="#49301f" /></mesh>
       <mesh ref={flame} position={[0, 1.31, 0]}><coneGeometry args={[0.13, 0.38, 9]} /><meshStandardMaterial color="#ff8b32" emissive="#ff4d10" emissiveIntensity={3} toneMapped={false} /></mesh>
     </group>
@@ -503,7 +505,7 @@ function SmoothActor({ id, position, visualPosition, moving, children }: { id: s
 }
 
 export function actorSegmentDuration(updateIntervalMs: number) {
-  const cadence = updateIntervalMs >= 70 && updateIntervalMs <= 600 ? updateIntervalMs : 158;
+  const cadence = updateIntervalMs >= 70 && updateIntervalMs <= 600 ? updateIntervalMs : CLIENT_STEP_MS;
   return THREE.MathUtils.clamp(cadence * 1.36, 215, 500);
 }
 
@@ -537,25 +539,35 @@ function FollowCamera({ target, visualTarget, mapWidth, mapHeight }: { target?: 
   return null;
 }
 
-function OcclusionController({ target }: { target?: Position }) {
+function OcclusionController({ target, visualTarget }: { target?: Position; visualTarget: MutableRefObject<THREE.Vector3> }) {
   const { camera, scene } = useThree();
   const raycaster = useMemo(() => new THREE.Raycaster(), []);
   const faded = useRef(new Map<THREE.Material, { opacity: number; transparent: boolean; depthWrite: boolean }>());
-  useFrame(() => {
+  const lastCheckAt = useRef(0);
+  const targetPoint = useMemo(() => new THREE.Vector3(), []);
+  const direction = useMemo(() => new THREE.Vector3(), []);
+  const next = useMemo(() => new Set<THREE.Material>(), []);
+  useFrame(({ clock }) => {
+    if (clock.elapsedTime - lastCheckAt.current < 0.075) return;
+    lastCheckAt.current = clock.elapsedTime;
     const roots = new Set<THREE.Object3D>();
     if (target) {
-      const targetPoint = new THREE.Vector3(target.x + 0.5, 1.05, target.y + 0.5);
-      const direction = targetPoint.clone().sub(camera.position);
+      const rendered = visualTarget.current;
+      const x = Number.isFinite(rendered.x) ? rendered.x : target.x + 0.5;
+      const z = Number.isFinite(rendered.z) ? rendered.z : target.y + 0.5;
+      targetPoint.set(x, 1.05, z);
+      direction.copy(targetPoint).sub(camera.position);
       const targetDistance = direction.length();
       raycaster.set(camera.position, direction.normalize());
       raycaster.far = Math.max(0, targetDistance - 0.35);
-      for (const hit of raycaster.intersectObjects(scene.children, true)) {
+      const occluders = collectOccluderRoots(scene);
+      for (const hit of raycaster.intersectObjects(occluders, true)) {
         let node: THREE.Object3D | null = hit.object;
         while (node && !node.userData.occluder) node = node.parent;
         if (node?.userData.occluder) roots.add(node);
       }
     }
-    const next = new Set<THREE.Material>();
+    next.clear();
     for (const root of roots) root.traverse((node) => {
       if (!(node instanceof THREE.Mesh)) return;
       const materials = Array.isArray(node.material) ? node.material : [node.material];
@@ -593,6 +605,19 @@ function OcclusionController({ target }: { target?: Position }) {
   return null;
 }
 
+function collectOccluderRoots(scene: THREE.Scene) {
+  const roots: THREE.Object3D[] = [];
+  const visit = (node: THREE.Object3D) => {
+    if (node.userData.occluder) {
+      roots.push(node);
+      return;
+    }
+    node.children.forEach(visit);
+  };
+  scene.children.forEach(visit);
+  return roots;
+}
+
 function Atmosphere({ torches, local }: { torches: readonly Position[]; local?: Position }) {
   const { scene } = useThree();
   const sun = useRef<THREE.DirectionalLight>(null);
@@ -617,7 +642,7 @@ function Atmosphere({ torches, local }: { torches: readonly Position[]; local?: 
     <>
       <hemisphereLight ref={ambient} args={["#bfd5cb", "#172019", 0.8]} />
       <directionalLight ref={sun} position={[14, 24, 9]} intensity={1.8} color="#ffe1aa" castShadow shadow-mapSize={[2048, 2048]} shadow-camera-near={1} shadow-camera-far={70} shadow-camera-left={-18} shadow-camera-right={18} shadow-camera-top={18} shadow-camera-bottom={-18} />
-      {activeTorches.map((torch) => <pointLight key={tileKey(torch)} position={[torch.x + 0.5, 1.45, torch.y + 0.5]} color="#ff6a24" intensity={5} distance={5.5} decay={2} />)}
+      {activeTorches.map((torch) => <pointLight key={tileKey(torch)} position={[torch.x + 0.5, 1.55, torch.y + 0.5]} color="#ff6a24" intensity={5.4} distance={6.1} decay={2} />)}
     </>
   );
 }

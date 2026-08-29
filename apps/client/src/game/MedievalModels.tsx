@@ -81,7 +81,7 @@ function CastleMasonry({ position, size }: { position: [number, number, number];
 }
 
 export function GabledRoof({ building, wallHeight }: { building: BuildingView; wallHeight: number }) {
-  const geometry = useMemo(() => roofGeometry(building.width + 0.55, building.height + 0.55), [building.width, building.height]);
+  const geometry = useMemo(() => roofGeometry(building.width + 0.7, building.height + 0.7), [building.width, building.height]);
   useEffect(() => () => geometry.dispose(), [geometry]);
   return (
     <group position={[building.x + building.width / 2, wallHeight + 0.02, building.y + building.height / 2]}>
@@ -96,7 +96,7 @@ export function GabledRoof({ building, wallHeight }: { building: BuildingView; w
 function roofGeometry(width: number, depth: number) {
   const halfWidth = width / 2;
   const halfDepth = depth / 2;
-  const rise = Math.min(1.35, 0.62 + Math.min(width, depth) * 0.12);
+  const rise = Math.min(1.65, 0.72 + Math.min(width, depth) * 0.14);
   const ridgeAlongZ = depth >= width;
   const vertices = ridgeAlongZ
     ? [
@@ -121,9 +121,9 @@ function roofGeometry(width: number, depth: number) {
 
 function Chimney({ x, z, keep }: { x: number; z: number; keep: boolean }) {
   return (
-    <group position={[x, 0.72, z]}>
-      <mesh castShadow><boxGeometry args={[0.32, 1.45, 0.32]} /><meshStandardMaterial color={keep ? "#626b68" : "#704938"} roughness={1} /></mesh>
-      <mesh position={[0, 0.76, 0]} castShadow><boxGeometry args={[0.42, 0.12, 0.42]} /><meshStandardMaterial color="#3c3731" roughness={1} /></mesh>
+    <group position={[x, 0.84, z]}>
+      <mesh castShadow><boxGeometry args={[0.37, 1.7, 0.37]} /><meshStandardMaterial color={keep ? "#626b68" : "#704938"} roughness={1} /></mesh>
+      <mesh position={[0, 0.89, 0]} castShadow><boxGeometry args={[0.48, 0.14, 0.48]} /><meshStandardMaterial color="#3c3731" roughness={1} /></mesh>
     </group>
   );
 }
@@ -145,7 +145,7 @@ export function ShutterWindow({
 export function HangingSign({ building, wallHeight }: { building: BuildingView; wallHeight: number }) {
   if (building.kind !== "house") return null;
   return (
-    <group position={[building.x + building.width - 0.35, wallHeight * 0.72, building.y - 0.18]}>
+    <group position={[building.x + building.width - 0.35, wallHeight * 0.72, building.y - 0.18]} scale={1.15}>
       <mesh position={[0, 0.25, 0]} castShadow><boxGeometry args={[0.55, 0.055, 0.055]} /><meshStandardMaterial color="#35251a" /></mesh>
       <mesh position={[0.2, -0.05, 0]} castShadow><boxGeometry args={[0.06, 0.55, 0.06]} /><meshStandardMaterial color="#2d2017" /></mesh>
       <mesh position={[0.2, -0.34, 0]} castShadow><boxGeometry args={[0.52, 0.34, 0.07]} /><meshStandardMaterial color="#785331" roughness={0.92} /></mesh>

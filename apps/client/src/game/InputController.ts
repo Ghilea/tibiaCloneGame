@@ -2,37 +2,41 @@ import type { BuildingView, Position } from "../protocol";
 import { NetworkClient } from "./NetworkClient";
 import { WorldState } from "./WorldState";
 
-// Stay comfortably above the server's 150 ms movement cooldown. Browser
-// interval jitter must never turn a held key into alternating accepts/rejects.
-export const CLIENT_STEP_MS = 158;
+// The server accepts a little scheduling/network jitter below this cadence.
+// A held key is scheduled directly at the next eligible instant.
+export const CLIENT_STEP_MS = 165;
+export const MOVEMENT_CHORD_GRACE_MS = 30;
 
 export class InputController {
   private lastMove = 0;
   private heldKeys = new Set<string>();
   private movementTimer: number | null = null;
+  private attached = false;
   constructor(private world: WorldState, private network: NetworkClient) { }
 
   attach() {
+    if (this.attached) return () => undefined;
+    this.attached = true;
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
     window.addEventListener("blur", this.clearHeldKeys);
     window.addEventListener("focusin", this.onFocusIn);
-    // Poll held input independently of the movement cadence. A cadence-sized
-    // interval can miss the first eligible step depending on when a key was
-    // pressed, producing a random pause of almost one extra tile duration.
-    this.movementTimer = window.setInterval(this.flushMovement, 16);
     return () => {
+      if (!this.attached) return;
+      this.attached = false;
       window.removeEventListener("keydown", this.onKeyDown);
       window.removeEventListener("keyup", this.onKeyUp);
       window.removeEventListener("blur", this.clearHeldKeys);
       window.removeEventListener("focusin", this.onFocusIn);
-      if (this.movementTimer !== null) window.clearInterval(this.movementTimer);
-      this.movementTimer = null;
+      this.cancelScheduledMovement();
       this.heldKeys.clear();
     };
   }
 
-  releaseAll() { this.heldKeys.clear(); }
+  releaseAll() {
+    this.heldKeys.clear();
+    this.cancelScheduledMovement();
+  }
 
   targetCreature(creatureId: string) { this.world.closePlayerContext(); this.network.attack(creatureId); }
   interactPlayer(playerId: string, x: number, y: number) { this.world.openPlayerContext(playerId, x, y); }
@@ -105,24 +109,46 @@ export class InputController {
     const key = event.key.toLowerCase();
     if (!this.isMovementKey(key)) return;
     event.preventDefault();
+    const startingFromRest = this.heldKeys.size === 0;
     const wasHeld = this.heldKeys.has(key);
     this.heldKeys.add(key);
-    if (!wasHeld) this.flushMovement();
+    if (!wasHeld && this.movementTimer === null) {
+      // Keydown events for a two-key diagonal do not arrive simultaneously.
+      // Briefly collect the initial chord so its first tile already travels
+      // in the intended direction instead of turning one full step later.
+      if (startingFromRest) {
+        this.movementTimer = window.setTimeout(this.flushMovement, MOVEMENT_CHORD_GRACE_MS);
+      } else {
+        this.flushMovement();
+      }
+    }
   };
 
   private onKeyUp = (event: KeyboardEvent) => {
     this.heldKeys.delete(event.key.toLowerCase());
+    if (this.heldKeys.size === 0) this.cancelScheduledMovement();
   };
 
-  private clearHeldKeys = () => this.heldKeys.clear();
+  private clearHeldKeys = () => this.releaseAll();
   private onFocusIn = (event: FocusEvent) => {
-    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) this.heldKeys.clear();
+    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) this.releaseAll();
   };
 
   private flushMovement = () => {
+    this.movementTimer = null;
     const delta = movementDelta(this.heldKeys);
-    if (delta) this.requestMove(...delta);
+    if (!delta) return;
+    const sent = this.requestMove(...delta);
+    if (this.heldKeys.size === 0) return;
+    const remainingCooldown = Math.max(0, CLIENT_STEP_MS - (performance.now() - this.lastMove));
+    const delay = sent || remainingCooldown > 0 ? Math.max(1, remainingCooldown) : 16;
+    this.movementTimer = window.setTimeout(this.flushMovement, delay);
   };
+
+  private cancelScheduledMovement() {
+    if (this.movementTimer !== null) window.clearTimeout(this.movementTimer);
+    this.movementTimer = null;
+  }
 
   private isMovementKey(key: string) {
     return ["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key);
@@ -130,9 +156,9 @@ export class InputController {
 
   private requestMove(dx: number, dy: number) {
     const now = performance.now();
-    if (now - this.lastMove < CLIENT_STEP_MS || !this.world.localPlayerId) return;
+    if (now - this.lastMove < CLIENT_STEP_MS || !this.world.localPlayerId) return false;
     const player = this.world.players.get(this.world.localPlayerId);
-    if (!player) return;
+    if (!player) return false;
     const buildings = this.world.map?.buildings ?? [];
     const blocked = (position: Position) => this.world.map?.blocked.some((tile) => tile.x === position.x && tile.y === position.y && tile.z === position.z)
       || this.world.map?.doors.some((door) => !door.open && samePosition(door.position, position) && !isHouseWallAnchor(door.position, buildings))
@@ -142,9 +168,10 @@ export class InputController {
       return Boolean(anchor && !this.world.map?.doors.some((door) => door.open && samePosition(door.position, anchor)));
     };
     const target = resolveMovementTarget(player.position, dx, dy, blocked, wallBlocked);
-    if (!target) return;
+    if (!target) return false;
     this.lastMove = now;
     this.network.move(target);
+    return true;
   }
 }
 

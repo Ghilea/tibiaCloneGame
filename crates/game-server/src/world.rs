@@ -19,7 +19,9 @@ use serde::Deserialize;
 use crate::content::ContentCatalog;
 
 pub const SPAWN: Position = Position { x: 10, y: 8, z: 7 };
-const MOVE_COOLDOWN: Duration = Duration::from_millis(150);
+// The client walks at 165 ms. A small acceptance margin prevents ordinary
+// packet jitter from compressing two valid steps into a false rejection.
+const MOVE_COOLDOWN: Duration = Duration::from_millis(145);
 const PLAYER_ATTACK_COOLDOWN: Duration = Duration::from_millis(650);
 const CREATURE_RESPAWN: Duration = Duration::from_secs(6);
 const CORPSE_DECAY: Duration = Duration::from_secs(45);

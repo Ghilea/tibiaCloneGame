@@ -8,6 +8,8 @@ const MEDIEVAL_VILLAGE_ASSET = "/assets/models/aldoria-medieval-village.glb";
 const SOURCE_HEIGHT = 3.1227;
 const SOURCE_WIDTH = 2;
 const SOURCE_DEPTH = 0.314;
+const DOOR_OPENING_HALF_WIDTH = 0.82;
+const WINDOW_OPENING_HALF_WIDTH = 0.8;
 
 export type MedievalHouseWallKind = "solid" | "door" | "window";
 
@@ -100,8 +102,8 @@ export function MedievalDoorLeafAsset({
       scale={[1.04 / SOURCE_WIDTH, wallHeight / SOURCE_HEIGHT, Math.max(0.28, 0.13 / SOURCE_DEPTH)]}
       onPointerDown={(event) => { event.stopPropagation(); onClick(); }}
     >
-      <group ref={hinge} position={[-0.648, 0, 0]}>
-        <primitive object={object} scale={[1.17, 1, 1]} />
+      <group ref={hinge} position={[-DOOR_OPENING_HALF_WIDTH, 0, 0]}>
+        <primitive object={object} scale={[1.42, 1, 1]} />
       </group>
     </group>
   );
@@ -121,6 +123,8 @@ function useAssetObject(scenes: THREE.Group[], nodeName: string, hideWindowGlass
       child.material = Array.isArray(child.material)
         ? child.material.map((material) => material.clone())
         : child.material.clone();
+      child.geometry = child.geometry.clone();
+      widenOpeningGeometry(child.geometry, nodeName);
       if (!hideWindowGlass) return;
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       materials.filter((material) => material.name.includes("WindowGlass")).forEach((material) => {
@@ -135,11 +139,48 @@ function useAssetObject(scenes: THREE.Group[], nodeName: string, hideWindowGlass
   useEffect(() => () => {
     object.traverse((child) => {
       if (!(child instanceof THREE.Mesh)) return;
+      child.geometry.dispose();
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       materials.forEach((material) => material.dispose());
     });
   }, [object]);
   return object;
+}
+
+function widenOpeningGeometry(geometry: THREE.BufferGeometry, nodeName: string) {
+  const position = geometry.getAttribute("position");
+  if (!(position instanceof THREE.BufferAttribute)) return;
+  if (nodeName === "Wall_Plaster_Door_Flat") {
+    remapOpeningEdges(position, 0.648, DOOR_OPENING_HALF_WIDTH);
+  } else if (nodeName === "Wall_Plaster_Window_Wide_Flat") {
+    remapOpeningEdges(position, 0.6, WINDOW_OPENING_HALF_WIDTH);
+  } else if (nodeName === "WindowShutters_Wide_Flat_Closed") {
+    for (let index = 0; index < position.count; index += 1) position.setX(index, position.getX(index) * 1.2);
+  } else if (nodeName === "WindowShutters_Wide_Flat_Open") {
+    const shift = WINDOW_OPENING_HALF_WIDTH - 0.6;
+    for (let index = 0; index < position.count; index += 1) {
+      const x = position.getX(index);
+      position.setX(index, x + Math.sign(x) * shift);
+    }
+  } else {
+    return;
+  }
+  position.needsUpdate = true;
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+}
+
+function remapOpeningEdges(position: THREE.BufferAttribute, sourceHalfWidth: number, targetHalfWidth: number) {
+  const remainingSourceWall = 1 - sourceHalfWidth;
+  const remainingTargetWall = 1 - targetHalfWidth;
+  for (let index = 0; index < position.count; index += 1) {
+    const x = position.getX(index);
+    const absoluteX = Math.abs(x);
+    if (absoluteX < 0.001 || absoluteX > 1.001) continue;
+    const distanceIntoWall = Math.max(0, absoluteX - sourceHalfWidth);
+    const remapped = targetHalfWidth + distanceIntoWall * (remainingTargetWall / remainingSourceWall);
+    position.setX(index, Math.sign(x) * Math.min(1, remapped));
+  }
 }
 
 function wallOpeningTransform(position: { x: number; y: number }, building: BuildingView) {

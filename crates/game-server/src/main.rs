@@ -373,7 +373,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
             None => Vec::new(),
         },
         max_capacity: f32::from(vocation_profile.capacity),
-        last_move: Instant::now() - Duration::from_millis(100),
+        last_move: Instant::now() - Duration::from_millis(165),
         last_attack: Instant::now() - Duration::from_millis(700),
         last_item_use: Instant::now() - Duration::from_millis(900),
         last_spell_cast: Instant::now() - Duration::from_millis(900),
