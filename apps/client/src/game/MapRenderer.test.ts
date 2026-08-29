@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { playerFacingFromMovement } from "./MapRenderer";
+import { playerFacingFromMovement } from "./PlayerFacing";
 
 describe("eight-direction player animation", () => {
   it("selects every atlas direction from isometric world movement", () => {

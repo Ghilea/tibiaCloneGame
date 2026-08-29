@@ -2,8 +2,6 @@ import {
   FormEvent,
   ReactNode,
   useEffect,
-  useMemo,
-  useRef,
   useState,
   useSyncExternalStore,
   type DragEvent,
@@ -16,7 +14,7 @@ import {
   type CharacterSummary,
 } from "./api";
 import { InputController } from "./game/InputController";
-import { MapRenderer } from "./game/MapRenderer";
+import { ThreeWorld } from "./game/ThreeWorld";
 import { NetworkClient } from "./game/NetworkClient";
 import { WorldState } from "./game/WorldState";
 import type { GroundItem, ItemInstance } from "./protocol";
@@ -306,8 +304,6 @@ function CharacterSelection({
 type Panel = "inventory" | "crafting" | "character" | "help";
 
 function Game({ onLeave }: { onLeave: () => void }) {
-  const host = useRef<HTMLDivElement>(null);
-  const renderer = useMemo(() => new MapRenderer(), []);
   const [panel, setPanel] = useState<Panel | null>(null);
   const emberSigil = world.inventory.find(
     (item) => item.definitionId === "ember_rune" && (item.charges ?? 0) > 0,
@@ -328,10 +324,6 @@ function Game({ onLeave }: { onLeave: () => void }) {
         "Learn Ember Bolt from Seraphine in Greyhaven first.",
       );
   };
-  useEffect(() => {
-    if (host.current) void renderer.mount(host.current, world, input);
-    return () => renderer.destroy();
-  }, [renderer]);
   useEffect(() => {
     if (panel || world.trade || world.incomingTrade || world.activeNpcId)
       input.releaseAll();
@@ -399,7 +391,9 @@ function Game({ onLeave }: { onLeave: () => void }) {
   };
   return (
     <main className="game-shell">
-      <section className="viewport" ref={host} />
+      <section className="viewport">
+        <ThreeWorld world={world} input={input} />
+      </section>
       <header className="world-header">
         <strong>Embers of Aldoria</strong>
         <span>

@@ -528,6 +528,23 @@ async fn session(mut socket: WebSocket, state: AppState) {
                     ),
                 }
             }
+            Ok(ClientMessage::ToggleWindow { window_id }) => {
+                match state.world.write().await.toggle_window(id, &window_id) {
+                    Ok(window) => state.broadcast(ServerMessage::WindowChanged { window }),
+                    Err(reason) => state.private(
+                        id,
+                        ServerMessage::Error {
+                            code: reason.into(),
+                            message: if reason == "window_out_of_reach" {
+                                "Move closer to use those shutters"
+                            } else {
+                                "Those shutters cannot be used"
+                            }
+                            .into(),
+                        },
+                    ),
+                }
+            }
             Ok(ClientMessage::Say { text }) if !text.trim().is_empty() => {
                 let text: String = text.trim().chars().take(160).collect();
                 state.broadcast(ServerMessage::Spoken {

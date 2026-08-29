@@ -46,6 +46,7 @@ export class NetworkClient {
   }
 
   toggleDoor(doorId: string) { this.send({ type: "toggle_door", door_id: doorId }); }
+  toggleWindow(windowId: string) { this.send({ type: "toggle_window", window_id: windowId }); }
   say(text: string) { this.send({ type: "say", text }); }
   pickup(instanceId: string) { this.send({ type: "pickup_item", instance_id: instanceId }); }
   drop(instanceId: string) { this.send({ type: "drop_item", instance_id: instanceId }); }

@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = 17;
+export const PROTOCOL_VERSION = 18;
 export const CLIENT_VERSION = "0.1.0";
 
 export type Position = { x: number; y: number; z: number };
@@ -35,7 +35,7 @@ export type MapView = {
   floors: Position[];
   houseWalls: Position[];
   castleWalls: Position[];
-  windows: Position[];
+  windows: WindowView[];
   torches: Position[];
   terrainMaterials: TerrainMaterialView[];
   buildings: BuildingView[];
@@ -46,6 +46,7 @@ export type TerrainMaterialId = "packed_earth" | "moss_stone" | "sandstone";
 export type TerrainMaterialView = { position: Position; material: TerrainMaterialId };
 export type BuildingView = { id: string; name: string; kind: "keep" | "house"; x: number; y: number; width: number; height: number; floor: number };
 export type DoorView = { id: string; position: Position; open: boolean };
+export type WindowView = { id: string; position: Position; open: boolean };
 export type StairView = { id: string; from: Position; to: Position };
 export type ItemDefinition = { id: string; name: string; weight: number; stackable: boolean; maxStack: number; charges?: number; attack?: number; containerSlots?: number; equipmentSlot?: string; pickupable: boolean; combatEffect?: { damage: number; range: number; cooldownMs: number }; distanceWeapon?: { damage: number; range: number; cooldownMs: number; ammunitionId: string } };
 export type ItemInstance = { instanceId: string; definitionId: string; quantity: number; charges?: number; containerId?: string; equippedSlot?: string };
@@ -59,6 +60,7 @@ export type ClientMessage =
   | { type: "hello"; protocol_version: number; client_version: string; session_token?: string; character_id?: string; character_name?: string }
   | { type: "move_request"; sequence: number; position: Position }
   | { type: "toggle_door"; door_id: string }
+  | { type: "toggle_window"; window_id: string }
   | { type: "say"; text: string }
   | { type: "ping"; sent_at: number }
   | { type: "pickup_item"; instance_id: string }
@@ -87,6 +89,7 @@ export type ServerMessage =
   | { type: "player_moved"; player_id: string; position: Position; sequence: number }
   | { type: "move_rejected"; player_id: string; position: Position; sequence: number; reason: string }
   | { type: "door_changed"; door: DoorView }
+  | { type: "window_changed"; window: WindowView }
   | { type: "spoken"; player_id: string; player_name: string; text: string }
   | { type: "pong"; player_id: string; sent_at: number }
   | { type: "inventory_changed"; player_id: string; inventory: ItemInstance[]; inventory_weight: number; max_capacity: number }

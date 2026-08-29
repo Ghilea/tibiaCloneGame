@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::{Context, bail};
 use game_protocol::{
-    BuildingView, DoorView, ItemDestination, MapView, StairView, TerrainMaterialView,
+    BuildingView, DoorView, ItemDestination, MapView, StairView, TerrainMaterialView, WindowView,
 };
 use game_types::{
     CreatureAttack, CreatureView, EntityId, GroundItem, ItemDefinition, ItemInstance, NpcView,
@@ -216,6 +216,11 @@ impl WorldMap {
             .map(|building| ("building", building.id.as_str()))
             .chain(view.doors.iter().map(|door| ("door", door.id.as_str())))
             .chain(
+                view.windows
+                    .iter()
+                    .map(|window| ("window", window.id.as_str())),
+            )
+            .chain(
                 view.stairs
                     .iter()
                     .map(|stairs| ("stairs", stairs.id.as_str())),
@@ -360,7 +365,15 @@ impl WorldMap {
             floors: document.floors,
             house_walls: document.house_walls,
             castle_walls: document.castle_walls,
-            windows: document.windows,
+            windows: document
+                .windows
+                .into_iter()
+                .map(|position| WindowView {
+                    id: format!("window_{}_{}_{}", position.z, position.x, position.y),
+                    position,
+                    open: false,
+                })
+                .collect(),
             torches: document.torches,
             terrain_materials: document.terrain_materials,
             buildings: document.buildings,
@@ -563,7 +576,7 @@ fn map_positions(view: &MapView) -> impl Iterator<Item = Position> + '_ {
         .chain(view.floors.iter())
         .chain(view.house_walls.iter())
         .chain(view.castle_walls.iter())
-        .chain(view.windows.iter())
+        .chain(view.windows.iter().map(|window| &window.position))
         .chain(view.torches.iter())
         .copied()
         .chain(view.terrain_materials.iter().map(|entry| entry.position))
@@ -1802,6 +1815,31 @@ impl World {
             map_door.open = changed.open;
         }
         Ok(changed)
+    }
+
+    pub fn toggle_window(
+        &mut self,
+        player_id: EntityId,
+        window_id: &str,
+    ) -> Result<WindowView, &'static str> {
+        let player_position = self
+            .players
+            .get(&player_id)
+            .ok_or("unknown_player")?
+            .view
+            .position;
+        let window = self
+            .map
+            .view
+            .windows
+            .iter_mut()
+            .find(|window| window.id == window_id)
+            .ok_or("unknown_window")?;
+        if !within_reach(player_position, window.position) {
+            return Err("window_out_of_reach");
+        }
+        window.open = !window.open;
+        Ok(window.clone())
     }
 
     pub fn map_view(&self) -> MapView {
@@ -3157,9 +3195,21 @@ fn map_view_with_doors(doors: Vec<DoorView>) -> MapView {
         house_walls: house_wall_tiles(),
         castle_walls: castle_wall_tiles(),
         windows: vec![
-            Position { x: 3, y: 11, z: 7 },
-            Position { x: 15, y: 12, z: 7 },
-            Position { x: 4, y: 18, z: 7 },
+            WindowView {
+                id: "west_house_window".into(),
+                position: Position { x: 3, y: 11, z: 7 },
+                open: false,
+            },
+            WindowView {
+                id: "east_house_window".into(),
+                position: Position { x: 15, y: 12, z: 7 },
+                open: false,
+            },
+            WindowView {
+                id: "south_house_window".into(),
+                position: Position { x: 4, y: 18, z: 7 },
+                open: false,
+            },
         ],
         torches: vec![
             Position { x: 8, y: 7, z: 7 },
@@ -3921,6 +3971,33 @@ mod tests {
         assert_eq!(
             world.toggle_door(id, "vault_house_door"),
             Err("door_occupied")
+        );
+    }
+
+    #[test]
+    fn shutters_are_server_authoritative_and_require_reach() {
+        let id = Uuid::new_v4();
+        let mut player = test_player(id, 100.0);
+        player.view.position = Position { x: 3, y: 12, z: 7 };
+        let mut world = World::new(catalog(1.0), vec![]);
+        world.insert_player(player);
+
+        let opened = world.toggle_window(id, "west_house_window").unwrap();
+        assert!(opened.open);
+        assert!(
+            world
+                .map_view()
+                .windows
+                .iter()
+                .find(|window| window.id == opened.id)
+                .unwrap()
+                .open
+        );
+
+        world.players.get_mut(&id).unwrap().view.position = Position { x: 30, y: 30, z: 7 };
+        assert_eq!(
+            world.toggle_window(id, "west_house_window"),
+            Err("window_out_of_reach")
         );
     }
 
@@ -4941,10 +5018,14 @@ mod tests {
     #[test]
     fn authored_atmosphere_decorations_and_materials_survive_validation() {
         let mut view = map_view();
-        let window = Position { x: 3, y: 11, z: 7 };
+        let window = WindowView {
+            id: "test_window".into(),
+            position: Position { x: 3, y: 11, z: 7 },
+            open: false,
+        };
         let torch = Position { x: 4, y: 12, z: 7 };
         let material_position = Position { x: 5, y: 12, z: 7 };
-        view.windows = vec![window];
+        view.windows = vec![window.clone()];
         view.torches = vec![torch];
         view.terrain_materials = vec![TerrainMaterialView {
             position: material_position,

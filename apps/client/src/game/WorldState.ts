@@ -124,6 +124,9 @@ export class WorldState {
       case "door_changed":
         if (this.map) this.map = { ...this.map, doors: this.map.doors.map((door) => door.id === message.door.id ? message.door : door) };
         break;
+      case "window_changed":
+        if (this.map) this.map = { ...this.map, windows: this.map.windows.map((window) => window.id === message.window.id ? message.window : window) };
+        break;
       case "spoken":
         this.chat.push({ id: crypto.randomUUID(), speaker: message.player_name, text: message.text });
         if (this.chat.length > 100) this.chat.shift();

@@ -12,9 +12,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "pixi.js": "^8.13.2",
+    "@react-three/fiber": "^9.7.0",
+    "@types/three": "^0.185.4",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",

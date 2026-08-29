@@ -4,7 +4,7 @@ use game_types::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u16 = 17;
+pub const PROTOCOL_VERSION: u16 = 18;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -22,6 +22,9 @@ pub enum ClientMessage {
     },
     ToggleDoor {
         door_id: String,
+    },
+    ToggleWindow {
+        window_id: String,
     },
     Say {
         text: String,
@@ -142,6 +145,9 @@ pub enum ServerMessage {
     },
     DoorChanged {
         door: DoorView,
+    },
+    WindowChanged {
+        window: WindowView,
     },
     Spoken {
         player_id: game_types::EntityId,
@@ -273,7 +279,7 @@ pub struct MapView {
     pub house_walls: Vec<Position>,
     pub castle_walls: Vec<Position>,
     #[serde(default)]
-    pub windows: Vec<Position>,
+    pub windows: Vec<WindowView>,
     #[serde(default)]
     pub torches: Vec<Position>,
     #[serde(default)]
@@ -306,6 +312,14 @@ pub struct BuildingView {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DoorView {
+    pub id: String,
+    pub position: Position,
+    pub open: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowView {
     pub id: String,
     pub position: Position,
     pub open: bool,

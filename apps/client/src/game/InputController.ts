@@ -60,6 +60,13 @@ export class InputController {
       else this.world.addSystemMessage("Move closer to use that door.");
       return;
     }
+    const window = this.world.map?.windows.find((entry) => samePosition(entry.position, target));
+    if (window) {
+      const nearby = Math.abs(player.position.x - target.x) <= 1 && Math.abs(player.position.y - target.y) <= 1;
+      if (nearby) this.network.toggleWindow(window.id);
+      else this.world.addSystemMessage("Move closer to use those shutters.");
+      return;
+    }
     const creature = [...this.world.creatures.values()].find((entry) => entry.position.x === target.x && entry.position.y === target.y && entry.position.z === target.z);
     if (creature) {
       this.network.attack(creature.id);
