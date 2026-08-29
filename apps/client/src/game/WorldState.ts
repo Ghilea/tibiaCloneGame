@@ -277,6 +277,19 @@ export class WorldState {
     if (this.chat.length > 100) this.chat.shift();
     this.notify();
   }
+
+  predictWindowToggle(windowId: string) {
+    if (!this.map) return;
+    const window = this.map.windows.find((entry) => entry.id === windowId);
+    if (!window) return;
+    this.map = {
+      ...this.map,
+      windows: this.map.windows.map((entry) => entry.id === windowId
+        ? { ...entry, open: !entry.open }
+        : entry),
+    };
+    this.notify();
+  }
 }
 
 function tradeCloseMessage(reason: string) {

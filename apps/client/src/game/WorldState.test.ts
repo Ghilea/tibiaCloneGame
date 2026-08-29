@@ -50,6 +50,9 @@ describe("authored shutter synchronization", () => {
       windows: [{ id: "window_7_1_0", position: position(1, 0), open: false }],
     };
 
+    world.predictWindowToggle("window_7_1_0");
+    expect(world.map.windows[0].open).toBe(true);
+
     world.apply({
       type: "window_changed",
       window: { id: "window_7_1_0", position: position(1, 0), open: true },

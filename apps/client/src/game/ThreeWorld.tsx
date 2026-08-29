@@ -642,7 +642,7 @@ function doorTransform(door: DoorView, building?: BuildingView) {
     x: door.position.x + 0.5,
     z: door.position.y + 0.5,
     rotation: 0,
-    openAngle: -Math.PI / 2,
+    openAngle: Math.PI / 2,
   };
   const maxX = building.x + building.width;
   const maxY = building.y + building.height;

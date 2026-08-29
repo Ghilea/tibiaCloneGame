@@ -66,7 +66,10 @@ export class InputController {
     const nearby = Math.abs(player.position.x - position.x) <= 1
       && Math.abs(player.position.y - position.y) <= 1
       && player.position.z === position.z;
-    if (nearby) this.network.toggleWindow(windowId);
+    if (nearby) {
+      this.world.predictWindowToggle(windowId);
+      this.network.toggleWindow(windowId);
+    }
     else this.world.addSystemMessage("Move closer to use those shutters.");
   }
 

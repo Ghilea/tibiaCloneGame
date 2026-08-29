@@ -320,5 +320,44 @@ function NpcInspector({ npc, onChange, onRemove }: { npc: NpcView; onChange: (np
 }
 
 function firstSafeBaseTile(document: EditorDocument): Position { const blocked = new Set(document.blocked.filter((tile) => tile.z === document.floor).map(key)); const occupied = new Set([...(document.spawns ?? []).map((entry) => key(entry.position)), ...(document.npcs ?? []).map((entry) => key(entry.position))]); for (let y = 0; y < document.height; y += 1) for (let x = 0; x < document.width; x += 1) { const position = { x, y, z: document.floor }; if (!blocked.has(key(position)) && !occupied.has(key(position))) return position; } return { x: 0, y: 0, z: document.floor }; }
-function normalizeDocument(document: EditorDocument): EditorDocument { const normalized = { ...document, bridges: document.bridges ?? [], trees: document.trees ?? [], windows: document.windows ?? [], torches: document.torches ?? [], terrainMaterials: document.terrainMaterials ?? [], npcs: document.npcs ?? [], playerSpawn: document.playerSpawn ?? { x: 0, y: 0, z: document.floor } }; if (!document.playerSpawn) normalized.playerSpawn = firstSafeBaseTile(normalized); return normalized; }
+function normalizeDocument(document: EditorDocument): EditorDocument {
+  const normalized = { ...document, bridges: document.bridges ?? [], trees: document.trees ?? [], windows: document.windows ?? [], torches: document.torches ?? [], terrainMaterials: document.terrainMaterials ?? [], npcs: document.npcs ?? [], playerSpawn: document.playerSpawn ?? { x: 0, y: 0, z: document.floor } };
+  normalized.buildings = alignHouseBuildingsToWalls(normalized);
+  if (!document.playerSpawn) normalized.playerSpawn = firstSafeBaseTile(normalized);
+  return normalized;
+}
+
+function alignHouseBuildingsToWalls(document: EditorDocument): BuildingView[] {
+  const remaining = new Map(document.houseWalls.map((position) => [key(position), position]));
+  const wallOrDoor = new Set([...remaining.keys(), ...document.doors.map((door) => key(door.position))]);
+  const outlines: { floor: number; minX: number; minY: number; maxX: number; maxY: number }[] = [];
+  while (remaining.size) {
+    const first = remaining.values().next().value as Position;
+    remaining.delete(key(first));
+    const frontier = [first]; const component = [first];
+    while (frontier.length) {
+      const current = frontier.pop()!;
+      for (const adjacent of [{ ...current, x: current.x - 1 }, { ...current, x: current.x + 1 }, { ...current, y: current.y - 1 }, { ...current, y: current.y + 1 }]) {
+        const found = remaining.get(key(adjacent));
+        if (found) { remaining.delete(key(adjacent)); component.push(found); frontier.push(found); }
+      }
+    }
+    const minX = Math.min(...component.map((position) => position.x)); const maxX = Math.max(...component.map((position) => position.x));
+    const minY = Math.min(...component.map((position) => position.y)); const maxY = Math.max(...component.map((position) => position.y));
+    if (maxX - minX + 1 < 3 || maxY - minY + 1 < 3) continue;
+    let closed = true;
+    for (let y = minY; y <= maxY && closed; y += 1) for (let x = minX; x <= maxX; x += 1) {
+      const perimeter = x === minX || x === maxX || y === minY || y === maxY;
+      if (perimeter && !wallOrDoor.has(key({ x, y, z: first.z }))) { closed = false; break; }
+    }
+    if (closed) outlines.push({ floor: first.z, minX, minY, maxX, maxY });
+  }
+  return document.buildings.map((building) => {
+    if (building.kind !== "house") return building;
+    const currentMaxX = building.x + building.width - 1; const currentMaxY = building.y + building.height - 1;
+    const outline = outlines.filter((entry) => entry.floor === building.floor && entry.maxX >= building.x - 1 && entry.minX <= currentMaxX + 1 && entry.maxY >= building.y - 1 && entry.minY <= currentMaxY + 1)
+      .sort((left, right) => (Math.abs(left.minX - building.x) + Math.abs(left.minY - building.y) + Math.abs(left.maxX - currentMaxX) + Math.abs(left.maxY - currentMaxY)) - (Math.abs(right.minX - building.x) + Math.abs(right.minY - building.y) + Math.abs(right.maxX - currentMaxX) + Math.abs(right.maxY - currentMaxY)))[0];
+    return outline ? { ...building, x: outline.minX, y: outline.minY, width: outline.maxX - outline.minX + 1, height: outline.maxY - outline.minY + 1 } : building;
+  });
+}
 function loadLocal(): EditorDocument { try { const saved = localStorage.getItem("aldoria-world-editor"); return saved ? normalizeDocument(JSON.parse(saved) as EditorDocument) : blankDocument(); } catch { return blankDocument(); } }

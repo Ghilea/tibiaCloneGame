@@ -208,6 +208,7 @@ impl WorldMap {
         {
             bail!("world dimensions must be between 1 and {MAX_WORLD_DIMENSION} tiles");
         }
+        align_house_buildings_to_authored_walls(&mut view);
         view.buildings.extend(infer_house_buildings(&view));
         let mut object_ids = HashSet::new();
         for (kind, id) in view
@@ -686,6 +687,125 @@ fn infer_house_buildings(view: &MapView) -> Vec<BuildingView> {
         }
     }
     inferred
+}
+
+#[derive(Debug, Clone, Copy)]
+struct HouseOutline {
+    floor: i16,
+    min_x: i32,
+    min_y: i32,
+    max_x: i32,
+    max_y: i32,
+}
+
+fn align_house_buildings_to_authored_walls(view: &mut MapView) {
+    let walls: HashSet<_> = view.house_walls.iter().copied().collect();
+    let wall_or_door: HashSet<_> = walls
+        .iter()
+        .copied()
+        .chain(view.doors.iter().map(|door| door.position))
+        .collect();
+    let mut remaining = walls;
+    let mut outlines = Vec::new();
+    while let Some(first) = remaining.iter().next().copied() {
+        remaining.remove(&first);
+        let mut frontier = VecDeque::from([first]);
+        let mut component = vec![first];
+        while let Some(current) = frontier.pop_front() {
+            for adjacent in [
+                Position {
+                    x: current.x - 1,
+                    ..current
+                },
+                Position {
+                    x: current.x + 1,
+                    ..current
+                },
+                Position {
+                    y: current.y - 1,
+                    ..current
+                },
+                Position {
+                    y: current.y + 1,
+                    ..current
+                },
+            ] {
+                if remaining.remove(&adjacent) {
+                    component.push(adjacent);
+                    frontier.push_back(adjacent);
+                }
+            }
+        }
+        let min_x = component
+            .iter()
+            .map(|position| position.x)
+            .min()
+            .unwrap_or(first.x);
+        let max_x = component
+            .iter()
+            .map(|position| position.x)
+            .max()
+            .unwrap_or(first.x);
+        let min_y = component
+            .iter()
+            .map(|position| position.y)
+            .min()
+            .unwrap_or(first.y);
+        let max_y = component
+            .iter()
+            .map(|position| position.y)
+            .max()
+            .unwrap_or(first.y);
+        if max_x - min_x + 1 < 3 || max_y - min_y + 1 < 3 {
+            continue;
+        }
+        let closed = (min_y..=max_y).all(|y| {
+            (min_x..=max_x).all(|x| {
+                let perimeter = x == min_x || x == max_x || y == min_y || y == max_y;
+                !perimeter || wall_or_door.contains(&Position { x, y, z: first.z })
+            })
+        });
+        if closed {
+            outlines.push(HouseOutline {
+                floor: first.z,
+                min_x,
+                min_y,
+                max_x,
+                max_y,
+            });
+        }
+    }
+
+    for building in view
+        .buildings
+        .iter_mut()
+        .filter(|building| building.kind == "house")
+    {
+        let current_max_x = building.x + building.width - 1;
+        let current_max_y = building.y + building.height - 1;
+        let Some(outline) = outlines
+            .iter()
+            .filter(|outline| {
+                outline.floor == building.floor
+                    && outline.max_x >= building.x - 1
+                    && outline.min_x <= current_max_x + 1
+                    && outline.max_y >= building.y - 1
+                    && outline.min_y <= current_max_y + 1
+            })
+            .min_by_key(|outline| {
+                (outline.min_x - building.x).abs()
+                    + (outline.min_y - building.y).abs()
+                    + (outline.max_x - current_max_x).abs()
+                    + (outline.max_y - current_max_y).abs()
+            })
+        else {
+            continue;
+        };
+        building.x = outline.min_x;
+        building.y = outline.min_y;
+        building.width = outline.max_x - outline.min_x + 1;
+        building.height = outline.max_y - outline.min_y + 1;
+    }
 }
 
 fn sort_positions(positions: &mut Vec<Position>) {
@@ -5086,6 +5206,38 @@ mod tests {
         );
         assert_eq!(map.house_wall_crossing(outside_corner, horizontal), None);
         assert_eq!(map.house_wall_crossing(outside_corner, vertical), None);
+    }
+
+    #[test]
+    fn authored_wall_outline_repairs_stale_editor_building_footprint() {
+        let mut view = map_view();
+        let expected = view
+            .buildings
+            .iter()
+            .find(|building| building.id == "west_house")
+            .cloned()
+            .unwrap();
+        let stale = view
+            .buildings
+            .iter_mut()
+            .find(|building| building.id == "west_house")
+            .unwrap();
+        stale.x += 1;
+        stale.y -= 1;
+        stale.width -= 1;
+
+        align_house_buildings_to_authored_walls(&mut view);
+
+        let repaired = view
+            .buildings
+            .iter()
+            .find(|building| building.id == "west_house")
+            .unwrap();
+        assert_eq!((repaired.x, repaired.y), (expected.x, expected.y));
+        assert_eq!(
+            (repaired.width, repaired.height),
+            (expected.width, expected.height)
+        );
     }
 
     #[test]

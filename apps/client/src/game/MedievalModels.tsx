@@ -202,8 +202,8 @@ export function ShutterWindow({
     if (right.current) right.current.rotation.y = THREE.MathUtils.damp(right.current.rotation.y, angle, 11, delta);
   });
   return (
-    <group position={[transform.x, wallHeight * 0.58, transform.z]} rotation={[0, transform.rotation, 0]}>
-      <mesh position={[0, 0, 0.16]} onPointerDown={(event) => { event.stopPropagation(); onClick(); }}>
+    <group position={[transform.x, wallHeight * 0.58, transform.z]} rotation={[0, transform.rotation, 0]} onPointerDown={(event) => { event.stopPropagation(); onClick(); }}>
+      <mesh position={[0, 0, 0.16]}>
         <planeGeometry args={[0.78, 0.92]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
       </mesh>
