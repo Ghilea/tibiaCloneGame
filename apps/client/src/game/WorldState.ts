@@ -2,7 +2,7 @@ import type { CreatureView, GroundItem, ItemDefinition, ItemInstance, MapView, N
 
 export type WorldListener = () => void;
 export type ChatLine = { id: string; speaker: string; text: string };
-export type CombatEffectView = { id: string; sourceId: string; targetId: string; effectId: string; damage: number; createdAt: number };
+export type CombatEffectView = { id: string; sourceId: string; targetId: string; effectId: string; damage: number; position: Position; createdAt: number };
 export type AreaWarningView = { id: string; sourceId: string; position: Position; effectId: string; radius: number; durationMs: number; createdAt: number };
 export type IncomingTrade = { tradeId: string; requester: PlayerView };
 export type TradeStateView = { tradeId: string; partner: PlayerView; yourOffer: ItemInstance[]; theirOffer: ItemInstance[]; youConfirmed: boolean; partnerConfirmed: boolean; status: "pending" | "active" };
@@ -179,9 +179,14 @@ export class WorldState {
         this.groundItems = message.ground_items;
         break;
       case "combat_effect":
-        this.combatEffects.push({ id: crypto.randomUUID(), sourceId: message.source_id, targetId: message.target_id, effectId: message.effect_id, damage: message.damage, createdAt: performance.now() });
+        this.combatEffects.push({
+          id: crypto.randomUUID(), sourceId: message.source_id, targetId: message.target_id,
+          effectId: message.effect_id, damage: message.damage,
+          position: { ...(this.players.get(message.target_id)?.position ?? this.creatures.get(message.target_id)?.position ?? { x: 0, y: 0, z: -999 }) },
+          createdAt: performance.now(),
+        });
         if (this.combatEffects.length > 50) this.combatEffects.shift();
-        if (message.source_id === this.localPlayerId) {
+        if (message.source_id === this.localPlayerId && message.effect_id !== "melee_hit") {
           if (this.spells.has(message.effect_id)) {
             this.spellCooldownMs = message.cooldown_ms;
             this.spellCooldownUntil = Date.now() + message.cooldown_ms;

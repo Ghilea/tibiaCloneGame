@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Position } from "../protocol";
-import { houseWallDoorAnchor, isHouseWallAnchor, movementDelta, resolveMovementTarget } from "./InputController";
+import { houseWallDoorAnchor, InputController, isHouseWallAnchor, movementDelta, resolveMovementTarget } from "./InputController";
+import { NetworkClient } from "./NetworkClient";
+import { WorldState } from "./WorldState";
 
 describe("held-key movement", () => {
   it("maps WASD to the fixed isometric screen axes", () => {
@@ -57,5 +59,28 @@ describe("thin house-wall collision", () => {
   it("cannot enter an exact house corner diagonally from outside", () => {
     const edgeBlocked = (from: Position, to: Position) => Boolean(houseWallDoorAnchor(from, to, buildings));
     expect(resolveMovementTarget({ x: 9, y: 9, z: 7 }, 1, 1, () => false, edgeBlocked)).toEqual({ x: 10, y: 9, z: 7 });
+  });
+});
+
+describe("world pointer interactions", () => {
+  it("keeps an already selected creature targeted when duplicate pointer events arrive", () => {
+    const world = new WorldState(); const network = new NetworkClient(world);
+    world.attackTargetId = "creature";
+    network.attack("creature");
+    expect(world.attackTargetId).toBe("creature");
+  });
+
+  it("takes loot from a non-empty corpse even when an empty corpse is first on the tile", () => {
+    const world = new WorldState(); const network = new NetworkClient(world); const input = new InputController(world, network);
+    const tile = { x: 4, y: 5, z: 7 };
+    world.localPlayerId = "player";
+    world.players.set("player", { id: "player", name: "Hero", vocation: "warrior", position: { x: 4, y: 4, z: 7 }, health: 100, maxHealth: 100, level: 1, experience: 0, mana: 0, maxMana: 0, swordSkill: 1, swordTries: 0, distanceSkill: 1, distanceTries: 0, fletchingSkill: 1, fletchingTries: 0, magicLevel: 0, magicTries: 0 });
+    world.groundItems = [
+      { item: { instanceId: "empty-corpse", definitionId: "corpse", quantity: 1 }, position: tile, contents: [] },
+      { item: { instanceId: "full-corpse", definitionId: "corpse", quantity: 1 }, position: tile, contents: [{ instanceId: "loot", definitionId: "gold_coin", quantity: 3, containerId: "full-corpse" }] },
+    ];
+    const pickup = vi.spyOn(network, "pickup").mockImplementation(() => undefined);
+    input.lootAt(tile);
+    expect(pickup).toHaveBeenCalledWith("loot");
   });
 });

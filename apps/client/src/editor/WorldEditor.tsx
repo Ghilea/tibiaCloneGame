@@ -5,6 +5,8 @@ import { waterEdgesAt } from "../game/WaterEdges";
 type PaintLayer = "erase" | "blocked" | "water" | "bridges" | "trees" | "roads" | "floors" | "packed_earth" | "moss_stone" | "sandstone" | "houseWalls" | "castleWalls" | "house" | "keep" | "removeBuilding" | "door" | "window" | "torch" | "stairs" | "spawn" | "npc" | "playerSpawn";
 type ToolGroup = "navigate" | "terrain" | "structures" | "entities";
 type SpawnView = { id: string; definitionId: string; position: Position };
+type WorldFileHandle = { name: string; createWritable: () => Promise<{ write: (data: Blob) => Promise<void>; close: () => Promise<void> }> };
+type SavePickerWindow = Window & { showSaveFilePicker?: (options: { suggestedName: string; types: { description: string; accept: Record<string, string[]> }[] }) => Promise<WorldFileHandle> };
 type EditorDrag = { kind: "playerSpawn" } | { kind: "door"; id: string } | { kind: "window"; position: Position } | { kind: "torch"; position: Position } | { kind: "stairs"; id: string } | { kind: "spawn"; id: string } | { kind: "npc"; id: string } | { kind: "building"; id: string; offsetX: number; offsetY: number };
 type EditorDocument = {
   version: 1; name: string; width: number; height: number; floor: number;
@@ -83,7 +85,9 @@ export function WorldEditor() {
   const lastPainted = useRef("");
   const panGesture = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
   const editorDrag = useRef<EditorDrag | null>(null);
+  const worldFileHandle = useRef<WorldFileHandle | null>(null);
   const [dragTarget, setDragTarget] = useState<Position | null>(null);
+  const [saveStatus, setSaveStatus] = useState("Autosaved locally");
   const layerSets = useMemo(() => Object.fromEntries(tileLayers.map((layer) => [layer, new Set(document[layer].filter((tile) => tile.z === activeFloor).map(key))])) as Record<(typeof tileLayers)[number], Set<string>>, [document, activeFloor]);
   const spawnByTile = useMemo(() => new Map(document.spawns.filter((entry) => entry.position.z === activeFloor).map((entry) => [key(entry.position), entry])), [document.spawns, activeFloor]);
   const doorByTile = useMemo(() => new Map(document.doors.filter((entry) => entry.position.z === activeFloor).map((entry) => [key(entry.position), entry])), [document.doors, activeFloor]);
@@ -194,20 +198,45 @@ export function WorldEditor() {
   const restore = (next: EditorDocument) => { documentRef.current = next; setDocument(next); saveLocal(next); };
   const undo = () => { const previous = history.at(-1); if (!previous) return; setFuture((items) => [documentRef.current, ...items]); setHistory((items) => items.slice(0, -1)); restore(previous); };
   const redo = () => { const next = future[0]; if (!next) return; setHistory((items) => [...items, documentRef.current]); setFuture((items) => items.slice(1)); restore(next); };
+  async function saveWorld(saveAs = false) {
+    const current = documentRef.current;
+    const fileName = worldFileName(current.name);
+    const blob = new Blob([JSON.stringify(current, null, 2)], { type: "application/json" });
+    const pickerWindow = window as SavePickerWindow;
+    try {
+      setSaveStatus("Saving…");
+      if (pickerWindow.showSaveFilePicker) {
+        if (saveAs || !worldFileHandle.current) worldFileHandle.current = await pickerWindow.showSaveFilePicker({
+          suggestedName: fileName,
+          types: [{ description: "Aldoria world map", accept: { "application/json": [".json"] } }],
+        });
+        const writable = await worldFileHandle.current.createWritable();
+        await writable.write(blob); await writable.close();
+        setSaveStatus(`Saved to ${worldFileHandle.current.name}`);
+        return;
+      }
+      downloadWorld(blob, fileName);
+      setSaveStatus(`Downloaded ${fileName}`);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") { setSaveStatus("Save cancelled"); return; }
+      console.error("Could not save world", error);
+      setSaveStatus("Save failed — try Save As");
+    }
+  }
   useEffect(() => {
     const keyDown = (event: KeyboardEvent) => {
       const editing = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement;
       if (event.code === "Space" && !editing) { event.preventDefault(); window.document.body.classList.add("editor-space-pan"); }
       if (!editing && event.ctrlKey && event.key.toLowerCase() === "z") { event.preventDefault(); event.shiftKey ? redo() : undo(); }
       if (!editing && event.ctrlKey && event.key.toLowerCase() === "y") { event.preventDefault(); redo(); }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); void saveWorld(event.shiftKey); }
       if (!editing && event.key === "Escape") setSelectedNpcId(null);
     };
     const keyUp = (event: KeyboardEvent) => { if (event.code === "Space") window.document.body.classList.remove("editor-space-pan"); };
     window.addEventListener("keydown", keyDown); window.addEventListener("keyup", keyUp);
     return () => { window.removeEventListener("keydown", keyDown); window.removeEventListener("keyup", keyUp); window.document.body.classList.remove("editor-space-pan"); };
   }, [history, future]);
-  const exportWorld = () => { const blob = new Blob([JSON.stringify(document, null, 2)], { type: "application/json" }); const anchor = Object.assign(window.document.createElement("a"), { href: URL.createObjectURL(blob), download: `${document.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.world.json` }); anchor.click(); URL.revokeObjectURL(anchor.href); };
-  const importWorld = async (file?: File) => { if (!file) return; const parsed = normalizeDocument(JSON.parse(await file.text()) as EditorDocument); if (parsed.version !== 1 || !Array.isArray(parsed.blocked) || !Array.isArray(parsed.spawns) || parsed.width < 1 || parsed.height < 1 || parsed.width > MAX_WORLD_SIZE || parsed.height > MAX_WORLD_SIZE) throw new Error("Unsupported world document"); commit(parsed); setActiveFloor(parsed.floor); setWorldWidth(parsed.width); setWorldHeight(parsed.height); setViewX(0); setViewY(0); };
+  const importWorld = async (file?: File) => { if (!file) return; const parsed = normalizeDocument(JSON.parse(await file.text()) as EditorDocument); if (parsed.version !== 1 || !Array.isArray(parsed.blocked) || !Array.isArray(parsed.spawns) || parsed.width < 1 || parsed.height < 1 || parsed.width > MAX_WORLD_SIZE || parsed.height > MAX_WORLD_SIZE) throw new Error("Unsupported world document"); worldFileHandle.current = null; setSaveStatus(`Imported ${file.name} — choose where to save`); commit(parsed); setActiveFloor(parsed.floor); setWorldWidth(parsed.width); setWorldHeight(parsed.height); setViewX(0); setViewY(0); };
   const resizeWorld = () => {
     const width = Number.isFinite(worldWidth) ? Math.max(8, Math.min(MAX_WORLD_SIZE, Math.trunc(worldWidth))) : document.width; const height = Number.isFinite(worldHeight) ? Math.max(8, Math.min(MAX_WORLD_SIZE, Math.trunc(worldHeight))) : document.height;
     const inBounds = (position: Position) => position.x >= 0 && position.y >= 0 && position.x < width && position.y < height;
@@ -226,7 +255,7 @@ export function WorldEditor() {
     setWorldWidth(width); setWorldHeight(height); commit(next);
   };
   const panTo = (x: number, y: number) => { const nextX = Number.isFinite(x) ? Math.trunc(x) : viewportX; const nextY = Number.isFinite(y) ? Math.trunc(y) : viewportY; setViewX(Math.max(0, Math.min(nextX, Math.max(0, document.width - VIEW_COLUMNS)))); setViewY(Math.max(0, Math.min(nextY, Math.max(0, document.height - VIEW_ROWS)))); };
-  const newWorld = () => { const next = blankDocument(); setWorldWidth(next.width); setWorldHeight(next.height); setActiveFloor(next.floor); setViewX(0); setViewY(0); commit(next); };
+  const newWorld = () => { const next = blankDocument(); worldFileHandle.current = null; setSaveStatus("New map — choose where to save"); setWorldWidth(next.width); setWorldHeight(next.height); setActiveFloor(next.floor); setViewX(0); setViewY(0); commit(next); };
   const beginPan = (event: ReactPointerEvent<HTMLDivElement>) => { const spacePan = window.document.body.classList.contains("editor-space-pan"); if (event.button !== 1 && event.button !== 2 && !(event.button === 0 && spacePan)) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); panGesture.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: viewportX, originY: viewportY }; };
   const movePan = (event: ReactPointerEvent<HTMLDivElement>) => { const gesture = panGesture.current; if (!gesture || gesture.pointerId !== event.pointerId) return; const screenX = event.clientX - gesture.startX; const screenY = event.clientY - gesture.startY; const halfWidth = ISO_TILE_WIDTH * zoom / 2; const halfHeight = ISO_TILE_HEIGHT * zoom / 2; const tileX = (screenX / halfWidth + screenY / halfHeight) / 2; const tileY = (-screenX / halfWidth + screenY / halfHeight) / 2; panTo(gesture.originX - Math.round(tileX), gesture.originY - Math.round(tileY)); };
   const endPan = (event: ReactPointerEvent<HTMLDivElement>) => { if (panGesture.current?.pointerId !== event.pointerId) return; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); panGesture.current = null; };
@@ -275,7 +304,7 @@ export function WorldEditor() {
       {selectedNpc && <NpcInspector npc={selectedNpc} onChange={updateNpc} onRemove={removeNpc} />}
       <details className="world-settings"><summary>World settings</summary><label>Map size (tiles)<span className="number-pair"><input type="number" min="8" max={MAX_WORLD_SIZE} value={worldWidth} onChange={(event) => setWorldWidth(Number(event.target.value))} /><b>x</b><input type="number" min="8" max={MAX_WORLD_SIZE} value={worldHeight} onChange={(event) => setWorldHeight(Number(event.target.value))} /></span></label><button className="resize-button" onClick={resizeWorld}>Apply map size</button><small>Maximum {MAX_WORLD_SIZE.toLocaleString()} × {MAX_WORLD_SIZE.toLocaleString()}. Sparse maps only store authored tiles.</small></details>
     </aside>
-    <section className="editor-workspace"><nav><span className="history-controls"><button title="Undo (Ctrl+Z)" disabled={!history.length} onClick={undo}>↶ Undo</button><button title="Redo (Ctrl+Y)" disabled={!future.length} onClick={redo}>↷ Redo</button></span><label>Floor<select value={activeFloor} onChange={(event) => setActiveFloor(Number(event.target.value))}>{[6, 7, 8, 9].map((floor) => <option key={floor}>{floor}</option>)}</select></label><span className="pan-controls"><button title="Move view west" onClick={() => panTo(viewportX - PAN_STEP, viewportY)}>←</button><button title="Move view north" onClick={() => panTo(viewportX, viewportY - PAN_STEP)}>↑</button><label>X<input type="number" min="0" max={document.width - 1} value={viewportX} onChange={(event) => panTo(Number(event.target.value), viewportY)} /></label><label>Y<input type="number" min="0" max={document.height - 1} value={viewportY} onChange={(event) => panTo(viewportX, Number(event.target.value))} /></label><button title="Move view south" onClick={() => panTo(viewportX, viewportY + PAN_STEP)}>↓</button><button title="Move view east" onClick={() => panTo(viewportX + PAN_STEP, viewportY)}>→</button></span><label>Zoom<input type="range" min="0.6" max="1.6" step="0.1" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label><span className="document-controls"><button onClick={newWorld}>New</button><label className="file-button">Import<input type="file" accept=".json" onChange={(event) => void importWorld(event.target.files?.[0]).catch((error) => alert(error))} /></label><button className="primary" onClick={exportWorld}>Export</button></span></nav>
+    <section className="editor-workspace"><nav><span className="history-controls"><button title="Undo (Ctrl+Z)" disabled={!history.length} onClick={undo}>↶ Undo</button><button title="Redo (Ctrl+Y)" disabled={!future.length} onClick={redo}>↷ Redo</button></span><label>Floor<select value={activeFloor} onChange={(event) => setActiveFloor(Number(event.target.value))}>{[6, 7, 8, 9].map((floor) => <option key={floor}>{floor}</option>)}</select></label><span className="pan-controls"><button title="Move view west" onClick={() => panTo(viewportX - PAN_STEP, viewportY)}>←</button><button title="Move view north" onClick={() => panTo(viewportX, viewportY - PAN_STEP)}>↑</button><label>X<input type="number" min="0" max={document.width - 1} value={viewportX} onChange={(event) => panTo(Number(event.target.value), viewportY)} /></label><label>Y<input type="number" min="0" max={document.height - 1} value={viewportY} onChange={(event) => panTo(viewportX, Number(event.target.value))} /></label><button title="Move view south" onClick={() => panTo(viewportX, viewportY + PAN_STEP)}>↓</button><button title="Move view east" onClick={() => panTo(viewportX + PAN_STEP, viewportY)}>→</button></span><label>Zoom<input type="range" min="0.6" max="1.6" step="0.1" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label><span className="save-status" title={saveStatus}>{saveStatus}</span><span className="document-controls"><button onClick={newWorld}>New</button><label className="file-button">Import<input type="file" accept=".json" onChange={(event) => void importWorld(event.target.files?.[0]).catch((error) => alert(error))} /></label><button title="Choose a new file (Ctrl+Shift+S)" onClick={() => void saveWorld(true)}>Save As</button><button className="primary" title="Save to the current file (Ctrl+S)" onClick={() => void saveWorld()}>Save</button></span></nav>
       <div className="map-scroll" onContextMenu={(event) => event.preventDefault()} onPointerDown={beginPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan}>
         <div className="editor-grid isometric" style={{ width: (visibleWidth + visibleHeight) * ISO_TILE_WIDTH * zoom / 2, height: (visibleWidth + visibleHeight) * ISO_TILE_HEIGHT * zoom / 2 }}>
           {Array.from({ length: visibleWidth * visibleHeight }, (_, index) => {
@@ -361,3 +390,16 @@ function alignHouseBuildingsToWalls(document: EditorDocument): BuildingView[] {
   });
 }
 function loadLocal(): EditorDocument { try { const saved = localStorage.getItem("aldoria-world-editor"); return saved ? normalizeDocument(JSON.parse(saved) as EditorDocument) : blankDocument(); } catch { return blankDocument(); } }
+
+function worldFileName(name: string) {
+  const safeName = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "aldoria-world";
+  return `${safeName}.world.json`;
+}
+
+function downloadWorld(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = window.document.createElement("a");
+  anchor.href = url; anchor.download = fileName; anchor.hidden = true;
+  window.document.body.appendChild(anchor); anchor.click(); anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+}

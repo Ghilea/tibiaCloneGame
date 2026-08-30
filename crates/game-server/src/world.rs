@@ -23,7 +23,9 @@ pub const SPAWN: Position = Position { x: 10, y: 8, z: 7 };
 // packet jitter from compressing two valid steps into a false rejection.
 const MOVE_COOLDOWN: Duration = Duration::from_millis(145);
 const PLAYER_ATTACK_COOLDOWN: Duration = Duration::from_millis(650);
-const CREATURE_RESPAWN: Duration = Duration::from_secs(6);
+// A defeated hunting spot should stay cleared long enough for the kill to feel
+// meaningful and for players to loot before the same creature returns.
+const CREATURE_RESPAWN: Duration = Duration::from_secs(30);
 const CORPSE_DECAY: Duration = Duration::from_secs(45);
 const EMPTY_CORPSE_DECAY: Duration = Duration::from_secs(10);
 const MANA_REGEN_INTERVAL: Duration = Duration::from_secs(2);
@@ -2339,18 +2341,22 @@ impl World {
             }
         };
         let mut events = self.damage_creature(player_id, target_id, damage)?;
-        if let Some((effect_id, cooldown_ms)) = projectile {
-            events.insert(
-                0,
-                WorldEvent::CombatEffect {
-                    source_id: player_id,
-                    target_id,
-                    effect_id,
-                    damage,
-                    cooldown_ms,
-                },
-            );
-        }
+        let (effect_id, cooldown_ms) = projectile.unwrap_or_else(|| {
+            (
+                "melee_hit".to_owned(),
+                PLAYER_ATTACK_COOLDOWN.as_millis() as u64,
+            )
+        });
+        events.insert(
+            0,
+            WorldEvent::CombatEffect {
+                source_id: player_id,
+                target_id,
+                effect_id,
+                damage,
+                cooldown_ms,
+            },
+        );
         if !events
             .iter()
             .any(|event| matches!(event, WorldEvent::PlayerStats(_)))
@@ -2763,15 +2769,17 @@ impl World {
                             .expect("creature exists")
                             .last_attack = now;
                         self.apply_creature_damage(creature_id, target_id, damage, &mut events);
-                        if attack.attack_type == "ranged" {
-                            events.push(WorldEvent::CombatEffect {
-                                source_id: creature_id,
-                                target_id,
-                                effect_id: attack.effect_id.clone(),
-                                damage,
-                                cooldown_ms: attack.interval_ms,
-                            });
-                        }
+                        events.push(WorldEvent::CombatEffect {
+                            source_id: creature_id,
+                            target_id,
+                            effect_id: if attack.effect_id.is_empty() {
+                                "melee_hit".to_owned()
+                            } else {
+                                attack.effect_id.clone()
+                            },
+                            damage,
+                            cooldown_ms: attack.interval_ms,
+                        });
                     }
                 }
             } else {
@@ -4543,6 +4551,11 @@ mod tests {
         world.try_attack(id, creature_id).unwrap();
         world.players.get_mut(&id).unwrap().last_attack = Instant::now() - PLAYER_ATTACK_COOLDOWN;
         let events = world.try_attack(id, creature_id).unwrap();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            WorldEvent::CombatEffect { effect_id, target_id, .. }
+                if effect_id == "melee_hit" && *target_id == creature_id
+        )));
         assert!(
             events
                 .iter()
@@ -4779,6 +4792,11 @@ mod tests {
                 .iter()
                 .any(|event| matches!(event, WorldEvent::PlayerStats(_)))
         );
+        assert!(events.iter().any(|event| matches!(
+            event,
+            WorldEvent::CombatEffect { effect_id, target_id, .. }
+                if effect_id == "melee_hit" && *target_id == id
+        )));
         assert_eq!(world.player(id).unwrap().view.health, 144);
     }
 

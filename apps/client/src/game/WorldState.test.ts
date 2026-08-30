@@ -77,3 +77,16 @@ describe("authored shutter synchronization", () => {
     expect(world.map.windows[0].open).toBe(true);
   });
 });
+
+describe("combat feedback", () => {
+  it("anchors confirmed melee damage to its target without starting an item cooldown", () => {
+    const world = new WorldState();
+    world.localPlayerId = "local";
+    world.players.set("local", player(position(10, 8)));
+
+    world.apply({ type: "combat_effect", source_id: "creature", target_id: "local", effect_id: "melee_hit", damage: 7, cooldown_ms: 1200 });
+
+    expect(world.combatEffects.at(-1)).toMatchObject({ targetId: "local", damage: 7, position: position(10, 8) });
+    expect(world.combatItemCooldownUntil).toBe(0);
+  });
+});

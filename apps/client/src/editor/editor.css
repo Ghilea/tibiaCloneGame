@@ -603,6 +603,18 @@ select {
 .document-controls {
   margin-left: auto;
 }
+.save-status {
+  max-width: 180px;
+  margin-left: auto;
+  overflow: hidden;
+  color: #90a298;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.save-status + .document-controls {
+  margin-left: 0;
+}
 .editor-workspace nav button,
 .file-button {
   border-radius: 8px;

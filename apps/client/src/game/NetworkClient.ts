@@ -76,7 +76,9 @@ export class NetworkClient {
   }
   attack(targetId: string) {
     if (this.world.attackTargetId === targetId) {
-      this.clearAttackTarget();
+      // Repeated pointer events must never toggle a valid target off.
+      // Clearing the target remains an explicit UI/Escape action.
+      this.sendAttackIntent();
       return;
     }
     this.world.setAttackTarget(targetId);

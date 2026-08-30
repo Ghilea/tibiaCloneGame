@@ -1,4 +1,4 @@
-import { Canvas, type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, type ThreeEvent, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type MutableRefObject } from "react";
 import * as THREE from "three";
 import type {
@@ -15,7 +15,7 @@ import { CreatureModel } from "./CreatureModels";
 import { CLIENT_STEP_MS, InputController } from "./InputController";
 import { MedievalDoorLeafAsset } from "./MedievalAssetModels";
 import { GabledRoof, HangingSign, MedievalDoorWall, MedievalWall, MedievalWindowWall, ShutterWindow } from "./MedievalModels";
-import { WorldState } from "./WorldState";
+import { WorldState, type CombatEffectView } from "./WorldState";
 
 const TILE_HEIGHT = 0.12;
 // The KayKit actors have broad, rounded silhouettes. The environment uses a
@@ -35,6 +35,7 @@ export function ThreeWorld({ world, input }: ThreeWorldProps) {
   return (
     <Canvas
       className="three-world"
+      onContextMenu={(event) => event.preventDefault()}
       orthographic
       shadows
       dpr={[1, 1.6]}
@@ -67,6 +68,7 @@ function WorldScene({ world, input }: ThreeWorldProps) {
   if (!map) return null;
   const onGround = useCallback((event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
+    if (event.button === 2) event.nativeEvent.preventDefault();
     input.interactAt({
       x: Math.max(0, Math.min(map.width - 1, Math.floor(event.point.x))),
       y: Math.max(0, Math.min(map.height - 1, Math.floor(event.point.z))),
@@ -78,7 +80,7 @@ function WorldScene({ world, input }: ThreeWorldProps) {
     <>
       <Atmosphere torches={map.torches.filter((tile) => tile.z === floor)} local={local?.position} />
       <FollowCamera target={local?.position} visualTarget={localVisualPosition} mapWidth={map.width} mapHeight={map.height} />
-      <Terrain map={map} floor={floor} onGround={onGround} />
+      <Suspense fallback={null}><Terrain map={map} floor={floor} onGround={onGround} /></Suspense>
       <Suspense fallback={null}>
         <Structures map={map} input={input} floor={floor} />
       </Suspense>
@@ -95,6 +97,11 @@ function WorldScene({ world, input }: ThreeWorldProps) {
             if (player.id !== world.localPlayerId)
               input.interactPlayer(player.id, event.nativeEvent.clientX, event.nativeEvent.clientY);
           }}
+          onContextMenu={(event) => {
+            event.stopPropagation(); event.nativeEvent.preventDefault();
+            if (player.id !== world.localPlayerId)
+              input.interactPlayer(player.id, event.nativeEvent.clientX, event.nativeEvent.clientY);
+          }}
         />
       ))}
       {creatures.map((creature) => (
@@ -104,6 +111,10 @@ function WorldScene({ world, input }: ThreeWorldProps) {
           selected={creature.id === world.attackTargetId}
           onClick={(event) => {
             event.stopPropagation();
+            input.targetCreature(creature.id);
+          }}
+          onContextMenu={(event) => {
+            event.stopPropagation(); event.nativeEvent.preventDefault();
             input.targetCreature(creature.id);
           }}
         />
@@ -117,6 +128,10 @@ function WorldScene({ world, input }: ThreeWorldProps) {
             event.stopPropagation();
             input.interactNpc(npc.id);
           }}
+          onContextMenu={(event) => {
+            event.stopPropagation(); event.nativeEvent.preventDefault();
+            input.interactNpc(npc.id);
+          }}
         />
       ))}
       {world.groundItems
@@ -128,10 +143,17 @@ function WorldScene({ world, input }: ThreeWorldProps) {
             corpse={entry.contents.length > 0}
             onClick={(event) => {
               event.stopPropagation();
-              input.interactAt(entry.position);
+              input.lootAt(entry.position);
+            }}
+            onContextMenu={(event) => {
+              event.stopPropagation(); event.nativeEvent.preventDefault();
+              input.lootAt(entry.position);
             }}
           />
         ))}
+      {world.combatEffects
+        .filter((effect) => effect.position.z === floor)
+        .map((effect) => <CombatImpact key={effect.id} effect={effect} localPlayerId={world.localPlayerId} />)}
       <Weather local={local?.position} floor={floor} />
     </>
   );
@@ -146,6 +168,11 @@ const Terrain = memo(function Terrain({
   floor: number;
   onGround: (event: ThreeEvent<PointerEvent>) => void;
 }) {
+  const grassTexture = useWorldTexture("/assets/world/greyhaven-grass.png", Math.max(1, map.width / 3), Math.max(1, map.height / 3));
+  const roadTexture = useWorldTexture("/assets/world/greyhaven-cobble.png");
+  const packedEarthTexture = useWorldTexture("/assets/world/aldoria-packed-earth-v1.png");
+  const mossStoneTexture = useWorldTexture("/assets/world/aldoria-moss-stone-v1.png");
+  const sandstoneTexture = useWorldTexture("/assets/world/aldoria-sandstone-v1.png");
   const onFloor = (positions: readonly Position[]) => positions.filter((tile) => tile.z === floor);
   const materials = new Map(map.terrainMaterials.filter((entry) => entry.position.z === floor).map((entry) => [`${entry.position.x}:${entry.position.y}`, entry.material]));
   const materialTiles = (id: string) => [...materials.entries()].filter(([, value]) => value === id).map(([key]) => {
@@ -159,13 +186,13 @@ const Terrain = memo(function Terrain({
     <group>
       <mesh receiveShadow position={[map.width / 2, -0.12, map.height / 2]} onPointerDown={onGround}>
         <boxGeometry args={[map.width, 0.2, map.height]} />
-        <meshStandardMaterial color="#4e7047" roughness={0.96} />
+        <meshStandardMaterial map={grassTexture} color="#91a477" roughness={0.96} />
       </mesh>
-      <InstancedTiles positions={onFloor(map.roads)} color="#7b674a" height={0.035} y={0.015} />
-      <InstancedTiles positions={onFloor(map.floors)} color="#827a68" height={0.045} y={0.025} />
-      <InstancedTiles positions={materialTiles("packed_earth")} color="#73573d" height={0.048} y={0.03} />
-      <InstancedTiles positions={materialTiles("moss_stone")} color="#59665b" height={0.052} y={0.034} />
-      <InstancedTiles positions={materialTiles("sandstone")} color="#ad976e" height={0.052} y={0.034} />
+      <InstancedTiles positions={onFloor(map.roads)} color="#b7a889" texture={roadTexture} height={0.035} y={0.015} />
+      <InstancedTiles positions={onFloor(map.floors)} color="#aaa18d" texture={mossStoneTexture} height={0.045} y={0.025} />
+      <InstancedTiles positions={materialTiles("packed_earth")} color="#b29676" texture={packedEarthTexture} height={0.048} y={0.03} />
+      <InstancedTiles positions={materialTiles("moss_stone")} color="#a4ad9a" texture={mossStoneTexture} height={0.052} y={0.034} />
+      <InstancedTiles positions={materialTiles("sandstone")} color="#d0ba91" texture={sandstoneTexture} height={0.052} y={0.034} />
       <WaterTiles positions={onFloor(map.water)} />
       <InstancedTiles positions={onFloor(map.bridges)} color="#795334" height={0.14} y={0.09} />
       <InstancedTiles positions={visibleRocks} color="#626d66" height={0.55} y={0.275} scale={0.72} castShadow />
@@ -192,6 +219,7 @@ function InstancedTiles({
   y,
   scale = 0.98,
   castShadow = false,
+  texture,
 }: {
   positions: readonly Position[];
   color: THREE.ColorRepresentation;
@@ -199,6 +227,7 @@ function InstancedTiles({
   y: number;
   scale?: number;
   castShadow?: boolean;
+  texture?: THREE.Texture;
 }) {
   const mesh = useRef<THREE.InstancedMesh>(null);
   useLayoutEffect(() => {
@@ -214,14 +243,16 @@ function InstancedTiles({
   return (
     <instancedMesh ref={mesh} args={[undefined, undefined, positions.length]} castShadow={castShadow} receiveShadow>
       <boxGeometry args={[scale, height, scale]} />
-      <meshStandardMaterial color={color} roughness={0.92} />
+      <meshStandardMaterial map={texture} color={color} roughness={0.92} />
     </instancedMesh>
   );
 }
 
 function WaterTiles({ positions }: { positions: readonly Position[] }) {
   const mesh = useRef<THREE.InstancedMesh>(null);
+  const waterTexture = useWorldTexture("/assets/world/aldoria-water-v1.png");
   const material = useMemo(() => new THREE.MeshPhysicalMaterial({
+    map: waterTexture,
     color: "#277789",
     emissive: "#16424d",
     emissiveIntensity: 0.08,
@@ -229,7 +260,7 @@ function WaterTiles({ positions }: { positions: readonly Position[] }) {
     roughness: 0.2,
     transparent: true,
     opacity: 0.86,
-  }), []);
+  }), [waterTexture]);
   useLayoutEffect(() => {
     if (!mesh.current) return;
     const matrix = new THREE.Matrix4();
@@ -248,6 +279,7 @@ function WaterTiles({ positions }: { positions: readonly Position[] }) {
     const wave = Math.sin(clock.elapsedTime * 1.15) * 0.035;
     material.roughness = 0.2 + wave;
     material.emissiveIntensity = 0.08 + wave;
+    waterTexture.offset.set(clock.elapsedTime * 0.012, clock.elapsedTime * 0.007);
   });
   if (!positions.length) return null;
   return (
@@ -256,6 +288,22 @@ function WaterTiles({ positions }: { positions: readonly Position[] }) {
       <primitive object={material} attach="material" />
     </instancedMesh>
   );
+}
+
+function useWorldTexture(path: string, repeatX = 1, repeatY = 1) {
+  const source = useLoader(THREE.TextureLoader, path);
+  const { gl } = useThree();
+  const texture = useMemo(() => {
+    const clone = source.clone();
+    clone.wrapS = clone.wrapT = THREE.RepeatWrapping;
+    clone.repeat.set(repeatX, repeatY);
+    clone.colorSpace = THREE.SRGBColorSpace;
+    clone.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy());
+    clone.needsUpdate = true;
+    return clone;
+  }, [gl, repeatX, repeatY, source]);
+  useEffect(() => () => texture.dispose(), [texture]);
+  return texture;
 }
 
 const Structures = memo(function Structures({ map, input, floor }: { map: NonNullable<WorldState["map"]>; input: InputController; floor: number }) {
@@ -413,14 +461,14 @@ function Torch({ position }: { position: Position }) {
 
 type ActorClick = (event: ThreeEvent<MouseEvent>) => void;
 
-type PlayerActorProps = { player: PlayerView; local: boolean; visualPosition?: MutableRefObject<THREE.Vector3>; selected: boolean; onClick: ActorClick };
+type PlayerActorProps = { player: PlayerView; local: boolean; visualPosition?: MutableRefObject<THREE.Vector3>; selected: boolean; onClick: ActorClick; onContextMenu: ActorClick };
 
-const PlayerActor = memo(function PlayerActor({ player, local, visualPosition, selected, onClick }: PlayerActorProps) {
+const PlayerActor = memo(function PlayerActor({ player, local, visualPosition, selected, onClick, onContextMenu }: PlayerActorProps) {
   const kind: CharacterKind = player.vocation === "mage" ? "mage" : player.vocation === "ranger" ? "ranger" : "knight";
   const moving = useRef(false);
   return (
     <SmoothActor id={player.id} position={player.position} visualPosition={visualPosition} moving={moving}>
-      <group onClick={onClick}>
+      <group onPointerDown={(event) => event.stopPropagation()} onClick={onClick} onContextMenu={onContextMenu}>
         <SelectionRing active={selected || local} color={local ? "#65b9e8" : "#e2be65"} />
         <AnimatedCharacter kind={kind} position={player.position} moving={moving} />
       </group>
@@ -428,9 +476,9 @@ const PlayerActor = memo(function PlayerActor({ player, local, visualPosition, s
   );
 }, actorPropsEqual);
 
-type NpcActorProps = { npc: NpcView; playerPosition: MutableRefObject<THREE.Vector3>; onClick: ActorClick };
+type NpcActorProps = { npc: NpcView; playerPosition: MutableRefObject<THREE.Vector3>; onClick: ActorClick; onContextMenu: ActorClick };
 
-const NpcActor = memo(function NpcActor({ npc, playerPosition, onClick }: NpcActorProps) {
+const NpcActor = memo(function NpcActor({ npc, playerPosition, onClick, onContextMenu }: NpcActorProps) {
   const kind: CharacterKind = npc.service === "spell_trainer" ? "mage" : npc.service === "depot" ? "knight" : "rogue";
   const moving = useRef(false);
   const presence = useRef<THREE.Group>(null);
@@ -470,17 +518,18 @@ const NpcActor = memo(function NpcActor({ npc, playerPosition, onClick }: NpcAct
       setCallout(null);
     }
   });
-  return <SmoothActor id={npc.id} position={npc.position} moving={moving}><group onClick={onClick}><SelectionRing active color="#d6b65e" /><group ref={presence} rotation={[0, homeFacing, 0]}><AnimatedCharacter kind={kind} position={npc.position} moving={moving} /></group><mesh position={[0, 2.55, 0]}><octahedronGeometry args={[0.11]} /><meshStandardMaterial color="#e7c45f" emissive="#b17f23" emissiveIntensity={1.3} /></mesh>{callout && <SpeechBubble text={callout} />}</group></SmoothActor>;
+  return <SmoothActor id={npc.id} position={npc.position} moving={moving}><group onPointerDown={(event) => event.stopPropagation()} onClick={onClick} onContextMenu={onContextMenu}><SelectionRing active color="#d6b65e" /><group ref={presence} rotation={[0, homeFacing, 0]}><AnimatedCharacter kind={kind} position={npc.position} moving={moving} /></group><mesh position={[0, 2.55, 0]}><octahedronGeometry args={[0.11]} /><meshStandardMaterial color="#e7c45f" emissive="#b17f23" emissiveIntensity={1.3} /></mesh>{callout && <SpeechBubble text={callout} />}</group></SmoothActor>;
 }, (previous, next) => previous.npc === next.npc && previous.playerPosition === next.playerPosition);
 
-type CreatureActorProps = { creature: CreatureView; selected: boolean; onClick: ActorClick };
+type CreatureActorProps = { creature: CreatureView; selected: boolean; onClick: ActorClick; onContextMenu: ActorClick };
 
-const CreatureActor = memo(function CreatureActor({ creature, selected, onClick }: CreatureActorProps) {
+const CreatureActor = memo(function CreatureActor({ creature, selected, onClick, onContextMenu }: CreatureActorProps) {
   const moving = useRef(false);
   return (
     <SmoothActor id={creature.id} position={creature.position} moving={moving}>
-      <group onClick={onClick}>
+      <group onPointerDown={(event) => event.stopPropagation()} onClick={onClick} onContextMenu={onContextMenu}>
         <SelectionRing active={selected} color="#dc594c" />
+        <TargetMarker active={selected} />
         <CreatureModel definitionId={creature.definitionId} immune={creature.immune} moving={moving} />
       </group>
     </SmoothActor>
@@ -566,12 +615,63 @@ export function actorSegmentDuration(updateIntervalMs: number) {
 
 function SelectionRing({ active, color }: { active: boolean; color: string }) {
   if (!active) return null;
-  return <mesh position={[0, 0.025, 0]} rotation={[-Math.PI / 2, 0, 0]}><ringGeometry args={[0.36, 0.48, 32]} /><meshBasicMaterial color={color} transparent opacity={0.82} depthWrite={false} /></mesh>;
+  return <mesh position={[0, 0.025, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={12}><ringGeometry args={[0.36, 0.48, 32]} /><meshBasicMaterial color={color} transparent opacity={0.82} depthTest={false} depthWrite={false} /></mesh>;
 }
 
-function GroundItemActor({ position, corpse, onClick }: { position: Position; corpse: boolean; onClick: ActorClick }) {
+function TargetMarker({ active }: { active: boolean }) {
+  const marker = useRef<THREE.Group>(null);
+  const phase = useRef(Math.random() * Math.PI * 2);
+  useFrame(({ clock }) => {
+    if (!marker.current) return;
+    marker.current.position.y = 2.18 + Math.sin(clock.elapsedTime * 4.5 + phase.current) * 0.09;
+    marker.current.rotation.y = clock.elapsedTime * 1.8;
+  });
+  if (!active) return null;
+  return <group ref={marker} position={[0, 2.18, 0]} renderOrder={15}>
+    <mesh rotation={[0, 0, Math.PI]}><coneGeometry args={[0.18, 0.38, 4]} /><meshBasicMaterial color="#ff5148" depthTest={false} depthWrite={false} /></mesh>
+  </group>;
+}
+
+function CombatImpact({ effect, localPlayerId }: { effect: CombatEffectView; localPlayerId: string | null }) {
+  const root = useRef<THREE.Group>(null);
+  const burst = useRef<THREE.Mesh>(null);
+  const ring = useRef<THREE.Mesh>(null);
+  const outgoing = effect.sourceId === localPlayerId;
+  const incoming = effect.targetId === localPlayerId;
+  const color = incoming ? "#ff4e46" : outgoing ? "#ffd268" : "#f18a56";
+  const texture = useMemo(() => damageTexture(effect.damage, color), [color, effect.damage]);
+  useEffect(() => () => texture.dispose(), [texture]);
+  useFrame(() => {
+    const age = performance.now() - effect.createdAt;
+    const progress = THREE.MathUtils.clamp(age / 850, 0, 1);
+    if (root.current) { root.current.visible = age < 850; root.current.position.y = 0.35 + progress * 1.25; }
+    if (burst.current) burst.current.scale.setScalar(0.25 + progress * 1.1);
+    const burstMaterial = burst.current?.material as THREE.MeshBasicMaterial | undefined;
+    if (burstMaterial) burstMaterial.opacity = Math.max(0, 0.8 - progress);
+    const ringMaterial = ring.current?.material as THREE.MeshBasicMaterial | undefined;
+    if (ringMaterial) ringMaterial.opacity = Math.max(0, 0.72 - progress);
+    if (ring.current) ring.current.scale.setScalar(0.55 + progress * 1.3);
+  });
+  return <group position={[effect.position.x + 0.5, 0.35, effect.position.y + 0.5]}>
+    <mesh ref={ring} position={[0, -0.29, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={16}><ringGeometry args={[0.24, 0.34, 20]} /><meshBasicMaterial color={color} transparent depthTest={false} depthWrite={false} /></mesh>
+    <mesh ref={burst} position={[0, 0.38, 0]} renderOrder={16}><icosahedronGeometry args={[0.22, 0]} /><meshBasicMaterial color={color} transparent opacity={0.8} depthTest={false} depthWrite={false} wireframe /></mesh>
+    <group ref={root}><sprite scale={[0.82, 0.38, 1]} renderOrder={18}><spriteMaterial map={texture} transparent depthTest={false} depthWrite={false} /></sprite></group>
+  </group>;
+}
+
+function damageTexture(damage: number, color: string) {
+  const canvas = document.createElement("canvas"); canvas.width = 256; canvas.height = 112;
+  const context = canvas.getContext("2d")!;
+  context.font = "900 66px Inter, sans-serif"; context.textAlign = "center"; context.textBaseline = "middle";
+  context.lineWidth = 12; context.strokeStyle = "rgba(12, 8, 7, .95)"; context.strokeText(`-${damage}`, 128, 55);
+  context.fillStyle = color; context.fillText(`-${damage}`, 128, 55);
+  const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; texture.needsUpdate = true;
+  return texture;
+}
+
+function GroundItemActor({ position, corpse, onClick, onContextMenu }: { position: Position; corpse: boolean; onClick: ActorClick; onContextMenu: ActorClick }) {
   return (
-    <group position={[position.x + 0.5, 0.12, position.y + 0.5]} onClick={onClick}>
+    <group position={[position.x + 0.5, 0.12, position.y + 0.5]} onPointerDown={(event) => event.stopPropagation()} onClick={onClick} onContextMenu={onContextMenu}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} castShadow>
         {corpse ? <circleGeometry args={[0.34, 14]} /> : <octahedronGeometry args={[0.18]} />}
         <meshStandardMaterial color={corpse ? "#6d3029" : "#d3a84f"} roughness={0.8} />

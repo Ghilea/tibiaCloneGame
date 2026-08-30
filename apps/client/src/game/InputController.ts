@@ -95,13 +95,23 @@ export class InputController {
       this.network.attack(creature.id);
       return;
     }
-    const item = this.world.groundItems.find((entry) => entry.position.x === target.x && entry.position.y === target.y && entry.position.z === target.z);
-    if (item && Math.abs(player.position.x - target.x) <= 1 && Math.abs(player.position.y - target.y) <= 1) {
-      const loot = item.contents[0];
-      if (loot) this.network.pickup(loot.instanceId);
-      else if (this.world.itemDefinitions.get(item.item.definitionId)?.pickupable) this.network.pickup(item.item.instanceId);
-      return;
-    }
+    if (this.world.groundItems.some((entry) => samePosition(entry.position, target))) this.lootAt(target);
+  }
+
+  lootAt(target: Position) {
+    const player = this.world.localPlayerId ? this.world.players.get(this.world.localPlayerId) : null;
+    if (!player) return;
+    const stack = this.world.groundItems.filter((entry) => samePosition(entry.position, target));
+    if (!stack.length) return;
+    const nearby = player.position.z === target.z
+      && Math.abs(player.position.x - target.x) <= 1
+      && Math.abs(player.position.y - target.y) <= 1;
+    if (!nearby) { this.world.addSystemMessage("Move closer to pick that up."); return; }
+    const containedLoot = stack.find((entry) => entry.contents.length > 0)?.contents[0];
+    if (containedLoot) { this.network.pickup(containedLoot.instanceId); return; }
+    const looseItem = stack.find((entry) => this.world.itemDefinitions.get(entry.item.definitionId)?.pickupable);
+    if (looseItem) { this.network.pickup(looseItem.item.instanceId); return; }
+    this.world.addSystemMessage("There is nothing left to take.");
   }
 
   private onKeyDown = (event: KeyboardEvent) => {
