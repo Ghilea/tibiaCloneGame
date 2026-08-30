@@ -12,8 +12,7 @@ import type {
   WindowView,
 } from "../protocol";
 import { CastleRatSprite } from "../actors/CastleRatSprite";
-import { direction8FromVector } from "../actors/direction8";
-import type { Direction8 } from "../actors/spriteTypes";
+import { createActorMotionState, sampleActorMotion, type ActorMotionState } from "../actors/actorMotion";
 import { AnimatedCharacter, type CharacterKind } from "./AnimatedCharacter";
 import { CreatureModel } from "./CreatureModels";
 import { CLIENT_STEP_MS, InputController } from "./InputController";
@@ -566,14 +565,16 @@ type CreatureActorProps = { creature: CreatureView; selected: boolean; onClick: 
 
 const CreatureActor = memo(function CreatureActor({ creature, selected, onClick, onContextMenu }: CreatureActorProps) {
   const moving = useRef(false);
-  const direction = useRef<Direction8>("s");
+  const motion = useRef<ActorMotionState>(createActorMotionState());
   return (
-    <SmoothActor id={creature.id} position={creature.position} moving={moving} direction={direction}>
+    <SmoothActor id={creature.id} position={creature.position} moving={moving} motion={motion}>
       <group onPointerDown={(event) => event.stopPropagation()} onClick={onClick} onContextMenu={onContextMenu}>
         <SelectionRing active={selected} color="#dc594c" />
         <TargetMarker active={selected} />
         {creature.definitionId === "castle_rat"
-          ? <CastleRatSprite direction={direction} moving={moving} state={creature.state} health={creature.health} />
+          ? <Suspense fallback={null}>
+              <CastleRatSprite motion={motion} state={creature.state} health={creature.health} />
+            </Suspense>
           : <CreatureModel definitionId={creature.definitionId} immune={creature.immune} moving={moving} />}
       </group>
     </SmoothActor>
@@ -611,7 +612,7 @@ function actorPropsEqual(previous: PlayerActorProps, next: PlayerActorProps) {
     && previous.selected === next.selected;
 }
 
-function SmoothActor({ id, position, visualPosition, moving, direction, correctionRevision = 0, children }: { id: string; position: Position; visualPosition?: MutableRefObject<THREE.Vector3>; moving?: MutableRefObject<boolean>; direction?: MutableRefObject<Direction8>; correctionRevision?: number; children: React.ReactNode }) {
+function SmoothActor({ id, position, visualPosition, moving, motion, correctionRevision = 0, children }: { id: string; position: Position; visualPosition?: MutableRefObject<THREE.Vector3>; moving?: MutableRefObject<boolean>; motion?: MutableRefObject<ActorMotionState>; correctionRevision?: number; children: React.ReactNode }) {
   const group = useRef<THREE.Group>(null);
   const current = useRef(new THREE.Vector3(position.x + 0.5, 0.05, position.y + 0.5));
   const segmentStart = useRef(current.current.clone());
@@ -620,6 +621,7 @@ function SmoothActor({ id, position, visualPosition, moving, direction, correcti
   const segmentDurationMs = useRef(170);
   const lastTargetAt = useRef(performance.now());
   const lastCorrectionRevision = useRef(correctionRevision);
+  const previousVisualPosition = useRef(current.current.clone());
   const target = useMemo(() => new THREE.Vector3(position.x + 0.5, 0.05, position.y + 0.5), [position.x, position.y]);
   useLayoutEffect(() => {
     if (target.equals(segmentTarget.current)) return;
@@ -629,12 +631,10 @@ function SmoothActor({ id, position, visualPosition, moving, direction, correcti
     const distance = current.current.distanceTo(target);
     const correcting = correctionRevision !== lastCorrectionRevision.current;
     lastCorrectionRevision.current = correctionRevision;
-    if (!correcting && Math.abs(dx) + Math.abs(dz) > 0.01 && direction) {
-      direction.current = direction8FromVector(dx, dz, direction.current);
-    }
     if (!correcting && Math.abs(dx) + Math.abs(dz) > 0.01 && group.current) group.current.rotation.y = Math.atan2(dx, dz);
     if (distance > 3) {
       current.current.copy(target);
+      previousVisualPosition.current.copy(target);
       segmentStart.current.copy(target);
       segmentTarget.current.copy(target);
       if (group.current) group.current.position.copy(target);
@@ -648,13 +648,17 @@ function SmoothActor({ id, position, visualPosition, moving, direction, correcti
     }
     lastTargetAt.current = now;
   }, [target, visualPosition, correctionRevision]);
-  useFrame(() => {
+  useFrame((_, delta) => {
     if (!group.current) return;
     const progress = THREE.MathUtils.clamp((performance.now() - segmentStartedAt.current) / segmentDurationMs.current, 0, 1);
     current.current.lerpVectors(segmentStart.current, segmentTarget.current, progress);
+    const visualDx = current.current.x - previousVisualPosition.current.x;
+    const visualDz = current.current.z - previousVisualPosition.current.z;
+    if (motion) sampleActorMotion(motion.current, visualDx, visualDz, delta);
+    previousVisualPosition.current.copy(current.current);
     group.current.position.copy(current.current);
     visualPosition?.current.copy(current.current);
-    if (moving) moving.current = progress < 1;
+    if (moving) moving.current = motion ? motion.current.moving : progress < 1;
   }, -1);
   return <group ref={group} name={id} position={current.current}>{children}</group>;
 }

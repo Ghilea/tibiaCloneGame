@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { direction8FromVector } from "./direction8";
+import { direction8FromVector, isometricAtlasDirection } from "./direction8";
 import { MONSTER_SPRITES, monsterSpriteDefinition } from "./monsterSpriteCatalog";
 import { DIRECTIONS } from "./spriteTypes";
-import { castleRatAtlasDirection } from "./CastleRatSprite";
 
 const REQUIRED_IDS = [
   "castle_rat",
@@ -57,17 +56,11 @@ describe("direction8FromVector", () => {
   });
 });
 
-describe("Castle Rat isometric atlas directions", () => {
+describe("isometric atlas direction", () => {
   it.each([
-    ["n", "nw"],
-    ["ne", "w"],
-    ["e", "sw"],
-    ["se", "s"],
-    ["s", "se"],
-    ["sw", "e"],
-    ["w", "ne"],
-    ["nw", "n"],
-  ] as const)("maps world %s to atlas %s", (world, atlas) => {
-    expect(castleRatAtlasDirection(world)).toBe(atlas);
+    ["n", "nw"], ["ne", "w"], ["e", "sw"], ["se", "s"],
+    ["s", "se"], ["sw", "e"], ["w", "ne"], ["nw", "n"],
+  ] as const)("maps world %s to camera-facing atlas row %s", (world, atlas) => {
+    expect(isometricAtlasDirection(world)).toBe(atlas);
   });
 });

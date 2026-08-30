@@ -49,6 +49,9 @@ export class WorldState {
   localCorrectionRevision = 0;
   private listeners = new Set<WorldListener>();
   private visualListeners = new Set<WorldListener>();
+  private batchDepth = 0;
+  private pendingWorldNotification = false;
+  private pendingVisualNotification = false;
   private pendingLocalMoves = new Map<number, Position>();
   private blockedTiles = new Set<string>();
   private doorsByTile = new Map<string, DoorView>();
@@ -67,13 +70,38 @@ export class WorldState {
   }
 
   notify() {
+    if (this.batchDepth > 0) {
+      this.pendingWorldNotification = true;
+      return;
+    }
     this.revision += 1;
     for (const listener of this.listeners) listener();
   }
 
   notifyVisual() {
+    if (this.batchDepth > 0) {
+      this.pendingVisualNotification = true;
+      return;
+    }
     this.visualRevision += 1;
     for (const listener of this.visualListeners) listener();
+  }
+
+  applyBatch(messages: readonly ServerMessage[]) {
+    this.batchDepth += 1;
+    try {
+      for (const message of messages) this.apply(message);
+    } finally {
+      this.batchDepth -= 1;
+      if (this.batchDepth === 0) {
+        const notifyWorld = this.pendingWorldNotification;
+        const notifyVisual = this.pendingVisualNotification;
+        this.pendingWorldNotification = false;
+        this.pendingVisualNotification = false;
+        if (notifyWorld) this.notify();
+        if (notifyVisual) this.notifyVisual();
+      }
+    }
   }
 
   apply(message: ServerMessage) {

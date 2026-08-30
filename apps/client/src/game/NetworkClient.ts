@@ -6,6 +6,8 @@ export class NetworkClient {
   private sequence = 0;
   private pingTimer: number | null = null;
   private attackTimer: number | null = null;
+  private incomingFrame: number | null = null;
+  private incomingMessages: ServerMessage[] = [];
 
   constructor(private world: WorldState) { }
 
@@ -22,10 +24,10 @@ export class NetworkClient {
     this.socket.addEventListener("message", (event) => {
       try {
         const message = JSON.parse(event.data) as ServerMessage;
-        const previousFloor = this.world.localPlayerId ? this.world.players.get(this.world.localPlayerId)?.position.z : undefined;
-        this.world.apply(message);
-        if (message.type === "player_moved" && message.player_id === this.world.localPlayerId && previousFloor !== undefined && previousFloor !== message.position.z) this.clearAttackTarget();
-        if (message.type === "creature_died" && this.world.attackTargetId === null) this.stopAttackTimer();
+        this.incomingMessages.push(message);
+        if (this.incomingFrame === null) {
+          this.incomingFrame = window.requestAnimationFrame(() => this.flushIncomingMessages());
+        }
       }
       catch { this.world.connection = "error"; this.world.notify(); }
     });
@@ -95,8 +97,28 @@ export class NetworkClient {
 
   disconnect() {
     this.clearAttackTarget();
+    if (this.incomingFrame !== null) window.cancelAnimationFrame(this.incomingFrame);
+    this.incomingFrame = null;
+    this.incomingMessages.length = 0;
     this.socket?.close();
     this.socket = null;
+  }
+
+  private flushIncomingMessages() {
+    this.incomingFrame = null;
+    const messages = this.incomingMessages.splice(0);
+    if (messages.length === 0) return;
+    const previousFloor = this.world.localPlayerId
+      ? this.world.players.get(this.world.localPlayerId)?.position.z
+      : undefined;
+    this.world.applyBatch(messages);
+    const currentFloor = this.world.localPlayerId
+      ? this.world.players.get(this.world.localPlayerId)?.position.z
+      : undefined;
+    if (previousFloor !== undefined && currentFloor !== previousFloor) this.clearAttackTarget();
+    if (messages.some((message) => message.type === "creature_died") && this.world.attackTargetId === null) {
+      this.stopAttackTimer();
+    }
   }
 
   private send(message: ClientMessage) {

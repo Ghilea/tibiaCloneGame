@@ -56,6 +56,25 @@ describe("local movement reconciliation", () => {
   });
 });
 
+describe("server message batching", () => {
+  it("coalesces a creature movement burst into one visual update", () => {
+    const world = new WorldState();
+    world.creatures.set("rat-a", { id: "rat-a", definitionId: "castle_rat", name: "Rat A", position: position(1, 1), health: 10, maxHealth: 10, state: "idle", immune: false });
+    world.creatures.set("rat-b", { id: "rat-b", definitionId: "castle_rat", name: "Rat B", position: position(2, 1), health: 10, maxHealth: 10, state: "idle", immune: false });
+    let visualUpdates = 0;
+    world.subscribeVisual(() => { visualUpdates += 1; });
+
+    world.applyBatch([
+      { type: "creature_moved", creature_id: "rat-a", position: position(1, 2) },
+      { type: "creature_moved", creature_id: "rat-b", position: position(2, 2) },
+    ]);
+
+    expect(visualUpdates).toBe(1);
+    expect(world.creatures.get("rat-a")?.position).toEqual(position(1, 2));
+    expect(world.creatures.get("rat-b")?.position).toEqual(position(2, 2));
+  });
+});
+
 describe("authored shutter synchronization", () => {
   it("applies the server state to a window id generated from an editor position", () => {
     const world = new WorldState();

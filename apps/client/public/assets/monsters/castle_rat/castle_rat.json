@@ -35,10 +35,12 @@
   },
   "animations": {
     "idle": {
-      "albedo": "atlases/castle_rat_idle_albedo.webp",
-      "normal": "atlases/castle_rat_idle_normal.webp",
+      "albedo": "atlases/castle_rat_idle_albedo_perf_v2.webp",
+      "normal": "atlases/castle_rat_idle_normal_perf_v2.webp",
       "columns": 12,
       "rows": 8,
+      "frameWidth": 128,
+      "frameHeight": 128,
       "directionRows": {
         "n": 0,
         "ne": 1,
@@ -54,10 +56,12 @@
       "playback": "loop"
     },
     "walk": {
-      "albedo": "atlases/castle_rat_walk_albedo.webp",
-      "normal": "atlases/castle_rat_walk_normal.webp",
+      "albedo": "atlases/castle_rat_walk_albedo_v5.webp",
+      "normal": "atlases/castle_rat_walk_normal_v5.webp",
       "columns": 8,
       "rows": 8,
+      "frameWidth": 192,
+      "frameHeight": 128,
       "directionRows": {
         "n": 0,
         "ne": 1,
@@ -73,10 +77,12 @@
       "playback": "loop"
     },
     "run": {
-      "albedo": "atlases/castle_rat_run_albedo.webp",
-      "normal": "atlases/castle_rat_run_normal.webp",
+      "albedo": "atlases/castle_rat_run_albedo_perf_v2.webp",
+      "normal": "atlases/castle_rat_run_normal_perf_v2.webp",
       "columns": 8,
       "rows": 8,
+      "frameWidth": 128,
+      "frameHeight": 128,
       "directionRows": {
         "n": 0,
         "ne": 1,
@@ -92,10 +98,12 @@
       "playback": "loop"
     },
     "bite": {
-      "albedo": "atlases/castle_rat_bite_albedo.webp",
-      "normal": "atlases/castle_rat_bite_normal.webp",
+      "albedo": "atlases/castle_rat_bite_albedo_perf_v2.webp",
+      "normal": "atlases/castle_rat_bite_normal_perf_v2.webp",
       "columns": 8,
       "rows": 8,
+      "frameWidth": 128,
+      "frameHeight": 128,
       "directionRows": {
         "n": 0,
         "ne": 1,
@@ -112,10 +120,12 @@
       "eventFrame": 4
     },
     "attack": {
-      "albedo": "atlases/castle_rat_attack_albedo.webp",
-      "normal": "atlases/castle_rat_attack_normal.webp",
+      "albedo": "atlases/castle_rat_attack_albedo_perf_v2.webp",
+      "normal": "atlases/castle_rat_attack_normal_perf_v2.webp",
       "columns": 8,
       "rows": 8,
+      "frameWidth": 128,
+      "frameHeight": 128,
       "directionRows": {
         "n": 0,
         "ne": 1,
@@ -132,10 +142,12 @@
       "eventFrame": 4
     },
     "hit": {
-      "albedo": "atlases/castle_rat_hit_albedo.webp",
-      "normal": "atlases/castle_rat_hit_normal.webp",
+      "albedo": "atlases/castle_rat_hit_albedo_perf_v2.webp",
+      "normal": "atlases/castle_rat_hit_normal_perf_v2.webp",
       "columns": 5,
       "rows": 8,
+      "frameWidth": 128,
+      "frameHeight": 128,
       "directionRows": {
         "n": 0,
         "ne": 1,
@@ -151,10 +163,12 @@
       "playback": "once"
     },
     "death": {
-      "albedo": "atlases/castle_rat_death_albedo.webp",
-      "normal": "atlases/castle_rat_death_normal.webp",
+      "albedo": "atlases/castle_rat_death_albedo_perf_v2.webp",
+      "normal": "atlases/castle_rat_death_normal_perf_v2.webp",
       "columns": 10,
       "rows": 8,
+      "frameWidth": 128,
+      "frameHeight": 128,
       "directionRows": {
         "n": 0,
         "ne": 1,
@@ -170,10 +184,12 @@
       "playback": "once"
     },
     "alert": {
-      "albedo": "atlases/castle_rat_alert_albedo.webp",
-      "normal": "atlases/castle_rat_alert_normal.webp",
+      "albedo": "atlases/castle_rat_alert_albedo_perf_v2.webp",
+      "normal": "atlases/castle_rat_alert_normal_perf_v2.webp",
       "columns": 6,
       "rows": 8,
+      "frameWidth": 128,
+      "frameHeight": 128,
       "directionRows": {
         "n": 0,
         "ne": 1,
@@ -189,10 +205,12 @@
       "playback": "once"
     },
     "eat": {
-      "albedo": "atlases/castle_rat_eat_albedo.webp",
-      "normal": "atlases/castle_rat_eat_normal.webp",
+      "albedo": "atlases/castle_rat_eat_albedo_perf_v2.webp",
+      "normal": "atlases/castle_rat_eat_normal_perf_v2.webp",
       "columns": 8,
       "rows": 8,
+      "frameWidth": 128,
+      "frameHeight": 128,
       "directionRows": {
         "n": 0,
         "ne": 1,

@@ -1,97 +1,114 @@
-import { useFrame, useLoader } from "@react-three/fiber";
+import { useFrame, useLoader, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, type MutableRefObject } from "react";
 import * as THREE from "three";
 import { createLitSpriteMaterial } from "../rendering/createLitSpriteMaterial";
+import type { ActorMotionState } from "./actorMotion";
+import { isometricAtlasDirection } from "./direction8";
 import type { Direction8 } from "./spriteTypes";
 
-const ROOT = "/assets/monsters/castle_rat/atlases";
-const DIRECTIONS: Direction8[] = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
+const ROOT = "/assets/monsters/castle_rat";
+const METADATA_URL = `${ROOT}/castle_rat.json`;
+const BASE_CREATURE_SPEED = 1 / 0.185;
 
-// The source art names rows in screen-facing orientation (E points left in the
-// image). Convert world directions through the fixed SE isometric camera so the
-// rat visibly faces the direction in which its ground position moves.
-const ATLAS_DIRECTION_BY_WORLD: Record<Direction8, Direction8> = {
-  n: "nw",
-  ne: "w",
-  e: "sw",
-  se: "s",
-  s: "se",
-  sw: "e",
-  w: "ne",
-  nw: "n",
+type AnimationName = "idle" | "walk" | "run" | "bite" | "attack" | "hit" | "death" | "alert" | "eat";
+type AtlasAnimation = {
+  albedo: string;
+  normal: string;
+  columns: number;
+  rows: number;
+  frameWidth?: number;
+  frameHeight?: number;
+  directionRows: Record<Direction8, number>;
+  framesPerDirection: number;
+  fps: number;
+  playback: "loop" | "once";
+  eventFrame?: number;
+};
+type CastleRatMetadata = {
+  frameWidth: number;
+  frameHeight: number;
+  anchor: { x: number; y: number };
+  animations: Record<AnimationName, AtlasAnimation>;
 };
 
-const ANIMATIONS = {
-  idle: { columns: 12, fps: 10, playback: "loop" },
-  walk: { columns: 8, fps: 12, playback: "loop" },
-  run: { columns: 8, fps: 16, playback: "loop" },
-  bite: { columns: 8, fps: 14, playback: "once" },
-  attack: { columns: 8, fps: 14, playback: "once" },
-  hit: { columns: 5, fps: 14, playback: "once" },
-  death: { columns: 10, fps: 10, playback: "once" },
-  alert: { columns: 6, fps: 10, playback: "once" },
-  eat: { columns: 8, fps: 10, playback: "loop" },
-} as const;
-
-type AnimationName = keyof typeof ANIMATIONS;
-type Playback = (typeof ANIMATIONS)[AnimationName]["playback"];
-
 const textureLoader = new THREE.TextureLoader();
-const loadedAnimationTextures = new Map<AnimationName, Promise<readonly [THREE.Texture, THREE.Texture]>>();
+const loadedTextures = new Map<string, Promise<readonly [THREE.Texture, THREE.Texture]>>();
+const scheduledPrewarms = new Set<string>();
+const uploadedTextures = new WeakSet<THREE.Texture>();
 
-function animationUrls(name: AnimationName): readonly [string, string] {
-  return [
-    `${ROOT}/castle_rat_${name}_albedo.webp`,
-    `${ROOT}/castle_rat_${name}_normal.webp`,
-  ];
+function assetUrl(path: string) {
+  return `${ROOT}/${path}`;
+}
+
+function animationUrls(animation: AtlasAnimation): readonly [string, string] {
+  return [assetUrl(animation.albedo), assetUrl(animation.normal)];
 }
 
 function configureAtlasTexture(texture: THREE.Texture) {
-  // These atlases have no gutters. Mipmaps sample neighbouring frames and make
-  // fragments of another direction appear around the cutout.
   texture.generateMipmaps = false;
   texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
   texture.needsUpdate = true;
 }
 
-function loadAnimationTextures(name: AnimationName) {
-  const cached = loadedAnimationTextures.get(name);
+function loadAnimationTextures(animation: AtlasAnimation) {
+  const urls = animationUrls(animation);
+  const key = urls.join("|");
+  const cached = loadedTextures.get(key);
   if (cached) return cached;
-  const urls = animationUrls(name);
   const loading = Promise.all(urls.map((url) => textureLoader.loadAsync(url))).then((textures) => {
     configureAtlasTexture(textures[0]);
     configureAtlasTexture(textures[1]);
     return textures as unknown as readonly [THREE.Texture, THREE.Texture];
   });
-  loadedAnimationTextures.set(name, loading);
+  loadedTextures.set(key, loading);
   return loading;
 }
 
+function prewarmAnimation(animation: AtlasAnimation, renderer: THREE.WebGLRenderer) {
+  const key = animationUrls(animation).join("|");
+  if (scheduledPrewarms.has(key)) return;
+  scheduledPrewarms.add(key);
+  const run = () => {
+    void loadAnimationTextures(animation).then((textures) => {
+      for (const texture of textures) {
+        if (uploadedTextures.has(texture)) continue;
+        renderer.initTexture(texture);
+        uploadedTextures.add(texture);
+      }
+    }).catch(() => scheduledPrewarms.delete(key));
+  };
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(run, { timeout: 1_500 });
+  } else {
+    window.setTimeout(run, 0);
+  }
+}
+
 type CastleRatSpriteProps = {
-  direction: MutableRefObject<Direction8>;
-  moving: MutableRefObject<boolean>;
+  motion: MutableRefObject<ActorMotionState>;
   state: string;
   health: number;
 };
 
-export function CastleRatSprite({ direction, moving, state, health }: CastleRatSpriteProps) {
-  // Only idle is needed to mount. Other large atlases load on first use instead
-  // of allocating every Castle Rat animation on the GPU at game startup.
-  const idleTextures = useLoader(
-    THREE.TextureLoader,
-    [...animationUrls("idle")],
-  ) as THREE.Texture[];
+export function CastleRatSprite({ motion, state, health }: CastleRatSpriteProps) {
+  const renderer = useThree(({ gl }) => gl);
+  const metadataSource = useLoader(THREE.FileLoader, METADATA_URL) as string;
+  const metadata = useMemo(() => JSON.parse(metadataSource) as CastleRatMetadata, [metadataSource]);
+  const idleAnimation = metadata.animations.idle;
+  const idleTextures = useLoader(THREE.TextureLoader, [...animationUrls(idleAnimation)]) as THREE.Texture[];
   const mesh = useRef<THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>>(null);
   const previousHealth = useRef(health);
-  const requestedOneShot = useRef<AnimationName | null>(null);
+  const previousState = useRef(state);
+  const dead = useRef(health <= 0);
+  const requestedOneShot = useRef<AnimationName | null>(state === "attacking" ? "bite" : null);
   const active = useRef<AnimationName>("idle");
   const frame = useRef(0);
   const elapsed = useRef(0);
   const finished = useRef(false);
   const desiredAnimation = useRef<AnimationName>("idle");
   const loadingAnimation = useRef<AnimationName | null>(null);
-  const lastDirection = useRef<Direction8>(direction.current);
+  const lastDirection = useRef<Direction8>(motion.current.direction);
   const cameraWorldQuaternion = useMemo(() => new THREE.Quaternion(), []);
   const parentWorldQuaternion = useMemo(() => new THREE.Quaternion(), []);
 
@@ -99,26 +116,43 @@ export function CastleRatSprite({ direction, moving, state, health }: CastleRatS
     const width = 0.95;
     const height = 1.05;
     const result = new THREE.PlaneGeometry(width, height);
-    // Metadata anchor is (128, 240) in a 256x256 frame.
-    result.translate(0, (240 / 256 - 0.5) * height, 0);
-    // PlaneGeometry otherwise shows the entire atlas until the first tick.
-    applyFrame(result, "idle", direction.current, 0);
+    result.translate(
+      (0.5 - metadata.anchor.x / metadata.frameWidth) * width,
+      (metadata.anchor.y / metadata.frameHeight - 0.5) * height,
+      0,
+    );
+    applyFrame(result, idleAnimation, motion.current.direction, 0, metadata);
     return result;
-  }, [direction]);
+  }, [idleAnimation, metadata, motion]);
 
   const material = useMemo(() => {
+    const result = createLitSpriteMaterial(idleTextures[0], idleTextures[1], 0.9, 0.35, 0.9);
+    // General materials use mipmaps; atlas cells must not sample neighbours.
     configureAtlasTexture(idleTextures[0]);
     configureAtlasTexture(idleTextures[1]);
-    const idlePair = idleTextures as unknown as readonly [THREE.Texture, THREE.Texture];
-    loadedAnimationTextures.set("idle", Promise.resolve(idlePair));
-    return createLitSpriteMaterial(idleTextures[0], idleTextures[1], 0.9, 0.35, 0.9);
-  }, [idleTextures]);
+    const pair = idleTextures as unknown as readonly [THREE.Texture, THREE.Texture];
+    loadedTextures.set(animationUrls(idleAnimation).join("|"), Promise.resolve(pair));
+    return result;
+  }, [idleAnimation, idleTextures]);
 
   useEffect(() => {
-    if (health < previousHealth.current && health > 0) requestedOneShot.current = "hit";
-    if (health <= 0) requestedOneShot.current = "death";
+    // Decode and upload the common movement atlas between frames instead of
+    // blocking the first frame in which a nearby rat starts walking.
+    prewarmAnimation(metadata.animations.walk, renderer);
+  }, [metadata, renderer]);
+
+  useEffect(() => {
+    if (health <= 0) {
+      dead.current = true;
+      requestedOneShot.current = "death";
+    } else if (health < previousHealth.current) {
+      requestedOneShot.current = "hit";
+    } else if (state === "attacking" && previousState.current !== "attacking") {
+      requestedOneShot.current = "bite";
+    }
     previousHealth.current = health;
-  }, [health]);
+    previousState.current = state;
+  }, [health, state]);
 
   useEffect(() => () => {
     geometry.dispose();
@@ -134,57 +168,59 @@ export function CastleRatSprite({ direction, moving, state, health }: CastleRatS
     actor.quaternion.copy(parentWorldQuaternion).invert().multiply(cameraWorldQuaternion);
 
     let desired: AnimationName;
-    if (requestedOneShot.current) desired = requestedOneShot.current;
-    else if (state === "attacking") desired = "bite";
-    else if (moving.current) desired = state === "returning" ? "run" : "walk";
+    if (dead.current) desired = "death";
+    else if (requestedOneShot.current) desired = requestedOneShot.current;
+    else if (motion.current.moving) desired = "walk";
     else desired = "idle";
     desiredAnimation.current = desired;
 
-    if (desired !== active.current) {
-      if (loadingAnimation.current !== desired) {
-        loadingAnimation.current = desired;
-        void loadAnimationTextures(desired).then(([albedo, normal]) => {
-          if (!mesh.current || desiredAnimation.current !== desired) {
-            if (loadingAnimation.current === desired) loadingAnimation.current = null;
-            return;
-          }
-          material.map = albedo;
-          material.normalMap = normal;
-          // Both maps stay present, so changing the texture does not require a
-          // shader recompile (`material.needsUpdate`) during gameplay.
-          active.current = desired;
-          loadingAnimation.current = null;
-          frame.current = 0;
-          elapsed.current = 0;
-          finished.current = false;
-          applyFrame(mesh.current.geometry, desired, direction.current, 0);
-        });
-      }
+    if (desired !== active.current && loadingAnimation.current !== desired) {
+      loadingAnimation.current = desired;
+      const definition = metadata.animations[desired];
+      void loadAnimationTextures(definition).then(([albedo, normal]) => {
+        if (!mesh.current || desiredAnimation.current !== desired) {
+          if (loadingAnimation.current === desired) loadingAnimation.current = null;
+          return;
+        }
+        material.map = albedo;
+        material.normalMap = normal;
+        material.needsUpdate = true;
+        active.current = desired;
+        loadingAnimation.current = null;
+        frame.current = 0;
+        elapsed.current = 0;
+        finished.current = false;
+        applyFrame(mesh.current.geometry, definition, motion.current.direction, 0, metadata);
+      });
     }
 
-    if (direction.current !== lastDirection.current) {
-      lastDirection.current = direction.current;
-      applyFrame(actor.geometry, active.current, direction.current, frame.current);
+    if (motion.current.direction !== lastDirection.current) {
+      lastDirection.current = motion.current.direction;
+      // Direction change does not reset frame or accumulator.
+      applyFrame(actor.geometry, metadata.animations[active.current], motion.current.direction, frame.current, metadata);
     }
 
-    const definition = ANIMATIONS[active.current] as { columns: number; fps: number; playback: Playback };
+    const definition = metadata.animations[active.current];
     if (finished.current) {
-      requestedOneShot.current = null;
+      if (active.current !== "death") requestedOneShot.current = null;
       return;
     }
 
+    const speedMultiplier = active.current === "walk"
+      ? THREE.MathUtils.clamp(motion.current.speed / BASE_CREATURE_SPEED, 0.75, 1.5)
+      : 1;
     elapsed.current += Math.min(delta, 0.1);
-    const secondsPerFrame = 1 / definition.fps;
+    const secondsPerFrame = 1 / (definition.fps * speedMultiplier);
     while (elapsed.current >= secondsPerFrame) {
       elapsed.current -= secondsPerFrame;
-      if (frame.current + 1 >= definition.columns) {
+      if (frame.current + 1 >= definition.framesPerDirection) {
         if (definition.playback === "loop") frame.current = 0;
         else {
-          frame.current = definition.columns - 1;
+          frame.current = definition.framesPerDirection - 1;
           finished.current = true;
         }
       } else frame.current += 1;
-      applyFrame(actor.geometry, active.current, direction.current, frame.current);
+      applyFrame(actor.geometry, definition, motion.current.direction, frame.current, metadata);
     }
   });
 
@@ -201,30 +237,24 @@ export function CastleRatSprite({ direction, moving, state, health }: CastleRatS
 
 function applyFrame(
   geometry: THREE.PlaneGeometry,
-  animation: AnimationName,
+  animation: AtlasAnimation,
   direction: Direction8,
   frame: number,
+  metadata: CastleRatMetadata,
 ) {
-  const columns = ANIMATIONS[animation].columns;
-  const atlasDirection = castleRatAtlasDirection(direction);
-  const row = DIRECTIONS.indexOf(atlasDirection);
-  // Stay half a texel inside the 256px cell to avoid bilinear sampling across
-  // atlas boundaries. Albedo and normal use the exact same rectangle.
-  const frameSize = 256;
-  const atlasWidth = columns * frameSize;
-  const atlasHeight = DIRECTIONS.length * frameSize;
-  const u0 = (frame * frameSize + 0.5) / atlasWidth;
-  const u1 = ((frame + 1) * frameSize - 0.5) / atlasWidth;
-  const vTop = 1 - (row * frameSize + 0.5) / atlasHeight;
-  const vBottom = 1 - ((row + 1) * frameSize - 0.5) / atlasHeight;
+  const row = animation.directionRows[isometricAtlasDirection(direction)];
+  const frameWidth = animation.frameWidth ?? metadata.frameWidth;
+  const frameHeight = animation.frameHeight ?? metadata.frameHeight;
+  const atlasWidth = animation.columns * frameWidth;
+  const atlasHeight = animation.rows * frameHeight;
+  const u0 = (frame * frameWidth + 0.5) / atlasWidth;
+  const u1 = ((frame + 1) * frameWidth - 0.5) / atlasWidth;
+  const vTop = 1 - (row * frameHeight + 0.5) / atlasHeight;
+  const vBottom = 1 - ((row + 1) * frameHeight - 0.5) / atlasHeight;
   const uv = geometry.attributes.uv as THREE.BufferAttribute;
   uv.setXY(0, u0, vTop);
   uv.setXY(1, u1, vTop);
   uv.setXY(2, u0, vBottom);
   uv.setXY(3, u1, vBottom);
   uv.needsUpdate = true;
-}
-
-export function castleRatAtlasDirection(worldDirection: Direction8): Direction8 {
-  return ATLAS_DIRECTION_BY_WORLD[worldDirection];
 }

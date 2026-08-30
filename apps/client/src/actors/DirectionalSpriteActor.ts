@@ -79,9 +79,8 @@ export class DirectionalSpriteActor extends THREE.Group {
   setDirection(direction: Direction8): void {
     if (this.direction === direction) return;
     this.direction = direction;
-    this.frameCursor = 0;
-    this.frameAccumulator = 0;
-    this.finished = false;
+    // Direction changes select another atlas row at the same locomotion phase.
+    // Restarting here makes curved/diagonal paths appear frozen on frame zero.
     this.applyCurrentFrame();
   }
 
