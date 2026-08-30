@@ -46,6 +46,7 @@ export class WorldState {
   ping = 0;
   revision = 0;
   visualRevision = 0;
+  localCorrectionRevision = 0;
   private listeners = new Set<WorldListener>();
   private visualListeners = new Set<WorldListener>();
   private pendingLocalMoves = new Map<number, Position>();
@@ -91,6 +92,7 @@ export class WorldState {
         this.incomingTrade = null;
         this.trade = null;
         this.pendingLocalMoves.clear();
+        this.localCorrectionRevision = 0;
         for (const player of [...message.players, message.player]) this.players.set(player.id, player);
         this.localPlayerId = message.player.id;
         this.selectedPlayerId = null;
@@ -166,6 +168,7 @@ export class WorldState {
       case "move_rejected": {
         notification = "none";
         if (this.localPlayerId === message.player_id) {
+          this.localCorrectionRevision += 1;
           this.pendingLocalMoves.clear();
           const player = this.players.get(this.localPlayerId);
           if (player && !samePosition(player.position, message.position)) {

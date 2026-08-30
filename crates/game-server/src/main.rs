@@ -25,7 +25,7 @@ use game_types::PlayerView;
 use serde_json::json;
 use tokio::sync::{RwLock, broadcast};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 use world::World;
 use world::WorldEvent;
@@ -1498,8 +1498,10 @@ fn crafting_error_message(code: &str) -> &'static str {
 
 async fn world_loop(state: AppState) {
     let mut interval = tokio::time::interval(Duration::from_millis(250));
+    let mut next_performance_sample = Instant::now();
     loop {
         interval.tick().await;
+        let cycle_started = Instant::now();
         let events = {
             let mut world = state.world.write().await;
             // Only ground items participate in the persistence transaction.
@@ -1522,6 +1524,14 @@ async fn world_loop(state: AppState) {
         };
         dispatch_world_events(&state, events).await;
         process_crafting(&state).await;
+        let cycle_ms = cycle_started.elapsed().as_millis();
+        if cycle_ms >= 200 {
+            warn!(cycle_ms, "slow world cycle");
+        }
+        if Instant::now() >= next_performance_sample {
+            debug!(cycle_ms, "world performance sample");
+            next_performance_sample = Instant::now() + Duration::from_secs(5);
+        }
     }
 }
 

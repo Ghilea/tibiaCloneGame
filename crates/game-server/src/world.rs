@@ -2174,11 +2174,21 @@ impl World {
         }
         let destination = self.map.stair_destination(target).unwrap_or(target);
         let player = self.players.get_mut(&id).expect("checked above");
-        if player.last_move.elapsed() < MOVE_COOLDOWN {
+        let now = Instant::now();
+        let elapsed = now.duration_since(player.last_move);
+        if elapsed < MOVE_COOLDOWN {
             return Err("moving_too_fast");
         }
         player.view.position = destination;
-        player.last_move = Instant::now();
+        // If the world lock briefly delayed networking, permit one genuinely
+        // elapsed buffered step instead of rejecting it and rubberbanding the
+        // client. Never retain more than two step intervals of credit.
+        if elapsed >= MOVE_COOLDOWN * 2 {
+            let credit_floor = now - MOVE_COOLDOWN * 2;
+            player.last_move = (player.last_move + MOVE_COOLDOWN).max(credit_floor);
+        } else {
+            player.last_move = now;
+        }
         Ok(destination)
     }
 
@@ -4455,6 +4465,22 @@ mod tests {
         assert_eq!(
             world.try_move(id, Position { x: 14, y: 8, z: 7 }),
             Err("invalid_step")
+        );
+    }
+
+    #[test]
+    fn movement_accepts_one_step_buffered_behind_a_server_stall() {
+        let id = Uuid::new_v4();
+        let mut world = World::new(catalog(1.0), vec![]);
+        let mut player = test_player(id, 100.0);
+        player.last_move = Instant::now() - MOVE_COOLDOWN * 2;
+        world.insert_player(player);
+
+        assert!(world.try_move(id, Position { x: 11, y: 8, z: 7 }).is_ok());
+        assert!(world.try_move(id, Position { x: 12, y: 8, z: 7 }).is_ok());
+        assert_eq!(
+            world.try_move(id, Position { x: 13, y: 8, z: 7 }),
+            Err("moving_too_fast")
         );
     }
 

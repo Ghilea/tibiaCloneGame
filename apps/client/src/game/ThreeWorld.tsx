@@ -112,6 +112,7 @@ function WorldScene({ world, input }: ThreeWorldProps) {
           player={player}
           local={player.id === world.localPlayerId}
           visualPosition={player.id === world.localPlayerId ? localVisualPosition : undefined}
+          correctionRevision={player.id === world.localPlayerId ? world.localCorrectionRevision : 0}
           selected={player.id === world.selectedPlayerId}
           onClick={(event) => {
             event.stopPropagation();
@@ -493,13 +494,13 @@ function Torch({ position }: { position: Position }) {
 
 type ActorClick = (event: ThreeEvent<MouseEvent>) => void;
 
-type PlayerActorProps = { player: PlayerView; local: boolean; visualPosition?: MutableRefObject<THREE.Vector3>; selected: boolean; onClick: ActorClick; onContextMenu: ActorClick };
+type PlayerActorProps = { player: PlayerView; local: boolean; visualPosition?: MutableRefObject<THREE.Vector3>; correctionRevision: number; selected: boolean; onClick: ActorClick; onContextMenu: ActorClick };
 
-const PlayerActor = memo(function PlayerActor({ player, local, visualPosition, selected, onClick, onContextMenu }: PlayerActorProps) {
+const PlayerActor = memo(function PlayerActor({ player, local, visualPosition, correctionRevision, selected, onClick, onContextMenu }: PlayerActorProps) {
   const kind: CharacterKind = player.vocation === "mage" ? "mage" : player.vocation === "ranger" ? "ranger" : "knight";
   const moving = useRef(false);
   return (
-    <SmoothActor id={player.id} position={player.position} visualPosition={visualPosition} moving={moving}>
+    <SmoothActor id={player.id} position={player.position} visualPosition={visualPosition} moving={moving} correctionRevision={correctionRevision}>
       <group onPointerDown={(event) => event.stopPropagation()} onClick={onClick} onContextMenu={onContextMenu}>
         <SelectionRing active={selected || local} color={local ? "#65b9e8" : "#e2be65"} />
         <AnimatedCharacter kind={kind} position={player.position} moving={moving} />
@@ -595,10 +596,11 @@ function actorPropsEqual(previous: PlayerActorProps, next: PlayerActorProps) {
   return previous.player === next.player
     && previous.local === next.local
     && previous.visualPosition === next.visualPosition
+    && previous.correctionRevision === next.correctionRevision
     && previous.selected === next.selected;
 }
 
-function SmoothActor({ id, position, visualPosition, moving, children }: { id: string; position: Position; visualPosition?: MutableRefObject<THREE.Vector3>; moving?: MutableRefObject<boolean>; children: React.ReactNode }) {
+function SmoothActor({ id, position, visualPosition, moving, correctionRevision = 0, children }: { id: string; position: Position; visualPosition?: MutableRefObject<THREE.Vector3>; moving?: MutableRefObject<boolean>; correctionRevision?: number; children: React.ReactNode }) {
   const group = useRef<THREE.Group>(null);
   const current = useRef(new THREE.Vector3(position.x + 0.5, 0.05, position.y + 0.5));
   const segmentStart = useRef(current.current.clone());
@@ -606,6 +608,7 @@ function SmoothActor({ id, position, visualPosition, moving, children }: { id: s
   const segmentStartedAt = useRef(performance.now());
   const segmentDurationMs = useRef(170);
   const lastTargetAt = useRef(performance.now());
+  const lastCorrectionRevision = useRef(correctionRevision);
   const target = useMemo(() => new THREE.Vector3(position.x + 0.5, 0.05, position.y + 0.5), [position.x, position.y]);
   useLayoutEffect(() => {
     if (target.equals(segmentTarget.current)) return;
@@ -613,7 +616,9 @@ function SmoothActor({ id, position, visualPosition, moving, children }: { id: s
     const dx = target.x - segmentTarget.current.x;
     const dz = target.z - segmentTarget.current.z;
     const distance = current.current.distanceTo(target);
-    if (Math.abs(dx) + Math.abs(dz) > 0.01 && group.current) group.current.rotation.y = Math.atan2(dx, dz);
+    const correcting = correctionRevision !== lastCorrectionRevision.current;
+    lastCorrectionRevision.current = correctionRevision;
+    if (!correcting && Math.abs(dx) + Math.abs(dz) > 0.01 && group.current) group.current.rotation.y = Math.atan2(dx, dz);
     if (distance > 3) {
       current.current.copy(target);
       segmentStart.current.copy(target);
@@ -628,7 +633,7 @@ function SmoothActor({ id, position, visualPosition, moving, children }: { id: s
       segmentDurationMs.current = actorSegmentDuration(now - lastTargetAt.current);
     }
     lastTargetAt.current = now;
-  }, [target, visualPosition]);
+  }, [target, visualPosition, correctionRevision]);
   useFrame(() => {
     if (!group.current) return;
     const progress = THREE.MathUtils.clamp((performance.now() - segmentStartedAt.current) / segmentDurationMs.current, 0, 1);
