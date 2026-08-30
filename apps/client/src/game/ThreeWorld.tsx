@@ -54,6 +54,7 @@ export function ThreeWorld({ world, input, onReady }: ThreeWorldProps) {
     >
       <Suspense fallback={null}>
         <WorldScene world={world} input={input} />
+        <ClientPerformanceMonitor />
         <SceneReady onReady={onReady} />
       </Suspense>
     </Canvas>
@@ -647,10 +648,11 @@ function SmoothActor({ id, position, visualPosition, moving, correctionRevision 
 
 export function actorSegmentDuration(updateIntervalMs: number) {
   const cadence = updateIntervalMs >= 70 && updateIntervalMs <= 600 ? updateIntervalMs : CLIENT_STEP_MS;
-  // Finish each visual step just before the next logical step. Letting the
-  // interpolation overlap the following tile made the actor trail collision
-  // by roughly half a tile, so walls appeared visually displaced.
-  return THREE.MathUtils.clamp(cadence * 0.96, 145, 300);
+  // Keep a small visual buffer beyond the expected logical update. Finishing
+  // early made the actor stop for a few milliseconds on every tile, and a
+  // delayed browser timer made that pause much more visible. The overlap is
+  // deliberately small enough that collision still appears aligned.
+  return THREE.MathUtils.clamp(Math.max(185, cadence * 1.08), 185, 650);
 }
 
 function SelectionRing({ active, color }: { active: boolean; color: string }) {
@@ -742,11 +744,13 @@ function OcclusionController({ target, visualTarget, sceneRevision }: { target?:
   const targetPoint = useMemo(() => new THREE.Vector3(), []);
   const direction = useMemo(() => new THREE.Vector3(), []);
   const next = useMemo(() => new Set<THREE.Material>(), []);
+  const occluders = useRef<THREE.Object3D[]>([]);
   useLayoutEffect(() => {
     // Compile occluders for transparency while a streamed region is being
     // prepared. Switching material defines only when the player reaches a
     // wall causes a visible one-frame hitch on many GPUs.
-    for (const root of collectOccluderRoots(scene)) root.traverse((node) => {
+    occluders.current = collectOccluderRoots(scene);
+    for (const root of occluders.current) root.traverse((node) => {
       if (!(node instanceof THREE.Mesh)) return;
       const materials = Array.isArray(node.material) ? node.material : [node.material];
       for (const material of materials) {
@@ -770,8 +774,7 @@ function OcclusionController({ target, visualTarget, sceneRevision }: { target?:
       const targetDistance = direction.length();
       raycaster.set(camera.position, direction.normalize());
       raycaster.far = Math.max(0, targetDistance - 0.35);
-      const occluders = collectOccluderRoots(scene);
-      for (const hit of raycaster.intersectObjects(occluders, true)) {
+      for (const hit of raycaster.intersectObjects(occluders.current, true)) {
         let node: THREE.Object3D | null = hit.object;
         while (node && !node.userData.occluder) node = node.parent;
         if (node?.userData.occluder) roots.add(node);
@@ -820,6 +823,9 @@ function Atmosphere({ torches, local }: { torches: readonly Position[]; local?: 
   const { scene } = useThree();
   const sun = useRef<THREE.DirectionalLight>(null);
   const ambient = useRef<THREE.HemisphereLight>(null);
+  const nightSky = useMemo(() => new THREE.Color("#101924"), []);
+  const daySky = useMemo(() => new THREE.Color("#9fb7b0"), []);
+  const sky = useMemo(() => new THREE.Color(), []);
   const activeTorches = useMemo(() => {
     if (!local) return torches.slice(0, 10);
     return [...torches].sort((a, b) => distanceSquared(a, local) - distanceSquared(b, local)).slice(0, 10);
@@ -833,7 +839,7 @@ function Atmosphere({ torches, local }: { torches: readonly Position[]; local?: 
     const daylight = (Math.cos(cycle * Math.PI * 2 - Math.PI) + 1) / 2;
     if (sun.current) sun.current.intensity = 0.18 + daylight * 2.1;
     if (ambient.current) ambient.current.intensity = 0.22 + daylight * 0.85;
-    const sky = new THREE.Color().lerpColors(new THREE.Color("#101924"), new THREE.Color("#9fb7b0"), daylight);
+    sky.lerpColors(nightSky, daySky, daylight);
     scene.background = sky;
   });
   return (
@@ -843,6 +849,30 @@ function Atmosphere({ torches, local }: { torches: readonly Position[]; local?: 
       {activeTorches.map((torch) => <pointLight key={tileKey(torch)} position={[torch.x + 0.5, 1.55, torch.y + 0.5]} color="#ff6a24" intensity={5.4} distance={6.1} decay={2} />)}
     </>
   );
+}
+
+function ClientPerformanceMonitor() {
+  const { gl } = useThree();
+  const sample = useRef({ elapsed: 0, frames: 0, totalMs: 0, maxMs: 0 });
+  useFrame((_, delta) => {
+    if (document.hidden || delta > 0.5) {
+      sample.current = { elapsed: 0, frames: 0, totalMs: 0, maxMs: 0 };
+      return;
+    }
+    const frameMs = delta * 1_000;
+    const current = sample.current;
+    current.elapsed += delta;
+    current.frames += 1;
+    current.totalMs += frameMs;
+    current.maxMs = Math.max(current.maxMs, frameMs);
+    if (current.elapsed < 5) return;
+    const averageMs = current.totalMs / Math.max(1, current.frames);
+    console.info(
+      `client performance sample: avg=${averageMs.toFixed(1)}ms max=${current.maxMs.toFixed(1)}ms fps=${(1_000 / averageMs).toFixed(0)} calls=${gl.info.render.calls} triangles=${gl.info.render.triangles}`,
+    );
+    sample.current = { elapsed: 0, frames: 0, totalMs: 0, maxMs: 0 };
+  });
+  return null;
 }
 
 function Weather({ local, floor }: { local?: Position; floor: number }) {

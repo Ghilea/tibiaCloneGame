@@ -32,6 +32,7 @@ const EMPTY_CORPSE_DECAY: Duration = Duration::from_secs(10);
 const MANA_REGEN_INTERVAL: Duration = Duration::from_secs(2);
 const CREATURE_AGGRO_RANGE: i32 = 6;
 const CREATURE_LEASH_RANGE: i32 = 8;
+const CREATURE_SIMULATION_RANGE: i32 = 18;
 const CREATURE_UNREACHABLE_TIMEOUT: Duration = Duration::from_millis(1_500);
 const MAX_WORLD_DIMENSION: i32 = 16_384;
 static BLOCKED_TILE_SET: OnceLock<HashSet<Position>> = OnceLock::new();
@@ -1055,6 +1056,7 @@ pub struct World {
     content: ContentCatalog,
     creatures: HashMap<EntityId, Creature>,
     spawns: Vec<Spawn>,
+    spawn_chunks: HashMap<MapChunkKey, Vec<usize>>,
     trades: HashMap<EntityId, TradeSession>,
     npcs: Vec<NpcView>,
     doors: HashMap<String, DoorView>,
@@ -1266,6 +1268,7 @@ impl World {
                     },
                 ]
             }),
+            spawn_chunks: HashMap::new(),
             trades: HashMap::new(),
             doors,
             windows,
@@ -1275,6 +1278,17 @@ impl World {
         world.npcs.retain(|npc| {
             world.map.is_walkable(npc.position) && npc.position != world.map.player_spawn
         });
+        for (index, spawn) in world.spawns.iter().enumerate() {
+            world
+                .spawn_chunks
+                .entry((
+                    spawn.position.z,
+                    spawn.position.x.div_euclid(MAP_STREAM_CHUNK_SIZE),
+                    spawn.position.y.div_euclid(MAP_STREAM_CHUNK_SIZE),
+                ))
+                .or_default()
+                .push(index);
+        }
         for index in 0..world.spawns.len() {
             world.spawn(index);
         }
@@ -3083,7 +3097,8 @@ impl World {
             self.ground_decay.retain(|id, _| !expired.contains(id));
             events.push(WorldEvent::GroundItemsChanged(self.ground_items.clone()));
         }
-        for index in 0..self.spawns.len() {
+        let simulated_spawns = self.simulated_spawn_indices();
+        for &index in &simulated_spawns {
             if self.spawns[index].active_id.is_none()
                 && self.spawns[index].respawn_at <= Instant::now()
                 && let Some(view) = self.spawn(index)
@@ -3091,7 +3106,20 @@ impl World {
                 events.push(WorldEvent::CreatureSpawned(view));
             }
         }
-        let creature_ids: Vec<_> = self.creatures.keys().copied().collect();
+        let mut creature_ids: HashSet<_> = simulated_spawns
+            .iter()
+            .filter_map(|index| self.spawns[*index].active_id)
+            .collect();
+        creature_ids.extend(
+            self.creatures
+                .values()
+                .filter(|creature| {
+                    creature.state != CreatureState::Idle
+                        || creature.target.is_some()
+                        || creature.pending_attack.is_some()
+                })
+                .map(|creature| creature.view.id),
+        );
         for creature_id in creature_ids {
             let Some(snapshot) = self.creatures.get(&creature_id).cloned() else {
                 continue;
@@ -3286,6 +3314,32 @@ impl World {
             }
         }
         events
+    }
+
+    fn simulated_spawn_indices(&self) -> HashSet<usize> {
+        let mut indices = HashSet::new();
+        for player in self.players.values() {
+            let position = player.view.position;
+            let min_chunk_x =
+                (position.x - CREATURE_SIMULATION_RANGE).div_euclid(MAP_STREAM_CHUNK_SIZE);
+            let max_chunk_x =
+                (position.x + CREATURE_SIMULATION_RANGE).div_euclid(MAP_STREAM_CHUNK_SIZE);
+            let min_chunk_y =
+                (position.y - CREATURE_SIMULATION_RANGE).div_euclid(MAP_STREAM_CHUNK_SIZE);
+            let max_chunk_y =
+                (position.y + CREATURE_SIMULATION_RANGE).div_euclid(MAP_STREAM_CHUNK_SIZE);
+            for chunk_y in min_chunk_y..=max_chunk_y {
+                for chunk_x in min_chunk_x..=max_chunk_x {
+                    if let Some(chunk) = self.spawn_chunks.get(&(position.z, chunk_x, chunk_y)) {
+                        indices.extend(chunk.iter().copied().filter(|index| {
+                            tile_distance(self.spawns[*index].position, position)
+                                <= CREATURE_SIMULATION_RANGE
+                        }));
+                    }
+                }
+            }
+        }
+        indices
     }
 
     fn apply_creature_damage(
