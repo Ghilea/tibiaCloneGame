@@ -1,0 +1,30 @@
+{
+  "id": "castle_rat",
+  "directions": [
+    "n",
+    "ne",
+    "e",
+    "se",
+    "s",
+    "sw",
+    "w",
+    "nw"
+  ],
+  "animations": [
+    "idle",
+    "walk",
+    "run",
+    "bite",
+    "attack",
+    "hit",
+    "death",
+    "alert",
+    "eat"
+  ],
+  "requiredOutputs": [
+    "castle_rat_albedo.webp",
+    "castle_rat_normal.webp",
+    "castle_rat.json"
+  ],
+  "notes": "All animation directions must keep the same foot anchor and canvas dimensions."
+}

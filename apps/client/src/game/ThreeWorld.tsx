@@ -11,6 +11,9 @@ import type {
   Position,
   WindowView,
 } from "../protocol";
+import { CastleRatSprite } from "../actors/CastleRatSprite";
+import { direction8FromVector } from "../actors/direction8";
+import type { Direction8 } from "../actors/spriteTypes";
 import { AnimatedCharacter, type CharacterKind } from "./AnimatedCharacter";
 import { CreatureModel } from "./CreatureModels";
 import { CLIENT_STEP_MS, InputController } from "./InputController";
@@ -26,7 +29,11 @@ const WALL_HEIGHT = 3.2;
 const CASTLE_HEIGHT = 4.1;
 const DOOR_HEIGHT = 2.2;
 const CAMERA_ZOOM = 135;
-const RENDER_CHUNK_SIZE = 16;
+// The server already streams a radius-48 region. Rebuilding the entire static
+// Three.js scene every 16 walked tiles caused a visible main-thread/GPU hitch.
+// A 64-tile render chunk consumes the already available streamed payload and
+// keeps the default 56x38 map stable for its full lifetime.
+const RENDER_CHUNK_SIZE = 64;
 const RENDER_PADDING = 20;
 
 type ThreeWorldProps = {
@@ -559,12 +566,15 @@ type CreatureActorProps = { creature: CreatureView; selected: boolean; onClick: 
 
 const CreatureActor = memo(function CreatureActor({ creature, selected, onClick, onContextMenu }: CreatureActorProps) {
   const moving = useRef(false);
+  const direction = useRef<Direction8>("s");
   return (
-    <SmoothActor id={creature.id} position={creature.position} moving={moving}>
+    <SmoothActor id={creature.id} position={creature.position} moving={moving} direction={direction}>
       <group onPointerDown={(event) => event.stopPropagation()} onClick={onClick} onContextMenu={onContextMenu}>
         <SelectionRing active={selected} color="#dc594c" />
         <TargetMarker active={selected} />
-        <CreatureModel definitionId={creature.definitionId} immune={creature.immune} moving={moving} />
+        {creature.definitionId === "castle_rat"
+          ? <CastleRatSprite direction={direction} moving={moving} state={creature.state} health={creature.health} />
+          : <CreatureModel definitionId={creature.definitionId} immune={creature.immune} moving={moving} />}
       </group>
     </SmoothActor>
   );
@@ -601,7 +611,7 @@ function actorPropsEqual(previous: PlayerActorProps, next: PlayerActorProps) {
     && previous.selected === next.selected;
 }
 
-function SmoothActor({ id, position, visualPosition, moving, correctionRevision = 0, children }: { id: string; position: Position; visualPosition?: MutableRefObject<THREE.Vector3>; moving?: MutableRefObject<boolean>; correctionRevision?: number; children: React.ReactNode }) {
+function SmoothActor({ id, position, visualPosition, moving, direction, correctionRevision = 0, children }: { id: string; position: Position; visualPosition?: MutableRefObject<THREE.Vector3>; moving?: MutableRefObject<boolean>; direction?: MutableRefObject<Direction8>; correctionRevision?: number; children: React.ReactNode }) {
   const group = useRef<THREE.Group>(null);
   const current = useRef(new THREE.Vector3(position.x + 0.5, 0.05, position.y + 0.5));
   const segmentStart = useRef(current.current.clone());
@@ -619,6 +629,9 @@ function SmoothActor({ id, position, visualPosition, moving, correctionRevision 
     const distance = current.current.distanceTo(target);
     const correcting = correctionRevision !== lastCorrectionRevision.current;
     lastCorrectionRevision.current = correctionRevision;
+    if (!correcting && Math.abs(dx) + Math.abs(dz) > 0.01 && direction) {
+      direction.current = direction8FromVector(dx, dz, direction.current);
+    }
     if (!correcting && Math.abs(dx) + Math.abs(dz) > 0.01 && group.current) group.current.rotation.y = Math.atan2(dx, dz);
     if (distance > 3) {
       current.current.copy(target);
@@ -738,19 +751,22 @@ function FollowCamera({ target, visualTarget, mapWidth, mapHeight }: { target?: 
 
 function OcclusionController({ target, visualTarget, sceneRevision }: { target?: Position; visualTarget: MutableRefObject<THREE.Vector3>; sceneRevision: MapView }) {
   const { camera, scene } = useThree();
-  const raycaster = useMemo(() => new THREE.Raycaster(), []);
+  const ray = useMemo(() => new THREE.Ray(), []);
   const faded = useRef(new Map<THREE.Material, number>());
   const lastCheckAt = useRef(0);
+  const lastCheckedTarget = useMemo(() => new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN), []);
   const targetPoint = useMemo(() => new THREE.Vector3(), []);
   const direction = useMemo(() => new THREE.Vector3(), []);
+  const intersection = useMemo(() => new THREE.Vector3(), []);
   const next = useMemo(() => new Set<THREE.Material>(), []);
-  const occluders = useRef<THREE.Object3D[]>([]);
+  const occluders = useRef<OccluderBounds[]>([]);
   useLayoutEffect(() => {
     // Compile occluders for transparency while a streamed region is being
     // prepared. Switching material defines only when the player reaches a
     // wall causes a visible one-frame hitch on many GPUs.
-    occluders.current = collectOccluderRoots(scene);
-    for (const root of occluders.current) root.traverse((node) => {
+    occluders.current = collectOccluderBounds(scene);
+    lastCheckedTarget.set(Number.NaN, Number.NaN, Number.NaN);
+    for (const { root } of occluders.current) root.traverse((node) => {
       if (!(node instanceof THREE.Mesh)) return;
       const materials = Array.isArray(node.material) ? node.material : [node.material];
       for (const material of materials) {
@@ -762,23 +778,24 @@ function OcclusionController({ target, visualTarget, sceneRevision }: { target?:
     });
   }, [scene, sceneRevision]);
   useFrame(({ clock }) => {
-    if (clock.elapsedTime - lastCheckAt.current < 0.075) return;
+    if (!target || clock.elapsedTime - lastCheckAt.current < 0.15) return;
+    const rendered = visualTarget.current;
+    const x = Number.isFinite(rendered.x) ? rendered.x : target.x + 0.5;
+    const z = Number.isFinite(rendered.z) ? rendered.z : target.y + 0.5;
+    targetPoint.set(x, 1.05, z);
+    // Camera and target are fixed while idle, so repeating the same broad
+    // raycast only steals time from rendering.
+    if (Number.isFinite(lastCheckedTarget.x) && lastCheckedTarget.distanceToSquared(targetPoint) < 0.0064) return;
     lastCheckAt.current = clock.elapsedTime;
+    lastCheckedTarget.copy(targetPoint);
+
     const roots = new Set<THREE.Object3D>();
-    if (target) {
-      const rendered = visualTarget.current;
-      const x = Number.isFinite(rendered.x) ? rendered.x : target.x + 0.5;
-      const z = Number.isFinite(rendered.z) ? rendered.z : target.y + 0.5;
-      targetPoint.set(x, 1.05, z);
-      direction.copy(targetPoint).sub(camera.position);
-      const targetDistance = direction.length();
-      raycaster.set(camera.position, direction.normalize());
-      raycaster.far = Math.max(0, targetDistance - 0.35);
-      for (const hit of raycaster.intersectObjects(occluders.current, true)) {
-        let node: THREE.Object3D | null = hit.object;
-        while (node && !node.userData.occluder) node = node.parent;
-        if (node?.userData.occluder) roots.add(node);
-      }
+    direction.copy(targetPoint).sub(camera.position);
+    const targetDistance = Math.max(0, direction.length() - 0.35);
+    ray.set(camera.position, direction.normalize());
+    for (const { root, bounds } of occluders.current) {
+      const hit = ray.intersectBox(bounds, intersection);
+      if (hit && hit.distanceTo(camera.position) < targetDistance) roots.add(root);
     }
     next.clear();
     for (const root of roots) root.traverse((node) => {
@@ -806,11 +823,14 @@ function OcclusionController({ target, visualTarget, sceneRevision }: { target?:
   return null;
 }
 
-function collectOccluderRoots(scene: THREE.Scene) {
-  const roots: THREE.Object3D[] = [];
+type OccluderBounds = { root: THREE.Object3D; bounds: THREE.Box3 };
+
+function collectOccluderBounds(scene: THREE.Scene) {
+  const roots: OccluderBounds[] = [];
   const visit = (node: THREE.Object3D) => {
     if (node.userData.occluder) {
-      roots.push(node);
+      const bounds = new THREE.Box3().setFromObject(node);
+      if (!bounds.isEmpty()) roots.push({ root: node, bounds });
       return;
     }
     node.children.forEach(visit);

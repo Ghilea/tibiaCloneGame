@@ -552,15 +552,20 @@ async fn session(mut socket: WebSocket, state: AppState) {
                         let next_region = world_region_key(position);
                         if next_region != streamed_region {
                             let world = state.world.read().await;
-                            let message = ServerMessage::WorldRegion {
-                                map: world.map_view_near(position, WORLD_REGION_RADIUS),
-                                ground_items: world
-                                    .ground_items_near(position, WORLD_REGION_RADIUS),
-                                creatures: world.creature_views_near(position, WORLD_REGION_RADIUS),
-                                npcs: world.npc_views_near(position, WORLD_REGION_RADIUS),
-                            };
+                            let message = world
+                                .requires_region_streaming(WORLD_REGION_RADIUS)
+                                .then(|| ServerMessage::WorldRegion {
+                                    map: world.map_view_near(position, WORLD_REGION_RADIUS),
+                                    ground_items: world
+                                        .ground_items_near(position, WORLD_REGION_RADIUS),
+                                    creatures: world
+                                        .creature_views_near(position, WORLD_REGION_RADIUS),
+                                    npcs: world.npc_views_near(position, WORLD_REGION_RADIUS),
+                                });
                             drop(world);
-                            state.private(id, message);
+                            if let Some(message) = message {
+                                state.private(id, message);
+                            }
                             streamed_region = next_region;
                         }
                     }

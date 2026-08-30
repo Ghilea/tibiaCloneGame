@@ -1,0 +1,211 @@
+{
+  "id": "castle_rat",
+  "displayName": "Castle Rat",
+  "version": "2d-sprite-v1",
+  "rendering": "Three.js PlaneGeometry + MeshStandardMaterial",
+  "directions": [
+    "n",
+    "ne",
+    "e",
+    "se",
+    "s",
+    "sw",
+    "w",
+    "nw"
+  ],
+  "frameWidth": 256,
+  "frameHeight": 256,
+  "anchor": {
+    "x": 128,
+    "y": 240
+  },
+  "worldAnchor": "between hind feet / ground contact",
+  "dynamicLighting": {
+    "enabled": true,
+    "normalMaps": "per-animation atlas, exact same layout as albedo",
+    "material": {
+      "type": "MeshStandardMaterial",
+      "roughness": 0.9,
+      "metalness": 0,
+      "alphaTest": 0.35,
+      "transparent": false,
+      "depthTest": true,
+      "depthWrite": true
+    }
+  },
+  "animations": {
+    "idle": {
+      "albedo": "atlases/castle_rat_idle_albedo.webp",
+      "normal": "atlases/castle_rat_idle_normal.webp",
+      "columns": 12,
+      "rows": 8,
+      "directionRows": {
+        "n": 0,
+        "ne": 1,
+        "e": 2,
+        "se": 3,
+        "s": 4,
+        "sw": 5,
+        "w": 6,
+        "nw": 7
+      },
+      "framesPerDirection": 12,
+      "fps": 10,
+      "playback": "loop"
+    },
+    "walk": {
+      "albedo": "atlases/castle_rat_walk_albedo.webp",
+      "normal": "atlases/castle_rat_walk_normal.webp",
+      "columns": 8,
+      "rows": 8,
+      "directionRows": {
+        "n": 0,
+        "ne": 1,
+        "e": 2,
+        "se": 3,
+        "s": 4,
+        "sw": 5,
+        "w": 6,
+        "nw": 7
+      },
+      "framesPerDirection": 8,
+      "fps": 12,
+      "playback": "loop"
+    },
+    "run": {
+      "albedo": "atlases/castle_rat_run_albedo.webp",
+      "normal": "atlases/castle_rat_run_normal.webp",
+      "columns": 8,
+      "rows": 8,
+      "directionRows": {
+        "n": 0,
+        "ne": 1,
+        "e": 2,
+        "se": 3,
+        "s": 4,
+        "sw": 5,
+        "w": 6,
+        "nw": 7
+      },
+      "framesPerDirection": 8,
+      "fps": 16,
+      "playback": "loop"
+    },
+    "bite": {
+      "albedo": "atlases/castle_rat_bite_albedo.webp",
+      "normal": "atlases/castle_rat_bite_normal.webp",
+      "columns": 8,
+      "rows": 8,
+      "directionRows": {
+        "n": 0,
+        "ne": 1,
+        "e": 2,
+        "se": 3,
+        "s": 4,
+        "sw": 5,
+        "w": 6,
+        "nw": 7
+      },
+      "framesPerDirection": 8,
+      "fps": 14,
+      "playback": "once",
+      "eventFrame": 4
+    },
+    "attack": {
+      "albedo": "atlases/castle_rat_attack_albedo.webp",
+      "normal": "atlases/castle_rat_attack_normal.webp",
+      "columns": 8,
+      "rows": 8,
+      "directionRows": {
+        "n": 0,
+        "ne": 1,
+        "e": 2,
+        "se": 3,
+        "s": 4,
+        "sw": 5,
+        "w": 6,
+        "nw": 7
+      },
+      "framesPerDirection": 8,
+      "fps": 14,
+      "playback": "once",
+      "eventFrame": 4
+    },
+    "hit": {
+      "albedo": "atlases/castle_rat_hit_albedo.webp",
+      "normal": "atlases/castle_rat_hit_normal.webp",
+      "columns": 5,
+      "rows": 8,
+      "directionRows": {
+        "n": 0,
+        "ne": 1,
+        "e": 2,
+        "se": 3,
+        "s": 4,
+        "sw": 5,
+        "w": 6,
+        "nw": 7
+      },
+      "framesPerDirection": 5,
+      "fps": 14,
+      "playback": "once"
+    },
+    "death": {
+      "albedo": "atlases/castle_rat_death_albedo.webp",
+      "normal": "atlases/castle_rat_death_normal.webp",
+      "columns": 10,
+      "rows": 8,
+      "directionRows": {
+        "n": 0,
+        "ne": 1,
+        "e": 2,
+        "se": 3,
+        "s": 4,
+        "sw": 5,
+        "w": 6,
+        "nw": 7
+      },
+      "framesPerDirection": 10,
+      "fps": 10,
+      "playback": "once"
+    },
+    "alert": {
+      "albedo": "atlases/castle_rat_alert_albedo.webp",
+      "normal": "atlases/castle_rat_alert_normal.webp",
+      "columns": 6,
+      "rows": 8,
+      "directionRows": {
+        "n": 0,
+        "ne": 1,
+        "e": 2,
+        "se": 3,
+        "s": 4,
+        "sw": 5,
+        "w": 6,
+        "nw": 7
+      },
+      "framesPerDirection": 6,
+      "fps": 10,
+      "playback": "once"
+    },
+    "eat": {
+      "albedo": "atlases/castle_rat_eat_albedo.webp",
+      "normal": "atlases/castle_rat_eat_normal.webp",
+      "columns": 8,
+      "rows": 8,
+      "directionRows": {
+        "n": 0,
+        "ne": 1,
+        "e": 2,
+        "se": 3,
+        "s": 4,
+        "sw": 5,
+        "w": 6,
+        "nw": 7
+      },
+      "framesPerDirection": 8,
+      "fps": 10,
+      "playback": "loop"
+    }
+  }
+}

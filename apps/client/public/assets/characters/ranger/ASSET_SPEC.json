@@ -1,0 +1,27 @@
+{
+  "id": "ranger",
+  "source": "Existing KayKit runtime GLB used only as offline bake source",
+  "directions": [
+    "n",
+    "ne",
+    "e",
+    "se",
+    "s",
+    "sw",
+    "w",
+    "nw"
+  ],
+  "minimumAnimations": [
+    "idle",
+    "walk",
+    "run",
+    "attack",
+    "hit",
+    "death"
+  ],
+  "requiredOutputs": [
+    "ranger_albedo.webp",
+    "ranger_normal.webp",
+    "ranger.json"
+  ]
+}

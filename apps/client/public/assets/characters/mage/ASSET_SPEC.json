@@ -1,0 +1,27 @@
+{
+  "id": "mage",
+  "source": "Existing KayKit runtime GLB used only as offline bake source",
+  "directions": [
+    "n",
+    "ne",
+    "e",
+    "se",
+    "s",
+    "sw",
+    "w",
+    "nw"
+  ],
+  "minimumAnimations": [
+    "idle",
+    "walk",
+    "run",
+    "attack",
+    "hit",
+    "death"
+  ],
+  "requiredOutputs": [
+    "mage_albedo.webp",
+    "mage_normal.webp",
+    "mage.json"
+  ]
+}

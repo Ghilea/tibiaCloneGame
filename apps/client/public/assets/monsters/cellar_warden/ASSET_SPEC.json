@@ -1,0 +1,29 @@
+{
+  "id": "cellar_warden",
+  "directions": [
+    "n",
+    "ne",
+    "e",
+    "se",
+    "s",
+    "sw",
+    "w",
+    "nw"
+  ],
+  "animations": [
+    "idle",
+    "walk",
+    "run",
+    "heavyAttack",
+    "groundSlam",
+    "roar",
+    "hit",
+    "death"
+  ],
+  "requiredOutputs": [
+    "cellar_warden_albedo.webp",
+    "cellar_warden_normal.webp",
+    "cellar_warden.json"
+  ],
+  "notes": "All animation directions must keep the same foot anchor and canvas dimensions."
+}

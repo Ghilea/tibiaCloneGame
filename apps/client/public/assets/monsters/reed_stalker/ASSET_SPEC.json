@@ -1,0 +1,29 @@
+{
+  "id": "reed_stalker",
+  "directions": [
+    "n",
+    "ne",
+    "e",
+    "se",
+    "s",
+    "sw",
+    "w",
+    "nw"
+  ],
+  "animations": [
+    "idle",
+    "walk",
+    "run",
+    "attack",
+    "rootAttack",
+    "hit",
+    "death",
+    "alert"
+  ],
+  "requiredOutputs": [
+    "reed_stalker_albedo.webp",
+    "reed_stalker_normal.webp",
+    "reed_stalker.json"
+  ],
+  "notes": "All animation directions must keep the same foot anchor and canvas dimensions."
+}
