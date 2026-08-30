@@ -38,6 +38,7 @@ struct CharacterRow {
     position_x: i32,
     position_y: i32,
     position_z: i16,
+    spawn_initialized: bool,
 }
 type GroundItemRow = (
     EntityId,
@@ -84,6 +85,7 @@ pub struct CharacterRecord {
     pub magic_level: i32,
     pub magic_tries: i32,
     pub position: Position,
+    pub spawn_initialized: bool,
 }
 
 impl Database {
@@ -150,7 +152,7 @@ impl Database {
         account_id: EntityId,
     ) -> Result<Vec<CharacterRecord>, sqlx::Error> {
         let rows: Vec<CharacterRow> = sqlx::query_as(
-            "SELECT id, account_id, name, vocation, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z \
+            "SELECT id, account_id, name, vocation, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized \
              FROM characters WHERE account_id = $1 ORDER BY created_at, name",
         )
         .bind(account_id)
@@ -164,14 +166,15 @@ impl Database {
         account_id: EntityId,
         name: &str,
         vocation: &str,
+        position: Position,
     ) -> Result<CharacterRecord, sqlx::Error> {
         let profile = game_types::playable_vocation(vocation)
             .ok_or_else(|| sqlx::Error::Protocol("invalid vocation".into()))?;
         let id = uuid::Uuid::new_v4();
         let mut transaction = self.pool.begin().await?;
         let row: CharacterRow = sqlx::query_as(
-            "INSERT INTO characters (id, account_id, name, vocation, health, mana, max_mana, sword_skill, distance_skill, magic_level) VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9) \
-             RETURNING id, account_id, name, vocation, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z",
+            "INSERT INTO characters (id, account_id, name, vocation, health, mana, max_mana, sword_skill, distance_skill, magic_level, position_x, position_y, position_z, spawn_initialized) VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9, $10, $11, $12, TRUE) \
+             RETURNING id, account_id, name, vocation, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized",
         )
         .bind(id)
         .bind(account_id)
@@ -182,6 +185,9 @@ impl Database {
         .bind(i32::from(profile.sword_skill))
         .bind(i32::from(profile.distance_skill))
         .bind(i32::from(profile.magic_level))
+        .bind(position.x)
+        .bind(position.y)
+        .bind(position.z)
         .fetch_one(&mut *transaction)
         .await?;
         sqlx::query("INSERT INTO item_instances (id, definition_id, quantity, owner_character_id) VALUES ($1, 'field_backpack', 1, $2)")
@@ -236,7 +242,7 @@ impl Database {
         character_id: EntityId,
     ) -> Result<Option<CharacterRecord>, sqlx::Error> {
         let row: Option<CharacterRow> = sqlx::query_as(
-            "SELECT id, account_id, name, vocation, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z \
+            "SELECT id, account_id, name, vocation, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized \
              FROM characters WHERE id = $1 AND account_id = $2",
         )
         .bind(character_id)
@@ -252,7 +258,7 @@ impl Database {
         position: Position,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
-            "UPDATE characters SET position_x = $2, position_y = $3, position_z = $4, updated_at = NOW() WHERE id = $1",
+            "UPDATE characters SET position_x = $2, position_y = $3, position_z = $4, spawn_initialized = TRUE, updated_at = NOW() WHERE id = $1",
         )
         .bind(character_id)
         .bind(position.x)
@@ -655,5 +661,6 @@ fn character_from_row(row: CharacterRow) -> CharacterRecord {
             y: row.position_y,
             z: row.position_z,
         },
+        spawn_initialized: row.spawn_initialized,
     }
 }

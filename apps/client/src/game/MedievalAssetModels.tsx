@@ -102,6 +102,10 @@ export function MedievalDoorLeafAsset({
       scale={[1.04 / SOURCE_WIDTH, wallHeight / SOURCE_HEIGHT, Math.max(0.28, 0.13 / SOURCE_DEPTH)]}
       onPointerDown={(event) => { event.stopPropagation(); onClick(); }}
     >
+      <mesh position={[0, 1.5, 0.18]}>
+        <planeGeometry args={[2.1, 3]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
+      </mesh>
       <group ref={hinge} position={[-DOOR_OPENING_HALF_WIDTH, 0, 0]}>
         <primitive object={object} scale={[1.42, 1, 1]} />
       </group>

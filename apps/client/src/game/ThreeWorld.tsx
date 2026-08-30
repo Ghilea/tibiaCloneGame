@@ -5,6 +5,7 @@ import type {
   BuildingView,
   CreatureView,
   DoorView,
+  MapView,
   NpcView,
   PlayerView,
   Position,
@@ -25,13 +26,16 @@ const WALL_HEIGHT = 3.2;
 const CASTLE_HEIGHT = 4.1;
 const DOOR_HEIGHT = 2.2;
 const CAMERA_ZOOM = 135;
+const RENDER_CHUNK_SIZE = 16;
+const RENDER_PADDING = 20;
 
 type ThreeWorldProps = {
   world: WorldState;
   input: InputController;
+  onReady?: () => void;
 };
 
-export function ThreeWorld({ world, input }: ThreeWorldProps) {
+export function ThreeWorld({ world, input, onReady }: ThreeWorldProps) {
   return (
     <Canvas
       className="three-world"
@@ -48,9 +52,22 @@ export function ThreeWorld({ world, input }: ThreeWorldProps) {
         gl.setClearColor(0x0b1210);
       }}
     >
-      <WorldScene world={world} input={input} />
+      <Suspense fallback={null}>
+        <WorldScene world={world} input={input} />
+        <SceneReady onReady={onReady} />
+      </Suspense>
     </Canvas>
   );
+}
+
+function SceneReady({ onReady }: { onReady?: () => void }) {
+  const reported = useRef(false);
+  useFrame(() => {
+    if (reported.current) return;
+    reported.current = true;
+    onReady?.();
+  });
+  return null;
 }
 
 function WorldScene({ world, input }: ThreeWorldProps) {
@@ -61,11 +78,17 @@ function WorldScene({ world, input }: ThreeWorldProps) {
   const local = world.localPlayerId ? world.players.get(world.localPlayerId) : undefined;
   const localVisualPosition = useRef(new THREE.Vector3(Number.NaN, 0.05, Number.NaN));
   const floor = local?.position.z ?? map?.floor ?? 0;
-  const players = [...world.players.values()].filter((entry) => entry.position.z === floor);
-  const creatures = [...world.creatures.values()].filter((entry) => entry.position.z === floor);
-  const npcs = [...world.npcs.values()].filter((entry) => entry.position.z === floor);
 
   if (!map) return null;
+  const chunkX = Math.floor((local?.position.x ?? 0) / RENDER_CHUNK_SIZE);
+  const chunkY = Math.floor((local?.position.y ?? 0) / RENDER_CHUNK_SIZE);
+  const region = useMemo(
+    () => createRenderRegion(map, floor, chunkX, chunkY),
+    [map, floor, chunkX, chunkY],
+  );
+  const players = [...world.players.values()].filter((entry) => insideRenderBounds(entry.position, region.bounds));
+  const creatures = [...world.creatures.values()].filter((entry) => insideRenderBounds(entry.position, region.bounds));
+  const npcs = [...world.npcs.values()].filter((entry) => insideRenderBounds(entry.position, region.bounds));
   const onGround = useCallback((event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
     if (event.button === 2) event.nativeEvent.preventDefault();
@@ -78,13 +101,11 @@ function WorldScene({ world, input }: ThreeWorldProps) {
 
   return (
     <>
-      <Atmosphere torches={map.torches.filter((tile) => tile.z === floor)} local={local?.position} />
+      <Atmosphere torches={region.map.torches} local={local?.position} />
       <FollowCamera target={local?.position} visualTarget={localVisualPosition} mapWidth={map.width} mapHeight={map.height} />
-      <Suspense fallback={null}><Terrain map={map} floor={floor} onGround={onGround} /></Suspense>
-      <Suspense fallback={null}>
-        <Structures map={map} input={input} floor={floor} />
-      </Suspense>
-      <OcclusionController target={local?.position} visualTarget={localVisualPosition} />
+      <Terrain map={region.map} floor={floor} bounds={region.bounds} onGround={onGround} />
+      <Structures map={region.map} input={input} floor={floor} />
+      <OcclusionController target={local?.position} visualTarget={localVisualPosition} sceneRevision={region.map} />
       {players.map((player) => (
         <PlayerActor
           key={player.id}
@@ -135,7 +156,7 @@ function WorldScene({ world, input }: ThreeWorldProps) {
         />
       ))}
       {world.groundItems
-        .filter((entry) => entry.position.z === floor)
+        .filter((entry) => insideRenderBounds(entry.position, region.bounds))
         .map((entry) => (
           <GroundItemActor
             key={entry.item.instanceId}
@@ -162,13 +183,15 @@ function WorldScene({ world, input }: ThreeWorldProps) {
 const Terrain = memo(function Terrain({
   map,
   floor,
+  bounds,
   onGround,
 }: {
   map: NonNullable<WorldState["map"]>;
   floor: number;
+  bounds: RenderBounds;
   onGround: (event: ThreeEvent<PointerEvent>) => void;
 }) {
-  const grassTexture = useWorldTexture("/assets/world/greyhaven-grass.png", Math.max(1, map.width / 3), Math.max(1, map.height / 3));
+  const grassTexture = useWorldTexture("/assets/world/greyhaven-grass.png", Math.max(1, bounds.width / 3), Math.max(1, bounds.height / 3));
   const roadTexture = useWorldTexture("/assets/world/greyhaven-cobble.png");
   const packedEarthTexture = useWorldTexture("/assets/world/aldoria-packed-earth-v1.png");
   const mossStoneTexture = useWorldTexture("/assets/world/aldoria-moss-stone-v1.png");
@@ -179,13 +202,18 @@ const Terrain = memo(function Terrain({
     const [x, y] = key.split(":").map(Number);
     return { x, y, z: floor };
   });
-  const blocked = new Set(map.blocked.filter((tile) => tile.z === floor).map(tileKey));
-  const visibleRocks = map.blocked.filter((tile) => tile.z === floor && !blockedByStructure(map, tile));
+  const structuralTiles = new Set([
+    ...map.water,
+    ...map.trees,
+    ...map.houseWalls,
+    ...map.castleWalls,
+  ].map(tileKey));
+  const visibleRocks = map.blocked.filter((tile) => tile.z === floor && !structuralTiles.has(tileKey(tile)));
 
   return (
     <group>
-      <mesh receiveShadow position={[map.width / 2, -0.12, map.height / 2]} onPointerDown={onGround}>
-        <boxGeometry args={[map.width, 0.2, map.height]} />
+      <mesh receiveShadow position={[bounds.minX + bounds.width / 2, -0.12, bounds.minY + bounds.height / 2]} onPointerDown={onGround}>
+        <boxGeometry args={[bounds.width, 0.2, bounds.height]} />
         <meshStandardMaterial map={grassTexture} color="#91a477" roughness={0.96} />
       </mesh>
       <InstancedTiles positions={onFloor(map.roads)} color="#b7a889" texture={roadTexture} height={0.035} y={0.015} />
@@ -200,6 +228,10 @@ const Terrain = memo(function Terrain({
   );
 }, (previous, next) => previous.floor === next.floor
   && previous.onGround === next.onGround
+  && previous.bounds.minX === next.bounds.minX
+  && previous.bounds.minY === next.bounds.minY
+  && previous.bounds.width === next.bounds.width
+  && previous.bounds.height === next.bounds.height
   && previous.map.width === next.map.width
   && previous.map.height === next.map.height
   && previous.map.blocked === next.map.blocked
@@ -610,7 +642,10 @@ function SmoothActor({ id, position, visualPosition, moving, children }: { id: s
 
 export function actorSegmentDuration(updateIntervalMs: number) {
   const cadence = updateIntervalMs >= 70 && updateIntervalMs <= 600 ? updateIntervalMs : CLIENT_STEP_MS;
-  return THREE.MathUtils.clamp(cadence * 1.36, 215, 500);
+  // Finish each visual step just before the next logical step. Letting the
+  // interpolation overlap the following tile made the actor trail collision
+  // by roughly half a tile, so walls appeared visually displaced.
+  return THREE.MathUtils.clamp(cadence * 0.96, 145, 300);
 }
 
 function SelectionRing({ active, color }: { active: boolean; color: string }) {
@@ -694,14 +729,29 @@ function FollowCamera({ target, visualTarget, mapWidth, mapHeight }: { target?: 
   return null;
 }
 
-function OcclusionController({ target, visualTarget }: { target?: Position; visualTarget: MutableRefObject<THREE.Vector3> }) {
+function OcclusionController({ target, visualTarget, sceneRevision }: { target?: Position; visualTarget: MutableRefObject<THREE.Vector3>; sceneRevision: MapView }) {
   const { camera, scene } = useThree();
   const raycaster = useMemo(() => new THREE.Raycaster(), []);
-  const faded = useRef(new Map<THREE.Material, { opacity: number; transparent: boolean; depthWrite: boolean }>());
+  const faded = useRef(new Map<THREE.Material, number>());
   const lastCheckAt = useRef(0);
   const targetPoint = useMemo(() => new THREE.Vector3(), []);
   const direction = useMemo(() => new THREE.Vector3(), []);
   const next = useMemo(() => new Set<THREE.Material>(), []);
+  useLayoutEffect(() => {
+    // Compile occluders for transparency while a streamed region is being
+    // prepared. Switching material defines only when the player reaches a
+    // wall causes a visible one-frame hitch on many GPUs.
+    for (const root of collectOccluderRoots(scene)) root.traverse((node) => {
+      if (!(node instanceof THREE.Mesh)) return;
+      const materials = Array.isArray(node.material) ? node.material : [node.material];
+      for (const material of materials) {
+        if (material.userData.occlusionPrepared) continue;
+        material.userData.occlusionPrepared = true;
+        material.transparent = true;
+        material.needsUpdate = true;
+      }
+    });
+  }, [scene, sceneRevision]);
   useFrame(({ clock }) => {
     if (clock.elapsedTime - lastCheckAt.current < 0.075) return;
     lastCheckAt.current = clock.elapsedTime;
@@ -729,32 +779,20 @@ function OcclusionController({ target, visualTarget }: { target?: Position; visu
       for (const material of materials) {
         next.add(material);
         if (!faded.current.has(material)) {
-          faded.current.set(material, {
-            opacity: material.opacity,
-            transparent: material.transparent,
-            depthWrite: material.depthWrite,
-          });
-          material.transparent = true;
+          faded.current.set(material, material.opacity);
           material.opacity = 0.28;
-          material.depthWrite = false;
-          material.needsUpdate = true;
         }
       }
     });
     for (const [material, original] of faded.current) {
       if (next.has(material)) continue;
-      material.opacity = original.opacity;
-      material.transparent = original.transparent;
-      material.depthWrite = original.depthWrite;
-      material.needsUpdate = true;
+      material.opacity = original;
       faded.current.delete(material);
     }
   });
   useEffect(() => () => {
     for (const [material, original] of faded.current) {
-      material.opacity = original.opacity;
-      material.transparent = original.transparent;
-      material.depthWrite = original.depthWrite;
+      material.opacity = original;
     }
   }, []);
   return null;
@@ -828,12 +866,63 @@ function Weather({ local, floor }: { local?: Position; floor: number }) {
   return <points ref={points} visible={false}><bufferGeometry><bufferAttribute attach="attributes-position" args={[drops, 3]} /></bufferGeometry><pointsMaterial color="#b9d7e2" size={0.045} transparent opacity={0.7} depthWrite={false} /></points>;
 }
 
-function blockedByStructure(map: NonNullable<WorldState["map"]>, tile: Position) {
-  const key = `${tile.x}:${tile.y}:${tile.z}`;
-  return map.water.some((entry) => tileKey(entry) === key)
-    || map.trees.some((entry) => tileKey(entry) === key)
-    || map.houseWalls.some((entry) => tileKey(entry) === key)
-    || map.castleWalls.some((entry) => tileKey(entry) === key);
+type RenderBounds = {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  width: number;
+  height: number;
+  floor: number;
+};
+
+function createRenderRegion(map: MapView, floor: number, chunkX: number, chunkY: number) {
+  const minX = Math.max(0, chunkX * RENDER_CHUNK_SIZE - RENDER_PADDING);
+  const minY = Math.max(0, chunkY * RENDER_CHUNK_SIZE - RENDER_PADDING);
+  const maxX = Math.min(map.width, (chunkX + 1) * RENDER_CHUNK_SIZE + RENDER_PADDING);
+  const maxY = Math.min(map.height, (chunkY + 1) * RENDER_CHUNK_SIZE + RENDER_PADDING);
+  const bounds: RenderBounds = {
+    minX,
+    minY,
+    maxX,
+    maxY,
+    width: Math.max(1, maxX - minX),
+    height: Math.max(1, maxY - minY),
+    floor,
+  };
+  const positions = (entries: readonly Position[]) => entries.filter((entry) => insideRenderBounds(entry, bounds));
+  const buildings = map.buildings.filter((building) => building.floor === floor
+    && building.x < maxX
+    && building.y < maxY
+    && building.x + building.width > minX
+    && building.y + building.height > minY);
+  const belongsToVisibleBuilding = (position: Position) => buildings.some((building) => insideBuilding(position, building));
+  const regionMap: MapView = {
+    ...map,
+    blocked: positions(map.blocked),
+    water: positions(map.water),
+    bridges: positions(map.bridges),
+    trees: positions(map.trees),
+    roads: positions(map.roads),
+    floors: positions(map.floors),
+    houseWalls: positions(map.houseWalls),
+    castleWalls: positions(map.castleWalls),
+    windows: map.windows.filter((entry) => insideRenderBounds(entry.position, bounds) || belongsToVisibleBuilding(entry.position)),
+    torches: positions(map.torches),
+    terrainMaterials: map.terrainMaterials.filter((entry) => insideRenderBounds(entry.position, bounds)),
+    buildings,
+    doors: map.doors.filter((entry) => insideRenderBounds(entry.position, bounds) || belongsToVisibleBuilding(entry.position)),
+    stairs: map.stairs.filter((entry) => insideRenderBounds(entry.from, bounds) || insideRenderBounds(entry.to, bounds)),
+  };
+  return { map: regionMap, bounds };
+}
+
+function insideRenderBounds(position: Position, bounds: RenderBounds) {
+  return position.z === bounds.floor
+    && position.x >= bounds.minX
+    && position.x < bounds.maxX
+    && position.y >= bounds.minY
+    && position.y < bounds.maxY;
 }
 
 function insideBuilding(position: Position, building: BuildingView) {

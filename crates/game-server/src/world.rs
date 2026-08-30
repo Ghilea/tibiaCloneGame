@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, HashSet, VecDeque},
     env, fs,
     path::Path,
-    sync::OnceLock,
+    sync::{Arc, OnceLock},
     time::{Duration, Instant},
 };
 
@@ -15,6 +15,7 @@ use game_types::{
     PlayerView, Position, RuneRecipe, SpellDefinition, vocation_profile,
 };
 use serde::Deserialize;
+use tracing::info;
 
 use crate::content::ContentCatalog;
 
@@ -206,6 +207,92 @@ struct WorldMap {
     blocked: HashSet<Position>,
     walkable_upper_tiles: HashSet<Position>,
     player_spawn: Position,
+    spatial: MapSpatialIndex,
+}
+
+const MAP_STREAM_CHUNK_SIZE: i32 = 32;
+type MapChunkKey = (i16, i32, i32);
+
+#[derive(Debug, Clone, Default)]
+struct PositionChunkIndex {
+    chunks: HashMap<MapChunkKey, Vec<u32>>,
+}
+
+impl PositionChunkIndex {
+    fn from_positions(positions: &[Position]) -> Self {
+        let mut chunks: HashMap<MapChunkKey, Vec<u32>> = HashMap::new();
+        for (index, position) in positions.iter().enumerate() {
+            chunks
+                .entry((
+                    position.z,
+                    position.x.div_euclid(MAP_STREAM_CHUNK_SIZE),
+                    position.y.div_euclid(MAP_STREAM_CHUNK_SIZE),
+                ))
+                .or_default()
+                .push(u32::try_from(index).expect("world layer exceeds index capacity"));
+        }
+        Self { chunks }
+    }
+
+    fn near<T, F>(&self, entries: &[T], center: Position, radius: i32, position: F) -> Vec<T>
+    where
+        T: Clone,
+        F: Fn(&T) -> Position,
+    {
+        let min_chunk_x = (center.x - radius).div_euclid(MAP_STREAM_CHUNK_SIZE);
+        let max_chunk_x = (center.x + radius).div_euclid(MAP_STREAM_CHUNK_SIZE);
+        let min_chunk_y = (center.y - radius).div_euclid(MAP_STREAM_CHUNK_SIZE);
+        let max_chunk_y = (center.y + radius).div_euclid(MAP_STREAM_CHUNK_SIZE);
+        let mut result = Vec::new();
+        for chunk_y in min_chunk_y..=max_chunk_y {
+            for chunk_x in min_chunk_x..=max_chunk_x {
+                let Some(indices) = self.chunks.get(&(center.z, chunk_x, chunk_y)) else {
+                    continue;
+                };
+                result.extend(indices.iter().filter_map(|index| {
+                    let entry = entries.get(*index as usize)?;
+                    position_in_region(position(entry), center, radius).then(|| entry.clone())
+                }));
+            }
+        }
+        result
+    }
+}
+
+#[derive(Debug, Clone)]
+struct MapSpatialIndex {
+    blocked: PositionChunkIndex,
+    water: PositionChunkIndex,
+    bridges: PositionChunkIndex,
+    trees: PositionChunkIndex,
+    roads: PositionChunkIndex,
+    floors: PositionChunkIndex,
+    house_walls: PositionChunkIndex,
+    castle_walls: PositionChunkIndex,
+    torches: PositionChunkIndex,
+    terrain_materials: PositionChunkIndex,
+}
+
+impl MapSpatialIndex {
+    fn new(view: &MapView) -> Self {
+        let terrain_positions: Vec<_> = view
+            .terrain_materials
+            .iter()
+            .map(|entry| entry.position)
+            .collect();
+        Self {
+            blocked: PositionChunkIndex::from_positions(&view.blocked),
+            water: PositionChunkIndex::from_positions(&view.water),
+            bridges: PositionChunkIndex::from_positions(&view.bridges),
+            trees: PositionChunkIndex::from_positions(&view.trees),
+            roads: PositionChunkIndex::from_positions(&view.roads),
+            floors: PositionChunkIndex::from_positions(&view.floors),
+            house_walls: PositionChunkIndex::from_positions(&view.house_walls),
+            castle_walls: PositionChunkIndex::from_positions(&view.castle_walls),
+            torches: PositionChunkIndex::from_positions(&view.torches),
+            terrain_materials: PositionChunkIndex::from_positions(&terrain_positions),
+        }
+    }
 }
 
 impl WorldMap {
@@ -290,25 +377,52 @@ impl WorldMap {
         view.blocked.extend(view.trees.iter().copied());
         let bridges: HashSet<_> = view.bridges.iter().copied().collect();
         view.blocked.retain(|position| !bridges.contains(position));
-        let canonical_house_walls: HashSet<_> = view
-            .house_walls
+        let authored_house_walls: HashSet<_> = view.house_walls.iter().copied().collect();
+        let mut canonical_house_walls = HashSet::new();
+        for building in view
+            .buildings
             .iter()
-            .copied()
-            .filter(|position| {
-                view.buildings.iter().any(|building| {
-                    building.kind == "house"
-                        && position.z == building.floor
-                        && position.x >= building.x
-                        && position.y >= building.y
-                        && position.x < building.x + building.width
-                        && position.y < building.y + building.height
-                        && (position.x == building.x
-                            || position.y == building.y
-                            || position.x == building.x + building.width - 1
-                            || position.y == building.y + building.height - 1)
-                })
-            })
-            .collect();
+            .filter(|building| building.kind == "house")
+        {
+            let max_x = building.x + building.width - 1;
+            let max_y = building.y + building.height - 1;
+            for x in building.x..=max_x {
+                for position in [
+                    Position {
+                        x,
+                        y: building.y,
+                        z: building.floor,
+                    },
+                    Position {
+                        x,
+                        y: max_y,
+                        z: building.floor,
+                    },
+                ] {
+                    if authored_house_walls.contains(&position) {
+                        canonical_house_walls.insert(position);
+                    }
+                }
+            }
+            for y in building.y + 1..max_y {
+                for position in [
+                    Position {
+                        x: building.x,
+                        y,
+                        z: building.floor,
+                    },
+                    Position {
+                        x: max_x,
+                        y,
+                        z: building.floor,
+                    },
+                ] {
+                    if authored_house_walls.contains(&position) {
+                        canonical_house_walls.insert(position);
+                    }
+                }
+            }
+        }
         view.blocked
             .retain(|position| !canonical_house_walls.contains(position));
         sort_positions(&mut view.blocked);
@@ -336,11 +450,13 @@ impl WorldMap {
             .filter(|position| position.z != view.floor)
             .copied()
             .collect();
+        let spatial = MapSpatialIndex::new(&view);
         let mut map = Self {
             view,
             blocked,
             walkable_upper_tiles,
             player_spawn: SPAWN,
+            spatial,
         };
         if !map.is_walkable(map.player_spawn) {
             map.player_spawn = map
@@ -354,10 +470,25 @@ impl WorldMap {
         path: &Path,
         content: &ContentCatalog,
     ) -> anyhow::Result<(Self, Vec<Spawn>, Vec<NpcView>, String)> {
+        let load_started = Instant::now();
+        let file_size_mb = fs::metadata(path)
+            .map(|metadata| metadata.len() as f64 / 1_048_576.0)
+            .unwrap_or(0.0);
+        info!(progress = 25, path = %path.display(), file_size_mb = format_args!("{file_size_mb:.1}"), "server startup: reading world file");
         let raw = fs::read_to_string(path)
             .with_context(|| format!("read world document from {}", path.display()))?;
+        info!(
+            progress = 40,
+            elapsed_ms = load_started.elapsed().as_millis(),
+            "server startup: world file read, parsing JSON"
+        );
         let document: WorldDocument = serde_json::from_str(&raw)
             .with_context(|| format!("parse world document from {}", path.display()))?;
+        info!(
+            progress = 55,
+            elapsed_ms = load_started.elapsed().as_millis(),
+            "server startup: JSON parsed, validating geometry"
+        );
         if document.version != 1 {
             bail!("unsupported world document version: {}", document.version);
         }
@@ -394,6 +525,11 @@ impl WorldMap {
             doors: document.doors,
             stairs: document.stairs,
         })?;
+        info!(
+            progress = 82,
+            elapsed_ms = load_started.elapsed().as_millis(),
+            "server startup: geometry validated and chunk index built"
+        );
         if let Some(player_spawn) = requested_player_spawn {
             if !map.is_walkable(player_spawn) {
                 bail!("playerSpawn is not on a walkable tile: {player_spawn:?}");
@@ -470,6 +606,13 @@ impl WorldMap {
                 bail!("invalid spell list on NPC: {}", npc.id);
             }
         }
+        info!(
+            progress = 92,
+            elapsed_ms = load_started.elapsed().as_millis(),
+            spawns = spawns.len(),
+            npcs = document.npcs.len(),
+            "server startup: world entities validated"
+        );
         Ok((map, spawns, document.npcs, document.name))
     }
 
@@ -603,20 +746,23 @@ fn map_positions(view: &MapView) -> impl Iterator<Item = Position> + '_ {
 }
 
 fn infer_house_buildings(view: &MapView) -> Vec<BuildingView> {
-    let inside_explicit = |position: Position| {
-        view.buildings.iter().any(|building| {
-            building.floor == position.z
-                && position.x >= building.x
-                && position.y >= building.y
-                && position.x < building.x + building.width
-                && position.y < building.y + building.height
-        })
-    };
+    let mut explicit_building_tiles = HashSet::new();
+    for building in &view.buildings {
+        for y in building.y..building.y + building.height {
+            for x in building.x..building.x + building.width {
+                explicit_building_tiles.insert(Position {
+                    x,
+                    y,
+                    z: building.floor,
+                });
+            }
+        }
+    }
     let walls: HashSet<_> = view
         .house_walls
         .iter()
         .copied()
-        .filter(|position| !inside_explicit(*position))
+        .filter(|position| !explicit_building_tiles.contains(position))
         .collect();
     let wall_or_door: HashSet<_> = walls
         .iter()
@@ -625,8 +771,10 @@ fn infer_house_buildings(view: &MapView) -> Vec<BuildingView> {
         .collect();
     let mut remaining = walls.clone();
     let mut inferred = Vec::new();
-    while let Some(first) = remaining.iter().next().copied() {
-        remaining.remove(&first);
+    for first in walls.iter().copied() {
+        if !remaining.remove(&first) {
+            continue;
+        }
         let mut frontier = VecDeque::from([first]);
         let mut component = Vec::new();
         while let Some(current) = frontier.pop_front() {
@@ -680,12 +828,8 @@ fn infer_house_buildings(view: &MapView) -> Vec<BuildingView> {
         if width < 3 || height < 3 {
             continue;
         }
-        let closed = (min_y..=max_y).all(|y| {
-            (min_x..=max_x).all(|x| {
-                let perimeter = x == min_x || x == max_x || y == min_y || y == max_y;
-                !perimeter || wall_or_door.contains(&Position { x, y, z: floor })
-            })
-        });
+        let closed =
+            rectangular_outline_is_closed(&wall_or_door, floor, min_x, min_y, max_x, max_y);
         if closed {
             inferred.push(BuildingView {
                 id: format!("manual_house_{floor}_{min_x}_{min_y}"),
@@ -720,8 +864,11 @@ fn align_house_buildings_to_authored_walls(view: &mut MapView) {
         .collect();
     let mut remaining = walls;
     let mut outlines = Vec::new();
-    while let Some(first) = remaining.iter().next().copied() {
-        remaining.remove(&first);
+    let wall_seeds: Vec<_> = remaining.iter().copied().collect();
+    for first in wall_seeds {
+        if !remaining.remove(&first) {
+            continue;
+        }
         let mut frontier = VecDeque::from([first]);
         let mut component = vec![first];
         while let Some(current) = frontier.pop_front() {
@@ -772,12 +919,8 @@ fn align_house_buildings_to_authored_walls(view: &mut MapView) {
         if max_x - min_x + 1 < 3 || max_y - min_y + 1 < 3 {
             continue;
         }
-        let closed = (min_y..=max_y).all(|y| {
-            (min_x..=max_x).all(|x| {
-                let perimeter = x == min_x || x == max_x || y == min_y || y == max_y;
-                !perimeter || wall_or_door.contains(&Position { x, y, z: first.z })
-            })
-        });
+        let closed =
+            rectangular_outline_is_closed(&wall_or_door, first.z, min_x, min_y, max_x, max_y);
         if closed {
             outlines.push(HouseOutline {
                 floor: first.z,
@@ -819,6 +962,37 @@ fn align_house_buildings_to_authored_walls(view: &mut MapView) {
         building.width = outline.max_x - outline.min_x + 1;
         building.height = outline.max_y - outline.min_y + 1;
     }
+}
+
+fn rectangular_outline_is_closed(
+    walls: &HashSet<Position>,
+    floor: i16,
+    min_x: i32,
+    min_y: i32,
+    max_x: i32,
+    max_y: i32,
+) -> bool {
+    (min_x..=max_x).all(|x| {
+        walls.contains(&Position {
+            x,
+            y: min_y,
+            z: floor,
+        }) && walls.contains(&Position {
+            x,
+            y: max_y,
+            z: floor,
+        })
+    }) && (min_y + 1..max_y).all(|y| {
+        walls.contains(&Position {
+            x: min_x,
+            y,
+            z: floor,
+        }) && walls.contains(&Position {
+            x: max_x,
+            y,
+            z: floor,
+        })
+    })
 }
 
 fn sort_positions(positions: &mut Vec<Position>) {
@@ -884,7 +1058,29 @@ pub struct World {
     trades: HashMap<EntityId, TradeSession>,
     npcs: Vec<NpcView>,
     doors: HashMap<String, DoorView>,
-    map: WorldMap,
+    windows: HashMap<String, WindowView>,
+    map: Arc<WorldMap>,
+}
+
+#[derive(Clone)]
+pub struct GroundStateBackup {
+    items: Vec<GroundItem>,
+    decay: HashMap<EntityId, Instant>,
+}
+
+#[derive(Clone)]
+pub struct PlayerStateBackup {
+    players: HashMap<EntityId, Player>,
+}
+
+#[derive(Clone)]
+pub struct CombatStateBackup {
+    player_id: EntityId,
+    player: Player,
+    creature_id: EntityId,
+    creature: Creature,
+    spawn: Spawn,
+    ground: GroundStateBackup,
 }
 
 impl World {
@@ -932,6 +1128,13 @@ impl World {
             .iter()
             .cloned()
             .map(|door| (door.id.clone(), door))
+            .collect();
+        let windows = map
+            .view
+            .windows
+            .iter()
+            .cloned()
+            .map(|window| (window.id.clone(), window))
             .collect();
         let mut world = Self {
             players: HashMap::new(),
@@ -1065,7 +1268,8 @@ impl World {
             }),
             trades: HashMap::new(),
             doors,
-            map,
+            windows,
+            map: Arc::new(map),
             npcs: requested_npcs.unwrap_or_else(default_npcs),
         };
         world.npcs.retain(|npc| {
@@ -1095,6 +1299,54 @@ impl World {
     pub fn ground_items(&self) -> &[GroundItem] {
         &self.ground_items
     }
+
+    pub fn ground_state_backup(&self) -> GroundStateBackup {
+        GroundStateBackup {
+            items: self.ground_items.clone(),
+            decay: self.ground_decay.clone(),
+        }
+    }
+
+    pub fn restore_ground_state(&mut self, backup: GroundStateBackup) {
+        self.ground_items = backup.items;
+        self.ground_decay = backup.decay;
+    }
+
+    pub fn player_state_backup(&self) -> PlayerStateBackup {
+        PlayerStateBackup {
+            players: self.players.clone(),
+        }
+    }
+
+    pub fn restore_player_state(&mut self, backup: PlayerStateBackup) {
+        self.players = backup.players;
+    }
+
+    pub fn combat_state_backup(
+        &self,
+        player_id: EntityId,
+        creature_id: EntityId,
+    ) -> Option<CombatStateBackup> {
+        let player = self.players.get(&player_id)?.clone();
+        let creature = self.creatures.get(&creature_id)?.clone();
+        let spawn = self.spawns.get(creature.spawn_index)?.clone();
+        Some(CombatStateBackup {
+            player_id,
+            player,
+            creature_id,
+            creature,
+            spawn,
+            ground: self.ground_state_backup(),
+        })
+    }
+
+    pub fn restore_combat_state(&mut self, backup: CombatStateBackup) {
+        let spawn_index = backup.creature.spawn_index;
+        self.players.insert(backup.player_id, backup.player);
+        self.creatures.insert(backup.creature_id, backup.creature);
+        self.spawns[spawn_index] = backup.spawn;
+        self.restore_ground_state(backup.ground);
+    }
     pub fn item_definitions(&self) -> Vec<ItemDefinition> {
         self.content.item_definitions()
     }
@@ -1115,14 +1367,40 @@ impl World {
         spells.sort();
         Some(spells)
     }
+    #[cfg(test)]
     pub fn creature_views(&self) -> Vec<CreatureView> {
         self.creatures
             .values()
             .map(|creature| creature.view.clone())
             .collect()
     }
+    #[cfg(test)]
     pub fn npc_views(&self) -> Vec<NpcView> {
         self.npcs.clone()
+    }
+
+    pub fn creature_views_near(&self, center: Position, radius: i32) -> Vec<CreatureView> {
+        self.creatures
+            .values()
+            .filter(|creature| position_in_region(creature.view.position, center, radius))
+            .map(|creature| creature.view.clone())
+            .collect()
+    }
+
+    pub fn npc_views_near(&self, center: Position, radius: i32) -> Vec<NpcView> {
+        self.npcs
+            .iter()
+            .filter(|npc| position_in_region(npc.position, center, radius))
+            .cloned()
+            .collect()
+    }
+
+    pub fn ground_items_near(&self, center: Position, radius: i32) -> Vec<GroundItem> {
+        self.ground_items
+            .iter()
+            .filter(|item| position_in_region(item.position, center, radius))
+            .cloned()
+            .collect()
     }
 
     pub fn buy_from_npc(
@@ -1968,15 +2246,6 @@ impl World {
             door.open = !door.open;
             door.clone()
         };
-        if let Some(map_door) = self
-            .map
-            .view
-            .doors
-            .iter_mut()
-            .find(|door| door.id == changed.id)
-        {
-            map_door.open = changed.open;
-        }
         Ok(changed)
     }
 
@@ -1991,13 +2260,7 @@ impl World {
             .ok_or("unknown_player")?
             .view
             .position;
-        let window = self
-            .map
-            .view
-            .windows
-            .iter_mut()
-            .find(|window| window.id == window_id)
-            .ok_or("unknown_window")?;
+        let window = self.windows.get_mut(window_id).ok_or("unknown_window")?;
         if !within_reach(player_position, window.position) {
             return Err("window_out_of_reach");
         }
@@ -2005,10 +2268,107 @@ impl World {
         Ok(window.clone())
     }
 
+    #[cfg(test)]
     pub fn map_view(&self) -> MapView {
         let mut view = self.map.view.clone();
         view.doors = self.door_views();
+        view.windows = self.window_views();
         view
+    }
+
+    pub fn map_view_near(&self, center: Position, radius: i32) -> MapView {
+        let source = &self.map.view;
+        MapView {
+            width: source.width,
+            height: source.height,
+            floor: source.floor,
+            blocked: self
+                .map
+                .spatial
+                .blocked
+                .near(&source.blocked, center, radius, |entry| *entry),
+            water: self
+                .map
+                .spatial
+                .water
+                .near(&source.water, center, radius, |entry| *entry),
+            bridges: self
+                .map
+                .spatial
+                .bridges
+                .near(&source.bridges, center, radius, |entry| *entry),
+            trees: self
+                .map
+                .spatial
+                .trees
+                .near(&source.trees, center, radius, |entry| *entry),
+            roads: self
+                .map
+                .spatial
+                .roads
+                .near(&source.roads, center, radius, |entry| *entry),
+            floors: self
+                .map
+                .spatial
+                .floors
+                .near(&source.floors, center, radius, |entry| *entry),
+            house_walls: self.map.spatial.house_walls.near(
+                &source.house_walls,
+                center,
+                radius,
+                |entry| *entry,
+            ),
+            castle_walls: self.map.spatial.castle_walls.near(
+                &source.castle_walls,
+                center,
+                radius,
+                |entry| *entry,
+            ),
+            windows: self
+                .windows
+                .values()
+                .filter(|window| position_in_region(window.position, center, radius))
+                .cloned()
+                .collect(),
+            torches: self
+                .map
+                .spatial
+                .torches
+                .near(&source.torches, center, radius, |entry| *entry),
+            terrain_materials: self.map.spatial.terrain_materials.near(
+                &source.terrain_materials,
+                center,
+                radius,
+                |entry| entry.position,
+            ),
+            buildings: source
+                .buildings
+                .iter()
+                .filter(|building| {
+                    building.floor == center.z
+                        && building.x <= center.x + radius
+                        && building.y <= center.y + radius
+                        && building.x + building.width > center.x - radius
+                        && building.y + building.height > center.y - radius
+                })
+                .cloned()
+                .collect(),
+            doors: self
+                .doors
+                .values()
+                .filter(|door| position_in_region(door.position, center, radius))
+                .cloned()
+                .collect(),
+            stairs: source
+                .stairs
+                .iter()
+                .filter(|stairs| {
+                    position_in_region(stairs.from, center, radius)
+                        || position_in_region(stairs.to, center, radius)
+                })
+                .cloned()
+                .collect(),
+        }
     }
 
     pub fn is_walkable(&self, position: Position) -> bool {
@@ -2019,10 +2379,18 @@ impl World {
         self.map.player_spawn
     }
 
+    #[cfg(test)]
     fn door_views(&self) -> Vec<DoorView> {
         let mut doors: Vec<_> = self.doors.values().cloned().collect();
         doors.sort_by(|left, right| left.id.cmp(&right.id));
         doors
+    }
+
+    #[cfg(test)]
+    fn window_views(&self) -> Vec<WindowView> {
+        let mut windows: Vec<_> = self.windows.values().cloned().collect();
+        windows.sort_by(|left, right| left.id.cmp(&right.id));
+        windows
     }
 
     pub fn try_pickup(
@@ -3319,6 +3687,12 @@ fn tile_distance(first: Position, second: Position) -> i32 {
     (first.x - second.x).abs().max((first.y - second.y).abs())
 }
 
+fn position_in_region(position: Position, center: Position, radius: i32) -> bool {
+    position.z == center.z
+        && (position.x - center.x).abs() <= radius
+        && (position.y - center.y).abs() <= radius
+}
+
 fn has_line_of_sight_on(map: &WorldMap, start: Position, end: Position) -> bool {
     if start.z != end.z {
         return false;
@@ -4093,7 +4467,7 @@ mod tests {
         let target = Position { x: 11, y: 9, z: 7 };
         assert!(world.map.is_walkable(side));
         assert!(world.map.is_walkable(target));
-        world.map.blocked.insert(side);
+        Arc::make_mut(&mut world.map).blocked.insert(side);
         assert_eq!(world.try_move(id, target), Err("corner_blocked"));
     }
 
@@ -5423,6 +5797,37 @@ mod tests {
         }
         assert_eq!(current, goal);
         assert!(steps.iter().any(|step| step.x > 7));
+    }
+
+    #[test]
+    fn world_region_contains_only_nearby_map_payload() {
+        let world = World::new(combat_catalog(), vec![]);
+        let full = world.map_view();
+        let region = world.map_view_near(SPAWN, 3);
+        let nearby = |position: &Position| position_in_region(*position, SPAWN, 3);
+
+        let expected = |positions: &[Position]| {
+            positions
+                .iter()
+                .filter(|position| nearby(position))
+                .copied()
+                .collect::<HashSet<_>>()
+        };
+
+        assert_eq!(
+            region.blocked.iter().copied().collect::<HashSet<_>>(),
+            expected(&full.blocked)
+        );
+        assert_eq!(
+            region.water.iter().copied().collect::<HashSet<_>>(),
+            expected(&full.water)
+        );
+        assert_eq!(
+            region.floors.iter().copied().collect::<HashSet<_>>(),
+            expected(&full.floors)
+        );
+        assert!(region.blocked.len() < full.blocked.len());
+        assert_eq!((region.width, region.height), (full.width, full.height));
     }
 
     #[test]

@@ -80,12 +80,12 @@ export class InputController {
   interactAt(target: Position) {
     const player = this.world.localPlayerId ? this.world.players.get(this.world.localPlayerId) : null;
     if (!player) return;
-    const door = this.world.map?.doors.find((entry) => entry.position.x === target.x && entry.position.y === target.y && entry.position.z === target.z);
+    const door = this.world.doorAt(target);
     if (door) {
       this.toggleDoor(door.id, door.position);
       return;
     }
-    const window = this.world.map?.windows.find((entry) => samePosition(entry.position, target));
+    const window = this.world.windowAt(target);
     if (window) {
       this.toggleWindow(window.id, window.position);
       return;
@@ -169,13 +169,16 @@ export class InputController {
     if (now - this.lastMove < CLIENT_STEP_MS || !this.world.localPlayerId) return false;
     const player = this.world.players.get(this.world.localPlayerId);
     if (!player) return false;
-    const buildings = this.world.map?.buildings ?? [];
-    const blocked = (position: Position) => this.world.map?.blocked.some((tile) => tile.x === position.x && tile.y === position.y && tile.z === position.z)
-      || this.world.map?.doors.some((door) => !door.open && samePosition(door.position, position) && !isHouseWallAnchor(door.position, buildings))
-      || [...this.world.npcs.values()].some((npc) => npc.position.x === position.x && npc.position.y === position.y && npc.position.z === position.z);
+    const buildings = this.world.buildingsNear(player.position);
+    const blocked = (position: Position) => {
+      const door = this.world.doorAt(position);
+      return this.world.isMapTileBlocked(position)
+        || Boolean(door && !door.open && !isHouseWallAnchor(position, buildings))
+        || Boolean(this.world.npcAt(position));
+    };
     const wallBlocked = (from: Position, to: Position) => {
       const anchor = houseWallDoorAnchor(from, to, buildings);
-      return Boolean(anchor && !this.world.map?.doors.some((door) => door.open && samePosition(door.position, anchor)));
+      return Boolean(anchor && !this.world.doorAt(anchor)?.open);
     };
     const target = resolveMovementTarget(player.position, dx, dy, blocked, wallBlocked);
     if (!target) return false;

@@ -43,10 +43,19 @@ export default function App() {
   if (world.connection === "online" && world.localPlayerId)
     return <Game onLeave={() => network.disconnect()} />;
   if (!sessionToken) return <AccountLogin onAuthenticated={authenticated} />;
+  if (world.connection === "connecting") {
+    return (
+      <main className="game-shell loading-shell">
+        <section className="viewport">
+          <WorldLoadingScreen />
+        </section>
+      </main>
+    );
+  }
   return (
     <CharacterLobby
       token={sessionToken}
-      connecting={world.connection === "connecting"}
+      connecting={false}
       onPlay={(characterId) => network.connect(sessionToken, characterId)}
       onLogout={logout}
     />
@@ -144,6 +153,7 @@ type Panel = "inventory" | "crafting" | "character" | "help";
 
 function Game({ onLeave }: { onLeave: () => void }) {
   const [panel, setPanel] = useState<Panel | null>(null);
+  const [sceneReady, setSceneReady] = useState(false);
   const emberSigil = world.inventory.find(
     (item) => item.definitionId === "ember_rune" && (item.charges ?? 0) > 0,
   );
@@ -222,7 +232,8 @@ function Game({ onLeave }: { onLeave: () => void }) {
   return (
     <main className="game-shell">
       <section className="viewport">
-        <ThreeWorld world={world} input={input} />
+        <ThreeWorld world={world} input={input} onReady={() => setSceneReady(true)} />
+        {!sceneReady && <WorldLoadingScreen />}
       </section>
       <header className="world-header">
         <strong>Embers of Aldoria</strong>
@@ -366,6 +377,18 @@ function Game({ onLeave }: { onLeave: () => void }) {
         </GameModal>
       )}
     </main>
+  );
+}
+
+function WorldLoadingScreen() {
+  return (
+    <div className="world-loading" role="status" aria-live="polite">
+      <div className="world-loading-emblem"><i /><i /><i /></div>
+      <p>Entering Aldoria</p>
+      <h2>Preparing the world around you</h2>
+      <span>Only nearby terrain is prepared for rendering so even vast maps stay responsive.</span>
+      <div className="world-loading-track"><b /></div>
+    </div>
   );
 }
 

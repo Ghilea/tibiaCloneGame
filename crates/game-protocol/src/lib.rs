@@ -4,7 +4,7 @@ use game_types::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u16 = 19;
+pub const PROTOCOL_VERSION: u16 = 20;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -125,6 +125,12 @@ pub enum ServerMessage {
         depot: Vec<ItemInstance>,
         inventory_weight: f32,
         max_capacity: f32,
+        ground_items: Vec<GroundItem>,
+        creatures: Vec<CreatureView>,
+        npcs: Vec<NpcView>,
+    },
+    WorldRegion {
+        map: MapView,
         ground_items: Vec<GroundItem>,
         creatures: Vec<CreatureView>,
         npcs: Vec<NpcView>,

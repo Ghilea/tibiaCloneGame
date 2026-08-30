@@ -30,6 +30,9 @@ use uuid::Uuid;
 use world::World;
 use world::WorldEvent;
 
+const WORLD_REGION_RADIUS: i32 = 48;
+const WORLD_REGION_CHUNK_SIZE: i32 = 32;
+
 #[derive(Clone)]
 struct AppState {
     world: Arc<RwLock<World>>,
@@ -70,17 +73,40 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
+    let startup_started = Instant::now();
+    info!(progress = 0, "server startup: beginning");
     let content = content::ContentCatalog::load()?;
+    info!(
+        progress = 5,
+        elapsed_ms = startup_started.elapsed().as_millis(),
+        "server startup: game content validated"
+    );
     let database = persistence::Database::connect_from_env().await?;
+    info!(
+        progress = 15,
+        elapsed_ms = startup_started.elapsed().as_millis(),
+        "server startup: persistence ready"
+    );
     let ground_items = match &database {
         Some(database) => database.load_ground_items().await?,
         None => Vec::new(),
     };
+    info!(
+        progress = 20,
+        elapsed_ms = startup_started.elapsed().as_millis(),
+        ground_items = ground_items.len(),
+        "server startup: persistent ground state loaded"
+    );
     let (events, _) = broadcast::channel(256);
     let (world, loaded_world) = World::from_environment(content, ground_items)?;
     if let Some((name, path)) = loaded_world {
         info!(world = %name, %path, "custom world loaded");
     }
+    info!(
+        progress = 95,
+        elapsed_ms = startup_started.elapsed().as_millis(),
+        "server startup: runtime world created"
+    );
     let state = AppState {
         world: Arc::new(RwLock::new(world)),
         events,
@@ -105,7 +131,7 @@ async fn main() -> anyhow::Result<()> {
 
     let address = env::var("GAME_SERVER_ADDR").unwrap_or_else(|_| "127.0.0.1:4000".into());
     let listener = tokio::net::TcpListener::bind(&address).await?;
-    info!(%address, protocol_version = PROTOCOL_VERSION, "game server ready");
+    info!(progress = 100, elapsed_ms = startup_started.elapsed().as_millis(), %address, protocol_version = PROTOCOL_VERSION, "game server ready");
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
@@ -152,9 +178,10 @@ async fn create_character(
     Json(request): Json<auth::CreateCharacterRequest>,
 ) -> Result<(StatusCode, Json<auth::CharacterSummary>), auth::ApiError> {
     let token = bearer_token(&headers)?;
+    let spawn = state.world.read().await.player_spawn();
     let character = state
         .auth
-        .create_character(token, request.name, request.vocation)
+        .create_character(token, request.name, request.vocation, spawn)
         .await?;
     Ok((StatusCode::CREATED, Json(character)))
 }
@@ -262,11 +289,22 @@ async fn session(mut socket: WebSocket, state: AppState) {
             .await;
             return;
         };
-        let position = if state.world.read().await.is_walkable(character.position) {
+        let position = if character.spawn_initialized
+            && state.world.read().await.is_walkable(character.position)
+        {
             character.position
         } else {
             world_spawn
         };
+        if position != character.position {
+            state.auth.save_position(character.id, position).await;
+            info!(
+                character_id = %character.id,
+                from = ?character.position,
+                to = ?position,
+                "repaired persisted character position"
+            );
+        }
         (
             character.id,
             character.name,
@@ -449,10 +487,10 @@ async fn session(mut socket: WebSocket, state: AppState) {
             depot,
             weight,
             capacity,
-            world.ground_items().to_vec(),
-            world.creature_views(),
-            world.npc_views(),
-            world.map_view(),
+            world.ground_items_near(position, WORLD_REGION_RADIUS),
+            world.creature_views_near(position, WORLD_REGION_RADIUS),
+            world.npc_views_near(position, WORLD_REGION_RADIUS),
+            world.map_view_near(position, WORLD_REGION_RADIUS),
         )
     };
     info!(%id, %name, %client_version, "player connected");
@@ -480,6 +518,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
     state.broadcast(ServerMessage::PlayerJoined {
         player: player.view.clone(),
     });
+    let mut streamed_region = world_region_key(position);
 
     let (mut outgoing, mut incoming) = socket.split();
     let mut events = state.events.subscribe();
@@ -510,6 +549,20 @@ async fn session(mut socket: WebSocket, state: AppState) {
                             position,
                             sequence,
                         });
+                        let next_region = world_region_key(position);
+                        if next_region != streamed_region {
+                            let world = state.world.read().await;
+                            let message = ServerMessage::WorldRegion {
+                                map: world.map_view_near(position, WORLD_REGION_RADIUS),
+                                ground_items: world
+                                    .ground_items_near(position, WORLD_REGION_RADIUS),
+                                creatures: world.creature_views_near(position, WORLD_REGION_RADIUS),
+                                npcs: world.npc_views_near(position, WORLD_REGION_RADIUS),
+                            };
+                            drop(world);
+                            state.private(id, message);
+                            streamed_region = next_region;
+                        }
                     }
                     Err(reason) => {
                         let world = state.world.read().await;
@@ -692,6 +745,14 @@ async fn session(mut socket: WebSocket, state: AppState) {
     state.world.write().await.remove_player(id);
     state.broadcast(ServerMessage::PlayerLeft { player_id: id });
     info!(%id, "player disconnected");
+}
+
+fn world_region_key(position: game_types::Position) -> (i32, i32, i16) {
+    (
+        position.x.div_euclid(WORLD_REGION_CHUNK_SIZE),
+        position.y.div_euclid(WORLD_REGION_CHUNK_SIZE),
+        position.z,
+    )
 }
 
 enum ItemMutation {
@@ -880,7 +941,11 @@ fn send_trade_error(state: &AppState, player_id: Uuid, code: &str) {
 
 async fn attack_target(state: &AppState, player_id: Uuid, target_id: Uuid) {
     let mut world = state.world.write().await;
-    let backup = world.clone();
+    let inventory_before = world
+        .player(player_id)
+        .map(|player| player.inventory.clone())
+        .unwrap_or_default();
+    let backup = world.combat_state_backup(player_id, target_id);
     let events = match world.try_attack(player_id, target_id) {
         Ok(events) => events,
         Err("attack_cooldown" | "target_out_of_range" | "creature_evading") => return,
@@ -895,8 +960,8 @@ async fn attack_target(state: &AppState, player_id: Uuid, target_id: Uuid) {
             return;
         }
     };
-    let inventory_changed = world.player(player_id).expect("active player").inventory
-        != backup.player(player_id).expect("active player").inventory;
+    let inventory_changed =
+        world.player(player_id).expect("active player").inventory != inventory_before;
     let combat_must_persist = inventory_changed
         || events
             .iter()
@@ -910,7 +975,9 @@ async fn attack_target(state: &AppState, player_id: Uuid, target_id: Uuid) {
             .persist_combat_state(&player, &inventory, &ground)
             .await
         {
-            *world = backup;
+            if let Some(backup) = backup {
+                world.restore_combat_state(backup);
+            }
             warn!(%player_id, %error, "combat transaction rolled back");
             state.private(
                 player_id,
@@ -1336,7 +1403,9 @@ async fn cancel_rune_crafting(state: &AppState, player_id: Uuid) {
 
 async fn process_crafting(state: &AppState) {
     let mut world = state.world.write().await;
-    let backup = world.clone();
+    // Crafting only mutates players (mana, queue and inventory). Copying the
+    // complete map here used to freeze a large world four times per second.
+    let backup = world.player_state_backup();
     let updates = world.tick_crafting();
     for update in &updates {
         if update.inventory_changed
@@ -1349,7 +1418,7 @@ async fn process_crafting(state: &AppState) {
                 .persist_crafting_state(&update.player, &inventory, world.ground_items())
                 .await
             {
-                *world = backup;
+                world.restore_player_state(backup);
                 warn!(player_id = %update.player.id, %error, "crafting transaction rolled back");
                 state.private(
                     update.player.id,
@@ -1433,7 +1502,10 @@ async fn world_loop(state: AppState) {
         interval.tick().await;
         let events = {
             let mut world = state.world.write().await;
-            let backup = world.clone();
+            // Only ground items participate in the persistence transaction.
+            // Cloning the complete world also cloned a multi-hundred-megabyte
+            // map every 250 ms and stalled movement while holding this lock.
+            let ground_backup = world.ground_state_backup();
             let mut events = world.tick();
             let ground_changed = events
                 .iter()
@@ -1442,7 +1514,7 @@ async fn world_loop(state: AppState) {
                 && let Some(database) = &state.database
                 && let Err(error) = database.persist_ground_items(world.ground_items()).await
             {
-                *world = backup;
+                world.restore_ground_state(ground_backup);
                 events.retain(|event| !matches!(event, WorldEvent::GroundItemsChanged(_)));
                 warn!(%error, "corpse decay transaction rolled back");
             }

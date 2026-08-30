@@ -196,6 +196,7 @@ impl AuthService {
         token: &str,
         name: String,
         vocation: String,
+        spawn: Position,
     ) -> Result<CharacterSummary, ApiError> {
         let account_id = self.account_for_token(token).await?;
         let name = validate_character_name(&name)?;
@@ -224,7 +225,7 @@ impl AuthService {
         }
         let character = self
             .database()?
-            .create_character(account_id, &name, vocation)
+            .create_character(account_id, &name, vocation, spawn)
             .await
             .map_err(|error| {
                 if error

@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = 19;
+export const PROTOCOL_VERSION = 20;
 export const CLIENT_VERSION = "0.1.0";
 
 export type Position = { x: number; y: number; z: number };
@@ -85,6 +85,7 @@ export type ClientMessage =
 
 export type ServerMessage =
   | { type: "welcome"; protocol_version: number; player: PlayerView; players: PlayerView[]; map: MapView; item_definitions: ItemDefinition[]; rune_recipes: RuneRecipe[]; spells: SpellDefinition[]; learned_spell_ids: string[]; inventory: ItemInstance[]; depot: ItemInstance[]; inventory_weight: number; max_capacity: number; ground_items: GroundItem[]; creatures: CreatureView[]; npcs: NpcView[] }
+  | { type: "world_region"; map: MapView; ground_items: GroundItem[]; creatures: CreatureView[]; npcs: NpcView[] }
   | { type: "player_joined"; player: PlayerView }
   | { type: "player_left"; player_id: string }
   | { type: "player_moved"; player_id: string; position: Position; sequence: number }

@@ -1,4 +1,4 @@
-import type { CreatureView, GroundItem, ItemDefinition, ItemInstance, MapView, NpcView, PlayerView, Position, RuneRecipe, ServerMessage, SpellDefinition } from "../protocol";
+import type { BuildingView, CreatureView, DoorView, GroundItem, ItemDefinition, ItemInstance, MapView, NpcView, PlayerView, Position, RuneRecipe, ServerMessage, SpellDefinition, WindowView } from "../protocol";
 
 export type WorldListener = () => void;
 export type ChatLine = { id: string; speaker: string; text: string };
@@ -6,6 +6,8 @@ export type CombatEffectView = { id: string; sourceId: string; targetId: string;
 export type AreaWarningView = { id: string; sourceId: string; position: Position; effectId: string; radius: number; durationMs: number; createdAt: number };
 export type IncomingTrade = { tradeId: string; requester: PlayerView };
 export type TradeStateView = { tradeId: string; partner: PlayerView; yourOffer: ItemInstance[]; theirOffer: ItemInstance[]; youConfirmed: boolean; partnerConfirmed: boolean; status: "pending" | "active" };
+
+const MAP_INDEX_CHUNK_SIZE = 16;
 
 export class WorldState {
   readonly players = new Map<string, PlayerView>();
@@ -47,6 +49,11 @@ export class WorldState {
   private listeners = new Set<WorldListener>();
   private visualListeners = new Set<WorldListener>();
   private pendingLocalMoves = new Map<number, Position>();
+  private blockedTiles = new Set<string>();
+  private doorsByTile = new Map<string, DoorView>();
+  private windowsByTile = new Map<string, WindowView>();
+  private npcsByTile = new Map<string, NpcView>();
+  private buildingBuckets = new Map<string, BuildingView[]>();
 
   subscribe(listener: WorldListener) {
     this.listeners.add(listener);
@@ -90,6 +97,7 @@ export class WorldState {
         this.playerContext = null;
         this.activeNpcId = null;
         this.map = message.map;
+        this.rebuildMapIndexes();
         this.itemDefinitions.clear();
         for (const definition of message.item_definitions) this.itemDefinitions.set(definition.id, definition);
         this.runeRecipes.clear();
@@ -99,7 +107,11 @@ export class WorldState {
         this.learnedSpellIds.clear();
         for (const spellId of message.learned_spell_ids) this.learnedSpellIds.add(spellId);
         this.npcs.clear();
-        for (const npc of message.npcs) this.npcs.set(npc.id, npc);
+        this.npcsByTile.clear();
+        for (const npc of message.npcs) {
+          this.npcs.set(npc.id, npc);
+          this.npcsByTile.set(positionKey(npc.position), npc);
+        }
         this.inventory = message.inventory;
         this.depot = message.depot;
         this.inventoryWeight = message.inventory_weight;
@@ -108,6 +120,19 @@ export class WorldState {
         this.creatures.clear();
         for (const creature of message.creatures) this.creatures.set(creature.id, creature);
         this.connection = "online";
+        break;
+      case "world_region":
+        this.map = message.map;
+        this.rebuildMapIndexes();
+        this.groundItems = message.ground_items;
+        this.creatures.clear();
+        for (const creature of message.creatures) this.creatures.set(creature.id, creature);
+        this.npcs.clear();
+        this.npcsByTile.clear();
+        for (const npc of message.npcs) {
+          this.npcs.set(npc.id, npc);
+          this.npcsByTile.set(positionKey(npc.position), npc);
+        }
         break;
       case "player_joined":
         this.players.set(message.player.id, message.player);
@@ -151,10 +176,16 @@ export class WorldState {
         break;
       }
       case "door_changed":
-        if (this.map) this.map = { ...this.map, doors: this.map.doors.map((door) => door.id === message.door.id ? message.door : door) };
+        if (this.map) {
+          this.map = { ...this.map, doors: this.map.doors.map((door) => door.id === message.door.id ? message.door : door) };
+          this.doorsByTile.set(positionKey(message.door.position), message.door);
+        }
         break;
       case "window_changed":
-        if (this.map) this.map = { ...this.map, windows: this.map.windows.map((window) => window.id === message.window.id ? message.window : window) };
+        if (this.map) {
+          this.map = { ...this.map, windows: this.map.windows.map((window) => window.id === message.window.id ? message.window : window) };
+          this.windowsByTile.set(positionKey(message.window.position), message.window);
+        }
         break;
       case "spoken":
         this.chat.push({ id: crypto.randomUUID(), speaker: message.player_name, text: message.text });
@@ -273,6 +304,59 @@ export class WorldState {
     else if (notification === "visual") this.notifyVisual();
   }
 
+  isMapTileBlocked(position: Position) {
+    return this.blockedTiles.has(positionKey(position));
+  }
+
+  doorAt(position: Position) {
+    return this.doorsByTile.get(positionKey(position));
+  }
+
+  windowAt(position: Position) {
+    return this.windowsByTile.get(positionKey(position));
+  }
+
+  npcAt(position: Position) {
+    return this.npcsByTile.get(positionKey(position));
+  }
+
+  buildingsNear(position: Position) {
+    const chunkX = Math.floor(position.x / MAP_INDEX_CHUNK_SIZE);
+    const chunkY = Math.floor(position.y / MAP_INDEX_CHUNK_SIZE);
+    const found = new Map<string, BuildingView>();
+    for (let y = chunkY - 1; y <= chunkY + 1; y += 1) {
+      for (let x = chunkX - 1; x <= chunkX + 1; x += 1) {
+        for (const building of this.buildingBuckets.get(`${position.z}:${x}:${y}`) ?? []) found.set(building.id, building);
+      }
+    }
+    return [...found.values()];
+  }
+
+  private rebuildMapIndexes() {
+    this.blockedTiles.clear();
+    this.doorsByTile.clear();
+    this.windowsByTile.clear();
+    this.buildingBuckets.clear();
+    if (!this.map) return;
+    for (const tile of this.map.blocked) this.blockedTiles.add(positionKey(tile));
+    for (const door of this.map.doors) this.doorsByTile.set(positionKey(door.position), door);
+    for (const window of this.map.windows) this.windowsByTile.set(positionKey(window.position), window);
+    for (const building of this.map.buildings) {
+      const minChunkX = Math.floor(building.x / MAP_INDEX_CHUNK_SIZE);
+      const maxChunkX = Math.floor((building.x + building.width - 1) / MAP_INDEX_CHUNK_SIZE);
+      const minChunkY = Math.floor(building.y / MAP_INDEX_CHUNK_SIZE);
+      const maxChunkY = Math.floor((building.y + building.height - 1) / MAP_INDEX_CHUNK_SIZE);
+      for (let chunkY = minChunkY; chunkY <= maxChunkY; chunkY += 1) {
+        for (let chunkX = minChunkX; chunkX <= maxChunkX; chunkX += 1) {
+          const key = `${building.floor}:${chunkX}:${chunkY}`;
+          const entries = this.buildingBuckets.get(key);
+          if (entries) entries.push(building);
+          else this.buildingBuckets.set(key, [building]);
+        }
+      }
+    }
+  }
+
   predictLocalMove(position: Position, sequence: number) {
     if (!this.localPlayerId) return;
     const player = this.players.get(this.localPlayerId);
@@ -333,8 +417,14 @@ export class WorldState {
         ? { ...entry, open: !entry.open }
         : entry),
     };
+    const predicted = this.map.windows.find((entry) => entry.id === windowId);
+    if (predicted) this.windowsByTile.set(positionKey(predicted.position), predicted);
     this.notify();
   }
+}
+
+function positionKey(position: Position) {
+  return `${position.x}:${position.y}:${position.z}`;
 }
 
 function samePosition(left: Position, right: Position) {

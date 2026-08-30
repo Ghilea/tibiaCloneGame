@@ -53,6 +53,7 @@ const VIEW_COLUMNS = 40;
 const VIEW_ROWS = 28;
 const PAN_STEP = 20;
 const MAX_WORLD_SIZE = 16_384;
+const MAX_LOCAL_AUTOSAVE_ENTRIES = 60_000;
 const ISO_TILE_WIDTH = 48;
 const ISO_TILE_HEIGHT = 28;
 
@@ -61,7 +62,14 @@ function blankDocument(): EditorDocument {
 }
 const key = (position: Position) => `${position.x}:${position.y}:${position.z}`;
 const same = (left: Position, right: Position) => left.x === right.x && left.y === right.y && left.z === right.z;
-const saveLocal = (document: EditorDocument) => { try { localStorage.setItem("aldoria-world-editor", JSON.stringify(document)); } catch { /* Large maps can exceed browser storage; JSON export remains available. */ } };
+const saveLocal = (document: EditorDocument) => {
+  const authoredEntries = tileLayers.reduce((total, layer) => total + document[layer].length, 0)
+    + document.windows.length + document.torches.length + document.terrainMaterials.length
+    + document.buildings.length + document.doors.length + document.stairs.length
+    + document.spawns.length + document.npcs.length;
+  if (authoredEntries > MAX_LOCAL_AUTOSAVE_ENTRIES) return;
+  try { localStorage.setItem("aldoria-world-editor", JSON.stringify(document)); } catch { /* JSON file saving remains available. */ }
+};
 
 export function WorldEditor() {
   const [document, setDocument] = useState<EditorDocument>(() => loadLocal());
@@ -88,6 +96,7 @@ export function WorldEditor() {
   const worldFileHandle = useRef<WorldFileHandle | null>(null);
   const [dragTarget, setDragTarget] = useState<Position | null>(null);
   const [saveStatus, setSaveStatus] = useState("Autosaved locally");
+  const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
   const layerSets = useMemo(() => Object.fromEntries(tileLayers.map((layer) => [layer, new Set(document[layer].filter((tile) => tile.z === activeFloor).map(key))])) as Record<(typeof tileLayers)[number], Set<string>>, [document, activeFloor]);
   const spawnByTile = useMemo(() => new Map(document.spawns.filter((entry) => entry.position.z === activeFloor).map((entry) => [key(entry.position), entry])), [document.spawns, activeFloor]);
   const doorByTile = useMemo(() => new Map(document.doors.filter((entry) => entry.position.z === activeFloor).map((entry) => [key(entry.position), entry])), [document.doors, activeFloor]);
@@ -236,7 +245,21 @@ export function WorldEditor() {
     window.addEventListener("keydown", keyDown); window.addEventListener("keyup", keyUp);
     return () => { window.removeEventListener("keydown", keyDown); window.removeEventListener("keyup", keyUp); window.document.body.classList.remove("editor-space-pan"); };
   }, [history, future]);
-  const importWorld = async (file?: File) => { if (!file) return; const parsed = normalizeDocument(JSON.parse(await file.text()) as EditorDocument); if (parsed.version !== 1 || !Array.isArray(parsed.blocked) || !Array.isArray(parsed.spawns) || parsed.width < 1 || parsed.height < 1 || parsed.width > MAX_WORLD_SIZE || parsed.height > MAX_WORLD_SIZE) throw new Error("Unsupported world document"); worldFileHandle.current = null; setSaveStatus(`Imported ${file.name} — choose where to save`); commit(parsed); setActiveFloor(parsed.floor); setWorldWidth(parsed.width); setWorldHeight(parsed.height); setViewX(0); setViewY(0); };
+  const importWorld = async (file?: File) => {
+    if (!file) return;
+    setLoadingMessage(`Reading ${file.name}`);
+    await nextBrowserPaint();
+    try {
+      const raw = await file.text();
+      setLoadingMessage("Parsing and validating world data");
+      await nextBrowserPaint();
+      const parsed = normalizeDocument(JSON.parse(raw) as EditorDocument);
+      if (parsed.version !== 1 || !Array.isArray(parsed.blocked) || !Array.isArray(parsed.spawns) || parsed.width < 1 || parsed.height < 1 || parsed.width > MAX_WORLD_SIZE || parsed.height > MAX_WORLD_SIZE) throw new Error("Unsupported world document");
+      worldFileHandle.current = null; setSaveStatus(`Imported ${file.name} — choose where to save`); commit(parsed); setActiveFloor(parsed.floor); setWorldWidth(parsed.width); setWorldHeight(parsed.height); setViewX(0); setViewY(0);
+    } finally {
+      setLoadingMessage(null);
+    }
+  };
   const resizeWorld = () => {
     const width = Number.isFinite(worldWidth) ? Math.max(8, Math.min(MAX_WORLD_SIZE, Math.trunc(worldWidth))) : document.width; const height = Number.isFinite(worldHeight) ? Math.max(8, Math.min(MAX_WORLD_SIZE, Math.trunc(worldHeight))) : document.height;
     const inBounds = (position: Position) => position.x >= 0 && position.y >= 0 && position.x < width && position.y < height;
@@ -290,9 +313,11 @@ export function WorldEditor() {
     || ["packed_earth", "moss_stone", "sandstone"].includes(value);
 
   return <main className="editor-shell">
+    {loadingMessage && <div className="editor-loading" role="status"><i /><strong>Loading world</strong><span>{loadingMessage}</span><small>Large maps stay file-based instead of being duplicated into browser storage.</small></div>}
     <header><div><p>EMBERS OF ALDORIA</p><h1>World Editor</h1></div><input value={document.name} onChange={(event) => restore({ ...document, name: event.target.value })} /><span>{document.width} x {document.height} / z={activeFloor}</span><a className="editor-back-button" href="/" aria-label="Back to character selection"><b aria-hidden="true">←</b> Back to Characters</a></header>
     <aside className="palette">
       <section className="editor-onboarding"><strong>Build naturally</strong><span>Paint with the active tool. Existing objects are always draggable.</span><small>Drag with the right or middle mouse button to pan from any tool. Hold Space for left-button pan. Ctrl+Z/Y handles undo and redo.</small></section>
+      <WorldMinimap document={document} floor={activeFloor} viewportX={viewportX} viewportY={viewportY} viewportWidth={visibleWidth} viewportHeight={visibleHeight} onPan={panTo} />
       <div className="tool-tabs" role="tablist" aria-label="Tool categories">{toolGroups.map((group) => <button role="tab" aria-selected={toolGroup === group.id} className={toolGroup === group.id ? "active" : ""} key={group.id} onClick={() => { setToolGroup(group.id); setTool(tools.find((entry) => entry.group === group.id)?.id ?? "erase"); }}>{group.label}</button>)}</div>
       <div className="tool-grid">{tools.filter((entry) => entry.group === toolGroup).map((entry) => <button title={entry.description} className={tool === entry.id ? "active" : ""} key={entry.id} onClick={() => setTool(entry.id)}><i style={{ background: entry.swatch }} /><span>{entry.label}</span></button>)}</div>
       <section className="tool-context"><div className="tool-context-title"><i style={{ background: activeTool.swatch }} /><div><strong>{activeTool.label}</strong><span>{activeTool.description}</span></div></div>
@@ -337,6 +362,157 @@ export function WorldEditor() {
   </main>;
 }
 
+const MINIMAP_WIDTH = 512;
+const MINIMAP_HEIGHT = 280;
+const MINIMAP_PADDING = 10;
+
+function WorldMinimap({ document, floor, viewportX, viewportY, viewportWidth, viewportHeight, onPan }: {
+  document: EditorDocument;
+  floor: number;
+  viewportX: number;
+  viewportY: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  onPan: (x: number, y: number) => void;
+}) {
+  const baseCanvas = useRef<HTMLCanvasElement>(null);
+  const overlayCanvas = useRef<HTMLCanvasElement>(null);
+  const draggingPointer = useRef<number | null>(null);
+  const [minimapZoom, setMinimapZoom] = useState(1);
+  const [minimapFocus, setMinimapFocus] = useState(() => ({ x: viewportX + viewportWidth / 2, y: viewportY + viewportHeight / 2 }));
+  const projection = minimapProjection(document.width, document.height);
+  const canvasTransform = minimapCanvasTransform(
+    projection,
+    minimapFocus.x,
+    minimapFocus.y,
+    minimapZoom,
+  );
+  const centerOnViewport = () => setMinimapFocus({ x: viewportX + viewportWidth / 2, y: viewportY + viewportHeight / 2 });
+  const changeZoom = (direction: -1 | 1) => {
+    centerOnViewport();
+    setMinimapZoom((current) => Math.max(1, Math.min(16, direction > 0 ? current * 2 : current / 2)));
+  };
+
+  useEffect(() => {
+    setMinimapZoom(1);
+    setMinimapFocus({ x: viewportX + viewportWidth / 2, y: viewportY + viewportHeight / 2 });
+  }, [document.width, document.height]);
+
+  useEffect(() => {
+    const canvas = baseCanvas.current; const context = canvas?.getContext("2d");
+    if (!canvas || !context) return;
+    context.clearRect(0, 0, MINIMAP_WIDTH, MINIMAP_HEIGHT);
+    context.fillStyle = "#080d0a"; context.fillRect(0, 0, MINIMAP_WIDTH, MINIMAP_HEIGHT);
+    context.fillStyle = "#40523d";
+    context.fillRect(projection.left, projection.top, document.width * projection.scale, document.height * projection.scale);
+    drawMinimapPositions(context, document.blocked, floor, projection, "#252d29", 1);
+    drawMinimapMaterials(context, document.terrainMaterials, floor, projection);
+    drawMinimapPositions(context, document.water, floor, projection, "#296b7c", 1.25);
+    drawMinimapPositions(context, document.roads, floor, projection, "#aaa18b", 1.4);
+    drawMinimapPositions(context, document.floors, floor, projection, "#805b3c", 1.2);
+    for (const building of document.buildings) {
+      if (building.floor !== floor) continue;
+      context.fillStyle = building.kind === "keep" ? "#929997" : "#bd8b59";
+      context.fillRect(
+        projection.left + building.x * projection.scale,
+        projection.top + building.y * projection.scale,
+        Math.max(1.5, building.width * projection.scale),
+        Math.max(1.5, building.height * projection.scale),
+      );
+    }
+    drawMinimapPositions(context, document.houseWalls, floor, projection, "#e0b06d", 1.7);
+    drawMinimapPositions(context, document.castleWalls, floor, projection, "#d2d8d5", 1.7);
+    drawMinimapPositions(context, document.bridges, floor, projection, "#d49a56", 2);
+    drawMinimapPositions(context, document.trees, floor, projection, "#1d7b3c", 1.8);
+    drawMinimapPositions(context, document.windows, floor, projection, "#68d7e7", 2);
+    drawMinimapPositions(context, document.torches, floor, projection, "#ff832f", 2.2);
+    drawMinimapPositions(context, document.doors.map((entry) => entry.position), floor, projection, "#ffe09a", 2.2);
+    drawMinimapPositions(context, document.spawns.map((entry) => entry.position), floor, projection, "#b76cff", 2.8);
+    drawMinimapPositions(context, document.npcs.map((entry) => entry.position), floor, projection, "#55e4be", 3);
+    drawMinimapPositions(context, [document.playerSpawn], floor, projection, "#fff176", 3.5);
+  }, [document, floor, projection.left, projection.scale, projection.top]);
+
+  useEffect(() => {
+    const canvas = overlayCanvas.current; const context = canvas?.getContext("2d");
+    if (!canvas || !context) return;
+    context.clearRect(0, 0, MINIMAP_WIDTH, MINIMAP_HEIGHT);
+    const x = projection.left + viewportX * projection.scale;
+    const y = projection.top + viewportY * projection.scale;
+    const width = Math.max(3, viewportWidth * projection.scale);
+    const height = Math.max(3, viewportHeight * projection.scale);
+    context.fillStyle = "#f6c66f24"; context.fillRect(x, y, width, height);
+    context.strokeStyle = "#ffd47e"; context.lineWidth = 2; context.strokeRect(x, y, width, height);
+  }, [projection.left, projection.scale, projection.top, viewportHeight, viewportWidth, viewportX, viewportY]);
+
+  const panFromPointer = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const canvasX = (event.clientX - rect.left) * MINIMAP_WIDTH / rect.width;
+    const canvasY = (event.clientY - rect.top) * MINIMAP_HEIGHT / rect.height;
+    const worldX = (canvasX - projection.left) / projection.scale;
+    const worldY = (canvasY - projection.top) / projection.scale;
+    onPan(Math.round(worldX - viewportWidth / 2), Math.round(worldY - viewportHeight / 2));
+  };
+  const begin = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); draggingPointer.current = event.pointerId; panFromPointer(event);
+  };
+  const move = (event: ReactPointerEvent<HTMLCanvasElement>) => { if (draggingPointer.current === event.pointerId) panFromPointer(event); };
+  const end = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (draggingPointer.current !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    draggingPointer.current = null;
+  };
+
+  return <section className="editor-minimap">
+    <div className="minimap-header"><div><strong>World overview</strong><span>Floor {floor} · View {viewportX}, {viewportY}</span></div><div className="minimap-controls"><button type="button" aria-label="Zoom minimap out" disabled={minimapZoom === 1} onClick={() => changeZoom(-1)}>−</button><output>{minimapZoom}×</output><button type="button" aria-label="Zoom minimap in" disabled={minimapZoom === 16} onClick={() => changeZoom(1)}>+</button><button type="button" aria-label="Center minimap on current view" title="Center on current view" onClick={centerOnViewport}>◎</button></div></div>
+    <div className="minimap-canvas" title="Click or drag to move the editor view. Use the mouse wheel to zoom." onWheel={(event) => { event.preventDefault(); changeZoom(event.deltaY < 0 ? 1 : -1); }}>
+      <canvas ref={baseCanvas} width={MINIMAP_WIDTH} height={MINIMAP_HEIGHT} style={{ transform: canvasTransform }} />
+      <canvas ref={overlayCanvas} width={MINIMAP_WIDTH} height={MINIMAP_HEIGHT} style={{ transform: canvasTransform }} aria-label="World minimap. Click or drag to move the editor view." onPointerDown={begin} onPointerMove={move} onPointerUp={end} onPointerCancel={end} />
+    </div>
+    <div className="minimap-legend"><span className="settlement">Buildings</span><span className="water-key">Water</span><span className="road-key">Roads</span><span className="life-key">Life</span></div>
+    <small>Click or drag to travel across the map.</small>
+  </section>;
+}
+
+function minimapProjection(worldWidth: number, worldHeight: number) {
+  const scale = Math.min(
+    (MINIMAP_WIDTH - MINIMAP_PADDING * 2) / Math.max(1, worldWidth),
+    (MINIMAP_HEIGHT - MINIMAP_PADDING * 2) / Math.max(1, worldHeight),
+  );
+  return {
+    scale,
+    left: (MINIMAP_WIDTH - worldWidth * scale) / 2,
+    top: (MINIMAP_HEIGHT - worldHeight * scale) / 2,
+  };
+}
+
+function minimapCanvasTransform(projection: ReturnType<typeof minimapProjection>, focusX: number, focusY: number, zoom: number) {
+  const focusCanvasX = projection.left + focusX * projection.scale;
+  const focusCanvasY = projection.top + focusY * projection.scale;
+  const translateX = Math.min(0, Math.max(1 - zoom, 0.5 - focusCanvasX / MINIMAP_WIDTH * zoom));
+  const translateY = Math.min(0, Math.max(1 - zoom, 0.5 - focusCanvasY / MINIMAP_HEIGHT * zoom));
+  return `translate(${translateX * 100}%, ${translateY * 100}%) scale(${zoom})`;
+}
+
+function drawMinimapPositions(context: CanvasRenderingContext2D, positions: readonly Position[], floor: number, projection: ReturnType<typeof minimapProjection>, color: string, minimumSize: number) {
+  context.fillStyle = color;
+  const size = Math.max(minimumSize, projection.scale);
+  for (const position of positions) {
+    if (position.z !== floor) continue;
+    context.fillRect(projection.left + position.x * projection.scale, projection.top + position.y * projection.scale, size, size);
+  }
+}
+
+function drawMinimapMaterials(context: CanvasRenderingContext2D, entries: readonly TerrainMaterialView[], floor: number, projection: ReturnType<typeof minimapProjection>) {
+  const colors: Record<TerrainMaterialId, string> = { packed_earth: "#765739", moss_stone: "#59644e", sandstone: "#c7a269" };
+  for (const entry of entries) {
+    if (entry.position.z !== floor) continue;
+    context.fillStyle = colors[entry.material];
+    const size = Math.max(1, projection.scale);
+    context.fillRect(projection.left + entry.position.x * projection.scale, projection.top + entry.position.y * projection.scale, size, size);
+  }
+}
+
 function NpcInspector({ npc, onChange, onRemove }: { npc: NpcView; onChange: (npc: NpcView, recordHistory?: boolean) => void; onRemove: () => void }) {
   const [offerItem, setOfferItem] = useState("blank_rune"); const [offerQuantity, setOfferQuantity] = useState(1); const [offerPrice, setOfferPrice] = useState(1);
   const updateOffer = (index: number, patch: Partial<NpcView["offers"][number]>) => onChange({ ...npc, offers: npc.offers.map((offer, offerIndex) => offerIndex === index ? { ...offer, ...patch } : offer) });
@@ -349,6 +525,7 @@ function NpcInspector({ npc, onChange, onRemove }: { npc: NpcView; onChange: (np
 }
 
 function firstSafeBaseTile(document: EditorDocument): Position { const blocked = new Set(document.blocked.filter((tile) => tile.z === document.floor).map(key)); const occupied = new Set([...(document.spawns ?? []).map((entry) => key(entry.position)), ...(document.npcs ?? []).map((entry) => key(entry.position))]); for (let y = 0; y < document.height; y += 1) for (let x = 0; x < document.width; x += 1) { const position = { x, y, z: document.floor }; if (!blocked.has(key(position)) && !occupied.has(key(position))) return position; } return { x: 0, y: 0, z: document.floor }; }
+function nextBrowserPaint() { return new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))); }
 function normalizeDocument(document: EditorDocument): EditorDocument {
   const normalized = { ...document, bridges: document.bridges ?? [], trees: document.trees ?? [], windows: document.windows ?? [], torches: document.torches ?? [], terrainMaterials: document.terrainMaterials ?? [], npcs: document.npcs ?? [], playerSpawn: document.playerSpawn ?? { x: 0, y: 0, z: document.floor } };
   normalized.buildings = alignHouseBuildingsToWalls(normalized);

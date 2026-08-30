@@ -51,6 +51,13 @@ h1, h2, h3 { font-family: Cinzel, Georgia, serif; }
 
 .game-shell { position: relative; width: 100vw; height: 100vh; overflow: hidden; background: #080c0a; }
 .viewport { position: absolute; inset: 0; }.viewport canvas { display: block; cursor: crosshair; touch-action: none; }.three-world { width: 100% !important; height: 100% !important; }
+.world-loading { position: absolute; z-index: 30; inset: 0; display: grid; place-content: center; justify-items: center; padding: 24px; text-align: center; background: radial-gradient(circle at 50% 42%, #31483a 0, #121d18 34%, #060a08 76%); transition: opacity .25s; }
+.world-loading::after { content: ""; position: absolute; inset: 20px; border: 1px solid #a9864748; box-shadow: inset 0 0 120px #000b; pointer-events: none; }
+.world-loading-emblem { position: relative; width: 76px; height: 76px; margin-bottom: 20px; animation: world-loading-spin 3s linear infinite; }.world-loading-emblem i { position: absolute; inset: 8px; border: 2px solid transparent; border-top-color: #e0bc70; border-radius: 50%; }.world-loading-emblem i:nth-child(2) { inset: 17px; border-top-color: #7fa58e; animation: world-loading-spin 1.8s linear infinite reverse; }.world-loading-emblem i:nth-child(3) { inset: 28px; background: radial-gradient(circle, #efc87a, #8f622e); border: 0; box-shadow: 0 0 24px #d59b49a8; }
+.world-loading p { margin: 0 0 8px; color: #d5ad62; font-size: 9px; font-weight: 700; letter-spacing: .24em; text-transform: uppercase; }.world-loading h2 { margin: 0; color: #efe0bc; font-size: clamp(22px, 4vw, 34px); }.world-loading > span { max-width: 470px; margin-top: 12px; color: #8f9d95; font-size: 10px; line-height: 1.6; }
+.world-loading-track { width: min(360px, 70vw); height: 4px; margin-top: 26px; overflow: hidden; background: #ffffff10; border-radius: 9px; }.world-loading-track b { display: block; width: 42%; height: 100%; background: linear-gradient(90deg, transparent, #e1b867, transparent); animation: world-loading-progress 1.25s ease-in-out infinite; }
+@keyframes world-loading-spin { to { transform: rotate(360deg); } }
+@keyframes world-loading-progress { from { transform: translateX(-110%); } to { transform: translateX(340%); } }
 .world-header { position: absolute; top: 14px; left: 50%; z-index: 5; display: grid; gap: 2px; min-width: 300px; padding: 9px 20px; transform: translateX(-50%); text-align: center; background: #101713d9; border: 1px solid #5b675f; border-radius: 9px; box-shadow: 0 8px 28px #0009; backdrop-filter: blur(12px); pointer-events: none; }
 .world-header strong { color: #e7d29d; font-family: Cinzel, serif; font-size: 13px; letter-spacing: .08em; }.world-header span { color: #8f9d94; font-size: 10px; }
 
