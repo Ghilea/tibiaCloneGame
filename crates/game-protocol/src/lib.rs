@@ -4,7 +4,7 @@ use game_types::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u16 = 18;
+pub const PROTOCOL_VERSION: u16 = 19;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -57,6 +57,9 @@ pub enum ClientMessage {
     UseItem {
         instance_id: game_types::EntityId,
         target_id: game_types::EntityId,
+    },
+    EatItem {
+        instance_id: game_types::EntityId,
     },
     RequestTrade {
         target_id: game_types::EntityId,
@@ -174,6 +177,10 @@ pub enum ServerMessage {
     },
     GroundItemsChanged {
         ground_items: Vec<GroundItem>,
+    },
+    FoodStatus {
+        player_id: game_types::EntityId,
+        remaining_ms: u64,
     },
     CombatEffect {
         source_id: game_types::EntityId,

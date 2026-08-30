@@ -416,6 +416,8 @@ async fn session(mut socket: WebSocket, state: AppState) {
         },
         crafting_queue: None,
         last_mana_regen: Instant::now(),
+        active_food: None,
+        last_food_regen: Instant::now(),
     };
     let (
         players,
@@ -602,6 +604,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
                 instance_id,
                 target_id,
             }) => use_combat_item(&state, id, instance_id, target_id).await,
+            Ok(ClientMessage::EatItem { instance_id }) => eat_item(&state, id, instance_id).await,
             Ok(ClientMessage::RequestTrade { target_id }) => {
                 request_trade(&state, id, target_id).await
             }
@@ -990,6 +993,65 @@ async fn use_combat_item(state: &AppState, player_id: Uuid, instance_id: Uuid, t
         },
     );
     dispatch_world_events(state, events).await;
+}
+
+async fn eat_item(state: &AppState, player_id: Uuid, instance_id: Uuid) {
+    let mut world = state.world.write().await;
+    let backup = world.clone();
+    let (player, remaining_ms) = match world.try_eat(player_id, instance_id) {
+        Ok(result) => result,
+        Err(reason) => {
+            state.private(
+                player_id,
+                ServerMessage::Error {
+                    code: reason.into(),
+                    message: match reason {
+                        "item_not_food" => "That cannot be eaten",
+                        "item_locked_in_trade" => "That item is currently offered in a trade",
+                        _ => "You cannot eat that item",
+                    }
+                    .into(),
+                },
+            );
+            return;
+        }
+    };
+    let (inventory, inventory_weight, max_capacity) = world
+        .inventory_state(player_id)
+        .expect("active player after eating");
+    if let Some(database) = &state.database
+        && let Err(error) = database
+            .persist_combat_state(&player, &inventory, world.ground_items())
+            .await
+    {
+        *world = backup;
+        warn!(%player_id, %error, "food transaction rolled back");
+        state.private(
+            player_id,
+            ServerMessage::Error {
+                code: "food_transaction_failed".into(),
+                message: "The food could not be consumed safely".into(),
+            },
+        );
+        return;
+    }
+    drop(world);
+    state.private(
+        player_id,
+        ServerMessage::InventoryChanged {
+            player_id,
+            inventory,
+            inventory_weight,
+            max_capacity,
+        },
+    );
+    state.private(
+        player_id,
+        ServerMessage::FoodStatus {
+            player_id,
+            remaining_ms,
+        },
+    );
 }
 
 fn combat_item_error_message(code: &str) -> &'static str {

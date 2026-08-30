@@ -615,7 +615,7 @@ export function actorSegmentDuration(updateIntervalMs: number) {
 
 function SelectionRing({ active, color }: { active: boolean; color: string }) {
   if (!active) return null;
-  return <mesh position={[0, 0.025, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={12}><ringGeometry args={[0.36, 0.48, 32]} /><meshBasicMaterial color={color} transparent opacity={0.82} depthTest={false} depthWrite={false} /></mesh>;
+  return <mesh position={[0, 0.025, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={12}><ringGeometry args={[0.36, 0.48, 32]} /><meshBasicMaterial color={color} transparent opacity={0.82} depthTest depthWrite={false} /></mesh>;
 }
 
 function TargetMarker({ active }: { active: boolean }) {

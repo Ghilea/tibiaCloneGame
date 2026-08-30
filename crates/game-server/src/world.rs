@@ -48,6 +48,15 @@ pub struct Player {
     pub learned_spells: HashSet<String>,
     pub crafting_queue: Option<CraftingQueue>,
     pub last_mana_regen: Instant,
+    pub active_food: Option<ActiveFood>,
+    pub last_food_regen: Instant,
+}
+
+#[derive(Debug, Clone)]
+pub struct ActiveFood {
+    until: Instant,
+    health_per_tick: u16,
+    mana_per_tick: u16,
 }
 
 #[derive(Debug, Clone)]
@@ -1718,6 +1727,7 @@ impl World {
             let elapsed = now.duration_since(player.last_mana_regen);
             let regen_steps = elapsed.as_secs() / MANA_REGEN_INTERVAL.as_secs();
             let old_mana = player.view.mana;
+            let old_health = player.view.health;
             if regen_steps > 0 {
                 player.view.mana = player
                     .view
@@ -1728,7 +1738,36 @@ impl World {
                     MANA_REGEN_INTERVAL * u32::try_from(regen_steps).unwrap_or(u32::MAX);
             }
 
-            let mut status = if player.view.mana != old_mana {
+            if let Some(food) = &player.active_food {
+                let food_until = food.until;
+                let effective_now = now.min(food_until);
+                let food_steps = effective_now
+                    .duration_since(player.last_food_regen.min(effective_now))
+                    .as_secs()
+                    / MANA_REGEN_INTERVAL.as_secs();
+                if food_steps > 0 {
+                    let steps = u16::try_from(food_steps).unwrap_or(u16::MAX);
+                    player.view.health = player
+                        .view
+                        .health
+                        .saturating_add(food.health_per_tick.saturating_mul(steps))
+                        .min(player.view.max_health);
+                    player.view.mana = player
+                        .view
+                        .mana
+                        .saturating_add(food.mana_per_tick.saturating_mul(steps))
+                        .min(player.view.max_mana);
+                    player.last_food_regen +=
+                        MANA_REGEN_INTERVAL * u32::try_from(food_steps).unwrap_or(u32::MAX);
+                }
+                if now >= food_until {
+                    player.active_food = None;
+                }
+            }
+
+            let mut status = if player.view.health != old_health {
+                Some("food_regenerated")
+            } else if player.view.mana != old_mana {
                 Some("mana_regenerated")
             } else {
                 None
@@ -2364,6 +2403,60 @@ impl World {
             events.push(WorldEvent::PlayerStats(stats));
         }
         Ok(events)
+    }
+
+    pub fn try_eat(
+        &mut self,
+        player_id: EntityId,
+        instance_id: EntityId,
+    ) -> Result<(PlayerView, u64), &'static str> {
+        if self.item_is_offered(player_id, instance_id) {
+            return Err("item_locked_in_trade");
+        }
+        let player = self.players.get(&player_id).ok_or("unknown_player")?;
+        let item_index = player
+            .inventory
+            .iter()
+            .position(|item| item.instance_id == instance_id)
+            .ok_or("item_not_owned")?;
+        let food = self
+            .content
+            .item(&player.inventory[item_index].definition_id)
+            .and_then(|definition| definition.food_effect.clone())
+            .ok_or("item_not_food")?;
+        let now = Instant::now();
+        let player = self.players.get_mut(&player_id).expect("checked above");
+        if player.inventory[item_index].quantity == 1 {
+            player.inventory.remove(item_index);
+        } else {
+            player.inventory[item_index].quantity -= 1;
+        }
+        let current_until = player
+            .active_food
+            .as_ref()
+            .map_or(now, |active| active.until.max(now));
+        let until = (current_until + Duration::from_secs(food.duration_seconds))
+            .min(now + Duration::from_secs(600));
+        player.active_food = Some(ActiveFood {
+            until,
+            health_per_tick: player
+                .active_food
+                .as_ref()
+                .map_or(food.health_per_tick, |active| {
+                    active.health_per_tick.max(food.health_per_tick)
+                }),
+            mana_per_tick: player
+                .active_food
+                .as_ref()
+                .map_or(food.mana_per_tick, |active| {
+                    active.mana_per_tick.max(food.mana_per_tick)
+                }),
+        });
+        player.last_food_regen = now;
+        Ok((
+            player.view.clone(),
+            u64::try_from(until.duration_since(now).as_millis()).unwrap_or(u64::MAX),
+        ))
     }
 
     pub fn try_use_item(
@@ -3645,6 +3738,7 @@ mod tests {
             pickupable: true,
             combat_effect: None,
             distance_weapon: None,
+            food_effect: None,
         }])
         .unwrap()
     }
@@ -3680,6 +3774,8 @@ mod tests {
             learned_spells: HashSet::new(),
             crafting_queue: None,
             last_mana_regen: Instant::now(),
+            active_food: None,
+            last_food_regen: Instant::now(),
         }
     }
 
@@ -3759,6 +3855,7 @@ mod tests {
                 pickupable: true,
                 combat_effect: None,
                 distance_weapon: None,
+                food_effect: None,
             },
             ItemDefinition {
                 id: "bag".into(),
@@ -3773,6 +3870,7 @@ mod tests {
                 pickupable: true,
                 combat_effect: None,
                 distance_weapon: None,
+                food_effect: None,
             },
             ItemDefinition {
                 id: "blade".into(),
@@ -3787,6 +3885,7 @@ mod tests {
                 pickupable: true,
                 combat_effect: None,
                 distance_weapon: None,
+                food_effect: None,
             },
         ])
         .unwrap()
@@ -3808,6 +3907,7 @@ mod tests {
                     pickupable: true,
                     combat_effect: None,
                     distance_weapon: None,
+                    food_effect: None,
                 },
                 ItemDefinition {
                     id: "gold_coin".into(),
@@ -3822,6 +3922,7 @@ mod tests {
                     pickupable: true,
                     combat_effect: None,
                     distance_weapon: None,
+                    food_effect: None,
                 },
                 ItemDefinition {
                     id: "mireling_remains".into(),
@@ -3836,6 +3937,7 @@ mod tests {
                     pickupable: false,
                     combat_effect: None,
                     distance_weapon: None,
+                    food_effect: None,
                 },
                 ItemDefinition {
                     id: "blank_rune".into(),
@@ -3850,6 +3952,7 @@ mod tests {
                     pickupable: true,
                     combat_effect: None,
                     distance_weapon: None,
+                    food_effect: None,
                 },
                 ItemDefinition {
                     id: "ember_rune".into(),
@@ -3868,6 +3971,7 @@ mod tests {
                         cooldown_ms: 800,
                     }),
                     distance_weapon: None,
+                    food_effect: None,
                 },
                 ItemDefinition {
                     id: "rough_arrow".into(),
@@ -3882,6 +3986,7 @@ mod tests {
                     pickupable: true,
                     combat_effect: None,
                     distance_weapon: None,
+                    food_effect: None,
                 },
                 ItemDefinition {
                     id: "ashwood_bow".into(),
@@ -3901,6 +4006,7 @@ mod tests {
                         cooldown_ms: 750,
                         ammunition_id: "rough_arrow".into(),
                     }),
+                    food_effect: None,
                 },
             ],
             vec![CreatureDefinition {
@@ -4798,6 +4904,35 @@ mod tests {
                 if effect_id == "melee_hit" && *target_id == id
         )));
         assert_eq!(world.player(id).unwrap().view.health, 144);
+    }
+
+    #[test]
+    fn eating_consumes_food_and_regenerates_health_and_mana_over_time() {
+        let id = Uuid::new_v4();
+        let mut player = test_player(id, 100.0);
+        player.view.health = 100;
+        player.view.mana = 10;
+        let food_id = Uuid::new_v4();
+        player.inventory.push(ItemInstance {
+            instance_id: food_id,
+            definition_id: "field_bread".into(),
+            quantity: 2,
+            charges: None,
+            container_id: None,
+            equipped_slot: None,
+        });
+        let mut world = World::new(ContentCatalog::load().unwrap(), vec![]);
+        world.insert_player(player);
+
+        let (_, remaining_ms) = world.try_eat(id, food_id).unwrap();
+        assert!(remaining_ms >= 59_000);
+        assert_eq!(world.player(id).unwrap().inventory[0].quantity, 1);
+        world.players.get_mut(&id).unwrap().last_food_regen =
+            Instant::now() - Duration::from_secs(4);
+        world.tick_crafting();
+        let player = world.player(id).unwrap();
+        assert!(player.view.health >= 104);
+        assert!(player.view.mana >= 14);
     }
 
     #[test]

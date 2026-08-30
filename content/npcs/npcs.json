@@ -8,7 +8,8 @@
     "position": { "x": 9, "y": 8, "z": 7 },
     "offers": [
       { "id": "blank_sigil", "itemDefinitionId": "blank_rune", "quantity": 1, "price": 2 },
-      { "id": "rough_arrows", "itemDefinitionId": "rough_arrow", "quantity": 10, "price": 3 }
+      { "id": "rough_arrows", "itemDefinitionId": "rough_arrow", "quantity": 10, "price": 3 },
+      { "id": "field_bread", "itemDefinitionId": "field_bread", "quantity": 2, "price": 3 }
     ],
     "spellIds": []
   },

@@ -47,7 +47,7 @@ const tools: { id: PaintLayer; label: string; swatch: string; group: ToolGroup; 
   { id: "spawn", label: "Creature", swatch: "#9b5fd0", group: "entities", description: "Place a server-authoritative creature spawn." },
 ];
 const creatureIds = ["castle_rat", "crypt_guard", "bone_acolyte", "cellar_warden", "mireling", "mire_skulker", "reed_stalker", "fen_brute"];
-const itemIds = ["blank_rune", "ember_rune", "traveler_blade", "ashwood_bow", "rough_arrow", "field_backpack", "mire_fiber", "gold_coin", "bog_ichor", "reed_hide", "fen_tusk"];
+const itemIds = ["blank_rune", "ember_rune", "traveler_blade", "ashwood_bow", "rough_arrow", "field_backpack", "mire_fiber", "gold_coin", "field_bread", "smoked_mire_meat", "bog_ichor", "reed_hide", "fen_tusk"];
 const spellIds = ["ember_bolt"];
 const VIEW_COLUMNS = 40;
 const VIEW_ROWS = 28;

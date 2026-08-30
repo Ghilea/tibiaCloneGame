@@ -49,6 +49,7 @@ export class NetworkClient {
   toggleWindow(windowId: string) { this.send({ type: "toggle_window", window_id: windowId }); }
   say(text: string) { this.send({ type: "say", text }); }
   pickup(instanceId: string) { this.send({ type: "pickup_item", instance_id: instanceId }); }
+  eat(instanceId: string) { this.send({ type: "eat_item", instance_id: instanceId }); }
   drop(instanceId: string) { this.send({ type: "drop_item", instance_id: instanceId }); }
   moveToRoot(instanceId: string) { this.send({ type: "move_item", instance_id: instanceId, destination: { kind: "root" } }); }
   moveToContainer(instanceId: string, containerId: string) { this.send({ type: "move_item", instance_id: instanceId, destination: { kind: "container", container_id: containerId } }); }

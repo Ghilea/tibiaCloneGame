@@ -90,3 +90,12 @@ describe("combat feedback", () => {
     expect(world.combatItemCooldownUntil).toBe(0);
   });
 });
+
+describe("food status", () => {
+  it("tracks the server-authoritative nourishment duration", () => {
+    const world = new WorldState(); world.localPlayerId = "local";
+    world.apply({ type: "food_status", player_id: "local", remaining_ms: 60_000 });
+    expect(world.nourishmentDurationMs).toBe(60_000);
+    expect(world.nourishmentUntil).toBeGreaterThan(Date.now() + 59_000);
+  });
+});

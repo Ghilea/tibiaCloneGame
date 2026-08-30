@@ -103,6 +103,13 @@ impl ContentCatalog {
             }) {
                 bail!("invalid distance weapon: {}", definition.id);
             }
+            if definition.food_effect.as_ref().is_some_and(|food| {
+                food.duration_seconds == 0
+                    || food.duration_seconds > 600
+                    || (food.health_per_tick == 0 && food.mana_per_tick == 0)
+            }) {
+                bail!("invalid food effect: {}", definition.id);
+            }
             items.insert(definition.id.clone(), definition);
         }
         if items.is_empty() {
@@ -297,6 +304,7 @@ mod tests {
             pickupable: true,
             combat_effect: None,
             distance_weapon: None,
+            food_effect: None,
         }
     }
 

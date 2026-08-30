@@ -9,6 +9,7 @@
     "attacks": [{ "type": "melee", "minDamage": 2, "maxDamage": 7, "intervalMs": 1200 }],
     "loot": [
       { "definitionId": "mire_fiber", "chance": 1.0, "minQuantity": 1, "maxQuantity": 2 },
+      { "definitionId": "smoked_mire_meat", "chance": 0.35, "minQuantity": 1, "maxQuantity": 1 },
       { "definitionId": "gold_coin", "chance": 0.65, "minQuantity": 1, "maxQuantity": 4 }
     ]
   },

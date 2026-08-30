@@ -7,6 +7,8 @@
   { "id": "field_backpack", "name": "Field Backpack", "weight": 18.0, "stackable": false, "maxStack": 1, "containerSlots": 12 },
   { "id": "mire_fiber", "name": "Mire Fiber", "weight": 0.8, "stackable": true, "maxStack": 100 },
   { "id": "gold_coin", "name": "Gold Coin", "weight": 0.1, "stackable": true, "maxStack": 100 },
+  { "id": "field_bread", "name": "Field Bread", "weight": 1.4, "stackable": true, "maxStack": 20, "foodEffect": { "healthPerTick": 2, "manaPerTick": 2, "durationSeconds": 60 } },
+  { "id": "smoked_mire_meat", "name": "Smoked Mire Meat", "weight": 2.2, "stackable": true, "maxStack": 20, "foodEffect": { "healthPerTick": 3, "manaPerTick": 1, "durationSeconds": 90 } },
   { "id": "mireling_remains", "name": "Mireling Remains", "weight": 30.0, "stackable": false, "maxStack": 1, "containerSlots": 8, "pickupable": false },
   { "id": "bog_ichor", "name": "Bog Ichor", "weight": 0.6, "stackable": true, "maxStack": 100 },
   { "id": "reed_hide", "name": "Reed Hide", "weight": 2.4, "stackable": true, "maxStack": 100 },

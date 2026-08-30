@@ -36,6 +36,8 @@ export class WorldState {
   combatItemCooldownMs = 0;
   spellCooldownUntil = 0;
   spellCooldownMs = 0;
+  nourishmentUntil = 0;
+  nourishmentDurationMs = 0;
   incomingTrade: IncomingTrade | null = null;
   trade: TradeStateView | null = null;
   connection: "offline" | "connecting" | "online" | "error" = "offline";
@@ -77,6 +79,8 @@ export class WorldState {
         this.combatItemCooldownMs = 0;
         this.spellCooldownUntil = 0;
         this.spellCooldownMs = 0;
+        this.nourishmentUntil = 0;
+        this.nourishmentDurationMs = 0;
         this.incomingTrade = null;
         this.trade = null;
         this.pendingLocalMoves.clear();
@@ -177,6 +181,12 @@ export class WorldState {
         break;
       case "ground_items_changed":
         this.groundItems = message.ground_items;
+        break;
+      case "food_status":
+        if (message.player_id === this.localPlayerId) {
+          this.nourishmentDurationMs = message.remaining_ms;
+          this.nourishmentUntil = Date.now() + message.remaining_ms;
+        }
         break;
       case "combat_effect":
         this.combatEffects.push({

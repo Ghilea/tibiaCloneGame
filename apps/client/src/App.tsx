@@ -13,7 +13,7 @@ import { InputController } from "./game/InputController";
 import { ThreeWorld } from "./game/ThreeWorld";
 import { NetworkClient } from "./game/NetworkClient";
 import { WorldState } from "./game/WorldState";
-import type { GroundItem, ItemInstance } from "./protocol";
+import { PROTOCOL_VERSION, type GroundItem, type ItemInstance } from "./protocol";
 import { canCraftSigils, vocationName } from "./vocations";
 
 const world = new WorldState();
@@ -134,7 +134,7 @@ function AccountLogin({
             ? "New here? Create an account"
             : "Already have an account? Log in"}
         </button>
-        <p className="version">Development realm · Protocol 10</p>
+        <p className="version">Development realm · Protocol {PROTOCOL_VERSION}</p>
       </section>
     </main>
   );
@@ -250,6 +250,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
             max={local?.maxMana ?? 1}
             label={`${local?.mana} / ${local?.maxMana}`}
           />
+          <NourishmentBar />
         </div>
       </section>
       {(world.attackTargetId || world.selectedPlayerId) && <TargetFrame />}
@@ -386,6 +387,21 @@ function ResourceBar({
     </div>
   );
 }
+
+function NourishmentBar() {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (world.nourishmentUntil <= Date.now()) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [world.nourishmentUntil]);
+  const remaining = Math.max(0, world.nourishmentUntil - now);
+  const percent = world.nourishmentDurationMs > 0 ? remaining / world.nourishmentDurationMs * 100 : 0;
+  return <div className="resource-bar nourishment" title="Food restores health and mana every two seconds while nourished">
+    <span style={{ width: `${percent}%` }} />
+    <small>{remaining > 0 ? `Nourished · ${Math.ceil(remaining / 1000)}s` : "Hungry"}</small>
+  </div>;
+}
 function TargetFrame() {
   const creature = world.attackTargetId
     ? world.creatures.get(world.attackTargetId)
@@ -495,6 +511,8 @@ const itemSpriteOrder = [
   "fen_brute_remains",
 ];
 function ItemIcon({ definitionId }: { definitionId: string }) {
+  if (definitionId === "field_bread") return <i className="item-icon food-icon">🥖</i>;
+  if (definitionId === "smoked_mire_meat") return <i className="item-icon food-icon">🍖</i>;
   const index = itemSpriteOrder.indexOf(definitionId);
   if (index < 0) return <i className="item-icon fallback" />;
   const column = index % 4;
@@ -1114,6 +1132,7 @@ function RuneCraftingPanel() {
     crafted: "One batch completed",
     waiting_mana: "Waiting for mana",
     mana_regenerated: "Mana is recovering",
+    food_regenerated: "Food is restoring health and mana",
     paused_combat: "Paused during combat",
     complete: "Queue completed",
     missing_material: "Materials ran out",
@@ -1358,7 +1377,8 @@ function InventoryEntry({
         onDragStart={(event) => startItemDrag(event, item.instanceId)}
         onDragOver={definition?.containerSlots ? allowItemDrop : undefined}
         onDrop={receive}
-        title="Drag to move this item"
+        onContextMenu={(event) => { if (!definition?.foodEffect) return; event.preventDefault(); network.eat(item.instanceId); }}
+        title={definition?.foodEffect ? "Right-click to eat · drag to move" : "Drag to move this item"}
       >
         <ItemIcon definitionId={item.definitionId} />
         <span>
@@ -1376,6 +1396,7 @@ function InventoryEntry({
           </small>
         </span>
         <div className="item-actions">
+          {definition?.foodEffect && <button onClick={() => network.eat(item.instanceId)}>Eat</button>}
           {definition?.equipmentSlot && !item.equippedSlot && (
             <button
               onClick={() =>

@@ -122,6 +122,16 @@ pub struct ItemDefinition {
     pub combat_effect: Option<ItemCombatEffect>,
     #[serde(default)]
     pub distance_weapon: Option<DistanceWeapon>,
+    #[serde(default)]
+    pub food_effect: Option<FoodEffect>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FoodEffect {
+    pub health_per_tick: u16,
+    pub mana_per_tick: u16,
+    pub duration_seconds: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

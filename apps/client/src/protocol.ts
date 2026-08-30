@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = 18;
+export const PROTOCOL_VERSION = 19;
 export const CLIENT_VERSION = "0.1.0";
 
 export type Position = { x: number; y: number; z: number };
@@ -48,7 +48,7 @@ export type BuildingView = { id: string; name: string; kind: "keep" | "house"; x
 export type DoorView = { id: string; position: Position; open: boolean };
 export type WindowView = { id: string; position: Position; open: boolean };
 export type StairView = { id: string; from: Position; to: Position };
-export type ItemDefinition = { id: string; name: string; weight: number; stackable: boolean; maxStack: number; charges?: number; attack?: number; containerSlots?: number; equipmentSlot?: string; pickupable: boolean; combatEffect?: { damage: number; range: number; cooldownMs: number }; distanceWeapon?: { damage: number; range: number; cooldownMs: number; ammunitionId: string } };
+export type ItemDefinition = { id: string; name: string; weight: number; stackable: boolean; maxStack: number; charges?: number; attack?: number; containerSlots?: number; equipmentSlot?: string; pickupable: boolean; combatEffect?: { damage: number; range: number; cooldownMs: number }; distanceWeapon?: { damage: number; range: number; cooldownMs: number; ammunitionId: string }; foodEffect?: { healthPerTick: number; manaPerTick: number; durationSeconds: number } };
 export type ItemInstance = { instanceId: string; definitionId: string; quantity: number; charges?: number; containerId?: string; equippedSlot?: string };
 export type GroundItem = { item: ItemInstance; position: Position; contents: ItemInstance[] };
 export type ShopOffer = { id: string; itemDefinitionId: string; quantity: number; price: number };
@@ -71,6 +71,7 @@ export type ClientMessage =
   | { type: "start_rune_crafting"; recipe_id: string; quantity: number }
   | { type: "cancel_rune_crafting" }
   | { type: "use_item"; instance_id: string; target_id: string }
+  | { type: "eat_item"; instance_id: string }
   | { type: "request_trade"; target_id: string }
   | { type: "respond_trade"; trade_id: string; accept: boolean }
   | { type: "set_trade_offer"; trade_id: string; item_ids: string[] }
@@ -96,6 +97,7 @@ export type ServerMessage =
   | { type: "depot_changed"; player_id: string; depot: ItemInstance[] }
   | { type: "spells_changed"; player_id: string; learned_spell_ids: string[] }
   | { type: "ground_items_changed"; ground_items: GroundItem[] }
+  | { type: "food_status"; player_id: string; remaining_ms: number }
   | { type: "combat_effect"; source_id: string; target_id: string; effect_id: string; damage: number; cooldown_ms: number }
   | { type: "area_telegraph"; source_id: string; position: Position; effect_id: string; radius: number; duration_ms: number }
   | { type: "trade_requested"; trade_id: string; requester: PlayerView }
