@@ -196,6 +196,40 @@ impl Database {
         Ok(character_from_row(row))
     }
 
+    pub async fn delete_character(
+        &self,
+        account_id: EntityId,
+        character_id: EntityId,
+    ) -> Result<bool, sqlx::Error> {
+        let mut transaction = self.pool.begin().await?;
+        let owned = sqlx::query_scalar::<_, EntityId>(
+            "SELECT id FROM characters WHERE id = $1 AND account_id = $2 FOR UPDATE",
+        )
+        .bind(character_id)
+        .bind(account_id)
+        .fetch_optional(&mut *transaction)
+        .await?
+        .is_some();
+        if !owned {
+            return Ok(false);
+        }
+        // Root inventory/depot items own their nested container trees through
+        // ON DELETE CASCADE. Spells cascade from the character itself.
+        sqlx::query(
+            "DELETE FROM item_instances WHERE owner_character_id = $1 OR depot_character_id = $1",
+        )
+        .bind(character_id)
+        .execute(&mut *transaction)
+        .await?;
+        sqlx::query("DELETE FROM characters WHERE id = $1 AND account_id = $2")
+            .bind(character_id)
+            .bind(account_id)
+            .execute(&mut *transaction)
+            .await?;
+        transaction.commit().await?;
+        Ok(true)
+    }
+
     pub async fn character_for_account(
         &self,
         account_id: EntityId,

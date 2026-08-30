@@ -438,11 +438,29 @@ select {
   border-radius: 8px;
 }
 .editor-shell header a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   padding: 8px 12px;
+  color: #f0d49a;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
   text-decoration: none;
-  border: 1px solid #695d42;
+  border: 1px solid #9b7943;
   border-radius: 8px;
-  background: #211f17;
+  background: linear-gradient(180deg, #3a3020, #211b13);
+  box-shadow: inset 0 1px #ffffff10, 0 4px 14px #0004;
+  transition: border-color 120ms ease, color 120ms ease, transform 120ms ease;
+}
+.editor-shell header a:hover {
+  color: #ffe7b2;
+  border-color: #d0a356;
+  transform: translateY(-1px);
+}
+.editor-shell header a:focus-visible {
+  outline: 2px solid #e7bd6d;
+  outline-offset: 2px;
 }
 .palette {
   display: flex;

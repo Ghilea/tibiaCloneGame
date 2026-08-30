@@ -1,67 +1,26 @@
 import {
   FormEvent,
   ReactNode,
+  useCallback,
   useEffect,
   useState,
   useSyncExternalStore,
   type DragEvent,
 } from "react";
-import {
-  ApiFailure,
-  authenticate,
-  createCharacter,
-  listCharacters,
-  type CharacterSummary,
-} from "./api";
+import { authenticate } from "./api";
+import { CharacterLobby } from "./CharacterLobby";
 import { InputController } from "./game/InputController";
 import { ThreeWorld } from "./game/ThreeWorld";
 import { NetworkClient } from "./game/NetworkClient";
 import { WorldState } from "./game/WorldState";
 import type { GroundItem, ItemInstance } from "./protocol";
+import { canCraftSigils, vocationName } from "./vocations";
 
 const world = new WorldState();
 const network = new NetworkClient(world);
 const input = new InputController(world, network);
 const subscribeWorldVisual = (listener: () => void) => world.subscribeVisual(listener);
 const worldVisualSnapshot = () => world.visualRevision;
-
-const vocations = [
-  {
-    id: "warrior",
-    name: "Warrior",
-    icon: "⚔",
-    role: "Durable melee fighter",
-    detail: "180 health · 130 capacity · trains Sword twice as fast",
-  },
-  {
-    id: "ranger",
-    name: "Ranger",
-    icon: "➶",
-    role: "Mobile weapon specialist",
-    detail: "Ashwood Bow · 100 arrows · trains Distance twice as fast",
-  },
-  {
-    id: "mage",
-    name: "Mage",
-    icon: "✦",
-    role: "Offensive sigil crafter",
-    detail: "120 mana · Magic Level 2 · trains Magic twice as fast",
-  },
-  {
-    id: "druid",
-    name: "Druid",
-    icon: "❧",
-    role: "Resilient sigil crafter",
-    detail: "115 health · 110 mana · trains Magic twice as fast",
-  },
-] as const;
-
-function vocationName(id: string) {
-  return vocations.find((vocation) => vocation.id === id)?.name ?? "Adventurer";
-}
-function canCraftSigils(id?: string) {
-  return id === "mage" || id === "druid" || id === "adventurer";
-}
 
 export default function App() {
   const [sessionToken, setSessionToken] = useState(
@@ -76,15 +35,22 @@ export default function App() {
     localStorage.setItem("sessionToken", token);
     setSessionToken(token);
   };
-  const logout = () => {
+  const logout = useCallback(() => {
     network.disconnect();
     localStorage.removeItem("sessionToken");
     setSessionToken("");
-  };
+  }, []);
   if (world.connection === "online" && world.localPlayerId)
     return <Game onLeave={() => network.disconnect()} />;
   if (!sessionToken) return <AccountLogin onAuthenticated={authenticated} />;
-  return <CharacterSelection token={sessionToken} onInvalidSession={logout} />;
+  return (
+    <CharacterLobby
+      token={sessionToken}
+      connecting={world.connection === "connecting"}
+      onPlay={(characterId) => network.connect(sessionToken, characterId)}
+      onLogout={logout}
+    />
+  );
 }
 
 function AccountLogin({
@@ -169,135 +135,6 @@ function AccountLogin({
             : "Already have an account? Log in"}
         </button>
         <p className="version">Development realm · Protocol 10</p>
-      </section>
-    </main>
-  );
-}
-
-function CharacterSelection({
-  token,
-  onInvalidSession,
-}: {
-  token: string;
-  onInvalidSession: () => void;
-}) {
-  const [characters, setCharacters] = useState<CharacterSummary[]>([]);
-  const [newName, setNewName] = useState("");
-  const [vocation, setVocation] =
-    useState<(typeof vocations)[number]["id"]>("mage");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    let active = true;
-    void listCharacters(token)
-      .then((result) => {
-        if (active) setCharacters(result.characters);
-      })
-      .catch((failure) => {
-        if (!active) return;
-        if (failure instanceof ApiFailure && failure.status === 401)
-          onInvalidSession();
-        else
-          setError(
-            failure instanceof Error
-              ? failure.message
-              : "Could not load characters",
-          );
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [token]);
-  const create = async (event: FormEvent) => {
-    event.preventDefault();
-    setError("");
-    try {
-      const character = await createCharacter(token, newName, vocation);
-      setCharacters((current) => [...current, character]);
-      setNewName("");
-    } catch (failure) {
-      setError(
-        failure instanceof Error
-          ? failure.message
-          : "Could not create the character",
-      );
-    }
-  };
-  return (
-    <main className="login-shell">
-      <section className="login-card character-select">
-        <p className="eyebrow">Greyhaven ledger</p>
-        <h1>Choose your traveler</h1>
-        {loading && <p className="muted">Loading characters…</p>}
-        <div className="character-list">
-          {characters.map((character) => (
-            <button
-              className="character-option"
-              key={character.id}
-              onClick={() => network.connect(token, character.id)}
-            >
-              <span>
-                <strong>{character.name}</strong>
-                <small>
-                  Level {character.level} {vocationName(character.vocation)} ·{" "}
-                  {character.position.x}, {character.position.y},{" "}
-                  {character.position.z}
-                </small>
-              </span>
-              <b>Enter world →</b>
-            </button>
-          ))}
-        </div>
-        {characters.length < 4 && (
-          <form onSubmit={create} className="create-character">
-            <label htmlFor="character-name">Create a new character</label>
-            <input
-              id="character-name"
-              value={newName}
-              onChange={(event) => setNewName(event.target.value)}
-              minLength={2}
-              maxLength={20}
-              placeholder="Character name"
-            />
-            <fieldset>
-              <legend>Choose your vocation</legend>
-              <div className="vocation-grid">
-                {vocations.map((option) => (
-                  <button
-                    type="button"
-                    className={
-                      vocation === option.id
-                        ? "vocation-option selected"
-                        : "vocation-option"
-                    }
-                    onClick={() => setVocation(option.id)}
-                    key={option.id}
-                  >
-                    <i>{option.icon}</i>
-                    <span>
-                      <strong>{option.name}</strong>
-                      <small>{option.role}</small>
-                    </span>
-                    <em>{option.detail}</em>
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-            <button className="create-submit">
-              Create {vocationName(vocation)}
-            </button>
-          </form>
-        )}
-        {world.connection === "connecting" && (
-          <p className="muted">Entering the world…</p>
-        )}
-        {error && <p className="error">{error}</p>}
-        <button className="text-button" onClick={onInvalidSession}>
-          Log out
-        </button>
       </section>
     </main>
   );

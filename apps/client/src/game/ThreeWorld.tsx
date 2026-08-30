@@ -1,5 +1,5 @@
 import { Canvas, type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
-import { memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type MutableRefObject } from "react";
+import { memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type MutableRefObject } from "react";
 import * as THREE from "three";
 import type {
   BuildingView,
@@ -11,6 +11,7 @@ import type {
   WindowView,
 } from "../protocol";
 import { AnimatedCharacter, type CharacterKind } from "./AnimatedCharacter";
+import { CreatureModel } from "./CreatureModels";
 import { CLIENT_STEP_MS, InputController } from "./InputController";
 import { MedievalDoorLeafAsset } from "./MedievalAssetModels";
 import { GabledRoof, HangingSign, MedievalDoorWall, MedievalWall, MedievalWindowWall, ShutterWindow } from "./MedievalModels";
@@ -111,6 +112,7 @@ function WorldScene({ world, input }: ThreeWorldProps) {
         <NpcActor
           key={npc.id}
           npc={npc}
+          playerPosition={localVisualPosition}
           onClick={(event) => {
             event.stopPropagation();
             input.interactNpc(npc.id);
@@ -426,34 +428,87 @@ const PlayerActor = memo(function PlayerActor({ player, local, visualPosition, s
   );
 }, actorPropsEqual);
 
-type NpcActorProps = { npc: NpcView; onClick: ActorClick };
+type NpcActorProps = { npc: NpcView; playerPosition: MutableRefObject<THREE.Vector3>; onClick: ActorClick };
 
-const NpcActor = memo(function NpcActor({ npc, onClick }: NpcActorProps) {
+const NpcActor = memo(function NpcActor({ npc, playerPosition, onClick }: NpcActorProps) {
   const kind: CharacterKind = npc.service === "spell_trainer" ? "mage" : npc.service === "depot" ? "knight" : "rogue";
   const moving = useRef(false);
-  return <SmoothActor id={npc.id} position={npc.position} moving={moving}><group onClick={onClick}><SelectionRing active color="#d6b65e" /><AnimatedCharacter kind={kind} position={npc.position} moving={moving} /><mesh position={[0, 2.18, 0]}><octahedronGeometry args={[0.11]} /><meshStandardMaterial color="#e7c45f" emissive="#b17f23" emissiveIntensity={1.3} /></mesh></group></SmoothActor>;
-}, (previous, next) => previous.npc === next.npc);
+  const presence = useRef<THREE.Group>(null);
+  const nearby = useRef(false);
+  const nextCallAt = useRef(Number.POSITIVE_INFINITY);
+  const hideCallAt = useRef(0);
+  const callIndex = useRef(Math.floor(stablePhase(npc.id) * 10));
+  const [callout, setCallout] = useState<string | null>(null);
+  const calls = npcCalls(npc);
+  const homeFacing = stablePhase(npc.id);
+  useFrame(({ clock }, delta) => {
+    const player = playerPosition.current;
+    const hasPlayer = Number.isFinite(player.x) && Number.isFinite(player.z);
+    const dx = hasPlayer ? player.x - npc.position.x - 0.5 : 0;
+    const dz = hasPlayer ? player.z - npc.position.y - 0.5 : 0;
+    const isNearby = hasPlayer && dx * dx + dz * dz <= 25;
+    const desired = isNearby ? Math.atan2(dx, dz) : homeFacing;
+    if (presence.current) {
+      const turn = Math.atan2(Math.sin(desired - presence.current.rotation.y), Math.cos(desired - presence.current.rotation.y));
+      presence.current.rotation.y += turn * (1 - Math.exp(-delta * (isNearby ? 7 : 2)));
+    }
+    if (isNearby && !nearby.current) nextCallAt.current = clock.elapsedTime + 0.45;
+    if (!isNearby && nearby.current) {
+      nextCallAt.current = Number.POSITIVE_INFINITY;
+      hideCallAt.current = 0;
+      setCallout(null);
+    }
+    nearby.current = isNearby;
+    if (isNearby && clock.elapsedTime >= nextCallAt.current) {
+      const message = calls[callIndex.current % calls.length];
+      callIndex.current += 1;
+      setCallout(message);
+      hideCallAt.current = clock.elapsedTime + 3.6;
+      nextCallAt.current = clock.elapsedTime + 15 + stablePhase(`${npc.id}-${callIndex.current}`) / (Math.PI * 2) * 8;
+    } else if (callout && clock.elapsedTime >= hideCallAt.current) {
+      hideCallAt.current = 0;
+      setCallout(null);
+    }
+  });
+  return <SmoothActor id={npc.id} position={npc.position} moving={moving}><group onClick={onClick}><SelectionRing active color="#d6b65e" /><group ref={presence} rotation={[0, homeFacing, 0]}><AnimatedCharacter kind={kind} position={npc.position} moving={moving} /></group><mesh position={[0, 2.55, 0]}><octahedronGeometry args={[0.11]} /><meshStandardMaterial color="#e7c45f" emissive="#b17f23" emissiveIntensity={1.3} /></mesh>{callout && <SpeechBubble text={callout} />}</group></SmoothActor>;
+}, (previous, next) => previous.npc === next.npc && previous.playerPosition === next.playerPosition);
 
 type CreatureActorProps = { creature: CreatureView; selected: boolean; onClick: ActorClick };
 
 const CreatureActor = memo(function CreatureActor({ creature, selected, onClick }: CreatureActorProps) {
-  const group = useRef<THREE.Group>(null);
-  const phase = stablePhase(creature.id);
-  useFrame(({ clock }) => {
-    if (group.current) group.current.position.y = Math.sin(clock.elapsedTime * 6 + phase) * 0.025;
-  });
-  const brute = creature.definitionId.includes("brute");
+  const moving = useRef(false);
   return (
-    <SmoothActor id={creature.id} position={creature.position}>
-      <group ref={group} onClick={onClick}>
+    <SmoothActor id={creature.id} position={creature.position} moving={moving}>
+      <group onClick={onClick}>
         <SelectionRing active={selected} color="#dc594c" />
-        <mesh position={[0, brute ? 0.72 : 0.55, 0]} castShadow><dodecahedronGeometry args={[brute ? 0.58 : 0.43, 0]} /><meshStandardMaterial color={creature.immune ? "#8c9791" : "#506b3a"} roughness={0.9} /></mesh>
-        <mesh position={[-0.2, brute ? 0.93 : 0.71, -0.34]}><sphereGeometry args={[0.045, 8, 6]} /><meshStandardMaterial color="#ff713d" emissive="#a52d15" emissiveIntensity={2} /></mesh>
-        <mesh position={[0.2, brute ? 0.93 : 0.71, -0.34]}><sphereGeometry args={[0.045, 8, 6]} /><meshStandardMaterial color="#ff713d" emissive="#a52d15" emissiveIntensity={2} /></mesh>
+        <CreatureModel definitionId={creature.definitionId} immune={creature.immune} moving={moving} />
       </group>
     </SmoothActor>
   );
 }, (previous, next) => previous.creature === next.creature && previous.selected === next.selected);
+
+function SpeechBubble({ text }: { text: string }) {
+  const texture = useMemo(() => {
+    const canvas = document.createElement("canvas"); canvas.width = 512; canvas.height = 128;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "rgba(12, 17, 14, .92)";
+    context.strokeStyle = "rgba(220, 183, 103, .9)"; context.lineWidth = 5;
+    context.beginPath(); context.roundRect(5, 5, 502, 98, 20); context.fill(); context.stroke();
+    context.beginPath(); context.moveTo(235, 102); context.lineTo(256, 124); context.lineTo(277, 102); context.closePath(); context.fill(); context.stroke();
+    context.fillStyle = "#f5e4bc"; context.font = "600 25px Inter, sans-serif"; context.textAlign = "center"; context.textBaseline = "middle";
+    context.fillText(text, 256, 55, 460);
+    const result = new THREE.CanvasTexture(canvas); result.colorSpace = THREE.SRGBColorSpace; result.needsUpdate = true; return result;
+  }, [text]);
+  useEffect(() => () => texture.dispose(), [texture]);
+  return <sprite position={[0, 3.08, 0]} scale={[2.3, 0.58, 1]} renderOrder={20}><spriteMaterial map={texture} transparent depthTest={false} depthWrite={false} /></sprite>;
+}
+
+function npcCalls(npc: NpcView) {
+  if (npc.service === "shop") return [`Welcome, traveler!`, `Supplies for the road!`, `Take a look at my wares.`];
+  if (npc.service === "depot") return [`Your belongings are safe here.`, `Travel light, traveler.`, `The vaults stand ready.`];
+  if (npc.service === "spell_trainer") return [`Knowledge rewards the patient.`, `Come, sharpen your mind.`, `Magic takes discipline.`];
+  return [`Good day, traveler.`, `Stay safe beyond the walls.`, `Have you heard the latest news?`];
+}
 
 function actorPropsEqual(previous: PlayerActorProps, next: PlayerActorProps) {
   return previous.player === next.player

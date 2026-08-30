@@ -92,6 +92,14 @@ impl ApiError {
             "The session is missing or has expired",
         )
     }
+
+    pub fn character_online() -> Self {
+        Self::new(
+            StatusCode::CONFLICT,
+            "character_online",
+            "Log out that character before deleting it",
+        )
+    }
 }
 
 impl IntoResponse for ApiError {
@@ -252,6 +260,28 @@ impl AuthService {
                     "That character does not belong to this account",
                 )
             })
+    }
+
+    pub async fn delete_character(
+        &self,
+        token: &str,
+        character_id: EntityId,
+    ) -> Result<(), ApiError> {
+        let account_id = self.account_for_token(token).await?;
+        let deleted = self
+            .database()?
+            .delete_character(account_id, character_id)
+            .await
+            .map_err(internal_error)?;
+        if deleted {
+            Ok(())
+        } else {
+            Err(ApiError::new(
+                StatusCode::NOT_FOUND,
+                "character_not_found",
+                "That character does not exist on this account",
+            ))
+        }
     }
 
     pub async fn save_position(&self, character_id: EntityId, position: Position) {

@@ -12,7 +12,7 @@ use std::{
 use axum::{
     Json, Router,
     extract::{
-        State, WebSocketUpgrade,
+        Path, State, WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
     http::{HeaderMap, StatusCode},
@@ -94,6 +94,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/auth/register", post(register))
         .route("/api/auth/login", post(login))
         .route("/api/characters", get(characters).post(create_character))
+        .route(
+            "/api/characters/{character_id}",
+            axum::routing::delete(delete_character),
+        )
         .route("/ws", get(websocket))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
@@ -153,6 +157,21 @@ async fn create_character(
         .create_character(token, request.name, request.vocation)
         .await?;
     Ok((StatusCode::CREATED, Json(character)))
+}
+
+async fn delete_character(
+    State(state): State<AppState>,
+    Path(character_id): Path<Uuid>,
+    headers: HeaderMap,
+) -> Result<StatusCode, auth::ApiError> {
+    let token = bearer_token(&headers)?;
+    // Resolve ownership before exposing whether an id is currently online.
+    state.auth.resolve_character(token, character_id).await?;
+    if state.world.read().await.player(character_id).is_some() {
+        return Err(auth::ApiError::character_online());
+    }
+    state.auth.delete_character(token, character_id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 fn bearer_token(headers: &HeaderMap) -> Result<&str, auth::ApiError> {

@@ -261,7 +261,7 @@ export function WorldEditor() {
     || ["packed_earth", "moss_stone", "sandstone"].includes(value);
 
   return <main className="editor-shell">
-    <header><div><p>EMBERS OF ALDORIA</p><h1>World Editor</h1></div><input value={document.name} onChange={(event) => restore({ ...document, name: event.target.value })} /><span>{document.width} x {document.height} / z={activeFloor}</span><a href="/">Open game</a></header>
+    <header><div><p>EMBERS OF ALDORIA</p><h1>World Editor</h1></div><input value={document.name} onChange={(event) => restore({ ...document, name: event.target.value })} /><span>{document.width} x {document.height} / z={activeFloor}</span><a className="editor-back-button" href="/" aria-label="Back to character selection"><b aria-hidden="true">←</b> Back to Characters</a></header>
     <aside className="palette">
       <section className="editor-onboarding"><strong>Build naturally</strong><span>Paint with the active tool. Existing objects are always draggable.</span><small>Drag with the right or middle mouse button to pan from any tool. Hold Space for left-button pan. Ctrl+Z/Y handles undo and redo.</small></section>
       <div className="tool-tabs" role="tablist" aria-label="Tool categories">{toolGroups.map((group) => <button role="tab" aria-selected={toolGroup === group.id} className={toolGroup === group.id ? "active" : ""} key={group.id} onClick={() => { setToolGroup(group.id); setTool(tools.find((entry) => entry.group === group.id)?.id ?? "erase"); }}>{group.label}</button>)}</div>

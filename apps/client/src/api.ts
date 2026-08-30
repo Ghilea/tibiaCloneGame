@@ -26,6 +26,10 @@ export async function createCharacter(token: string, name: string, vocation: str
   return request<CharacterSummary>("/characters", { method: "POST", body: JSON.stringify({ name, vocation }) }, token);
 }
 
+export async function deleteCharacter(token: string, characterId: string) {
+  return request<void>(`/characters/${encodeURIComponent(characterId)}`, { method: "DELETE" }, token);
+}
+
 async function request<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
@@ -35,5 +39,6 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
     const body = await response.json().catch(() => ({ code: "network_error", message: `HTTP ${response.status}` }));
     throw new ApiFailure(body.code ?? "request_failed", body.message ?? "The request failed", response.status);
   }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
