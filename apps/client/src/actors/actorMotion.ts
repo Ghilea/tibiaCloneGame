@@ -1,17 +1,18 @@
-import { direction8FromVector } from "./direction8";
-import type { Direction8 } from "./spriteTypes";
+import { cardinalFacingFromVector, direction8FromVector } from "./direction8";
+import type { CardinalDirection, Direction8 } from "./spriteTypes";
 
 export const MOVEMENT_EPSILON = 0.001;
 
 export type ActorMotionState = {
   moving: boolean;
   direction: Direction8;
+  facing: CardinalDirection;
   /** Visual world-units travelled per second. */
   speed: number;
 };
 
 export function createActorMotionState(direction: Direction8 = "s"): ActorMotionState {
-  return { moving: false, direction, speed: 0 };
+  return { moving: false, direction, facing: "south", speed: 0 };
 }
 
 export function sampleActorMotion(
@@ -28,6 +29,7 @@ export function sampleActorMotion(
   }
   motion.moving = true;
   motion.direction = direction8FromVector(dx, dz, motion.direction);
+  motion.facing = cardinalFacingFromVector(dx, dz, motion.facing);
   motion.speed = distance / Math.max(deltaSeconds, 1 / 240);
   return motion;
 }

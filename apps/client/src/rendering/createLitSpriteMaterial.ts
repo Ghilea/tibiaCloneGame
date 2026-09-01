@@ -12,7 +12,7 @@ import * as THREE from "three";
  */
 export function createLitSpriteMaterial(
   albedo: THREE.Texture,
-  normal: THREE.Texture,
+  normal: THREE.Texture | null,
   roughness = 0.9,
   alphaTest = 0.35,
   normalStrength = 1.0,
@@ -20,9 +20,13 @@ export function createLitSpriteMaterial(
   albedo.colorSpace = THREE.SRGBColorSpace;
 
   albedo.wrapS = albedo.wrapT = THREE.ClampToEdgeWrapping;
-  normal.wrapS = normal.wrapT = THREE.ClampToEdgeWrapping;
-  albedo.magFilter = normal.magFilter = THREE.NearestFilter;
-  albedo.minFilter = normal.minFilter = THREE.LinearMipmapLinearFilter;
+  if (normal) normal.wrapS = normal.wrapT = THREE.ClampToEdgeWrapping;
+  albedo.magFilter = THREE.LinearFilter;
+  albedo.minFilter = THREE.LinearFilter;
+  if (normal) {
+    normal.magFilter = THREE.LinearFilter;
+    normal.minFilter = THREE.LinearFilter;
+  }
 
   const material = new THREE.MeshStandardMaterial({
     map: albedo,

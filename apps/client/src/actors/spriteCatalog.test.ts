@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { direction8FromVector, isometricAtlasDirection } from "./direction8";
+import { cardinalFacingFromVector, direction8FromVector, isometricAtlasDirection } from "./direction8";
 import { MONSTER_SPRITES, monsterSpriteDefinition } from "./monsterSpriteCatalog";
 import { DIRECTIONS } from "./spriteTypes";
 
@@ -62,5 +62,23 @@ describe("isometric atlas direction", () => {
     ["s", "se"], ["sw", "e"], ["w", "ne"], ["nw", "n"],
   ] as const)("maps world %s to camera-facing atlas row %s", (world, atlas) => {
     expect(isometricAtlasDirection(world)).toBe(atlas);
+  });
+});
+
+describe("four-direction sprite facing", () => {
+  it("uses only cardinal art for all eight gameplay directions", () => {
+    expect(cardinalFacingFromVector(0, -1)).toBe("north");
+    expect(cardinalFacingFromVector(1, -1)).toBe("north");
+    expect(cardinalFacingFromVector(1, 0)).toBe("east");
+    expect(cardinalFacingFromVector(1, 1)).toBe("south");
+    expect(cardinalFacingFromVector(0, 1)).toBe("south");
+    expect(cardinalFacingFromVector(-1, 1)).toBe("south");
+    expect(cardinalFacingFromVector(-1, 0)).toBe("west");
+    expect(cardinalFacingFromVector(-1, -1)).toBe("north");
+  });
+
+  it("uses previous cardinal facing as a diagonal tie-break", () => {
+    expect(cardinalFacingFromVector(1, -1, "east")).toBe("east");
+    expect(cardinalFacingFromVector(-1, 1, "west")).toBe("west");
   });
 });

@@ -31,7 +31,10 @@ use world::World;
 use world::WorldEvent;
 
 const WORLD_REGION_RADIUS: i32 = 48;
-const WORLD_REGION_CHUNK_SIZE: i32 = 32;
+// Refresh from the last streamed center instead of toggling at global chunk
+// borders. Half-radius hysteresis leaves 24 tiles of overlap and prevents a
+// player walking back and forth across x/y=32 from rebuilding the client map.
+const WORLD_REGION_REFRESH_DISTANCE: i32 = WORLD_REGION_RADIUS / 2;
 
 #[derive(Clone)]
 struct AppState {
@@ -518,7 +521,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
     state.broadcast(ServerMessage::PlayerJoined {
         player: player.view.clone(),
     });
-    let mut streamed_region = world_region_key(position);
+    let mut streamed_region_center = position;
 
     let (mut outgoing, mut incoming) = socket.split();
     let mut events = state.events.subscribe();
@@ -549,8 +552,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
                             position,
                             sequence,
                         });
-                        let next_region = world_region_key(position);
-                        if next_region != streamed_region {
+                        if should_refresh_world_region(streamed_region_center, position) {
                             let world = state.world.read().await;
                             let message = world
                                 .requires_region_streaming(WORLD_REGION_RADIUS)
@@ -566,7 +568,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
                             if let Some(message) = message {
                                 state.private(id, message);
                             }
-                            streamed_region = next_region;
+                            streamed_region_center = position;
                         }
                     }
                     Err(reason) => {
@@ -752,12 +754,10 @@ async fn session(mut socket: WebSocket, state: AppState) {
     info!(%id, "player disconnected");
 }
 
-fn world_region_key(position: game_types::Position) -> (i32, i32, i16) {
-    (
-        position.x.div_euclid(WORLD_REGION_CHUNK_SIZE),
-        position.y.div_euclid(WORLD_REGION_CHUNK_SIZE),
-        position.z,
-    )
+fn should_refresh_world_region(from: game_types::Position, current: game_types::Position) -> bool {
+    from.z != current.z
+        || (current.x - from.x).abs() >= WORLD_REGION_REFRESH_DISTANCE
+        || (current.y - from.y).abs() >= WORLD_REGION_REFRESH_DISTANCE
 }
 
 enum ItemMutation {
@@ -1786,4 +1786,31 @@ async fn shutdown_signal() {
     let terminate = std::future::pending::<()>();
     tokio::select! { _ = ctrl_c => {}, _ = terminate => {} }
     info!("shutdown requested");
+}
+
+#[cfg(test)]
+mod region_streaming_tests {
+    use super::*;
+    use game_types::Position;
+
+    #[test]
+    fn region_refresh_has_hysteresis_around_old_chunk_boundaries() {
+        let center = Position { x: 31, y: 10, z: 7 };
+        assert!(!should_refresh_world_region(
+            center,
+            Position { x: 32, y: 10, z: 7 }
+        ));
+        assert!(!should_refresh_world_region(
+            center,
+            Position { x: 30, y: 10, z: 7 }
+        ));
+        assert!(should_refresh_world_region(
+            center,
+            Position { x: 55, y: 10, z: 7 }
+        ));
+        assert!(should_refresh_world_region(
+            center,
+            Position { x: 31, y: 10, z: 6 }
+        ));
+    }
 }

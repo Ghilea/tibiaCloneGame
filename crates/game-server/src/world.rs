@@ -23,6 +23,15 @@ pub const SPAWN: Position = Position { x: 10, y: 8, z: 7 };
 // The client walks at 165 ms. A small acceptance margin prevents ordinary
 // packet jitter from compressing two valid steps into a false rejection.
 const MOVE_COOLDOWN: Duration = Duration::from_millis(145);
+const DIAGONAL_MOVE_FACTOR: f64 = std::f64::consts::SQRT_2;
+
+fn movement_cooldown(dx: i32, dy: i32) -> Duration {
+    if dx != 0 && dy != 0 {
+        MOVE_COOLDOWN.mul_f64(DIAGONAL_MOVE_FACTOR)
+    } else {
+        MOVE_COOLDOWN
+    }
+}
 const PLAYER_ATTACK_COOLDOWN: Duration = Duration::from_millis(650);
 // A defeated hunting spot should stay cleared long enough for the kill to feel
 // meaningful and for players to loot before the same creature returns.
@@ -2190,16 +2199,17 @@ impl World {
         let player = self.players.get_mut(&id).expect("checked above");
         let now = Instant::now();
         let elapsed = now.duration_since(player.last_move);
-        if elapsed < MOVE_COOLDOWN {
+        let move_cooldown = movement_cooldown(dx, dy);
+        if elapsed < move_cooldown {
             return Err("moving_too_fast");
         }
         player.view.position = destination;
         // If the world lock briefly delayed networking, permit one genuinely
         // elapsed buffered step instead of rejecting it and rubberbanding the
         // client. Never retain more than two step intervals of credit.
-        if elapsed >= MOVE_COOLDOWN * 2 {
-            let credit_floor = now - MOVE_COOLDOWN * 2;
-            player.last_move = (player.last_move + MOVE_COOLDOWN).max(credit_floor);
+        if elapsed >= move_cooldown * 2 {
+            let credit_floor = now - move_cooldown * 2;
+            player.last_move = (player.last_move + move_cooldown).max(credit_floor);
         } else {
             player.last_move = now;
         }
@@ -4527,6 +4537,13 @@ mod tests {
             world.try_move(id, Position { x: 14, y: 8, z: 7 }),
             Err("invalid_step")
         );
+    }
+
+    #[test]
+    fn diagonal_steps_preserve_cardinal_world_speed() {
+        let cardinal = movement_cooldown(1, 0).as_secs_f64();
+        let diagonal = movement_cooldown(1, 1).as_secs_f64();
+        assert!((diagonal / cardinal - std::f64::consts::SQRT_2).abs() < 0.01);
     }
 
     #[test]

@@ -1,24 +1,29 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Position } from "../protocol";
-import { houseWallDoorAnchor, InputController, isHouseWallAnchor, movementDelta, resolveMovementTarget } from "./InputController";
+import { CLIENT_STEP_MS, houseWallDoorAnchor, InputController, isHouseWallAnchor, movementDelta, movementStepMs, resolveMovementTarget } from "./InputController";
 import { NetworkClient } from "./NetworkClient";
 import { WorldState } from "./WorldState";
 
 describe("held-key movement", () => {
-  it("maps WASD to the fixed isometric screen axes", () => {
-    expect(movementDelta(new Set(["w"]))).toEqual([-1, -1]);
-    expect(movementDelta(new Set(["a"]))).toEqual([-1, 1]);
-    expect(movementDelta(new Set(["s"]))).toEqual([1, 1]);
-    expect(movementDelta(new Set(["d"]))).toEqual([1, -1]);
+  it("maps WASD directly to the top-down world axes", () => {
+    expect(movementDelta(new Set(["w"]))).toEqual([0, -1]);
+    expect(movementDelta(new Set(["a"]))).toEqual([-1, 0]);
+    expect(movementDelta(new Set(["s"]))).toEqual([0, 1]);
+    expect(movementDelta(new Set(["d"]))).toEqual([1, 0]);
   });
 
   it("combines two keys into a visual diagonal", () => {
-    expect(movementDelta(new Set(["w", "d"]))).toEqual([0, -1]);
+    expect(movementDelta(new Set(["w", "d"]))).toEqual([1, -1]);
   });
 
   it("supports arrows and cancels opposing directions", () => {
-    expect(movementDelta(new Set(["arrowup", "arrowleft"]))).toEqual([-1, 0]);
+    expect(movementDelta(new Set(["arrowup", "arrowleft"]))).toEqual([-1, -1]);
     expect(movementDelta(new Set(["a", "d"]))).toBeNull();
+  });
+
+  it("normalizes tile speed by taking sqrt(2) longer for diagonal steps", () => {
+    expect(movementStepMs(1, 0)).toBe(CLIENT_STEP_MS);
+    expect(movementStepMs(1, 1)).toBeCloseTo(CLIENT_STEP_MS * Math.SQRT2);
   });
 });
 

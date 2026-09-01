@@ -16,6 +16,15 @@ describe("actor motion sampling", () => {
     const motion = createActorMotionState();
     sampleActorMotion(motion, 0.1, -0.1, 0.02);
     sampleActorMotion(motion, 0.0001, 0, 0.02);
-    expect(motion).toEqual({ moving: false, direction: "ne", speed: 0 });
+    expect(motion).toEqual({ moving: false, direction: "ne", facing: "north", speed: 0 });
+  });
+
+  it("keeps a stable cardinal facing throughout diagonal movement", () => {
+    const motion = createActorMotionState();
+    sampleActorMotion(motion, 0.1, -0.1, 0.02);
+    expect(motion.facing).toBe("north");
+    sampleActorMotion(motion, 0.10001, -0.1, 0.02);
+    sampleActorMotion(motion, 0.1, -0.10001, 0.02);
+    expect(motion.facing).toBe("north");
   });
 });

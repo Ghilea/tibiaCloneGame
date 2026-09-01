@@ -1,229 +1,49 @@
 {
   "id": "castle_rat",
-  "displayName": "Castle Rat",
-  "version": "2d-sprite-v1",
-  "rendering": "Three.js PlaneGeometry + MeshStandardMaterial",
-  "directions": [
-    "n",
-    "ne",
-    "e",
-    "se",
-    "s",
-    "sw",
-    "w",
-    "nw"
-  ],
-  "frameWidth": 256,
-  "frameHeight": 256,
-  "anchor": {
-    "x": 128,
-    "y": 240
-  },
-  "worldAnchor": "between hind feet / ground contact",
-  "dynamicLighting": {
-    "enabled": true,
-    "normalMaps": "per-animation atlas, exact same layout as albedo",
-    "material": {
-      "type": "MeshStandardMaterial",
-      "roughness": 0.9,
-      "metalness": 0,
-      "alphaTest": 0.35,
-      "transparent": false,
-      "depthTest": true,
-      "depthWrite": true
-    }
-  },
+  "type": "spriteCreature",
+  "directions": ["north", "south", "east", "west"],
+  "renderSize": { "width": 0.95, "height": 1.05 },
+  "collisionSize": { "width": 1, "height": 1 },
+  "anchor": { "x": 0.5, "y": 0.0625 },
+  "mirrorEastFromWest": false,
+  "material": { "roughness": 0.9, "normalStrength": 0.9, "alphaTest": 0.35 },
+  "shadow": { "width": 0.68, "depth": 0.32, "opacity": 0.22 },
   "animations": {
     "idle": {
       "albedo": "atlases/castle_rat_idle_albedo_perf_v2.webp",
       "normal": "atlases/castle_rat_idle_normal_perf_v2.webp",
-      "columns": 12,
-      "rows": 8,
-      "frameWidth": 128,
-      "frameHeight": 128,
-      "directionRows": {
-        "n": 0,
-        "ne": 1,
-        "e": 2,
-        "se": 3,
-        "s": 4,
-        "sw": 5,
-        "w": 6,
-        "nw": 7
-      },
-      "framesPerDirection": 12,
-      "fps": 10,
-      "playback": "loop"
+      "columns": 12, "rows": 8, "frameWidth": 128, "frameHeight": 128,
+      "directionRows": { "north": 0, "east": 2, "south": 4, "west": 6 },
+      "framesPerDirection": 12, "fps": 10, "loop": true, "priority": 10
     },
     "walk": {
       "albedo": "atlases/castle_rat_walk_albedo_v5.webp",
       "normal": "atlases/castle_rat_walk_normal_v5.webp",
-      "columns": 8,
-      "rows": 8,
-      "frameWidth": 192,
-      "frameHeight": 128,
-      "directionRows": {
-        "n": 0,
-        "ne": 1,
-        "e": 2,
-        "se": 3,
-        "s": 4,
-        "sw": 5,
-        "w": 6,
-        "nw": 7
-      },
-      "framesPerDirection": 8,
-      "fps": 12,
-      "playback": "loop"
-    },
-    "run": {
-      "albedo": "atlases/castle_rat_run_albedo_perf_v2.webp",
-      "normal": "atlases/castle_rat_run_normal_perf_v2.webp",
-      "columns": 8,
-      "rows": 8,
-      "frameWidth": 128,
-      "frameHeight": 128,
-      "directionRows": {
-        "n": 0,
-        "ne": 1,
-        "e": 2,
-        "se": 3,
-        "s": 4,
-        "sw": 5,
-        "w": 6,
-        "nw": 7
-      },
-      "framesPerDirection": 8,
-      "fps": 16,
-      "playback": "loop"
-    },
-    "bite": {
-      "albedo": "atlases/castle_rat_bite_albedo_perf_v2.webp",
-      "normal": "atlases/castle_rat_bite_normal_perf_v2.webp",
-      "columns": 8,
-      "rows": 8,
-      "frameWidth": 128,
-      "frameHeight": 128,
-      "directionRows": {
-        "n": 0,
-        "ne": 1,
-        "e": 2,
-        "se": 3,
-        "s": 4,
-        "sw": 5,
-        "w": 6,
-        "nw": 7
-      },
-      "framesPerDirection": 8,
-      "fps": 14,
-      "playback": "once",
-      "eventFrame": 4
+      "columns": 8, "rows": 8, "frameWidth": 192, "frameHeight": 128,
+      "directionRows": { "north": 0, "east": 2, "south": 4, "west": 6 },
+      "framesPerDirection": 8, "fps": 12, "loop": true, "priority": 20
     },
     "attack": {
       "albedo": "atlases/castle_rat_attack_albedo_perf_v2.webp",
       "normal": "atlases/castle_rat_attack_normal_perf_v2.webp",
-      "columns": 8,
-      "rows": 8,
-      "frameWidth": 128,
-      "frameHeight": 128,
-      "directionRows": {
-        "n": 0,
-        "ne": 1,
-        "e": 2,
-        "se": 3,
-        "s": 4,
-        "sw": 5,
-        "w": 6,
-        "nw": 7
-      },
-      "framesPerDirection": 8,
-      "fps": 14,
-      "playback": "once",
-      "eventFrame": 4
+      "columns": 8, "rows": 8, "frameWidth": 128, "frameHeight": 128,
+      "directionRows": { "north": 0, "east": 2, "south": 4, "west": 6 },
+      "framesPerDirection": 8, "fps": 14, "loop": false, "priority": 60,
+      "events": [{ "frame": 4, "event": "attackImpact" }]
     },
     "hit": {
       "albedo": "atlases/castle_rat_hit_albedo_perf_v2.webp",
       "normal": "atlases/castle_rat_hit_normal_perf_v2.webp",
-      "columns": 5,
-      "rows": 8,
-      "frameWidth": 128,
-      "frameHeight": 128,
-      "directionRows": {
-        "n": 0,
-        "ne": 1,
-        "e": 2,
-        "se": 3,
-        "s": 4,
-        "sw": 5,
-        "w": 6,
-        "nw": 7
-      },
-      "framesPerDirection": 5,
-      "fps": 14,
-      "playback": "once"
+      "columns": 5, "rows": 8, "frameWidth": 128, "frameHeight": 128,
+      "directionRows": { "north": 0, "east": 2, "south": 4, "west": 6 },
+      "framesPerDirection": 5, "fps": 14, "loop": false, "priority": 80
     },
     "death": {
       "albedo": "atlases/castle_rat_death_albedo_perf_v2.webp",
       "normal": "atlases/castle_rat_death_normal_perf_v2.webp",
-      "columns": 10,
-      "rows": 8,
-      "frameWidth": 128,
-      "frameHeight": 128,
-      "directionRows": {
-        "n": 0,
-        "ne": 1,
-        "e": 2,
-        "se": 3,
-        "s": 4,
-        "sw": 5,
-        "w": 6,
-        "nw": 7
-      },
-      "framesPerDirection": 10,
-      "fps": 10,
-      "playback": "once"
-    },
-    "alert": {
-      "albedo": "atlases/castle_rat_alert_albedo_perf_v2.webp",
-      "normal": "atlases/castle_rat_alert_normal_perf_v2.webp",
-      "columns": 6,
-      "rows": 8,
-      "frameWidth": 128,
-      "frameHeight": 128,
-      "directionRows": {
-        "n": 0,
-        "ne": 1,
-        "e": 2,
-        "se": 3,
-        "s": 4,
-        "sw": 5,
-        "w": 6,
-        "nw": 7
-      },
-      "framesPerDirection": 6,
-      "fps": 10,
-      "playback": "once"
-    },
-    "eat": {
-      "albedo": "atlases/castle_rat_eat_albedo_perf_v2.webp",
-      "normal": "atlases/castle_rat_eat_normal_perf_v2.webp",
-      "columns": 8,
-      "rows": 8,
-      "frameWidth": 128,
-      "frameHeight": 128,
-      "directionRows": {
-        "n": 0,
-        "ne": 1,
-        "e": 2,
-        "se": 3,
-        "s": 4,
-        "sw": 5,
-        "w": 6,
-        "nw": 7
-      },
-      "framesPerDirection": 8,
-      "fps": 10,
-      "playback": "loop"
+      "columns": 10, "rows": 8, "frameWidth": 128, "frameHeight": 128,
+      "directionRows": { "north": 0, "east": 2, "south": 4, "west": 6 },
+      "framesPerDirection": 10, "fps": 10, "loop": false, "priority": 100
     }
   }
 }

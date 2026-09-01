@@ -1,4 +1,4 @@
-import type { Direction8 } from "./spriteTypes";
+import type { CardinalDirection, Direction8 } from "./spriteTypes";
 
 const OCTANTS: Direction8[] = ["e", "ne", "n", "nw", "w", "sw", "s", "se"];
 
@@ -32,4 +32,29 @@ export function direction8FromVector(x: number, z: number, fallback: Direction8 
 
 export function isometricAtlasDirection(worldDirection: Direction8): Direction8 {
   return ISOMETRIC_ATLAS_DIRECTION[worldDirection];
+}
+
+/**
+ * Gameplay keeps all eight directions while sprite art only needs four.
+ * The previous cardinal facing breaks diagonal ties, so interpolation noise
+ * cannot alternate the selected atlas row every frame.
+ */
+export function cardinalFacingFromVector(
+  x: number,
+  z: number,
+  previous: CardinalDirection = "south",
+): CardinalDirection {
+  const absX = Math.abs(x);
+  const absZ = Math.abs(z);
+  if (absX < 1e-6 && absZ < 1e-6) return previous;
+  // A small hysteresis band absorbs sub-pixel interpolation differences on a
+  // diagonal. Facing changes only when one axis is clearly dominant.
+  if (absX > absZ * 1.15) return x > 0 ? "east" : "west";
+  if (absZ > absX * 1.15) return z > 0 ? "south" : "north";
+  if ((previous === "east" && x > 0) || (previous === "west" && x < 0)) return previous;
+  if ((previous === "south" && z > 0) || (previous === "north" && z < 0)) return previous;
+  // A newly pressed axis is represented by the latest sampled component in
+  // callers that know input order. Motion interpolation has no such history,
+  // so vertical is the deterministic initial tie-break.
+  return z > 0 ? "south" : "north";
 }

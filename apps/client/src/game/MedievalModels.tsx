@@ -1,4 +1,5 @@
-import { useEffect, useMemo } from "react";
+import { useFrame } from "@react-three/fiber";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { BuildingView, WindowView } from "../protocol";
 import { MedievalHouseWallAsset, MedievalWindowShuttersAsset } from "./MedievalAssetModels";
@@ -80,15 +81,21 @@ function CastleMasonry({ position, size }: { position: [number, number, number];
   );
 }
 
-export function GabledRoof({ building, wallHeight }: { building: BuildingView; wallHeight: number }) {
+export function GabledRoof({ building, wallHeight, roofVisible = true, roofFade = 1 }: { building: BuildingView; wallHeight: number; roofVisible?: boolean; roofFade?: number }) {
   const geometry = useMemo(() => roofGeometry(building.width + 0.7, building.height + 0.7), [building.width, building.height]);
+  const material = useRef<THREE.MeshStandardMaterial>(null);
   useEffect(() => () => geometry.dispose(), [geometry]);
+  useFrame((_, delta) => {
+    if (!material.current) return;
+    material.current.opacity = THREE.MathUtils.damp(material.current.opacity, roofFade, 10, delta);
+    material.current.depthWrite = material.current.opacity > 0.5;
+  });
   return (
     <group position={[building.x + building.width / 2, wallHeight + 0.02, building.y + building.height / 2]}>
       <mesh geometry={geometry} castShadow receiveShadow>
-        <meshStandardMaterial color={building.kind === "keep" ? "#45504d" : "#71372d"} roughness={0.91} side={THREE.DoubleSide} />
+        <meshStandardMaterial ref={material} color={building.kind === "keep" ? "#45504d" : "#71372d"} roughness={0.91} side={THREE.DoubleSide} transparent opacity={roofFade} />
       </mesh>
-      <Chimney x={building.width * 0.22} z={-building.height * 0.18} keep={building.kind === "keep"} />
+      {roofVisible && <Chimney x={building.width * 0.22} z={-building.height * 0.18} keep={building.kind === "keep"} />}
     </group>
   );
 }

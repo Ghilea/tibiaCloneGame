@@ -1,5 +1,5 @@
 import { Canvas, type ThreeEvent, useFrame, useLoader, useThree } from "@react-three/fiber";
-import { memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type MutableRefObject } from "react";
+import { memo, Suspense, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type MutableRefObject, type RefObject } from "react";
 import * as THREE from "three";
 import type {
   BuildingView,
@@ -19,6 +19,7 @@ import { CLIENT_STEP_MS, InputController } from "./InputController";
 import { MedievalDoorLeafAsset } from "./MedievalAssetModels";
 import { GabledRoof, HangingSign, MedievalDoorWall, MedievalWall, MedievalWindowWall, ShutterWindow } from "./MedievalModels";
 import { WorldState, type CombatEffectView } from "./WorldState";
+import { tileCenter, worldToTile, WORLD_TILE_SIZE } from "./WorldCoordinates";
 
 const TILE_HEIGHT = 0.12;
 // The KayKit actors have broad, rounded silhouettes. The environment uses a
@@ -28,6 +29,10 @@ const WALL_HEIGHT = 3.2;
 const CASTLE_HEIGHT = 4.1;
 const DOOR_HEIGHT = 2.2;
 const CAMERA_ZOOM = 135;
+const CAMERA_HEIGHT = 18;
+// About 27 degrees away from straight down: enough to read wall fronts and
+// actor silhouettes without returning to the old diagonal isometric view.
+const CAMERA_TOPDOWN_OFFSET = 9;
 // The server already streams a radius-48 region. Rebuilding the entire static
 // Three.js scene every 16 walked tiles caused a visible main-thread/GPU hitch.
 // A 64-tile render chunk consumes the already available streamed payload and
@@ -42,28 +47,36 @@ type ThreeWorldProps = {
 };
 
 export function ThreeWorld({ world, input, onReady }: ThreeWorldProps) {
+  const performanceLabel = useRef<HTMLDivElement>(null);
+  const positionLabel = useRef<HTMLDivElement>(null);
   return (
-    <Canvas
-      className="three-world"
-      onContextMenu={(event) => event.preventDefault()}
-      orthographic
-      shadows
-      dpr={[1, 1.6]}
-      camera={{ near: 0.1, far: 180, position: [12, 16, 12], zoom: CAMERA_ZOOM }}
-      gl={{ antialias: true, powerPreference: "high-performance" }}
-      onCreated={({ gl }) => {
-        gl.outputColorSpace = THREE.SRGBColorSpace;
-        gl.shadowMap.enabled = true;
-        gl.shadowMap.type = THREE.PCFSoftShadowMap;
-        gl.setClearColor(0x0b1210);
-      }}
-    >
-      <Suspense fallback={null}>
-        <WorldScene world={world} input={input} />
-        <ClientPerformanceMonitor />
-        <SceneReady onReady={onReady} />
-      </Suspense>
-    </Canvas>
+    <>
+      <Canvas
+        className="three-world"
+        onContextMenu={(event) => event.preventDefault()}
+        orthographic
+        shadows
+        dpr={[1, 1.6]}
+        camera={{ near: 0.1, far: 180, position: [0, CAMERA_HEIGHT, CAMERA_TOPDOWN_OFFSET], zoom: CAMERA_ZOOM }}
+        gl={{ antialias: true, powerPreference: "high-performance" }}
+        onCreated={({ gl }) => {
+          gl.outputColorSpace = THREE.SRGBColorSpace;
+          gl.shadowMap.enabled = true;
+          gl.shadowMap.type = THREE.PCFSoftShadowMap;
+          gl.setClearColor(0x0b1210);
+        }}
+      >
+        <Suspense fallback={null}>
+          <WorldScene world={world} input={input} />
+          <ClientPerformanceMonitor label={performanceLabel} positionLabel={positionLabel} world={world} />
+          <SceneReady onReady={onReady} />
+        </Suspense>
+      </Canvas>
+      <div className="debug-meter" aria-label="Position and rendering performance">
+        <div ref={positionLabel} className="position-meter">x -- · y -- · z --</div>
+        <div ref={performanceLabel} className="fps-meter">-- FPS</div>
+      </div>
+    </>
   );
 }
 
@@ -82,17 +95,24 @@ function WorldScene({ world, input }: ThreeWorldProps) {
   const visualSnapshot = useCallback(() => world.visualRevision, [world]);
   useSyncExternalStore(subscribeVisual, visualSnapshot);
   const map = world.map;
+  // Region payloads replace MapView in one network message. Keep actor/input
+  // updates urgent, but let React prepare the large static Three.js diff as
+  // interruptible background work instead of blocking a movement frame.
+  const renderMap = useDeferredValue(map);
   const local = world.localPlayerId ? world.players.get(world.localPlayerId) : undefined;
   const localVisualPosition = useRef(new THREE.Vector3(Number.NaN, 0.05, Number.NaN));
   const floor = local?.position.z ?? map?.floor ?? 0;
 
-  if (!map) return null;
+  if (!map || !renderMap) return null;
   const chunkX = Math.floor((local?.position.x ?? 0) / RENDER_CHUNK_SIZE);
   const chunkY = Math.floor((local?.position.y ?? 0) / RENDER_CHUNK_SIZE);
   const region = useMemo(
-    () => createRenderRegion(map, floor, chunkX, chunkY),
-    [map, floor, chunkX, chunkY],
+    () => createRenderRegion(renderMap, floor, chunkX, chunkY),
+    [renderMap, floor, chunkX, chunkY],
   );
+  const indoorBuildingId = local
+    ? region.map.buildings.find((building) => building.floor === floor && insideBuilding(local.position, building))?.id ?? null
+    : null;
   const players = [...world.players.values()].filter((entry) => insideRenderBounds(entry.position, region.bounds));
   const creatures = [...world.creatures.values()].filter((entry) => insideRenderBounds(entry.position, region.bounds));
   const npcs = [...world.npcs.values()].filter((entry) => insideRenderBounds(entry.position, region.bounds));
@@ -100,8 +120,8 @@ function WorldScene({ world, input }: ThreeWorldProps) {
     event.stopPropagation();
     if (event.button === 2) event.nativeEvent.preventDefault();
     input.interactAt({
-      x: Math.max(0, Math.min(map.width - 1, Math.floor(event.point.x))),
-      y: Math.max(0, Math.min(map.height - 1, Math.floor(event.point.z))),
+      x: Math.max(0, Math.min(map.width - 1, worldToTile(event.point.x))),
+      y: Math.max(0, Math.min(map.height - 1, worldToTile(event.point.z))),
       z: floor,
     });
   }, [floor, input, map.height, map.width]);
@@ -111,7 +131,7 @@ function WorldScene({ world, input }: ThreeWorldProps) {
       <Atmosphere torches={region.map.torches} local={local?.position} />
       <FollowCamera target={local?.position} visualTarget={localVisualPosition} mapWidth={map.width} mapHeight={map.height} />
       <Terrain map={region.map} floor={floor} bounds={region.bounds} onGround={onGround} />
-      <Structures map={region.map} input={input} floor={floor} />
+      <Structures map={region.map} input={input} floor={floor} indoorBuildingId={indoorBuildingId} />
       <OcclusionController target={local?.position} visualTarget={localVisualPosition} sceneRevision={region.map} />
       {players.map((player) => (
         <PlayerActor
@@ -346,11 +366,11 @@ function useWorldTexture(path: string, repeatX = 1, repeatY = 1) {
   return texture;
 }
 
-const Structures = memo(function Structures({ map, input, floor }: { map: NonNullable<WorldState["map"]>; input: InputController; floor: number }) {
+const Structures = memo(function Structures({ map, input, floor, indoorBuildingId }: { map: NonNullable<WorldState["map"]>; input: InputController; floor: number; indoorBuildingId: string | null }) {
   const buildings = map.buildings.filter((entry) => entry.floor === floor);
   return (
     <group>
-      {buildings.map((building) => <Building key={building.id} building={building} doors={map.doors} windows={map.windows} input={input} />)}
+      {buildings.map((building) => <Building key={building.id} building={building} doors={map.doors} windows={map.windows} input={input} roofVisible={building.id !== indoorBuildingId} />)}
       <ConnectedWalls positions={map.castleWalls.filter((tile) => tile.z === floor)} castle />
       {map.trees.filter((tile) => tile.z === floor).map((tile) => <Tree key={tileKey(tile)} position={tile} />)}
       {map.torches.filter((tile) => tile.z === floor).map((tile) => <Torch key={tileKey(tile)} position={tile} />)}
@@ -359,7 +379,7 @@ const Structures = memo(function Structures({ map, input, floor }: { map: NonNul
   );
 });
 
-function Building({ building, doors, windows, input }: { building: BuildingView; doors: readonly DoorView[]; windows: readonly WindowView[]; input: InputController }) {
+function Building({ building, doors, windows, input, roofVisible }: { building: BuildingView; doors: readonly DoorView[]; windows: readonly WindowView[]; input: InputController; roofVisible: boolean }) {
   const height = building.kind === "keep" ? CASTLE_HEIGHT : WALL_HEIGHT;
   const maxX = building.x + building.width;
   const maxY = building.y + building.height;
@@ -390,7 +410,7 @@ function Building({ building, doors, windows, input }: { building: BuildingView;
             ? <MedievalWindowWall key={wall.key} position={wall.position} size={wall.size} />
             : <MedievalWall key={wall.key} position={wall.position} size={wall.size} keep={building.kind === "keep"} />
         ))}
-        <GabledRoof building={building} wallHeight={height} />
+        <GabledRoof building={building} wallHeight={height} roofVisible={roofVisible} roofFade={roofVisible ? 1 : 0.08} />
         <HangingSign building={building} wallHeight={height} />
         {matchingDoors.map((door) => <Door key={door.id} door={door} building={building} input={input} tall={height} />)}
         {matchingWindows.map((window) => <ShutterWindow key={window.id} window={window} building={building} wallHeight={height} onClick={() => input.toggleWindow(window.id, window.position)} />)}
@@ -573,7 +593,7 @@ const CreatureActor = memo(function CreatureActor({ creature, selected, onClick,
         <TargetMarker active={selected} />
         {creature.definitionId === "castle_rat"
           ? <Suspense fallback={null}>
-              <CastleRatSprite motion={motion} state={creature.state} health={creature.health} />
+              <CastleRatSprite motion={motion} state={creature.state} health={creature.health} immune={creature.immune} />
             </Suspense>
           : <CreatureModel definitionId={creature.definitionId} immune={creature.immune} moving={moving} />}
       </group>
@@ -614,7 +634,7 @@ function actorPropsEqual(previous: PlayerActorProps, next: PlayerActorProps) {
 
 function SmoothActor({ id, position, visualPosition, moving, motion, correctionRevision = 0, children }: { id: string; position: Position; visualPosition?: MutableRefObject<THREE.Vector3>; moving?: MutableRefObject<boolean>; motion?: MutableRefObject<ActorMotionState>; correctionRevision?: number; children: React.ReactNode }) {
   const group = useRef<THREE.Group>(null);
-  const current = useRef(new THREE.Vector3(position.x + 0.5, 0.05, position.y + 0.5));
+  const current = useRef(new THREE.Vector3(tileCenter(position.x), 0.05, tileCenter(position.y)));
   const segmentStart = useRef(current.current.clone());
   const segmentTarget = useRef(current.current.clone());
   const segmentStartedAt = useRef(performance.now());
@@ -622,7 +642,7 @@ function SmoothActor({ id, position, visualPosition, moving, motion, correctionR
   const lastTargetAt = useRef(performance.now());
   const lastCorrectionRevision = useRef(correctionRevision);
   const previousVisualPosition = useRef(current.current.clone());
-  const target = useMemo(() => new THREE.Vector3(position.x + 0.5, 0.05, position.y + 0.5), [position.x, position.y]);
+  const target = useMemo(() => new THREE.Vector3(tileCenter(position.x), 0.05, tileCenter(position.y)), [position.x, position.y]);
   useLayoutEffect(() => {
     if (target.equals(segmentTarget.current)) return;
     const now = performance.now();
@@ -744,9 +764,9 @@ function FollowCamera({ target, visualTarget, mapWidth, mapHeight }: { target?: 
   useFrame(() => {
     const rendered = visualTarget.current;
     const hasRenderedTarget = Number.isFinite(rendered.x) && Number.isFinite(rendered.z);
-    const x = hasRenderedTarget ? rendered.x : (target?.x ?? mapWidth / 2) + 0.5;
-    const z = hasRenderedTarget ? rendered.z : (target?.y ?? mapHeight / 2) + 0.5;
-    camera.position.set(x + 12, 16, z + 12);
+    const x = hasRenderedTarget ? rendered.x : tileCenter(target?.x ?? mapWidth / 2);
+    const z = hasRenderedTarget ? rendered.z : tileCenter(target?.y ?? mapHeight / 2);
+    camera.position.set(x, CAMERA_HEIGHT * WORLD_TILE_SIZE, z + CAMERA_TOPDOWN_OFFSET * WORLD_TILE_SIZE);
     camera.lookAt(x, 0, z);
     camera.updateMatrixWorld();
   });
@@ -763,14 +783,14 @@ function OcclusionController({ target, visualTarget, sceneRevision }: { target?:
   const direction = useMemo(() => new THREE.Vector3(), []);
   const intersection = useMemo(() => new THREE.Vector3(), []);
   const next = useMemo(() => new Set<THREE.Material>(), []);
-  const occluders = useRef<OccluderBounds[]>([]);
+  const occluders = useRef<OccluderIndex>({ all: [], buckets: new Map() });
   useLayoutEffect(() => {
     // Compile occluders for transparency while a streamed region is being
     // prepared. Switching material defines only when the player reaches a
     // wall causes a visible one-frame hitch on many GPUs.
     occluders.current = collectOccluderBounds(scene);
     lastCheckedTarget.set(Number.NaN, Number.NaN, Number.NaN);
-    for (const { root } of occluders.current) root.traverse((node) => {
+    for (const { root } of occluders.current.all) root.traverse((node) => {
       if (!(node instanceof THREE.Mesh)) return;
       const materials = Array.isArray(node.material) ? node.material : [node.material];
       for (const material of materials) {
@@ -797,7 +817,7 @@ function OcclusionController({ target, visualTarget, sceneRevision }: { target?:
     direction.copy(targetPoint).sub(camera.position);
     const targetDistance = Math.max(0, direction.length() - 0.35);
     ray.set(camera.position, direction.normalize());
-    for (const { root, bounds } of occluders.current) {
+    for (const { root, bounds } of nearbyOccluders(occluders.current, targetPoint)) {
       const hit = ray.intersectBox(bounds, intersection);
       if (hit && hit.distanceTo(camera.position) < targetDistance) roots.add(root);
     }
@@ -828,8 +848,10 @@ function OcclusionController({ target, visualTarget, sceneRevision }: { target?:
 }
 
 type OccluderBounds = { root: THREE.Object3D; bounds: THREE.Box3 };
+type OccluderIndex = { all: OccluderBounds[]; buckets: Map<string, OccluderBounds[]> };
+const OCCLUDER_BUCKET_SIZE = 8;
 
-function collectOccluderBounds(scene: THREE.Scene) {
+function collectOccluderBounds(scene: THREE.Scene): OccluderIndex {
   const roots: OccluderBounds[] = [];
   const visit = (node: THREE.Object3D) => {
     if (node.userData.occluder) {
@@ -840,7 +862,34 @@ function collectOccluderBounds(scene: THREE.Scene) {
     node.children.forEach(visit);
   };
   scene.children.forEach(visit);
-  return roots;
+  const buckets = new Map<string, OccluderBounds[]>();
+  for (const entry of roots) {
+    const minX = Math.floor(entry.bounds.min.x / OCCLUDER_BUCKET_SIZE);
+    const maxX = Math.floor(entry.bounds.max.x / OCCLUDER_BUCKET_SIZE);
+    const minZ = Math.floor(entry.bounds.min.z / OCCLUDER_BUCKET_SIZE);
+    const maxZ = Math.floor(entry.bounds.max.z / OCCLUDER_BUCKET_SIZE);
+    for (let x = minX; x <= maxX; x += 1) for (let z = minZ; z <= maxZ; z += 1) {
+      const key = `${x}:${z}`;
+      const bucket = buckets.get(key);
+      if (bucket) bucket.push(entry);
+      else buckets.set(key, [entry]);
+    }
+  }
+  return { all: roots, buckets };
+}
+
+function nearbyOccluders(index: OccluderIndex, target: THREE.Vector3): Set<OccluderBounds> {
+  const result = new Set<OccluderBounds>();
+  // The camera is nine tiles south of the target. Two tiles of side padding
+  // covers wide trees/walls while excluding the rest of the streamed region.
+  const minX = Math.floor((target.x - 2) / OCCLUDER_BUCKET_SIZE);
+  const maxX = Math.floor((target.x + 2) / OCCLUDER_BUCKET_SIZE);
+  const minZ = Math.floor((target.z - 2) / OCCLUDER_BUCKET_SIZE);
+  const maxZ = Math.floor((target.z + CAMERA_TOPDOWN_OFFSET + 2) / OCCLUDER_BUCKET_SIZE);
+  for (let x = minX; x <= maxX; x += 1) for (let z = minZ; z <= maxZ; z += 1) {
+    for (const entry of index.buckets.get(`${x}:${z}`) ?? []) result.add(entry);
+  }
+  return result;
 }
 
 function Atmosphere({ torches, local }: { torches: readonly Position[]; local?: Position }) {
@@ -875,12 +924,16 @@ function Atmosphere({ torches, local }: { torches: readonly Position[]; local?: 
   );
 }
 
-function ClientPerformanceMonitor() {
+function ClientPerformanceMonitor({ label, positionLabel, world }: {
+  label: RefObject<HTMLDivElement | null>;
+  positionLabel: RefObject<HTMLDivElement | null>;
+  world: WorldState;
+}) {
   const { gl } = useThree();
-  const sample = useRef({ elapsed: 0, frames: 0, totalMs: 0, maxMs: 0 });
+  const sample = useRef({ elapsed: 0, frames: 0, totalMs: 0, maxMs: 0, logElapsed: 0 });
   useFrame((_, delta) => {
     if (document.hidden || delta > 0.5) {
-      sample.current = { elapsed: 0, frames: 0, totalMs: 0, maxMs: 0 };
+      sample.current = { elapsed: 0, frames: 0, totalMs: 0, maxMs: 0, logElapsed: 0 };
       return;
     }
     const frameMs = delta * 1_000;
@@ -889,12 +942,27 @@ function ClientPerformanceMonitor() {
     current.frames += 1;
     current.totalMs += frameMs;
     current.maxMs = Math.max(current.maxMs, frameMs);
-    if (current.elapsed < 5) return;
+    current.logElapsed += delta;
+    if (current.elapsed < 0.5) return;
     const averageMs = current.totalMs / Math.max(1, current.frames);
-    console.info(
-      `client performance sample: avg=${averageMs.toFixed(1)}ms max=${current.maxMs.toFixed(1)}ms fps=${(1_000 / averageMs).toFixed(0)} calls=${gl.info.render.calls} triangles=${gl.info.render.triangles}`,
-    );
-    sample.current = { elapsed: 0, frames: 0, totalMs: 0, maxMs: 0 };
+    const fps = Math.round(1_000 / averageMs);
+    const player = world.localPlayerId ? world.players.get(world.localPlayerId) : undefined;
+    if (positionLabel.current && player) {
+      const { x, y, z } = player.position;
+      positionLabel.current.textContent = `x ${x} · y ${y} · z ${z}`;
+    }
+    if (label.current) {
+      label.current.textContent = `${fps} FPS · ${gl.info.render.calls} calls`;
+      label.current.dataset.level = fps >= 55 ? "good" : fps >= 30 ? "fair" : "poor";
+    }
+    if (current.logElapsed >= 5) {
+      console.info(`client performance sample: avg=${averageMs.toFixed(1)}ms max=${current.maxMs.toFixed(1)}ms fps=${fps} calls=${gl.info.render.calls} triangles=${gl.info.render.triangles}`);
+      current.logElapsed = 0;
+    }
+    current.elapsed = 0;
+    current.frames = 0;
+    current.totalMs = 0;
+    current.maxMs = 0;
   });
   return null;
 }

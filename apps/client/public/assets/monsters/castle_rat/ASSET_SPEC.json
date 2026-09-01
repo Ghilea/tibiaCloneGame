@@ -1,30 +1,13 @@
 {
   "id": "castle_rat",
-  "directions": [
-    "n",
-    "ne",
-    "e",
-    "se",
-    "s",
-    "sw",
-    "w",
-    "nw"
-  ],
-  "animations": [
-    "idle",
-    "walk",
-    "run",
-    "bite",
-    "attack",
-    "hit",
-    "death",
-    "alert",
-    "eat"
-  ],
-  "requiredOutputs": [
-    "castle_rat_albedo.webp",
-    "castle_rat_normal.webp",
-    "castle_rat.json"
-  ],
-  "notes": "All animation directions must keep the same foot anchor and canvas dimensions."
+  "type": "spriteCreature",
+  "directions": ["north", "south", "east", "west"],
+  "animations": ["idle", "walk", "attack", "hit", "death"],
+  "atlasLayout": "One albedo/normal atlas pair per animation; one row per authored direction and one column per frame. Both maps have identical packing.",
+  "frameCoordinates": "Resolved from columns, rows, frameWidth, frameHeight, directionRows and framesPerDirection in castle_rat.json.",
+  "anchor": { "x": 0.5, "y": 0.0625, "coordinateSystem": "normalized from bottom-left" },
+  "renderSize": { "width": 0.95, "height": 1.05, "unit": "world tile" },
+  "collisionSize": { "width": 1, "height": 1, "unit": "logical tile" },
+  "mirrorEastFromWest": false,
+  "notes": "Runtime uses only four graphical directions. Gameplay movement remains eight-directional. Existing eight-row source atlases are retained during migration, but diagonal rows are never selected."
 }

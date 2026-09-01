@@ -1,7 +1,43 @@
 export const DIRECTIONS = ["n", "ne", "e", "se", "s", "sw", "w", "nw"] as const;
 export type Direction8 = (typeof DIRECTIONS)[number];
+export const CARDINAL_DIRECTIONS = ["north", "south", "east", "west"] as const;
+export type CardinalDirection = (typeof CARDINAL_DIRECTIONS)[number];
 
 export type AnimationPlayback = "loop" | "once";
+
+export type CreatureAnimationEvent = {
+  frame: number;
+  event: string;
+};
+
+export type CreatureAnimationDefinition = {
+  albedo: string;
+  normal?: string;
+  columns: number;
+  rows: number;
+  frameWidth: number;
+  frameHeight: number;
+  directionRows: Partial<Record<CardinalDirection, number>>;
+  framesPerDirection: number;
+  fps: number;
+  loop: boolean;
+  priority: number;
+  events?: CreatureAnimationEvent[];
+};
+
+export type SpriteCreatureDefinition = {
+  id: string;
+  type: "spriteCreature";
+  directions: CardinalDirection[];
+  renderSize: { width: number; height: number };
+  collisionSize: { width: number; height: number };
+  /** Normalized from the frame's bottom-left corner. */
+  anchor: { x: number; y: number };
+  mirrorEastFromWest: boolean;
+  material: { roughness: number; normalStrength: number; alphaTest: number };
+  shadow: { width: number; depth: number; opacity: number };
+  animations: Record<string, CreatureAnimationDefinition>;
+};
 
 export interface SpriteAnimationDef {
   /** Atlas frame indices in playback order. */

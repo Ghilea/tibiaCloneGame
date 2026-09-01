@@ -6,11 +6,13 @@ import { WorldState } from "./WorldState";
 // A held key is scheduled directly at the next eligible instant.
 export const CLIENT_STEP_MS = 165;
 export const MOVEMENT_CHORD_GRACE_MS = 30;
+export const DIAGONAL_STEP_FACTOR = Math.SQRT2;
 
 export class InputController {
   private lastMove = 0;
   private heldKeys = new Set<string>();
   private movementTimer: number | null = null;
+  private moveIntervalMs = CLIENT_STEP_MS;
   private attached = false;
   constructor(private world: WorldState, private network: NetworkClient) { }
 
@@ -150,7 +152,7 @@ export class InputController {
     if (!delta) return;
     const sent = this.requestMove(...delta);
     if (this.heldKeys.size === 0) return;
-    const remainingCooldown = Math.max(0, CLIENT_STEP_MS - (performance.now() - this.lastMove));
+    const remainingCooldown = Math.max(0, this.moveIntervalMs - (performance.now() - this.lastMove));
     const delay = sent || remainingCooldown > 0 ? Math.max(1, remainingCooldown) : 16;
     this.movementTimer = window.setTimeout(this.flushMovement, delay);
   };
@@ -166,7 +168,7 @@ export class InputController {
 
   private requestMove(dx: number, dy: number) {
     const now = performance.now();
-    if (now - this.lastMove < CLIENT_STEP_MS || !this.world.localPlayerId) return false;
+    if (!this.world.localPlayerId) return false;
     const player = this.world.players.get(this.world.localPlayerId);
     if (!player) return false;
     const buildings = this.world.buildingsNear(player.position);
@@ -182,6 +184,8 @@ export class InputController {
     };
     const target = resolveMovementTarget(player.position, dx, dy, blocked, wallBlocked);
     if (!target) return false;
+    this.moveIntervalMs = movementStepMs(target.x - player.position.x, target.y - player.position.y);
+    if (now - this.lastMove < this.moveIntervalMs) return false;
     this.lastMove = now;
     this.network.move(target);
     return true;
@@ -242,14 +246,10 @@ export function movementDelta(heldKeys: ReadonlySet<string>): [number, number] |
   const right = heldKeys.has("d") || heldKeys.has("arrowright");
   const up = heldKeys.has("w") || heldKeys.has("arrowup");
   const down = heldKeys.has("s") || heldKeys.has("arrowdown");
-  const screenX = Number(right) - Number(left);
-  const screenY = Number(down) - Number(up);
-  // The camera is fixed at 45 degrees. Convert screen-relative WASD into the
-  // server's unchanged world grid: W always travels visually upward, while
-  // two held keys still produce the four visual diagonals.
-  const delta: [number, number] = [
-    Math.sign(screenX + screenY),
-    Math.sign(screenY - screenX),
-  ];
+  const delta: [number, number] = [Number(right) - Number(left), Number(down) - Number(up)];
   return delta[0] || delta[1] ? delta : null;
+}
+
+export function movementStepMs(dx: number, dy: number): number {
+  return CLIENT_STEP_MS * (dx !== 0 && dy !== 0 ? DIAGONAL_STEP_FACTOR : 1);
 }
