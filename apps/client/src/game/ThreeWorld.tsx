@@ -48,9 +48,10 @@ type ThreeWorldProps = {
   world: WorldState;
   input: InputController;
   onReady?: () => void;
+  showDebug?: boolean;
 };
 
-export function ThreeWorld({ world, input, onReady }: ThreeWorldProps) {
+export function ThreeWorld({ world, input, onReady, showDebug = true }: ThreeWorldProps) {
   const performanceLabel = useRef<HTMLDivElement>(null);
   const positionLabel = useRef<HTMLDivElement>(null);
   return (
@@ -76,14 +77,16 @@ export function ThreeWorld({ world, input, onReady }: ThreeWorldProps) {
       >
         <Suspense fallback={null}>
           <WorldScene world={world} input={input} />
-          <ClientPerformanceMonitor label={performanceLabel} positionLabel={positionLabel} world={world} />
+          {showDebug && <ClientPerformanceMonitor label={performanceLabel} positionLabel={positionLabel} world={world} />}
           <SceneReady onReady={onReady} />
         </Suspense>
       </Canvas>
-      <div className="debug-meter" aria-label="Position and rendering performance">
-        <div ref={positionLabel} className="position-meter">x -- · y -- · z --</div>
-        <div ref={performanceLabel} className="fps-meter">-- FPS</div>
-      </div>
+      {showDebug && (
+        <div className="debug-meter" aria-label="Position and rendering performance">
+          <div ref={positionLabel} className="position-meter">x -- · y -- · z --</div>
+          <div ref={performanceLabel} className="fps-meter">-- FPS</div>
+        </div>
+      )}
     </>
   );
 }

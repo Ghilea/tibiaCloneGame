@@ -8,7 +8,7 @@ import {
   type DragEvent,
 } from "react";
 import { authenticate } from "./api";
-import { CharacterLobby } from "./CharacterLobby";
+import { CharacterLobby, CharacterPreview } from "./CharacterLobby";
 import { InputController } from "./game/InputController";
 import { ThreeWorld } from "./game/ThreeWorld";
 import { NetworkClient } from "./game/NetworkClient";
@@ -149,10 +149,13 @@ function AccountLogin({
   );
 }
 
-type Panel = "inventory" | "crafting" | "character" | "help";
+type Panel = "inventory" | "crafting" | "character" | "help" | "options";
 
 function Game({ onLeave }: { onLeave: () => void }) {
   const [panel, setPanel] = useState<Panel | null>(null);
+  const [escapeMenu, setEscapeMenu] = useState(false);
+  const [showPerformance, setShowPerformance] = useState(true);
+  const [reducedMotion, setReducedMotion] = useState(false);
   const [sceneReady, setSceneReady] = useState(false);
   const emberSigil = world.inventory.find(
     (item) => item.definitionId === "ember_rune" && (item.charges ?? 0) > 0,
@@ -174,10 +177,11 @@ function Game({ onLeave }: { onLeave: () => void }) {
       );
   };
   useEffect(() => {
-    if (panel || world.trade || world.incomingTrade || world.activeNpcId)
+    if (panel || escapeMenu || world.trade || world.incomingTrade || world.activeNpcId)
       input.releaseAll();
   }, [
     panel,
+    escapeMenu,
     Boolean(world.trade),
     Boolean(world.incomingTrade),
     world.activeNpcId,
@@ -190,16 +194,23 @@ function Game({ onLeave }: { onLeave: () => void }) {
       h: "help",
     };
     const listener = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (panel) {
+          setPanel(null);
+          return;
+        }
+        setEscapeMenu((current) => !current);
+        world.closePlayerContext();
+        world.closeNpc();
+        return;
+      }
       if (
         event.target instanceof HTMLInputElement ||
         event.target instanceof HTMLTextAreaElement
       )
         return;
-      if (event.key === "Escape") {
-        setPanel(null);
-        world.closePlayerContext();
-        world.closeNpc();
-      }
       if (event.code === "Digit1") {
         event.preventDefault();
         useEmberSigil();
@@ -214,12 +225,13 @@ function Game({ onLeave }: { onLeave: () => void }) {
       if (next) {
         event.preventDefault();
         world.closeNpc();
+        setEscapeMenu(false);
         setPanel((current) => (current === next ? null : next));
       }
     };
-    window.addEventListener("keydown", listener);
-    return () => window.removeEventListener("keydown", listener);
-  }, [emberSigil?.instanceId, knowsEmberBolt, world.attackTargetId]);
+    window.addEventListener("keydown", listener, true);
+    return () => window.removeEventListener("keydown", listener, true);
+  }, [emberSigil?.instanceId, knowsEmberBolt, panel, world.attackTargetId]);
   const local = world.localPlayerId
     ? world.players.get(world.localPlayerId)
     : null;
@@ -228,11 +240,12 @@ function Game({ onLeave }: { onLeave: () => void }) {
     crafting: "Crafting & Production",
     character: "Character & Skills",
     help: "Controls",
+    options: "Options",
   };
   return (
-    <main className="game-shell">
+    <main className={`game-shell ${reducedMotion ? "reduced-motion" : ""}`}>
       <section className="viewport">
-        <ThreeWorld world={world} input={input} onReady={() => setSceneReady(true)} />
+        <ThreeWorld world={world} input={input} showDebug={showPerformance} onReady={() => setSceneReady(true)} />
         {!sceneReady && <WorldLoadingScreen />}
       </section>
       <header className="world-header">
@@ -268,7 +281,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
       {world.playerContext && <PlayerContextMenu />}
       <NearbyLootWindow />
       <Chat />
-      <nav className="action-dock" aria-label="Combat hotbar and game panels">
+      <nav className="action-dock" aria-label="Combat hotbar">
         <button
           className="ability-slot ember-sigil"
           disabled={!emberSigil || !world.attackTargetId}
@@ -283,8 +296,8 @@ function Game({ onLeave }: { onLeave: () => void }) {
             />
           )}
           <kbd>1</kbd>
-          <span>Ember Sigil</span>
-          <small>{emberCharges} charges</small>
+          <span className="ability-glyph">ES</span>
+          <small>{emberCharges}</small>
         </button>
         <button
           className="ability-slot ember-bolt"
@@ -308,52 +321,63 @@ function Game({ onLeave }: { onLeave: () => void }) {
             />
           )}
           <kbd>2</kbd>
-          <span>{emberBolt?.name ?? "Ember Bolt"}</span>
-          <small>
-            {knowsEmberBolt
-              ? `${emberBolt?.manaCost ?? 0} mana`
-              : "Not learned"}
-          </small>
+          <span className="ability-glyph">EB</span>
+          <small>{knowsEmberBolt ? emberBolt?.manaCost ?? 0 : "—"}</small>
         </button>
-        <i className="dock-divider" />
+        {[3, 4, 5, 6, 7, 8].map((slot) => (
+          <button className="ability-slot empty-ability" key={slot} disabled title="Empty action slot">
+            <kbd>{slot}</kbd>
+            <span>+</span>
+          </button>
+        ))}
+      </nav>
+      <nav className="panel-dock" aria-label="Character panels">
         <DockButton
           hotkey="C"
+          icon={"\u2659"}
           label="Character"
           active={panel === "character"}
           onClick={() => setPanel(panel === "character" ? null : "character")}
         />
         <DockButton
           hotkey="I"
+          icon={"\u25a6"}
           label="Inventory"
           active={panel === "inventory"}
           onClick={() => setPanel(panel === "inventory" ? null : "inventory")}
         />
         <DockButton
           hotkey="K"
+          icon={"\u2692"}
           label="Crafting"
           active={panel === "crafting"}
           onClick={() => setPanel(panel === "crafting" ? null : "crafting")}
         />
-        <DockButton
-          hotkey="H"
-          label="Help"
-          active={panel === "help"}
-          onClick={() => setPanel(panel === "help" ? null : "help")}
-        />
-        <button className="dock-exit" onClick={onLeave}>
-          Exit
-        </button>
       </nav>
-      {panel && !world.trade && !world.incomingTrade && !world.activeNpcId && (
-        <GameModal title={titles[panel]} onClose={() => setPanel(null)}>
+      {escapeMenu && !world.trade && !world.incomingTrade && !world.activeNpcId && (
+        <EscapeMenu
+          onResume={() => setEscapeMenu(false)}
+          onOpen={(next) => { setEscapeMenu(false); setPanel(next); }}
+          onLeave={onLeave}
+        />
+      )}
+      {panel && !escapeMenu && !world.trade && !world.incomingTrade && !world.activeNpcId && (
+        <GameModal title={titles[panel]} kind={panel} onClose={() => setPanel(null)}>
           {panel === "inventory" ? (
             <InventoryPanel />
           ) : panel === "crafting" ? (
             <RuneCraftingPanel />
           ) : panel === "character" ? (
             <CharacterPanel />
-          ) : (
+          ) : panel === "help" ? (
             <HelpPanel />
+          ) : (
+            <OptionsPanel
+              showPerformance={showPerformance}
+              reducedMotion={reducedMotion}
+              onShowPerformance={setShowPerformance}
+              onReducedMotion={setReducedMotion}
+            />
           )}
         </GameModal>
       )}
@@ -463,30 +487,68 @@ function TargetFrame() {
 }
 function DockButton({
   hotkey,
+  icon,
   label,
   active,
   onClick,
 }: {
   hotkey: string;
+  icon: string;
   label: string;
   active: boolean;
   onClick: () => void;
 }) {
   return (
-    <button className={active ? "active" : ""} onClick={onClick}>
+    <button className={`panel-button ${active ? "active" : ""}`} onClick={onClick} title={`${label} (${hotkey})`} aria-label={`${label} (${hotkey})`}>
+      <span className="panel-icon" aria-hidden="true">{icon}</span>
       <kbd>{hotkey}</kbd>
-      <span>{label}</span>
     </button>
   );
 }
+
+function EscapeMenu({ onResume, onOpen, onLeave }: { onResume: () => void; onOpen: (panel: "options" | "help") => void; onLeave: () => void }) {
+  return (
+    <div className="pause-layer" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onResume(); }}>
+      <section className="pause-menu" role="dialog" aria-modal="true" aria-labelledby="pause-title">
+        <header>
+          <span>Embers of Aldoria</span>
+          <h2 id="pause-title">Game Menu</h2>
+        </header>
+        <button className="pause-primary" onClick={onResume}>Return to game <kbd>Esc</kbd></button>
+        <button onClick={() => onOpen("options")}><span>Options</span><small>Interface and accessibility</small></button>
+        <button onClick={() => onOpen("help")}><span>Help & Controls</span><small>Movement, combat and shortcuts</small></button>
+        <button className="pause-exit" onClick={onLeave}><span>Exit game</span><small>Return to character selection</small></button>
+      </section>
+    </div>
+  );
+}
+
+function OptionsPanel({ showPerformance, reducedMotion, onShowPerformance, onReducedMotion }: { showPerformance: boolean; reducedMotion: boolean; onShowPerformance: (value: boolean) => void; onReducedMotion: (value: boolean) => void }) {
+  return (
+    <div className="options-panel">
+      <section>
+        <header><span className="option-icon">UI</span><div><h3>Interface</h3><p>Choose which diagnostic information is visible while playing.</p></div></header>
+        <label><span><strong>Performance display</strong><small>Show position, FPS and draw calls.</small></span><input type="checkbox" checked={showPerformance} onChange={(event) => onShowPerformance(event.target.checked)} /></label>
+      </section>
+      <section>
+        <header><span className="option-icon">FX</span><div><h3>Accessibility</h3><p>Reduce non-essential interface movement.</p></div></header>
+        <label><span><strong>Reduced interface motion</strong><small>Disable sweeping and pulsing UI animations.</small></span><input type="checkbox" checked={reducedMotion} onChange={(event) => onReducedMotion(event.target.checked)} /></label>
+      </section>
+      <p className="options-note">Gameplay shortcuts remain active: C for Character, I for Inventory, K for Crafting and H for Help.</p>
+    </div>
+  );
+}
+
 function GameModal({
   title,
   children,
   onClose,
+  kind,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
+  kind?: string;
 }) {
   return (
     <div
@@ -496,7 +558,7 @@ function GameModal({
       }}
     >
       <section
-        className="game-modal"
+        className={`game-modal ${kind ? `panel-${kind}` : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -810,15 +872,50 @@ function CharacterPanel() {
     ? world.players.get(world.localPlayerId)
     : null;
   if (!player) return null;
+  const equipped = world.inventory.filter((item) => item.equippedSlot);
+  const equipmentLayout = [
+    { id: "helmet", label: "Helmet", aliases: ["helmet", "head"] },
+    { id: "back", label: "Back", aliases: ["back", "cape"] },
+    { id: "amulet", label: "Amulet", aliases: ["amulet", "neck"] },
+    { id: "left-hand", label: "Left hand", aliases: ["left_hand", "offhand", "shield"] },
+    { id: "right-hand", label: "Right hand", aliases: ["right_hand", "mainhand", "weapon"] },
+    { id: "ring-left", label: "Ring", aliases: ["ring_left", "ring1"] },
+    { id: "ring-right", label: "Ring", aliases: ["ring_right", "ring2"] },
+    { id: "legs", label: "Legs", aliases: ["legs"] },
+    { id: "shoes", label: "Shoes", aliases: ["shoes", "feet", "boots"] },
+    { id: "backpack", label: "Backpack", aliases: ["backpack", "bag"] },
+  ];
+  const skillRanks: [string, number][] = [
+    ["Sword", player.swordSkill],
+    ["Distance", player.distanceSkill],
+    ["Fletching", player.fletchingSkill],
+    ["Magic", player.magicLevel],
+  ];
+  const strongestSkill = skillRanks.reduce((best, current) => current[1] > best[1] ? current : best);
   return (
     <div className="character-panel">
-      <section>
-        <div className="character-portrait">{player.name.slice(0, 1)}</div>
-        <h3>{player.name}</h3>
-        <p>
-          Level {player.level} {vocationName(player.vocation)}
-        </p>
-        <small>{player.experience} experience</small>
+      <section className="character-sheet">
+        <header className="character-identity">
+          <div className="character-portrait">{player.name.slice(0, 1)}</div>
+          <span><small>Level {player.level}</small><h3>{player.name}</h3><b>{vocationName(player.vocation)}</b></span>
+        </header>
+        <h4>Equipment</h4>
+        <div className="equipment-paperdoll">
+          <div className="character-model-preview" aria-label={`${player.name} character preview`}>
+            <CharacterPreview vocation={player.vocation} />
+            <span>{player.name}</span>
+          </div>
+          {equipmentLayout.map(({ id, label, aliases }) => {
+            const item = equipped.find((entry) => entry.equippedSlot && aliases.includes(entry.equippedSlot));
+            const itemName = item ? world.itemDefinitions.get(item.definitionId)?.name ?? item.definitionId : label;
+            return (
+              <div className={`equipment-slot slot-${id} ${item ? "filled" : ""}`} key={id} title={itemName}>
+                {item ? <ItemIcon definitionId={item.definitionId} /> : <span aria-hidden="true">{equipmentSlotGlyph(id)}</span>}
+                <small>{itemName}</small>
+              </div>
+            );
+          })}
+        </div>
         <p className="vocation-perk">
           {player.vocation === "ranger"
             ? "Excels with distance weapons and ammunition."
@@ -827,8 +924,8 @@ function CharacterPanel() {
               : "Can use traded sigils; crafting requires a Mage or Druid."}
         </p>
       </section>
-      <section>
-        <h3>Usage-based skills</h3>
+      <section className="skills-sheet">
+        <header><span><small>Progression</small><h3>Skills & Mastery</h3></span><b>{player.level}</b></header>
         <SkillRow
           name="Sword Skill"
           level={player.swordSkill}
@@ -858,8 +955,39 @@ function CharacterPanel() {
           their matching damage type or production discipline.
         </p>
       </section>
+      <section className="stats-sheet">
+        <header><span><small>Overview</small><h3>Character Stats</h3></span></header>
+        <div className="character-resources">
+          <span className="health-stat"><small>Health</small><strong>{player.health}<i>/ {player.maxHealth}</i></strong><em><i style={{ width: `${Math.min(100, player.health / Math.max(1, player.maxHealth) * 100)}%` }} /></em></span>
+          <span className="mana-stat"><small>Mana</small><strong>{player.mana}<i>/ {player.maxMana}</i></strong><em><i style={{ width: `${Math.min(100, player.mana / Math.max(1, player.maxMana) * 100)}%` }} /></em></span>
+          <span><small>Experience</small><strong>{player.experience}</strong></span>
+          <span><small>Capacity</small><strong>{world.inventoryWeight.toFixed(1)}<i>/ {world.maxCapacity.toFixed(1)}</i></strong><em><i style={{ width: `${Math.min(100, world.inventoryWeight / Math.max(1, world.maxCapacity) * 100)}%` }} /></em></span>
+        </div>
+        <dl className="character-facts">
+          <div><dt>Level</dt><dd>{player.level}</dd></div>
+          <div><dt>Vocation</dt><dd>{vocationName(player.vocation)}</dd></div>
+          <div><dt>Highest mastery</dt><dd>{strongestSkill[0]} <b>{strongestSkill[1]}</b></dd></div>
+          <div><dt>Equipped</dt><dd>{equipped.length} / {equipmentLayout.length}</dd></div>
+        </dl>
+      </section>
     </div>
   );
+}
+
+function equipmentSlotGlyph(slot: string) {
+  const glyphs: Record<string, string> = {
+    helmet: "\u25b2",
+    back: "\u25a5",
+    amulet: "\u25c7",
+    "left-hand": "L",
+    "right-hand": "R",
+    "ring-left": "\u25cb",
+    "ring-right": "\u25cb",
+    legs: "\u2161",
+    shoes: "\u2304",
+    backpack: "\u25a6",
+  };
+  return glyphs[slot] ?? "\u00b7";
 }
 
 function SkillRow({
@@ -1280,9 +1408,10 @@ function Chat() {
 }
 
 function InventoryPanel() {
+  const [query, setQuery] = useState("");
   const rootItems = world.inventory.filter(
     (item) => !item.containerId && !item.equippedSlot,
-  );
+  ).filter((item) => (world.itemDefinitions.get(item.definitionId)?.name ?? item.definitionId).toLowerCase().includes(query.trim().toLowerCase()));
   const equipped = world.inventory.filter((item) => item.equippedSlot);
   const primaryContainer = world.inventory.find(
     (item) => world.itemDefinitions.get(item.definitionId)?.containerSlots,
@@ -1306,6 +1435,10 @@ function InventoryPanel() {
   };
   return (
     <div className="inventory-panel">
+      <header className="inventory-toolbar">
+        <span><small>Backpack</small><strong>{world.inventory.length} items carried</strong></span>
+        <label><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search inventory" aria-label="Search inventory" /></label>
+      </header>
       <div className="inventory-summary">
         <span>
           <strong>Carrying capacity</strong>
@@ -1331,26 +1464,24 @@ function InventoryPanel() {
           onDragOver={allowItemDrop}
           onDrop={(event) => drop(event, "equipment")}
         >
-          <h3>Equipment</h3>
+          <header className="inventory-section-title"><span><small>Loadout</small><h3>Equipment</h3></span><b>{equipped.length}</b></header>
           {equipped.length === 0 && (
             <p className="empty-state">Drop compatible equipment here.</p>
           )}
-          {equipped.map((item) => (
-            <InventoryEntry
-              item={item}
-              key={item.instanceId}
-              primaryContainerId={primaryContainer?.instanceId}
-            />
-          ))}
+          <div className="equipment-inventory-list">
+            {equipped.map((item) => (
+              <InventoryEntry item={item} key={item.instanceId} primaryContainerId={primaryContainer?.instanceId} />
+            ))}
+          </div>
         </section>
         <section
           className="inventory-drop-zone"
           onDragOver={allowItemDrop}
           onDrop={(event) => drop(event, "root")}
         >
-          <h3>Backpack & Inventory</h3>
+          <header className="inventory-section-title"><span><small>Storage</small><h3>Backpack & Inventory</h3></span><b>{rootItems.length}</b></header>
           {rootItems.length === 0 && (
-            <p className="empty-state">Drop items here to unpack them.</p>
+            <p className="empty-state">{query ? "No items match your search." : "Drop items here to unpack them."}</p>
           )}
           {rootItems.map((item) => (
             <InventoryEntry

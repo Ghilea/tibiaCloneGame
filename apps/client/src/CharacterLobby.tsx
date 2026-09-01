@@ -131,7 +131,7 @@ export function CharacterLobby({ token, connecting, onPlay, onLogout }: Characte
   );
 }
 
-function CharacterPreview({ vocation }: { vocation: string }) {
+export function CharacterPreview({ vocation }: { vocation: string }) {
   const kind: CharacterKind = vocation === "ranger" ? "ranger" : vocation === "mage" || vocation === "druid" ? "mage" : "knight";
   return (
     <Canvas dpr={[1, 1.5]} camera={{ position: [0, 1.35, 4.8], fov: 34 }} gl={{ antialias: true, powerPreference: "high-performance" }}>
