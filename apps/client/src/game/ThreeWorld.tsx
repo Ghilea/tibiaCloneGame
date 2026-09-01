@@ -854,18 +854,21 @@ function OcclusionController({ target, visualTarget, sceneRevision }: { target?:
         next.add(material);
         if (!faded.current.has(material)) {
           faded.current.set(material, material.opacity);
-          material.opacity = 0.28;
         }
+        material.userData.occlusionOpacity = 0.28;
+        material.opacity = Math.min(material.opacity, 0.28);
       }
     });
     for (const [material, original] of faded.current) {
       if (next.has(material)) continue;
+      delete material.userData.occlusionOpacity;
       material.opacity = original;
       faded.current.delete(material);
     }
   });
   useEffect(() => () => {
     for (const [material, original] of faded.current) {
+      delete material.userData.occlusionOpacity;
       material.opacity = original;
     }
   }, []);

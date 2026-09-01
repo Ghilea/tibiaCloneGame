@@ -87,11 +87,16 @@ export const GabledRoof = memo(function GabledRoof({ building, wallHeight, roofV
   useEffect(() => () => geometry.dispose(), [geometry]);
   useFrame((_, delta) => {
     if (!material.current) return;
-    material.current.opacity = THREE.MathUtils.damp(material.current.opacity, roofFade, 10, delta);
+    const occlusionOpacity = material.current.userData.occlusionOpacity as number | undefined;
+    const targetOpacity = Math.min(roofFade, occlusionOpacity ?? 1);
+    material.current.opacity = THREE.MathUtils.damp(material.current.opacity, targetOpacity, 10, delta);
     material.current.depthWrite = material.current.opacity > 0.5;
   });
   return (
-    <group position={[building.x + building.width / 2, wallHeight + 0.02, building.y + building.height / 2]}>
+    <group
+      position={[building.x + building.width / 2, wallHeight + 0.02, building.y + building.height / 2]}
+      userData={{ occluder: true, occluderKind: "roof", buildingId: building.id }}
+    >
       <mesh geometry={geometry} receiveShadow>
         <meshStandardMaterial ref={material} color={building.kind === "keep" ? "#45504d" : "#71372d"} roughness={0.91} side={THREE.DoubleSide} transparent opacity={roofFade} />
       </mesh>
