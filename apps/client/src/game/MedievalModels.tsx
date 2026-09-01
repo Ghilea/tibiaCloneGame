@@ -68,16 +68,11 @@ export function MedievalDoorWall({
 }
 
 function CastleMasonry({ position, size }: { position: [number, number, number]; size: [number, number, number] }) {
-  const horizontal = size[0] > size[2];
-  const courses = Math.max(3, Math.floor(size[1] / 0.38));
   return (
-    <group position={position}>
-      <mesh castShadow receiveShadow><boxGeometry args={size} /><meshStandardMaterial color="#6d7773" roughness={1} /></mesh>
-      {Array.from({ length: courses }, (_, row) => {
-        const y = -size[1] / 2 + (row + 1) * (size[1] / (courses + 1));
-        return <mesh key={row} position={horizontal ? [0, y, size[2] * 0.54] : [size[0] * 0.54, y, 0]}><boxGeometry args={horizontal ? [size[0] + 0.02, 0.018, 0.025] : [0.025, 0.018, size[2] + 0.02]} /><meshStandardMaterial color="#3f4946" roughness={1} /></mesh>;
-      })}
-    </group>
+    <mesh position={position} castShadow receiveShadow>
+      <boxGeometry args={size} />
+      <meshStandardMaterial color="#6d7773" roughness={1} />
+    </mesh>
   );
 }
 

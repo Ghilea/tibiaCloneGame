@@ -1,6 +1,7 @@
 import { Canvas, type ThreeEvent, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { memo, Suspense, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type MutableRefObject, type RefObject } from "react";
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type {
   BuildingView,
   CreatureView,
@@ -451,22 +452,58 @@ function ConnectedWalls({ positions, castle }: { positions: readonly Position[];
   return (
     <group>
       {positions.map((tile) => {
-        const arms = [
-          { key: "west", present: set.has(`${tile.x - 1}:${tile.y}:${tile.z}`), position: [-0.32, height / 2, 0] as [number, number, number], size: [0.42, height, castle ? 0.28 : 0.18] as [number, number, number] },
-          { key: "east", present: set.has(`${tile.x + 1}:${tile.y}:${tile.z}`), position: [0.32, height / 2, 0] as [number, number, number], size: [0.42, height, castle ? 0.28 : 0.18] as [number, number, number] },
-          { key: "north", present: set.has(`${tile.x}:${tile.y - 1}:${tile.z}`), position: [0, height / 2, -0.32] as [number, number, number], size: [castle ? 0.28 : 0.18, height, 0.42] as [number, number, number] },
-          { key: "south", present: set.has(`${tile.x}:${tile.y + 1}:${tile.z}`), position: [0, height / 2, 0.32] as [number, number, number], size: [castle ? 0.28 : 0.18, height, 0.42] as [number, number, number] },
-        ];
         return (
-          <group key={tileKey(tile)} position={[tile.x + 0.5, 0, tile.y + 0.5]} userData={{ occluder: true }}>
-            <MedievalWall position={[0, height / 2, 0]} size={[castle ? 0.3 : 0.24, height, castle ? 0.3 : 0.24]} keep={castle} />
-            {arms.filter((arm) => arm.present).map((arm) => <MedievalWall key={arm.key} position={arm.position} size={arm.size} keep={castle} />)}
-            {castle && <mesh position={[0, height + 0.18, 0]} castShadow><boxGeometry args={[0.25, 0.36, 0.25]} /><meshStandardMaterial color="#87908c" roughness={0.95} /></mesh>}
-          </group>
+          <ConnectedWallTile
+            key={tileKey(tile)}
+            position={[tile.x + 0.5, 0, tile.y + 0.5]}
+            height={height}
+            castle={castle}
+            west={set.has(`${tile.x - 1}:${tile.y}:${tile.z}`)}
+            east={set.has(`${tile.x + 1}:${tile.y}:${tile.z}`)}
+            north={set.has(`${tile.x}:${tile.y - 1}:${tile.z}`)}
+            south={set.has(`${tile.x}:${tile.y + 1}:${tile.z}`)}
+          />
         );
       })}
     </group>
   );
+}
+
+function ConnectedWallTile({ position, height, castle, west, east, north, south }: {
+  position: [number, number, number];
+  height: number;
+  castle: boolean;
+  west: boolean;
+  east: boolean;
+  north: boolean;
+  south: boolean;
+}) {
+  const geometry = useMemo(() => {
+    const thickness = castle ? 0.28 : 0.18;
+    const centerSize = castle ? 0.3 : 0.24;
+    const pieces: THREE.BufferGeometry[] = [];
+    const addBox = (size: [number, number, number], offset: [number, number, number]) => {
+      const box = new THREE.BoxGeometry(...size);
+      box.translate(...offset);
+      pieces.push(box);
+    };
+    addBox([centerSize, height, centerSize], [0, height / 2, 0]);
+    if (west) addBox([0.42, height, thickness], [-0.32, height / 2, 0]);
+    if (east) addBox([0.42, height, thickness], [0.32, height / 2, 0]);
+    if (north) addBox([thickness, height, 0.42], [0, height / 2, -0.32]);
+    if (south) addBox([thickness, height, 0.42], [0, height / 2, 0.32]);
+    if (castle) addBox([0.25, 0.36, 0.25], [0, height + 0.18, 0]);
+    const merged = mergeGeometries(pieces, false);
+    pieces.forEach((piece) => piece.dispose());
+    if (!merged) throw new Error("Unable to merge connected wall geometry");
+    merged.computeBoundingBox();
+    merged.computeBoundingSphere();
+    return merged;
+  }, [castle, east, height, north, south, west]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  return <mesh geometry={geometry} position={position} castShadow receiveShadow userData={{ occluder: true }}>
+    <meshStandardMaterial color={castle ? "#6d7773" : "#aa987c"} roughness={0.98} />
+  </mesh>;
 }
 
 function Battlements({ building, height }: { building: BuildingView; height: number }) {
