@@ -1,5 +1,5 @@
 import { useFrame } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { BuildingView, WindowView } from "../protocol";
 import { MedievalHouseWallAsset, MedievalWindowShuttersAsset } from "./MedievalAssetModels";
@@ -81,7 +81,7 @@ function CastleMasonry({ position, size }: { position: [number, number, number];
   );
 }
 
-export function GabledRoof({ building, wallHeight, roofVisible = true, roofFade = 1 }: { building: BuildingView; wallHeight: number; roofVisible?: boolean; roofFade?: number }) {
+export const GabledRoof = memo(function GabledRoof({ building, wallHeight, roofVisible = true, roofFade = 1 }: { building: BuildingView; wallHeight: number; roofVisible?: boolean; roofFade?: number }) {
   const geometry = useMemo(() => roofGeometry(building.width + 0.7, building.height + 0.7), [building.width, building.height]);
   const material = useRef<THREE.MeshStandardMaterial>(null);
   useEffect(() => () => geometry.dispose(), [geometry]);
@@ -92,13 +92,13 @@ export function GabledRoof({ building, wallHeight, roofVisible = true, roofFade 
   });
   return (
     <group position={[building.x + building.width / 2, wallHeight + 0.02, building.y + building.height / 2]}>
-      <mesh geometry={geometry} castShadow receiveShadow>
+      <mesh geometry={geometry} receiveShadow>
         <meshStandardMaterial ref={material} color={building.kind === "keep" ? "#45504d" : "#71372d"} roughness={0.91} side={THREE.DoubleSide} transparent opacity={roofFade} />
       </mesh>
-      {roofVisible && <Chimney x={building.width * 0.22} z={-building.height * 0.18} keep={building.kind === "keep"} />}
+      <group visible={roofVisible}><Chimney x={building.width * 0.22} z={-building.height * 0.18} keep={building.kind === "keep"} /></group>
     </group>
   );
-}
+});
 
 function roofGeometry(width: number, depth: number) {
   const halfWidth = width / 2;
@@ -129,8 +129,8 @@ function roofGeometry(width: number, depth: number) {
 function Chimney({ x, z, keep }: { x: number; z: number; keep: boolean }) {
   return (
     <group position={[x, 0.84, z]}>
-      <mesh castShadow><boxGeometry args={[0.37, 1.7, 0.37]} /><meshStandardMaterial color={keep ? "#626b68" : "#704938"} roughness={1} /></mesh>
-      <mesh position={[0, 0.89, 0]} castShadow><boxGeometry args={[0.48, 0.14, 0.48]} /><meshStandardMaterial color="#3c3731" roughness={1} /></mesh>
+      <mesh><boxGeometry args={[0.37, 1.7, 0.37]} /><meshStandardMaterial color={keep ? "#626b68" : "#704938"} roughness={1} /></mesh>
+      <mesh position={[0, 0.89, 0]}><boxGeometry args={[0.48, 0.14, 0.48]} /><meshStandardMaterial color="#3c3731" roughness={1} /></mesh>
     </group>
   );
 }

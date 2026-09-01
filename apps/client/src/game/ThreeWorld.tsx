@@ -28,7 +28,7 @@ const TILE_HEIGHT = 0.12;
 const WALL_HEIGHT = 3.2;
 const CASTLE_HEIGHT = 4.1;
 const DOOR_HEIGHT = 2.2;
-const CAMERA_ZOOM = 135;
+const CAMERA_ZOOM = 125;
 const CAMERA_HEIGHT = 18;
 // About 27 degrees away from straight down: enough to read wall fronts and
 // actor silhouettes without returning to the old diagonal isometric view.
@@ -94,11 +94,11 @@ function SceneReady({ onReady }: { onReady?: () => void }) {
   return null;
 }
 
-function StaticShadowMap({ revision, indoorBuildingId }: { revision: MapView; indoorBuildingId: string | null }) {
+function StaticShadowMap({ revision }: { revision: MapView }) {
   const { gl } = useThree();
   useLayoutEffect(() => {
     gl.shadowMap.needsUpdate = true;
-  }, [gl, revision, indoorBuildingId]);
+  }, [gl, revision]);
   return null;
 }
 
@@ -144,7 +144,7 @@ function WorldScene({ world, input }: ThreeWorldProps) {
       <FollowCamera target={local?.position} visualTarget={localVisualPosition} mapWidth={map.width} mapHeight={map.height} />
       <Terrain map={region.map} floor={floor} bounds={region.bounds} onGround={onGround} />
       <Structures map={region.map} input={input} floor={floor} indoorBuildingId={indoorBuildingId} />
-      <StaticShadowMap revision={region.map} indoorBuildingId={indoorBuildingId} />
+      <StaticShadowMap revision={region.map} />
       <OcclusionController target={local?.position} visualTarget={localVisualPosition} sceneRevision={region.map} />
       {players.map((player) => (
         <PlayerActor
@@ -380,20 +380,29 @@ function useWorldTexture(path: string, repeatX = 1, repeatY = 1) {
 }
 
 const Structures = memo(function Structures({ map, input, floor, indoorBuildingId }: { map: NonNullable<WorldState["map"]>; input: InputController; floor: number; indoorBuildingId: string | null }) {
-  const buildings = map.buildings.filter((entry) => entry.floor === floor);
+  const buildings = useMemo(() => map.buildings.filter((entry) => entry.floor === floor), [floor, map.buildings]);
   return (
     <group>
-      {buildings.map((building) => <Building key={building.id} building={building} doors={map.doors} windows={map.windows} input={input} roofVisible={building.id !== indoorBuildingId} />)}
-      <ConnectedWalls positions={map.castleWalls.filter((tile) => tile.z === floor)} castle />
-      {map.trees.filter((tile) => tile.z === floor).map((tile) => <Tree key={tileKey(tile)} position={tile} />)}
-      {map.torches.filter((tile) => tile.z === floor).map((tile) => <Torch key={tileKey(tile)} position={tile} />)}
-      {map.doors.filter((door) => door.position.z === floor && !insideAnyBuilding(door.position, buildings)).map((door) => <Door key={door.id} door={door} input={input} />)}
+      {buildings.map((building) => <group key={building.id}>
+        <Building building={building} doors={map.doors} windows={map.windows} input={input} />
+        <GabledRoof building={building} wallHeight={buildingWallHeight(building)} roofVisible={building.id !== indoorBuildingId} roofFade={building.id !== indoorBuildingId ? 1 : 0.08} />
+      </group>)}
+      <StaticStructures map={map} input={input} floor={floor} buildings={buildings} />
     </group>
   );
 });
 
-function Building({ building, doors, windows, input, roofVisible }: { building: BuildingView; doors: readonly DoorView[]; windows: readonly WindowView[]; input: InputController; roofVisible: boolean }) {
-  const height = building.kind === "keep" ? CASTLE_HEIGHT : WALL_HEIGHT;
+const StaticStructures = memo(function StaticStructures({ map, input, floor, buildings }: { map: NonNullable<WorldState["map"]>; input: InputController; floor: number; buildings: readonly BuildingView[] }) {
+  return <>
+      <ConnectedWalls positions={map.castleWalls.filter((tile) => tile.z === floor)} castle />
+      {map.trees.filter((tile) => tile.z === floor).map((tile) => <Tree key={tileKey(tile)} position={tile} />)}
+      {map.torches.filter((tile) => tile.z === floor).map((tile) => <Torch key={tileKey(tile)} position={tile} />)}
+      {map.doors.filter((door) => door.position.z === floor && !insideAnyBuilding(door.position, buildings)).map((door) => <Door key={door.id} door={door} input={input} />)}
+    </>;
+});
+
+const Building = memo(function Building({ building, doors, windows, input }: { building: BuildingView; doors: readonly DoorView[]; windows: readonly WindowView[]; input: InputController }) {
+  const height = buildingWallHeight(building);
   const maxX = building.x + building.width;
   const maxY = building.y + building.height;
   const matchingDoors = doors.filter((door) => door.position.z === building.floor && insideBuilding(door.position, building));
@@ -423,7 +432,6 @@ function Building({ building, doors, windows, input, roofVisible }: { building: 
             ? <MedievalWindowWall key={wall.key} position={wall.position} size={wall.size} />
             : <MedievalWall key={wall.key} position={wall.position} size={wall.size} keep={building.kind === "keep"} />
         ))}
-        <GabledRoof building={building} wallHeight={height} roofVisible={roofVisible} roofFade={roofVisible ? 1 : 0.08} />
         <HangingSign building={building} wallHeight={height} />
         {matchingDoors.map((door) => <Door key={door.id} door={door} building={building} input={input} tall={height} />)}
         {matchingWindows.map((window) => <ShutterWindow key={window.id} window={window} building={building} wallHeight={height} onClick={() => input.toggleWindow(window.id, window.position)} />)}
@@ -431,6 +439,10 @@ function Building({ building, doors, windows, input, roofVisible }: { building: 
       </group>
     </group>
   );
+});
+
+function buildingWallHeight(building: BuildingView) {
+  return building.kind === "keep" ? CASTLE_HEIGHT : WALL_HEIGHT;
 }
 
 function ConnectedWalls({ positions, castle }: { positions: readonly Position[]; castle: boolean }) {
