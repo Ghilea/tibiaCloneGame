@@ -7,6 +7,7 @@ import {
   useState,
   useSyncExternalStore,
   type DragEvent,
+  type MouseEvent,
   type PointerEvent,
 } from "react";
 import { authenticate } from "./api";
@@ -610,14 +611,14 @@ function GameWindow({ title, children, onClose, kind }: { title: string; childre
   const windowRef = useRef<HTMLElement>(null);
   const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null);
   const positionKey = `aldoria.window-position.${kind ?? title.toLowerCase().replace(/\s+/g, "-")}`;
-  const [position, setPosition] = useState<{ x: number; y: number } | null>(() => loadWindowPosition(positionKey));
+  const [position, setPosition] = useState<{ x: number; y: number; width: number } | null>(() => loadWindowPosition(positionKey));
   const beginWindowDrag = (event: PointerEvent<HTMLElement>) => {
     if (event.button !== 0 || (event.target as HTMLElement).closest("button")) return;
     const bounds = windowRef.current?.getBoundingClientRect();
     if (!bounds) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = { pointerId: event.pointerId, offsetX: event.clientX - bounds.left, offsetY: event.clientY - bounds.top };
-    setPosition({ x: bounds.left, y: bounds.top });
+    setPosition({ x: bounds.left, y: bounds.top, width: bounds.width });
   };
   const moveWindow = (event: PointerEvent<HTMLElement>) => {
     const drag = dragRef.current;
@@ -628,6 +629,7 @@ function GameWindow({ title, children, onClose, kind }: { title: string; childre
     setPosition({
       x: Math.max(8, Math.min(event.clientX - drag.offsetX, window.innerWidth - bounds.width - 8)),
       y: Math.max(8, Math.min(event.clientY - drag.offsetY, window.innerHeight - bounds.height - 8)),
+      width: bounds.width,
     });
   };
   const endWindowDrag = (event: PointerEvent<HTMLElement>) => {
@@ -640,7 +642,7 @@ function GameWindow({ title, children, onClose, kind }: { title: string; childre
     });
   };
   return (
-    <section ref={windowRef} className={`game-modal movable-game-window ${kind ? `panel-${kind}` : ""}`} style={position ? { position: "fixed", left: position.x, top: position.y } : undefined} role="dialog" aria-label={title}>
+    <section ref={windowRef} className={`game-modal movable-game-window ${kind ? `panel-${kind}` : ""}`} style={position ? { position: "fixed", left: position.x, top: position.y, width: position.width } : undefined} role="dialog" aria-label={title}>
       <header onPointerDown={beginWindowDrag} onPointerMove={moveWindow} onPointerUp={endWindowDrag} onPointerCancel={endWindowDrag}>
         <div><p className="eyebrow">Greyhaven interface</p><h2>{title}</h2></div>
         <button aria-label="Close" onClick={onClose}>×</button>
@@ -650,10 +652,10 @@ function GameWindow({ title, children, onClose, kind }: { title: string; childre
   );
 }
 
-function loadWindowPosition(storageKey: string): { x: number; y: number } | null {
+function loadWindowPosition(storageKey: string): { x: number; y: number; width: number } | null {
   try {
     const value = JSON.parse(localStorage.getItem(storageKey) ?? "null");
-    return value && Number.isFinite(value.x) && Number.isFinite(value.y) ? value : null;
+    return value && Number.isFinite(value.x) && Number.isFinite(value.y) && Number.isFinite(value.width) && value.width > 0 ? value : null;
   } catch {
     return null;
   }
@@ -1566,26 +1568,32 @@ function Chat() {
 
 function InventoryPanel() {
   const [query, setQuery] = useState("");
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ itemId: string; x: number; y: number } | null>(null);
+  const [splitRequest, setSplitRequest] = useState<{ itemId: string; quantity: number; max: number; x: number; y: number } | null>(null);
   const inventoryLayoutKey = `aldoria.inventory-layout.${world.localPlayerId ?? "local"}`;
   const [backpackLayout, setBackpackLayout] = useState<(string | null)[]>(() => loadInventoryLayout(inventoryLayoutKey));
   const carriedItems = world.inventory.filter((item) => !item.equippedSlot);
   const matchingItemIds = new Set(carriedItems
     .filter((item) => (world.itemDefinitions.get(item.definitionId)?.name ?? item.definitionId).toLowerCase().includes(query.trim().toLowerCase()))
     .map((item) => item.instanceId));
-  const primaryContainer = world.inventory.find(
-    (item) => world.itemDefinitions.get(item.definitionId)?.containerSlots,
-  );
   const equippedBackpack = world.inventory.find((item) => item.equippedSlot === "backpack");
   const equippedBackpackDefinition = equippedBackpack ? world.itemDefinitions.get(equippedBackpack.definitionId) : undefined;
-  const selectedItem = selectedItemId ? world.inventory.find((item) => item.instanceId === selectedItemId) : undefined;
+  const contextItem = contextMenu ? world.inventory.find((item) => item.instanceId === contextMenu.itemId) : undefined;
   const backpackSlots = equippedBackpackDefinition?.containerSlots ?? 0;
   useEffect(() => {
     setBackpackLayout((current) => reconcileInventoryLayout(current, carriedItems.map((item) => item.instanceId), backpackSlots));
-  }, [world.visualRevision, backpackSlots]);
+  }, [world.revision, backpackSlots]);
   useEffect(() => {
     localStorage.setItem(inventoryLayoutKey, JSON.stringify(backpackLayout));
   }, [backpackLayout, inventoryLayoutKey]);
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = (event: globalThis.PointerEvent) => {
+      if (!(event.target as HTMLElement).closest(".inventory-context-menu")) setContextMenu(null);
+    };
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [contextMenu]);
   const drop = (
     event: DragEvent,
     destination: "root" | "ground" | "equipment",
@@ -1611,10 +1619,33 @@ function InventoryPanel() {
       if (slot) network.equip(itemId, slot);
     }
   };
-  const selectItem = (itemId: string) => setSelectedItemId((current) => current === itemId ? null : itemId);
+  const openContextMenu = (event: MouseEvent, itemId: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setContextMenu({ itemId, x: Math.min(event.clientX, window.innerWidth - 230), y: Math.min(event.clientY, window.innerHeight - 260) });
+  };
   const pointerDrop = (itemId: string, target: HTMLElement | null) => {
     const destination = target?.dataset.inventoryDrop;
-    if (!destination) return;
+    if (!destination) {
+      if (!target?.closest(".game-modal")) network.drop(itemId);
+      return;
+    }
+    const targetItemId = target?.dataset.itemId;
+    if (targetItemId && targetItemId !== itemId) {
+      const sourceItem = world.inventory.find((item) => item.instanceId === itemId);
+      const targetItem = world.inventory.find((item) => item.instanceId === targetItemId);
+      const definition = sourceItem ? world.itemDefinitions.get(sourceItem.definitionId) : undefined;
+      const canStack = sourceItem && targetItem
+        && sourceItem.definitionId === targetItem.definitionId
+        && sourceItem.charges === targetItem.charges
+        && definition?.stackable
+        && sourceItem.quantity + targetItem.quantity <= (definition.maxStack ?? 1);
+      if (canStack) {
+        if (targetItem.containerId) network.moveToContainer(itemId, targetItem.containerId);
+        else network.moveToRoot(itemId);
+        return;
+      }
+    }
     if (destination === "container") {
       const containerId = target?.dataset.containerId;
       if (containerId && containerId !== itemId) network.moveToContainer(itemId, containerId);
@@ -1668,7 +1699,7 @@ function InventoryPanel() {
       <p className="drag-hint">
         Drag items between equipment, inventory, and containers.
       </p>
-      <div className={`inventory-workspace ${selectedItem ? "has-selection" : ""}`}>
+      <div className="inventory-workspace">
       <div className="inventory-columns">
         <section
           className="inventory-drop-zone"
@@ -1686,27 +1717,26 @@ function InventoryPanel() {
                 ? carriedItems.find((entry) => entry.instanceId === itemId)
                 : undefined;
               return item
-                ? <InventorySlot item={item} selected={item.instanceId === selectedItemId} onSelect={selectItem} onPointerDrop={pointerDrop} dropKind="root" dropIndex={index} onDropToArea={(event) => drop(event, "root", index)} key={`backpack-${index}-${item.instanceId}`} />
+                ? <InventorySlot item={item} onOpenContextMenu={openContextMenu} onPointerDrop={pointerDrop} dropKind="root" dropIndex={index} onDropToArea={(event) => drop(event, "root", index)} key={`backpack-${index}-${item.instanceId}`} />
                 : <div className="inventory-grid-slot empty" data-inventory-drop="root" data-backpack-index={index} onDragOver={allowItemDrop} onDrop={(event) => drop(event, "root", index)} key={`backpack-empty-${index}`} />;
             })}
           </div>
         </section>
       </div>
-      {selectedItem && <InventoryDetails item={selectedItem} primaryContainerId={primaryContainer?.instanceId} />}
       </div>
-      <div
-        className="ground-drop-zone"
-        data-inventory-drop="ground"
-        onDragOver={allowItemDrop}
-        onDrop={(event) => drop(event, "ground")}
-      >
-        Drop item on the ground at your feet
-      </div>
+      {contextItem && contextMenu && <InventoryDetails item={contextItem} position={contextMenu} onClose={() => setContextMenu(null)} onSplit={() => setSplitRequest({ itemId: contextItem.instanceId, quantity: Math.max(1, Math.floor(contextItem.quantity / 2)), max: contextItem.quantity - 1, x: contextMenu.x, y: contextMenu.y })} />}
+      {splitRequest && (
+        <form className="split-stack-dialog" style={{ left: splitRequest.x, top: splitRequest.y }} onSubmit={(event) => { event.preventDefault(); network.split(splitRequest.itemId, splitRequest.quantity); setSplitRequest(null); }}>
+          <span><small>Split stack</small><strong>Choose amount</strong></span>
+          <input autoFocus type="number" min={1} max={splitRequest.max} value={splitRequest.quantity} onChange={(event) => setSplitRequest((current) => current ? { ...current, quantity: Math.max(1, Math.min(current.max, Number(event.target.value) || 1)) } : null)} />
+          <div><button type="button" onClick={() => setSplitRequest(null)}>Cancel</button><button type="submit">Create stack</button></div>
+        </form>
+      )}
     </div>
   );
 }
 
-function InventorySlot({ item, selected, onSelect, onPointerDrop, dropKind, dropIndex, onDropToArea }: { item: ItemInstance; selected: boolean; onSelect: (id: string) => void; onPointerDrop: (itemId: string, target: HTMLElement | null) => void; dropKind: "root" | "equipment"; dropIndex?: number; onDropToArea: (event: DragEvent) => void }) {
+function InventorySlot({ item, onOpenContextMenu, onPointerDrop, dropKind, dropIndex, onDropToArea }: { item: ItemInstance; onOpenContextMenu: (event: MouseEvent, itemId: string) => void; onPointerDrop: (itemId: string, target: HTMLElement | null) => void; dropKind: "root" | "equipment"; dropIndex?: number; onDropToArea: (event: DragEvent) => void }) {
   const definition = world.itemDefinitions.get(item.definitionId);
   const children = world.inventory.filter((child) => child.containerId === item.instanceId);
   const receive = (event: DragEvent) => {
@@ -1721,9 +1751,9 @@ function InventorySlot({ item, selected, onSelect, onPointerDrop, dropKind, drop
       draggable={false}
       data-inventory-drop={definition?.containerSlots ? "container" : dropKind}
       data-container-id={definition?.containerSlots ? item.instanceId : undefined}
+      data-item-id={item.instanceId}
       data-backpack-index={dropKind === "root" ? dropIndex : undefined}
-      className={`inventory-grid-slot filled ${selected ? "selected" : ""} ${definition?.containerSlots ? "container-drop-target" : ""}`}
-      onClick={() => { if (!consumePointerDragClick(item.instanceId)) onSelect(item.instanceId); }}
+      className={`inventory-grid-slot filled ${definition?.containerSlots ? "container-drop-target" : ""}`}
       onDoubleClick={() => {
         if (definition?.foodEffect) network.eat(item.instanceId);
         else if (definition?.equipmentSlot && !item.equippedSlot) network.equip(item.instanceId, definition.equipmentSlot);
@@ -1734,7 +1764,7 @@ function InventorySlot({ item, selected, onSelect, onPointerDrop, dropKind, drop
       onPointerCancel={cancelPointerItemDrag}
       onDragOver={allowItemDrop}
       onDrop={definition?.containerSlots ? receive : onDropToArea}
-      onContextMenu={(event) => { if (!definition?.foodEffect) return; event.preventDefault(); network.eat(item.instanceId); }}
+      onContextMenu={(event) => onOpenContextMenu(event, item.instanceId)}
       title={`${definition?.name ?? item.definitionId}${definition?.containerSlots ? ` · ${children.length}/${definition.containerSlots} slots` : ""}`}
     >
       <ItemIcon definitionId={item.definitionId} />
@@ -1746,10 +1776,10 @@ function InventorySlot({ item, selected, onSelect, onPointerDrop, dropKind, drop
   );
 }
 
-function InventoryDetails({ item, primaryContainerId }: { item: ItemInstance; primaryContainerId?: string }) {
+function InventoryDetails({ item, position, onClose, onSplit }: { item: ItemInstance; position: { x: number; y: number }; onClose: () => void; onSplit: () => void }) {
   const definition = world.itemDefinitions.get(item.definitionId);
   const children = world.inventory.filter((child) => child.containerId === item.instanceId);
-  return <section className="inventory-item-details">
+  return <section className="inventory-item-details inventory-context-menu" style={{ left: position.x, top: position.y }} onClick={(event) => { if ((event.target as HTMLElement).closest("button")) onClose(); }}>
     <ItemIcon definitionId={item.definitionId} />
     <span><small>{item.equippedSlot ? "Equipped" : item.containerId ? "Inside backpack" : "Inventory item"}</small><strong>{definition?.name ?? item.definitionId}</strong><p>{((definition?.weight ?? 0) * item.quantity).toFixed(1)} oz{definition?.containerSlots ? ` · ${children.length}/${definition.containerSlots} slots` : ""}{definition?.distanceWeapon ? ` · range ${definition.distanceWeapon.range}` : ""}</p></span>
     <div className="item-actions">
@@ -1757,9 +1787,7 @@ function InventoryDetails({ item, primaryContainerId }: { item: ItemInstance; pr
       {definition?.equipmentSlot && !item.equippedSlot && <button onClick={() => network.equip(item.instanceId, definition.equipmentSlot!)}>Equip</button>}
       {item.equippedSlot && <button onClick={() => network.moveToRoot(item.instanceId)}>Unequip</button>}
       {item.containerId && <button onClick={() => network.moveToRoot(item.instanceId)}>Unpack</button>}
-      {!item.containerId && !item.equippedSlot && primaryContainerId && item.instanceId !== primaryContainerId && <button onClick={() => network.moveToContainer(item.instanceId, primaryContainerId)}>Pack</button>}
-      {item.quantity > 1 && <button onClick={() => network.split(item.instanceId, Math.floor(item.quantity / 2))}>Split</button>}
-      {!item.containerId && !item.equippedSlot && <button onClick={() => network.drop(item.instanceId)}>Drop</button>}
+      {item.quantity > 1 && <button onClick={onSplit}>Split stack…</button>}
     </div>
   </section>;
 }
@@ -1904,7 +1932,6 @@ type PointerItemDrag = {
   previewIcon: HTMLElement | null;
 };
 let pointerItemDrag: PointerItemDrag | null = null;
-let suppressedPointerClickItemId: string | null = null;
 
 function beginPointerItemDrag(event: PointerEvent<HTMLElement>, itemId: string) {
   if (event.button !== 0) return;
@@ -1941,9 +1968,9 @@ function endPointerItemDrag(event: PointerEvent<HTMLElement>, onDrop: (itemId: s
   if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   if (drag.moved) {
     event.preventDefault();
-    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-inventory-drop]") ?? null;
+    const hovered = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null;
+    const target = hovered?.closest<HTMLElement>("[data-inventory-drop]") ?? hovered;
     onDrop(drag.itemId, target);
-    suppressedPointerClickItemId = drag.itemId;
   }
   clearPointerItemDrag();
 }
@@ -1986,12 +2013,6 @@ function clearPointerDropPreview() {
   drag.previewIcon?.remove();
   drag.previewTarget = null;
   drag.previewIcon = null;
-}
-
-function consumePointerDragClick(itemId: string) {
-  if (suppressedPointerClickItemId !== itemId) return false;
-  suppressedPointerClickItemId = null;
-  return true;
 }
 
 function reconcileInventoryLayout(current: (string | null)[], itemIds: string[], slotCount: number) {
