@@ -190,7 +190,7 @@ impl Database {
         .bind(position.z)
         .fetch_one(&mut *transaction)
         .await?;
-        sqlx::query("INSERT INTO item_instances (id, definition_id, quantity, owner_character_id) VALUES ($1, 'field_backpack', 1, $2)")
+        sqlx::query("INSERT INTO item_instances (id, definition_id, quantity, owner_character_id, equipped_slot) VALUES ($1, 'field_backpack', 1, $2, 'backpack')")
             .bind(uuid::Uuid::new_v4()).bind(id).execute(&mut *transaction).await?;
         if vocation == "ranger" {
             sqlx::query("INSERT INTO item_instances (id, definition_id, quantity, owner_character_id, equipped_slot) VALUES ($1, 'ashwood_bow', 1, $2, 'weapon')")

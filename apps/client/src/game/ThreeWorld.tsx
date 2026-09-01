@@ -823,12 +823,30 @@ function damageTexture(damage: number, color: string) {
 }
 
 function GroundItemActor({ position, corpse, onClick, onContextMenu }: { position: Position; corpse: boolean; onClick: ActorClick; onContextMenu: ActorClick }) {
+  const lootBeacon = useRef<THREE.Group>(null);
+  useFrame(({ clock }) => {
+    if (!lootBeacon.current || !corpse) return;
+    lootBeacon.current.position.y = 0.64 + Math.sin(clock.elapsedTime * 3.2 + position.x + position.y) * 0.08;
+    lootBeacon.current.rotation.y = clock.elapsedTime * 1.4;
+  });
   return (
     <group position={[position.x + 0.5, 0.12, position.y + 0.5]} onPointerDown={(event) => event.stopPropagation()} onClick={onClick} onContextMenu={onContextMenu}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} castShadow>
         {corpse ? <circleGeometry args={[0.34, 14]} /> : <octahedronGeometry args={[0.18]} />}
         <meshStandardMaterial color={corpse ? "#6d3029" : "#d3a84f"} roughness={0.8} />
       </mesh>
+      {corpse && <>
+        <mesh position={[0, 0.025, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={17}>
+          <ringGeometry args={[0.39, 0.47, 28]} />
+          <meshBasicMaterial color="#f0bc55" transparent opacity={0.72} depthWrite={false} />
+        </mesh>
+        <group ref={lootBeacon} position={[0, 0.64, 0]} renderOrder={18}>
+          <mesh rotation={[0, 0, Math.PI / 4]}>
+            <octahedronGeometry args={[0.105]} />
+            <meshStandardMaterial color="#ffd879" emissive="#d98a25" emissiveIntensity={2.4} roughness={0.35} depthWrite={false} />
+          </mesh>
+        </group>
+      </>}
     </group>
   );
 }

@@ -36,7 +36,7 @@ const PLAYER_ATTACK_COOLDOWN: Duration = Duration::from_millis(650);
 // A defeated hunting spot should stay cleared long enough for the kill to feel
 // meaningful and for players to loot before the same creature returns.
 const CREATURE_RESPAWN: Duration = Duration::from_secs(30);
-const CORPSE_DECAY: Duration = Duration::from_secs(45);
+const CORPSE_DECAY: Duration = Duration::from_secs(5 * 60);
 const EMPTY_CORPSE_DECAY: Duration = Duration::from_secs(10);
 const MANA_REGEN_INTERVAL: Duration = Duration::from_secs(2);
 const CREATURE_AGGRO_RANGE: i32 = 6;
@@ -1489,6 +1489,9 @@ impl World {
         if self.inventory_weight(&inventory) > player.max_capacity + f32::EPSILON {
             return Err("shop_capacity_exceeded");
         }
+        if !self.inventory_slots_valid(&inventory) {
+            return Err("inventory_full");
+        }
         self.players
             .get_mut(&player_id)
             .expect("player was checked")
@@ -1634,6 +1637,9 @@ impl World {
         combined.extend(transferred.iter().cloned());
         if self.inventory_weight(&combined) > player.max_capacity + f32::EPSILON {
             return Err("too_heavy");
+        }
+        if !self.inventory_slots_valid(&combined) {
+            return Err("inventory_full");
         }
         let player = self
             .players
@@ -1844,6 +1850,12 @@ impl World {
             session.confirmed_a = false;
             session.confirmed_b = false;
             return Err("trade_capacity_exceeded");
+        }
+        if !self.inventory_slots_valid(&inventory_a) || !self.inventory_slots_valid(&inventory_b) {
+            let session = self.trades.get_mut(&trade_id).expect("trade exists");
+            session.confirmed_a = false;
+            session.confirmed_b = false;
+            return Err("inventory_full");
         }
         self.players
             .get_mut(&trade.player_a)
@@ -2467,6 +2479,17 @@ impl World {
             .content
             .item(&picked_item.definition_id)
             .ok_or("unknown_item_definition")?;
+        let auto_equip_backpack = definition.equipment_slot.as_deref() == Some("backpack")
+            && !player
+                .inventory
+                .iter()
+                .any(|item| item.equipped_slot.as_deref() == Some("backpack"));
+        let merges_existing_stack = definition.stackable
+            && player.inventory.iter().any(|item| {
+                item.definition_id == picked_item.definition_id
+                    && item.charges == picked_item.charges
+                    && item.quantity + picked_item.quantity <= definition.max_stack
+            });
         if content_index.is_none() && !definition.pickupable {
             return Err("item_not_pickupable");
         }
@@ -2474,6 +2497,17 @@ impl World {
             + definition.weight * f32::from(picked_item.quantity);
         if weight > player.max_capacity + f32::EPSILON {
             return Err("too_heavy");
+        }
+        if !auto_equip_backpack
+            && !merges_existing_stack
+            && self.inventory_slots_used(&player.inventory)
+                >= self.inventory_slot_capacity(&player.inventory)
+        {
+            return Err(if self.inventory_slot_capacity(&player.inventory) == 0 {
+                "backpack_required"
+            } else {
+                "inventory_full"
+            });
         }
 
         let mut picked_item = if let Some(content_index) = content_index {
@@ -2493,7 +2527,7 @@ impl World {
                 .and_modify(|deadline| *deadline = (*deadline).min(empty_decay));
         }
         picked_item.container_id = None;
-        picked_item.equipped_slot = None;
+        picked_item.equipped_slot = auto_equip_backpack.then(|| "backpack".to_string());
         let player = self.players.get_mut(&player_id).expect("checked above");
         if definition.stackable
             && let Some(stack) = player.inventory.iter_mut().find(|item| {
@@ -2517,7 +2551,17 @@ impl World {
         if self.item_is_offered(player_id, instance_id) {
             return Err("item_locked_in_trade");
         }
-        let player = self.players.get_mut(&player_id).ok_or("unknown_player")?;
+        let player = self.players.get(&player_id).ok_or("unknown_player")?;
+        let dropping_equipped_backpack = player.inventory.iter().any(|item| {
+            item.instance_id == instance_id && item.equipped_slot.as_deref() == Some("backpack")
+        });
+        if dropping_equipped_backpack && self.inventory_slots_used(&player.inventory) > 0 {
+            return Err("backpack_in_use");
+        }
+        let player = self
+            .players
+            .get_mut(&player_id)
+            .expect("player was checked");
         let item_index = player
             .inventory
             .iter()
@@ -2562,6 +2606,39 @@ impl World {
             .content
             .item(&source.definition_id)
             .ok_or("unknown_item_definition")?;
+        let current_used = self.inventory_slots_used(&player.inventory);
+        let current_capacity = self.inventory_slot_capacity(&player.inventory);
+        let (future_used, future_capacity) = match &destination {
+            ItemDestination::Root | ItemDestination::Container { .. } => (
+                current_used + usize::from(source.equipped_slot.is_some()),
+                if source.equipped_slot.as_deref() == Some("backpack") {
+                    0
+                } else {
+                    current_capacity
+                },
+            ),
+            ItemDestination::Equipment { slot } => {
+                let displaced = player.inventory.iter().any(|item| {
+                    item.instance_id != instance_id
+                        && item.equipped_slot.as_deref() == Some(slot.as_str())
+                });
+                let used = current_used.saturating_sub(usize::from(source.equipped_slot.is_none()))
+                    + usize::from(displaced);
+                let capacity = if slot == "backpack" {
+                    usize::from(definition.container_slots.unwrap_or(0))
+                } else {
+                    current_capacity
+                };
+                (used, capacity)
+            }
+        };
+        if future_used > future_capacity {
+            return Err(if future_capacity == 0 {
+                "backpack_required"
+            } else {
+                "inventory_full"
+            });
+        }
         let (container_id, equipped_slot) = match &destination {
             ItemDestination::Root => (None, None),
             ItemDestination::Container { container_id } => {
@@ -2668,6 +2745,18 @@ impl World {
     ) -> Result<EntityId, &'static str> {
         if self.item_is_offered(player_id, instance_id) {
             return Err("item_locked_in_trade");
+        }
+        let inventory = &self
+            .players
+            .get(&player_id)
+            .ok_or("unknown_player")?
+            .inventory;
+        if self.inventory_slots_used(inventory) >= self.inventory_slot_capacity(inventory) {
+            return Err(if self.inventory_slot_capacity(inventory) == 0 {
+                "backpack_required"
+            } else {
+                "inventory_full"
+            });
         }
         let player = self.players.get_mut(&player_id).ok_or("unknown_player")?;
         let source = player
@@ -3482,6 +3571,27 @@ impl World {
             })
             .sum()
     }
+
+    fn inventory_slot_capacity(&self, inventory: &[ItemInstance]) -> usize {
+        inventory
+            .iter()
+            .find(|item| item.equipped_slot.as_deref() == Some("backpack"))
+            .and_then(|item| self.content.item(&item.definition_id))
+            .and_then(|definition| definition.container_slots)
+            .map(usize::from)
+            .unwrap_or(0)
+    }
+
+    fn inventory_slots_used(&self, inventory: &[ItemInstance]) -> usize {
+        inventory
+            .iter()
+            .filter(|item| item.equipped_slot.is_none())
+            .count()
+    }
+
+    fn inventory_slots_valid(&self, inventory: &[ItemInstance]) -> bool {
+        self.inventory_slots_used(inventory) <= self.inventory_slot_capacity(inventory)
+    }
 }
 
 fn offered_items(player: &Player, item_ids: &[EntityId]) -> Vec<ItemInstance> {
@@ -4180,21 +4290,24 @@ mod tests {
     use uuid::Uuid;
 
     fn catalog(weight: f32) -> ContentCatalog {
-        ContentCatalog::from_definitions(vec![ItemDefinition {
-            id: "test_item".into(),
-            name: "Test".into(),
-            weight,
-            stackable: true,
-            max_stack: 100,
-            charges: None,
-            attack: None,
-            container_slots: None,
-            equipment_slot: None,
-            pickupable: true,
-            combat_effect: None,
-            distance_weapon: None,
-            food_effect: None,
-        }])
+        ContentCatalog::from_definitions(vec![
+            ItemDefinition {
+                id: "test_item".into(),
+                name: "Test".into(),
+                weight,
+                stackable: true,
+                max_stack: 100,
+                charges: None,
+                attack: None,
+                container_slots: None,
+                equipment_slot: None,
+                pickupable: true,
+                combat_effect: None,
+                distance_weapon: None,
+                food_effect: None,
+            },
+            test_backpack_definition(),
+        ])
         .unwrap()
     }
     fn test_player(id: EntityId, capacity: f32) -> Player {
@@ -4342,6 +4455,7 @@ mod tests {
                 distance_weapon: None,
                 food_effect: None,
             },
+            test_backpack_definition(),
         ])
         .unwrap()
     }
@@ -4349,6 +4463,7 @@ mod tests {
     fn combat_catalog() -> ContentCatalog {
         ContentCatalog::from_all_with_recipes(
             vec![
+                test_backpack_definition(),
                 ItemDefinition {
                     id: "mire_fiber".into(),
                     name: "Fiber".into(),
@@ -4527,6 +4642,30 @@ mod tests {
         }
     }
 
+    fn test_backpack_definition() -> ItemDefinition {
+        ItemDefinition {
+            id: "test_backpack".into(),
+            name: "Test Backpack".into(),
+            weight: 1.0,
+            stackable: false,
+            max_stack: 1,
+            charges: None,
+            attack: None,
+            container_slots: Some(100),
+            equipment_slot: Some("backpack".into()),
+            pickupable: true,
+            combat_effect: None,
+            distance_weapon: None,
+            food_effect: None,
+        }
+    }
+
+    fn equip_test_backpack(player: &mut Player) {
+        let mut backpack = instance("test_backpack");
+        backpack.equipped_slot = Some("backpack".into());
+        player.inventory.push(backpack);
+    }
+
     #[test]
     fn movement_is_validated_by_world() {
         let id = Uuid::new_v4();
@@ -4579,6 +4718,7 @@ mod tests {
     fn npc_shop_spends_physical_gold_and_delivers_bundles() {
         let id = Uuid::new_v4();
         let mut player = test_player(id, 100.0);
+        equip_test_backpack(&mut player);
         let mut coins = instance("gold_coin");
         coins.quantity = 5;
         player.inventory.push(coins);
@@ -4759,13 +4899,23 @@ mod tests {
         let mut player = test_player(id, 100.0);
         player.view.position = Position { x: 8, y: 8, z: 7 };
         player.inventory = vec![bag, contents];
+        equip_test_backpack(&mut player);
         let mut world = World::new(advanced_catalog(), vec![]);
         world.insert_player(player);
 
         world
             .deposit_item(id, "aldren_vaultkeeper", bag_id)
             .unwrap();
-        assert!(world.player(id).unwrap().inventory.is_empty());
+        assert_eq!(
+            world
+                .player(id)
+                .unwrap()
+                .inventory
+                .iter()
+                .filter(|item| item.equipped_slot.is_none())
+                .count(),
+            0
+        );
         assert_eq!(
             world
                 .player(id)
@@ -4787,6 +4937,7 @@ mod tests {
                 .unwrap()
                 .inventory
                 .iter()
+                .filter(|item| item.equipped_slot.is_none())
                 .map(|item| item.instance_id)
                 .collect::<HashSet<_>>(),
             HashSet::from([bag_id, contents_id])
@@ -4842,13 +4993,74 @@ mod tests {
                 contents: Vec::new(),
             }],
         );
-        world.insert_player(test_player(id, 10.0));
+        let mut player = test_player(id, 10.0);
+        equip_test_backpack(&mut player);
+        world.insert_player(player);
         world.try_pickup(id, instance_id).unwrap();
         assert!(world.ground_items().is_empty());
-        assert_eq!(world.player(id).unwrap().inventory.len(), 1);
+        assert_eq!(
+            world
+                .player(id)
+                .unwrap()
+                .inventory
+                .iter()
+                .filter(|item| item.equipped_slot.is_none())
+                .count(),
+            1
+        );
         world.try_drop(id, instance_id).unwrap();
         assert_eq!(world.ground_items().len(), 1);
-        assert!(world.player(id).unwrap().inventory.is_empty());
+        assert_eq!(
+            world
+                .player(id)
+                .unwrap()
+                .inventory
+                .iter()
+                .filter(|item| item.equipped_slot.is_none())
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn inventory_requires_an_equipped_backpack_and_equips_the_first_one() {
+        let id = Uuid::new_v4();
+        let item_without_bag = item(1);
+        let item_id = item_without_bag.instance_id;
+        let backpack = instance("test_backpack");
+        let backpack_id = backpack.instance_id;
+        let mut world = World::new(
+            catalog(1.0),
+            vec![
+                GroundItem {
+                    item: item_without_bag,
+                    position: SPAWN,
+                    contents: Vec::new(),
+                },
+                GroundItem {
+                    item: backpack,
+                    position: SPAWN,
+                    contents: Vec::new(),
+                },
+            ],
+        );
+        world.insert_player(test_player(id, 100.0));
+
+        assert_eq!(world.try_pickup(id, item_id), Err("backpack_required"));
+        world.try_pickup(id, backpack_id).unwrap();
+        assert_eq!(
+            world
+                .player(id)
+                .unwrap()
+                .inventory
+                .iter()
+                .find(|item| item.instance_id == backpack_id)
+                .unwrap()
+                .equipped_slot
+                .as_deref(),
+            Some("backpack")
+        );
+        world.try_pickup(id, item_id).unwrap();
     }
 
     #[test]
@@ -4923,6 +5135,7 @@ mod tests {
         let stack_id = stack.instance_id;
         let mut player = test_player(id, 100.0);
         player.inventory = vec![first_bag, second_bag, stack];
+        equip_test_backpack(&mut player);
         let mut world = World::new(advanced_catalog(), vec![]);
         world.insert_player(player);
         world
@@ -4980,6 +5193,7 @@ mod tests {
         let second_id = second.instance_id;
         let mut player = test_player(id, 100.0);
         player.inventory = vec![first, second];
+        equip_test_backpack(&mut player);
         let mut world = World::new(advanced_catalog(), vec![]);
         world.insert_player(player);
         world
@@ -5030,9 +5244,11 @@ mod tests {
         let item_b_id = item_b.instance_id;
         let mut first = test_player(player_a, 100.0);
         first.view.name = "First".into();
+        equip_test_backpack(&mut first);
         first.inventory.push(item_a);
         let mut second = test_player(player_b, 100.0);
         second.view.name = "Second".into();
+        equip_test_backpack(&mut second);
         second.inventory.push(item_b);
         let mut world = World::new(catalog(1.0), vec![]);
         world.insert_player(first);
@@ -5065,10 +5281,26 @@ mod tests {
         assert!(!world.trades.contains_key(&trade_id));
         let first_items = &world.player(player_a).unwrap().inventory;
         let second_items = &world.player(player_b).unwrap().inventory;
-        assert_eq!(first_items.len(), 1);
-        assert_eq!(second_items.len(), 1);
-        assert_eq!(first_items[0].instance_id, item_b_id);
-        assert_eq!(second_items[0].instance_id, item_a_id);
+        assert_eq!(
+            first_items
+                .iter()
+                .filter(|item| item.equipped_slot.is_none())
+                .count(),
+            1
+        );
+        assert_eq!(
+            second_items
+                .iter()
+                .filter(|item| item.equipped_slot.is_none())
+                .count(),
+            1
+        );
+        assert!(first_items.iter().any(|item| item.instance_id == item_b_id));
+        assert!(
+            second_items
+                .iter()
+                .any(|item| item.instance_id == item_a_id)
+        );
     }
 
     #[test]
@@ -5123,6 +5355,7 @@ mod tests {
     fn combat_kill_awards_xp_and_physical_loot() {
         let id = Uuid::new_v4();
         let mut player = test_player(id, 100.0);
+        equip_test_backpack(&mut player);
         player.view.position = Position { x: 22, y: 8, z: 7 };
         let mut world = World::new(combat_catalog(), vec![]);
         world.insert_player(player);

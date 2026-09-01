@@ -3,9 +3,11 @@ import {
   ReactNode,
   useCallback,
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
   type DragEvent,
+  type PointerEvent,
 } from "react";
 import { authenticate } from "./api";
 import { CharacterLobby, CharacterPreview } from "./CharacterLobby";
@@ -14,7 +16,7 @@ import { ThreeWorld } from "./game/ThreeWorld";
 import { NetworkClient } from "./game/NetworkClient";
 import { WorldState } from "./game/WorldState";
 import { PROTOCOL_VERSION, type GroundItem, type ItemInstance } from "./protocol";
-import { canCraftSigils, vocationName } from "./vocations";
+import { canCraftSigils } from "./vocations";
 
 const world = new WorldState();
 const network = new NetworkClient(world);
@@ -153,6 +155,7 @@ type Panel = "inventory" | "crafting" | "character" | "help" | "options";
 
 function Game({ onLeave }: { onLeave: () => void }) {
   const [panel, setPanel] = useState<Panel | null>(null);
+  const [showInventoryCharacter, setShowInventoryCharacter] = useState(false);
   const [escapeMenu, setEscapeMenu] = useState(false);
   const [showPerformance, setShowPerformance] = useState(true);
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -211,6 +214,14 @@ function Game({ onLeave }: { onLeave: () => void }) {
         event.target instanceof HTMLTextAreaElement
       )
         return;
+      if (event.code === "KeyE" && !panel && !escapeMenu && !world.trade && !world.incomingTrade && !world.activeNpcId) {
+        const loot = nearbyLootCorpses().flatMap((corpse) => corpse.contents);
+        if (loot.length > 0) {
+          event.preventDefault();
+          if (!event.repeat) loot.forEach((item) => network.pickup(item.instanceId));
+          return;
+        }
+      }
       if (event.code === "Digit1") {
         event.preventDefault();
         useEmberSigil();
@@ -226,17 +237,22 @@ function Game({ onLeave }: { onLeave: () => void }) {
         event.preventDefault();
         world.closeNpc();
         setEscapeMenu(false);
-        setPanel((current) => (current === next ? null : next));
+        if (next === "character" && panel === "inventory") {
+          setShowInventoryCharacter((current) => !current);
+        } else {
+          if (next === "inventory" && panel !== "inventory") setShowInventoryCharacter(panel === "character");
+          setPanel((current) => (current === next ? null : next));
+        }
       }
     };
     window.addEventListener("keydown", listener, true);
     return () => window.removeEventListener("keydown", listener, true);
-  }, [emberSigil?.instanceId, knowsEmberBolt, panel, world.attackTargetId]);
+  }, [emberSigil?.instanceId, escapeMenu, knowsEmberBolt, panel, world.attackTargetId]);
   const local = world.localPlayerId
     ? world.players.get(world.localPlayerId)
     : null;
   const titles: Record<Panel, string> = {
-    inventory: "Inventory & Equipment",
+    inventory: "Inventory",
     crafting: "Crafting & Production",
     character: "Character & Skills",
     help: "Controls",
@@ -259,8 +275,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
         <div>
           <strong>{local?.name}</strong>
           <small>
-            Level {local?.level} {vocationName(local?.vocation ?? "")} ·{" "}
-            {local?.experience} XP
+            Level {local?.level} · {local?.experience} XP
           </small>
           <ResourceBar
             kind="health"
@@ -280,6 +295,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
       {(world.attackTargetId || world.selectedPlayerId) && <TargetFrame />}
       {world.playerContext && <PlayerContextMenu />}
       <NearbyLootWindow />
+      <NpcProximityGuard />
       <Chat />
       <nav className="action-dock" aria-label="Combat hotbar">
         <button
@@ -336,15 +352,21 @@ function Game({ onLeave }: { onLeave: () => void }) {
           hotkey="C"
           icon={"\u2659"}
           label="Character"
-          active={panel === "character"}
-          onClick={() => setPanel(panel === "character" ? null : "character")}
+          active={panel === "character" || (panel === "inventory" && showInventoryCharacter)}
+          onClick={() => {
+            if (panel === "inventory") setShowInventoryCharacter((current) => !current);
+            else setPanel(panel === "character" ? null : "character");
+          }}
         />
         <DockButton
           hotkey="I"
           icon={"\u25a6"}
           label="Inventory"
           active={panel === "inventory"}
-          onClick={() => setPanel(panel === "inventory" ? null : "inventory")}
+          onClick={() => {
+            if (panel === "inventory") setPanel(null);
+            else { setShowInventoryCharacter(panel === "character"); setPanel("inventory"); }
+          }}
         />
         <DockButton
           hotkey="K"
@@ -357,18 +379,26 @@ function Game({ onLeave }: { onLeave: () => void }) {
       {escapeMenu && !world.trade && !world.incomingTrade && !world.activeNpcId && (
         <EscapeMenu
           onResume={() => setEscapeMenu(false)}
-          onOpen={(next) => { setEscapeMenu(false); setPanel(next); }}
+          onOpen={(next) => {
+            setEscapeMenu(false);
+            setPanel(next);
+          }}
           onLeave={onLeave}
         />
       )}
-      {panel && !escapeMenu && !world.trade && !world.incomingTrade && !world.activeNpcId && (
-        <GameModal title={titles[panel]} kind={panel} onClose={() => setPanel(null)}>
-          {panel === "inventory" ? (
-            <InventoryPanel />
-          ) : panel === "crafting" ? (
+      {panel === "inventory" && !escapeMenu && !world.trade && !world.incomingTrade && !world.activeNpcId && (
+        <DualGearWindows
+          showCharacter={showInventoryCharacter}
+          onCloseCharacter={() => setShowInventoryCharacter(false)}
+          onCloseInventory={() => setPanel(null)}
+        />
+      )}
+      {panel && panel !== "inventory" && !escapeMenu && !world.trade && !world.incomingTrade && !world.activeNpcId && (
+        <GameModal title={titles[panel]} kind={panel === "character" ? "character-compact" : panel} onClose={() => setPanel(null)}>
+          {panel === "crafting" ? (
             <RuneCraftingPanel />
           ) : panel === "character" ? (
-            <CharacterPanel />
+            <CompactCharacterPanel />
           ) : panel === "help" ? (
             <HelpPanel />
           ) : (
@@ -402,6 +432,20 @@ function Game({ onLeave }: { onLeave: () => void }) {
       )}
     </main>
   );
+}
+
+function NpcProximityGuard() {
+  useSyncExternalStore(subscribeWorldVisual, worldVisualSnapshot);
+  const npc = world.activeNpcId ? world.npcs.get(world.activeNpcId) : null;
+  const player = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
+  useEffect(() => {
+    if (!npc || !player) return;
+    const inRange = npc.position.z === player.position.z
+      && Math.abs(npc.position.x - player.position.x) <= 1
+      && Math.abs(npc.position.y - player.position.y) <= 1;
+    if (!inRange) world.closeNpc();
+  }, [npc?.id, npc?.position.x, npc?.position.y, npc?.position.z, player?.position.x, player?.position.y, player?.position.z]);
+  return null;
 }
 
 function WorldLoadingScreen() {
@@ -557,23 +601,69 @@ function GameModal({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <section
-        className={`game-modal ${kind ? `panel-${kind}` : ""}`}
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-      >
-        <header>
-          <div>
-            <p className="eyebrow">Greyhaven interface</p>
-            <h2>{title}</h2>
-          </div>
-          <button aria-label="Close" onClick={onClose}>
-            ×
-          </button>
-        </header>
-        <div className="modal-content">{children}</div>
-      </section>
+      <GameWindow title={title} kind={kind} onClose={onClose}>{children}</GameWindow>
+    </div>
+  );
+}
+
+function GameWindow({ title, children, onClose, kind }: { title: string; children: ReactNode; onClose: () => void; kind?: string }) {
+  const windowRef = useRef<HTMLElement>(null);
+  const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null);
+  const positionKey = `aldoria.window-position.${kind ?? title.toLowerCase().replace(/\s+/g, "-")}`;
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(() => loadWindowPosition(positionKey));
+  const beginWindowDrag = (event: PointerEvent<HTMLElement>) => {
+    if (event.button !== 0 || (event.target as HTMLElement).closest("button")) return;
+    const bounds = windowRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = { pointerId: event.pointerId, offsetX: event.clientX - bounds.left, offsetY: event.clientY - bounds.top };
+    setPosition({ x: bounds.left, y: bounds.top });
+  };
+  const moveWindow = (event: PointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    const element = windowRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !element) return;
+    event.preventDefault();
+    const bounds = element.getBoundingClientRect();
+    setPosition({
+      x: Math.max(8, Math.min(event.clientX - drag.offsetX, window.innerWidth - bounds.width - 8)),
+      y: Math.max(8, Math.min(event.clientY - drag.offsetY, window.innerHeight - bounds.height - 8)),
+    });
+  };
+  const endWindowDrag = (event: PointerEvent<HTMLElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    dragRef.current = null;
+    setPosition((current) => {
+      if (current) localStorage.setItem(positionKey, JSON.stringify(current));
+      return current;
+    });
+  };
+  return (
+    <section ref={windowRef} className={`game-modal movable-game-window ${kind ? `panel-${kind}` : ""}`} style={position ? { position: "fixed", left: position.x, top: position.y } : undefined} role="dialog" aria-label={title}>
+      <header onPointerDown={beginWindowDrag} onPointerMove={moveWindow} onPointerUp={endWindowDrag} onPointerCancel={endWindowDrag}>
+        <div><p className="eyebrow">Greyhaven interface</p><h2>{title}</h2></div>
+        <button aria-label="Close" onClick={onClose}>×</button>
+      </header>
+      <div className="modal-content">{children}</div>
+    </section>
+  );
+}
+
+function loadWindowPosition(storageKey: string): { x: number; y: number } | null {
+  try {
+    const value = JSON.parse(localStorage.getItem(storageKey) ?? "null");
+    return value && Number.isFinite(value.x) && Number.isFinite(value.y) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function DualGearWindows({ showCharacter, onCloseCharacter, onCloseInventory }: { showCharacter: boolean; onCloseCharacter: () => void; onCloseInventory: () => void }) {
+  return (
+    <div className={`modal-layer dual-gear-layer ${showCharacter ? "has-character" : ""}`}>
+      {showCharacter && <GameWindow title="Character" kind="character-compact" onClose={onCloseCharacter}><CompactCharacterPanel /></GameWindow>}
+      <GameWindow title="Inventory" kind="inventory" onClose={onCloseInventory}><InventoryPanel /></GameWindow>
     </div>
   );
 }
@@ -867,24 +957,103 @@ function PlayerContextMenu() {
   );
 }
 
+const equipmentLayout = [
+  { id: "helmet", label: "Helmet", aliases: ["helmet", "head"] },
+  { id: "back", label: "Back", aliases: ["back", "cape"] },
+  { id: "amulet", label: "Amulet", aliases: ["amulet", "neck"] },
+  { id: "left-hand", label: "Left hand", aliases: ["left_hand", "offhand", "shield"] },
+  { id: "right-hand", label: "Right hand", aliases: ["right_hand", "mainhand", "weapon"] },
+  { id: "ring-left", label: "Ring", aliases: ["ring_left", "ring1"] },
+  { id: "ring-right", label: "Ring", aliases: ["ring_right", "ring2"] },
+  { id: "legs", label: "Legs", aliases: ["legs"] },
+  { id: "shoes", label: "Shoes", aliases: ["shoes", "feet", "boots"] },
+  { id: "backpack", label: "Backpack", aliases: ["backpack", "bag"] },
+];
+
+function CompactCharacterPanel() {
+  const [showDetails, setShowDetails] = useState(false);
+  const player = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
+  if (!player) return null;
+  return (
+    <div className="compact-character-panel">
+      <header className="character-identity">
+        <div className="character-portrait">{player.name.slice(0, 1)}</div>
+        <span><small>Level {player.level}</small><h3>{player.name}</h3><b>Drag equipment between windows</b></span>
+      </header>
+      <EquipmentPaperdoll interactive />
+      <button className="character-details-toggle" aria-expanded={showDetails} onClick={() => setShowDetails((current) => !current)}>
+        <span>{showDetails ? "Hide details" : "Skills & stats"}</span><b>{showDetails ? "−" : "+"}</b>
+      </button>
+      {showDetails && (
+        <div className="compact-character-details">
+          <span><small>Health</small><strong>{player.health} / {player.maxHealth}</strong></span>
+          <span><small>Mana</small><strong>{player.mana} / {player.maxMana}</strong></span>
+          <span><small>Sword</small><strong>{player.swordSkill}</strong></span>
+          <span><small>Distance</small><strong>{player.distanceSkill}</strong></span>
+          <span><small>Fletching</small><strong>{player.fletchingSkill}</strong></span>
+          <span><small>Magic</small><strong>{player.magicLevel}</strong></span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EquipmentPaperdoll({ interactive }: { interactive: boolean }) {
+  const player = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
+  if (!player) return null;
+  const equipped = world.inventory.filter((item) => item.equippedSlot);
+  return (
+    <div className={`equipment-paperdoll ${interactive ? "interactive-paperdoll" : ""}`} data-inventory-drop="equipment">
+      <div className="character-model-preview" aria-label={`${player.name} character preview`}>
+        <CharacterPreview vocation={player.vocation} />
+        <span>{player.name}</span>
+      </div>
+      {equipmentLayout.map(({ id, label, aliases }) => {
+        const item = equipped.find((entry) => entry.equippedSlot && aliases.includes(entry.equippedSlot));
+        const itemName = item ? world.itemDefinitions.get(item.definitionId)?.name ?? item.definitionId : label;
+        return (
+          <div
+            className={`equipment-slot slot-${id} ${item ? "filled" : ""}`}
+            data-inventory-drop="equipment"
+            key={id}
+            title={itemName}
+            onDoubleClick={interactive && item ? () => network.moveToRoot(item.instanceId) : undefined}
+            onPointerDown={interactive && item ? (event) => beginPointerItemDrag(event, item.instanceId) : undefined}
+            onPointerMove={interactive && item ? movePointerItemDrag : undefined}
+            onPointerUp={interactive && item ? (event) => endPointerItemDrag(event, routeEquipmentPointerDrop) : undefined}
+            onPointerCancel={interactive && item ? cancelPointerItemDrag : undefined}
+          >
+            {item ? <ItemIcon definitionId={item.definitionId} /> : <span aria-hidden="true">{equipmentSlotGlyph(id)}</span>}
+            <small>{itemName}</small>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function moveEquippedItem(itemId: string, target: HTMLElement | null) {
+  const destination = target?.dataset.inventoryDrop;
+  if (destination === "root") network.moveToRoot(itemId);
+  else if (destination === "ground") network.drop(itemId);
+  else if (destination === "container") {
+    const containerId = target?.dataset.containerId;
+    if (containerId && containerId !== itemId) network.moveToContainer(itemId, containerId);
+  }
+}
+
+let currentInventoryPointerDrop: ((itemId: string, target: HTMLElement | null) => void) | null = null;
+function routeEquipmentPointerDrop(itemId: string, target: HTMLElement | null) {
+  if (currentInventoryPointerDrop) currentInventoryPointerDrop(itemId, target);
+  else moveEquippedItem(itemId, target);
+}
+
 function CharacterPanel() {
   const player = world.localPlayerId
     ? world.players.get(world.localPlayerId)
     : null;
   if (!player) return null;
   const equipped = world.inventory.filter((item) => item.equippedSlot);
-  const equipmentLayout = [
-    { id: "helmet", label: "Helmet", aliases: ["helmet", "head"] },
-    { id: "back", label: "Back", aliases: ["back", "cape"] },
-    { id: "amulet", label: "Amulet", aliases: ["amulet", "neck"] },
-    { id: "left-hand", label: "Left hand", aliases: ["left_hand", "offhand", "shield"] },
-    { id: "right-hand", label: "Right hand", aliases: ["right_hand", "mainhand", "weapon"] },
-    { id: "ring-left", label: "Ring", aliases: ["ring_left", "ring1"] },
-    { id: "ring-right", label: "Ring", aliases: ["ring_right", "ring2"] },
-    { id: "legs", label: "Legs", aliases: ["legs"] },
-    { id: "shoes", label: "Shoes", aliases: ["shoes", "feet", "boots"] },
-    { id: "backpack", label: "Backpack", aliases: ["backpack", "bag"] },
-  ];
   const skillRanks: [string, number][] = [
     ["Sword", player.swordSkill],
     ["Distance", player.distanceSkill],
@@ -897,32 +1066,9 @@ function CharacterPanel() {
       <section className="character-sheet">
         <header className="character-identity">
           <div className="character-portrait">{player.name.slice(0, 1)}</div>
-          <span><small>Level {player.level}</small><h3>{player.name}</h3><b>{vocationName(player.vocation)}</b></span>
+          <span><small>Level {player.level}</small><h3>{player.name}</h3><b>Defined by your skills</b></span>
         </header>
-        <h4>Equipment</h4>
-        <div className="equipment-paperdoll">
-          <div className="character-model-preview" aria-label={`${player.name} character preview`}>
-            <CharacterPreview vocation={player.vocation} />
-            <span>{player.name}</span>
-          </div>
-          {equipmentLayout.map(({ id, label, aliases }) => {
-            const item = equipped.find((entry) => entry.equippedSlot && aliases.includes(entry.equippedSlot));
-            const itemName = item ? world.itemDefinitions.get(item.definitionId)?.name ?? item.definitionId : label;
-            return (
-              <div className={`equipment-slot slot-${id} ${item ? "filled" : ""}`} key={id} title={itemName}>
-                {item ? <ItemIcon definitionId={item.definitionId} /> : <span aria-hidden="true">{equipmentSlotGlyph(id)}</span>}
-                <small>{itemName}</small>
-              </div>
-            );
-          })}
-        </div>
-        <p className="vocation-perk">
-          {player.vocation === "ranger"
-            ? "Excels with distance weapons and ammunition."
-            : canCraftSigils(player.vocation)
-              ? "Can craft and use sigils."
-              : "Can use traded sigils; crafting requires a Mage or Druid."}
-        </p>
+        <EquipmentPaperdoll interactive={false} />
       </section>
       <section className="skills-sheet">
         <header><span><small>Progression</small><h3>Skills & Mastery</h3></span><b>{player.level}</b></header>
@@ -965,7 +1111,7 @@ function CharacterPanel() {
         </div>
         <dl className="character-facts">
           <div><dt>Level</dt><dd>{player.level}</dd></div>
-          <div><dt>Vocation</dt><dd>{vocationName(player.vocation)}</dd></div>
+          <div><dt>Current focus</dt><dd>{strongestSkill[0]}</dd></div>
           <div><dt>Highest mastery</dt><dd>{strongestSkill[0]} <b>{strongestSkill[1]}</b></dd></div>
           <div><dt>Equipped</dt><dd>{equipped.length} / {equipmentLayout.length}</dd></div>
         </dl>
@@ -1169,23 +1315,28 @@ function TradeItem({ item }: { item: ItemInstance }) {
 }
 function NearbyLootWindow() {
   useSyncExternalStore(subscribeWorldVisual, worldVisualSnapshot);
+  const corpses = nearbyLootCorpses();
+  return corpses.length > 0 ? <LootWindow corpses={corpses} onLootAll={() => corpses.flatMap((corpse) => corpse.contents).forEach((item) => network.pickup(item.instanceId))} /> : null;
+}
+
+function nearbyLootCorpses() {
   const local = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
-  if (!local) return null;
-  const corpses = world.groundItems.filter(
+  if (!local) return [];
+  return world.groundItems.filter(
     (ground) => ground.contents.length > 0
       && ground.position.z === local.position.z
       && Math.abs(ground.position.x - local.position.x) <= 1
       && Math.abs(ground.position.y - local.position.y) <= 1,
   );
-  return corpses.length > 0 ? <LootWindow corpses={corpses} /> : null;
 }
 
-function LootWindow({ corpses }: { corpses: GroundItem[] }) {
+function LootWindow({ corpses, onLootAll }: { corpses: GroundItem[]; onLootAll: () => void }) {
+  const itemCount = corpses.reduce((count, corpse) => count + corpse.contents.length, 0);
   return (
     <section className="loot-window">
       <header>
         <span>Nearby loot</span>
-        <small>Click an item to collect</small>
+        <small>Remains for up to 5 minutes</small>
       </header>
       {corpses.map((corpse) => (
         <div className="corpse" key={corpse.item.instanceId}>
@@ -1208,6 +1359,7 @@ function LootWindow({ corpses }: { corpses: GroundItem[] }) {
           ))}
         </div>
       ))}
+      <footer><button className="loot-all-button" onClick={onLootAll}><kbd>E</kbd><span>Loot all</span><small>{itemCount} {itemCount === 1 ? "item" : "items"}</small></button></footer>
     </section>
   );
 }
@@ -1244,6 +1396,11 @@ function HelpPanel() {
           Drag items between equipment, your main inventory, containers, or the
           ground drop area.
         </p>
+      </section>
+      <section>
+        <kbd>E</kbd>
+        <strong>Loot nearby items</strong>
+        <p>When the nearby-loot window is visible, collect all listed items at once.</p>
       </section>
       <section>
         <kbd>1</kbd>
@@ -1409,21 +1566,42 @@ function Chat() {
 
 function InventoryPanel() {
   const [query, setQuery] = useState("");
-  const rootItems = world.inventory.filter(
-    (item) => !item.containerId && !item.equippedSlot,
-  ).filter((item) => (world.itemDefinitions.get(item.definitionId)?.name ?? item.definitionId).toLowerCase().includes(query.trim().toLowerCase()));
-  const equipped = world.inventory.filter((item) => item.equippedSlot);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const inventoryLayoutKey = `aldoria.inventory-layout.${world.localPlayerId ?? "local"}`;
+  const [backpackLayout, setBackpackLayout] = useState<(string | null)[]>(() => loadInventoryLayout(inventoryLayoutKey));
+  const carriedItems = world.inventory.filter((item) => !item.equippedSlot);
+  const matchingItemIds = new Set(carriedItems
+    .filter((item) => (world.itemDefinitions.get(item.definitionId)?.name ?? item.definitionId).toLowerCase().includes(query.trim().toLowerCase()))
+    .map((item) => item.instanceId));
   const primaryContainer = world.inventory.find(
     (item) => world.itemDefinitions.get(item.definitionId)?.containerSlots,
   );
+  const equippedBackpack = world.inventory.find((item) => item.equippedSlot === "backpack");
+  const equippedBackpackDefinition = equippedBackpack ? world.itemDefinitions.get(equippedBackpack.definitionId) : undefined;
+  const selectedItem = selectedItemId ? world.inventory.find((item) => item.instanceId === selectedItemId) : undefined;
+  const backpackSlots = equippedBackpackDefinition?.containerSlots ?? 0;
+  useEffect(() => {
+    setBackpackLayout((current) => reconcileInventoryLayout(current, carriedItems.map((item) => item.instanceId), backpackSlots));
+  }, [world.visualRevision, backpackSlots]);
+  useEffect(() => {
+    localStorage.setItem(inventoryLayoutKey, JSON.stringify(backpackLayout));
+  }, [backpackLayout, inventoryLayoutKey]);
   const drop = (
     event: DragEvent,
     destination: "root" | "ground" | "equipment",
+    backpackIndex?: number,
   ) => {
     event.preventDefault();
+    event.stopPropagation();
     const itemId = draggedItemId(event);
     if (!itemId) return;
-    if (destination === "root") network.moveToRoot(itemId);
+    if (destination === "root") {
+      const item = world.inventory.find((entry) => entry.instanceId === itemId);
+      if (item?.containerId || item?.equippedSlot) network.moveToRoot(itemId);
+      if (backpackIndex !== undefined) {
+        setBackpackLayout((current) => moveInventoryItem(current, itemId, backpackIndex, backpackSlots));
+      }
+    }
     else if (destination === "ground") network.drop(itemId);
     else {
       const item = world.inventory.find((entry) => entry.instanceId === itemId);
@@ -1433,15 +1611,47 @@ function InventoryPanel() {
       if (slot) network.equip(itemId, slot);
     }
   };
+  const selectItem = (itemId: string) => setSelectedItemId((current) => current === itemId ? null : itemId);
+  const pointerDrop = (itemId: string, target: HTMLElement | null) => {
+    const destination = target?.dataset.inventoryDrop;
+    if (!destination) return;
+    if (destination === "container") {
+      const containerId = target?.dataset.containerId;
+      if (containerId && containerId !== itemId) network.moveToContainer(itemId, containerId);
+      return;
+    }
+    if (destination === "root") {
+      const item = world.inventory.find((entry) => entry.instanceId === itemId);
+      if (item?.containerId || item?.equippedSlot) network.moveToRoot(itemId);
+      const targetIndex = Number(target?.dataset.backpackIndex);
+      if (Number.isInteger(targetIndex)) {
+        setBackpackLayout((current) => moveInventoryItem(current, itemId, targetIndex, backpackSlots));
+      }
+      return;
+    }
+    if (destination === "equipment") {
+      const item = world.inventory.find((entry) => entry.instanceId === itemId);
+      const slot = item ? world.itemDefinitions.get(item.definitionId)?.equipmentSlot : undefined;
+      if (slot) network.equip(itemId, slot);
+      return;
+    }
+    if (destination === "ground") network.drop(itemId);
+  };
+  useEffect(() => {
+    currentInventoryPointerDrop = pointerDrop;
+    return () => {
+      if (currentInventoryPointerDrop === pointerDrop) currentInventoryPointerDrop = null;
+    };
+  }, [pointerDrop]);
   return (
     <div className="inventory-panel">
       <header className="inventory-toolbar">
-        <span><small>Backpack</small><strong>{world.inventory.length} items carried</strong></span>
+        <span><small>{equippedBackpackDefinition?.name ?? "No backpack equipped"}</small><strong>{carriedItems.length} / {backpackSlots} slots used</strong></span>
         <label><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search inventory" aria-label="Search inventory" /></label>
       </header>
       <div className="inventory-summary">
         <span>
-          <strong>Carrying capacity</strong>
+          <strong>{equippedBackpackDefinition ? `${backpackSlots} inventory slots` : "Equip a backpack to carry items"}</strong>
           <small>
             {world.inventoryWeight.toFixed(1)} / {world.maxCapacity.toFixed(1)}{" "}
             oz
@@ -1458,42 +1668,35 @@ function InventoryPanel() {
       <p className="drag-hint">
         Drag items between equipment, inventory, and containers.
       </p>
+      <div className={`inventory-workspace ${selectedItem ? "has-selection" : ""}`}>
       <div className="inventory-columns">
         <section
           className="inventory-drop-zone"
-          onDragOver={allowItemDrop}
-          onDrop={(event) => drop(event, "equipment")}
-        >
-          <header className="inventory-section-title"><span><small>Loadout</small><h3>Equipment</h3></span><b>{equipped.length}</b></header>
-          {equipped.length === 0 && (
-            <p className="empty-state">Drop compatible equipment here.</p>
-          )}
-          <div className="equipment-inventory-list">
-            {equipped.map((item) => (
-              <InventoryEntry item={item} key={item.instanceId} primaryContainerId={primaryContainer?.instanceId} />
-            ))}
-          </div>
-        </section>
-        <section
-          className="inventory-drop-zone"
+          data-inventory-drop="root"
           onDragOver={allowItemDrop}
           onDrop={(event) => drop(event, "root")}
         >
-          <header className="inventory-section-title"><span><small>Storage</small><h3>Backpack & Inventory</h3></span><b>{rootItems.length}</b></header>
-          {rootItems.length === 0 && (
-            <p className="empty-state">{query ? "No items match your search." : "Drop items here to unpack them."}</p>
+          <header className="inventory-section-title"><span><small>Storage</small><h3>Backpack</h3></span><b>{carriedItems.length} / {backpackSlots}</b></header>
+          {matchingItemIds.size === 0 && (
+            <p className="empty-state">{query ? "No items match your search." : backpackSlots === 0 ? "You have no inventory slots. Equip a backpack in the Character window." : "Your backpack is empty."}</p>
           )}
-          {rootItems.map((item) => (
-            <InventoryEntry
-              item={item}
-              key={item.instanceId}
-              primaryContainerId={primaryContainer?.instanceId}
-            />
-          ))}
+          <div className="inventory-slot-grid backpack-slot-grid">
+            {backpackLayout.map((itemId, index) => {
+              const item = itemId && matchingItemIds.has(itemId)
+                ? carriedItems.find((entry) => entry.instanceId === itemId)
+                : undefined;
+              return item
+                ? <InventorySlot item={item} selected={item.instanceId === selectedItemId} onSelect={selectItem} onPointerDrop={pointerDrop} dropKind="root" dropIndex={index} onDropToArea={(event) => drop(event, "root", index)} key={`backpack-${index}-${item.instanceId}`} />
+                : <div className="inventory-grid-slot empty" data-inventory-drop="root" data-backpack-index={index} onDragOver={allowItemDrop} onDrop={(event) => drop(event, "root", index)} key={`backpack-empty-${index}`} />;
+            })}
+          </div>
         </section>
+      </div>
+      {selectedItem && <InventoryDetails item={selectedItem} primaryContainerId={primaryContainer?.instanceId} />}
       </div>
       <div
         className="ground-drop-zone"
+        data-inventory-drop="ground"
         onDragOver={allowItemDrop}
         onDrop={(event) => drop(event, "ground")}
       >
@@ -1502,6 +1705,65 @@ function InventoryPanel() {
     </div>
   );
 }
+
+function InventorySlot({ item, selected, onSelect, onPointerDrop, dropKind, dropIndex, onDropToArea }: { item: ItemInstance; selected: boolean; onSelect: (id: string) => void; onPointerDrop: (itemId: string, target: HTMLElement | null) => void; dropKind: "root" | "equipment"; dropIndex?: number; onDropToArea: (event: DragEvent) => void }) {
+  const definition = world.itemDefinitions.get(item.definitionId);
+  const children = world.inventory.filter((child) => child.containerId === item.instanceId);
+  const receive = (event: DragEvent) => {
+    if (!definition?.containerSlots) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const itemId = draggedItemId(event);
+    if (itemId && itemId !== item.instanceId) network.moveToContainer(itemId, item.instanceId);
+  };
+  return (
+    <button
+      draggable={false}
+      data-inventory-drop={definition?.containerSlots ? "container" : dropKind}
+      data-container-id={definition?.containerSlots ? item.instanceId : undefined}
+      data-backpack-index={dropKind === "root" ? dropIndex : undefined}
+      className={`inventory-grid-slot filled ${selected ? "selected" : ""} ${definition?.containerSlots ? "container-drop-target" : ""}`}
+      onClick={() => { if (!consumePointerDragClick(item.instanceId)) onSelect(item.instanceId); }}
+      onDoubleClick={() => {
+        if (definition?.foodEffect) network.eat(item.instanceId);
+        else if (definition?.equipmentSlot && !item.equippedSlot) network.equip(item.instanceId, definition.equipmentSlot);
+      }}
+      onPointerDown={(event) => beginPointerItemDrag(event, item.instanceId)}
+      onPointerMove={movePointerItemDrag}
+      onPointerUp={(event) => endPointerItemDrag(event, onPointerDrop)}
+      onPointerCancel={cancelPointerItemDrag}
+      onDragOver={allowItemDrop}
+      onDrop={definition?.containerSlots ? receive : onDropToArea}
+      onContextMenu={(event) => { if (!definition?.foodEffect) return; event.preventDefault(); network.eat(item.instanceId); }}
+      title={`${definition?.name ?? item.definitionId}${definition?.containerSlots ? ` · ${children.length}/${definition.containerSlots} slots` : ""}`}
+    >
+      <ItemIcon definitionId={item.definitionId} />
+      {item.quantity > 1 && <b>{item.quantity}</b>}
+      {item.charges !== undefined && <b>{item.charges}</b>}
+      {item.equippedSlot && <i className="inventory-slot-state">{item.equippedSlot}</i>}
+      {item.containerId && <i className="inventory-slot-state">packed</i>}
+    </button>
+  );
+}
+
+function InventoryDetails({ item, primaryContainerId }: { item: ItemInstance; primaryContainerId?: string }) {
+  const definition = world.itemDefinitions.get(item.definitionId);
+  const children = world.inventory.filter((child) => child.containerId === item.instanceId);
+  return <section className="inventory-item-details">
+    <ItemIcon definitionId={item.definitionId} />
+    <span><small>{item.equippedSlot ? "Equipped" : item.containerId ? "Inside backpack" : "Inventory item"}</small><strong>{definition?.name ?? item.definitionId}</strong><p>{((definition?.weight ?? 0) * item.quantity).toFixed(1)} oz{definition?.containerSlots ? ` · ${children.length}/${definition.containerSlots} slots` : ""}{definition?.distanceWeapon ? ` · range ${definition.distanceWeapon.range}` : ""}</p></span>
+    <div className="item-actions">
+      {definition?.foodEffect && <button onClick={() => network.eat(item.instanceId)}>Eat</button>}
+      {definition?.equipmentSlot && !item.equippedSlot && <button onClick={() => network.equip(item.instanceId, definition.equipmentSlot!)}>Equip</button>}
+      {item.equippedSlot && <button onClick={() => network.moveToRoot(item.instanceId)}>Unequip</button>}
+      {item.containerId && <button onClick={() => network.moveToRoot(item.instanceId)}>Unpack</button>}
+      {!item.containerId && !item.equippedSlot && primaryContainerId && item.instanceId !== primaryContainerId && <button onClick={() => network.moveToContainer(item.instanceId, primaryContainerId)}>Pack</button>}
+      {item.quantity > 1 && <button onClick={() => network.split(item.instanceId, Math.floor(item.quantity / 2))}>Split</button>}
+      {!item.containerId && !item.equippedSlot && <button onClick={() => network.drop(item.instanceId)}>Drop</button>}
+    </div>
+  </section>;
+}
+
 function InventoryEntry({
   item,
   primaryContainerId,
@@ -1608,18 +1870,165 @@ function InventoryEntry({
   );
 }
 const ITEM_DRAG_TYPE = "application/x-aldoria-item";
+let activeDraggedItemId: string | null = null;
 function startItemDrag(event: DragEvent, itemId: string) {
+  activeDraggedItemId = itemId;
   event.dataTransfer.effectAllowed = "move";
   event.dataTransfer.setData(ITEM_DRAG_TYPE, itemId);
   event.dataTransfer.setData("text/plain", itemId);
 }
+function finishItemDrag() {
+  activeDraggedItemId = null;
+}
 function draggedItemId(event: DragEvent) {
   return (
     event.dataTransfer.getData(ITEM_DRAG_TYPE) ||
-    event.dataTransfer.getData("text/plain")
+    event.dataTransfer.getData("text/plain") ||
+    activeDraggedItemId ||
+    ""
   );
 }
 function allowItemDrop(event: DragEvent) {
   event.preventDefault();
   event.dataTransfer.dropEffect = "move";
+}
+
+type PointerItemDrag = {
+  itemId: string;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  source: HTMLElement;
+  moved: boolean;
+  previewTarget: HTMLElement | null;
+  previewIcon: HTMLElement | null;
+};
+let pointerItemDrag: PointerItemDrag | null = null;
+let suppressedPointerClickItemId: string | null = null;
+
+function beginPointerItemDrag(event: PointerEvent<HTMLElement>, itemId: string) {
+  if (event.button !== 0) return;
+  pointerItemDrag = {
+    itemId,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    source: event.currentTarget,
+    moved: false,
+    previewTarget: null,
+    previewIcon: null,
+  };
+  event.currentTarget.setPointerCapture(event.pointerId);
+}
+
+function movePointerItemDrag(event: PointerEvent<HTMLElement>) {
+  const drag = pointerItemDrag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) >= 5) {
+    drag.moved = true;
+    drag.source.classList.add("pointer-dragging");
+    document.body.classList.add("inventory-pointer-dragging");
+  }
+  if (drag.moved) {
+    event.preventDefault();
+    updatePointerDropPreview(event.clientX, event.clientY);
+  }
+}
+
+function endPointerItemDrag(event: PointerEvent<HTMLElement>, onDrop: (itemId: string, target: HTMLElement | null) => void) {
+  const drag = pointerItemDrag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  if (drag.moved) {
+    event.preventDefault();
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-inventory-drop]") ?? null;
+    onDrop(drag.itemId, target);
+    suppressedPointerClickItemId = drag.itemId;
+  }
+  clearPointerItemDrag();
+}
+
+function cancelPointerItemDrag(event: PointerEvent<HTMLElement>) {
+  if (pointerItemDrag?.pointerId !== event.pointerId) return;
+  clearPointerItemDrag();
+}
+
+function clearPointerItemDrag() {
+  clearPointerDropPreview();
+  pointerItemDrag?.source.classList.remove("pointer-dragging");
+  document.body.classList.remove("inventory-pointer-dragging");
+  pointerItemDrag = null;
+}
+
+function updatePointerDropPreview(clientX: number, clientY: number) {
+  const drag = pointerItemDrag;
+  if (!drag) return;
+  const hovered = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-inventory-drop]") ?? null;
+  const target = hovered?.closest<HTMLElement>(".inventory-grid-slot, .equipment-slot") ?? null;
+  if (target === drag.previewTarget) return;
+  clearPointerDropPreview();
+  if (!target || target === drag.source) return;
+  const sourceIcon = drag.source.querySelector<HTMLElement>(".item-icon");
+  if (!sourceIcon) return;
+  const previewIcon = sourceIcon.cloneNode(true) as HTMLElement;
+  previewIcon.classList.add("inventory-drop-ghost");
+  previewIcon.setAttribute("aria-hidden", "true");
+  target.classList.add("pointer-drop-preview");
+  target.appendChild(previewIcon);
+  drag.previewTarget = target;
+  drag.previewIcon = previewIcon;
+}
+
+function clearPointerDropPreview() {
+  const drag = pointerItemDrag;
+  if (!drag) return;
+  drag.previewTarget?.classList.remove("pointer-drop-preview");
+  drag.previewIcon?.remove();
+  drag.previewTarget = null;
+  drag.previewIcon = null;
+}
+
+function consumePointerDragClick(itemId: string) {
+  if (suppressedPointerClickItemId !== itemId) return false;
+  suppressedPointerClickItemId = null;
+  return true;
+}
+
+function reconcileInventoryLayout(current: (string | null)[], itemIds: string[], slotCount: number) {
+  const validIds = new Set(itemIds);
+  const next = Array.from({ length: slotCount }, (_, index) => {
+    const itemId = current[index];
+    return itemId && validIds.delete(itemId) ? itemId : null;
+  });
+  for (const itemId of itemIds) {
+    if (!validIds.has(itemId)) continue;
+    const emptyIndex = next.indexOf(null);
+    if (emptyIndex >= 0) next[emptyIndex] = itemId;
+    else next.push(itemId);
+  }
+  return next;
+}
+
+function loadInventoryLayout(storageKey: string): (string | null)[] {
+  try {
+    const stored = JSON.parse(localStorage.getItem(storageKey) ?? "[]");
+    return Array.isArray(stored)
+      ? stored.map((entry) => typeof entry === "string" ? entry : null)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function moveInventoryItem(current: (string | null)[], itemId: string, targetIndex: number, slotCount: number) {
+  const next = reconcileInventoryLayout(current, [
+    ...current.filter((entry): entry is string => Boolean(entry)),
+    itemId,
+  ], Math.max(slotCount, targetIndex + 1));
+  const sourceIndex = next.indexOf(itemId);
+  if (sourceIndex === targetIndex) return next;
+  const displaced = next[targetIndex] ?? null;
+  next[targetIndex] = itemId;
+  if (sourceIndex >= 0) next[sourceIndex] = displaced;
+  return next;
 }

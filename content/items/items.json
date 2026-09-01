@@ -4,7 +4,7 @@
   { "id": "traveler_blade", "name": "Traveler's Blade", "weight": 24.0, "stackable": false, "maxStack": 1, "attack": 8, "equipmentSlot": "weapon" },
   { "id": "ashwood_bow", "name": "Ashwood Bow", "weight": 19.0, "stackable": false, "maxStack": 1, "equipmentSlot": "weapon", "distanceWeapon": { "damage": 4, "range": 6, "cooldownMs": 750, "ammunitionId": "rough_arrow" } },
   { "id": "rough_arrow", "name": "Rough Arrow", "weight": 0.08, "stackable": true, "maxStack": 100 },
-  { "id": "field_backpack", "name": "Field Backpack", "weight": 18.0, "stackable": false, "maxStack": 1, "containerSlots": 12 },
+  { "id": "field_backpack", "name": "Field Backpack", "weight": 18.0, "stackable": false, "maxStack": 1, "containerSlots": 12, "equipmentSlot": "backpack" },
   { "id": "mire_fiber", "name": "Mire Fiber", "weight": 0.8, "stackable": true, "maxStack": 100 },
   { "id": "gold_coin", "name": "Gold Coin", "weight": 0.1, "stackable": true, "maxStack": 100 },
   { "id": "field_bread", "name": "Field Bread", "weight": 1.4, "stackable": true, "maxStack": 20, "foodEffect": { "healthPerTick": 2, "manaPerTick": 2, "durationSeconds": 60 } },
