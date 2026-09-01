@@ -34,6 +34,9 @@ const CAMERA_HEIGHT = 18;
 // About 27 degrees away from straight down: enough to read wall fronts and
 // actor silhouettes without returning to the old diagonal isometric view.
 const CAMERA_TOPDOWN_OFFSET = 9;
+const GROUND_ACTOR_Y = 0.05;
+// The bridge top is y=0.16. Keep the same clearance actors have above normal terrain.
+const BRIDGE_ACTOR_Y = 0.23;
 // The server already streams a radius-48 region. Rebuilding the entire static
 // Three.js scene every 16 walked tiles caused a visible main-thread/GPU hitch.
 // A 64-tile render chunk consumes the already available streamed payload and
@@ -123,6 +126,8 @@ function WorldScene({ world, input }: ThreeWorldProps) {
     () => createRenderRegion(renderMap, floor, chunkX, chunkY),
     [renderMap, floor, chunkX, chunkY],
   );
+  const bridgeTiles = useMemo(() => new Set(region.map.bridges.map(tileKey)), [region.map.bridges]);
+  const actorGroundY = (position: Position) => bridgeTiles.has(tileKey(position)) ? BRIDGE_ACTOR_Y : GROUND_ACTOR_Y;
   const indoorBuildingId = local
     ? region.map.buildings.find((building) => building.floor === floor && insideBuilding(local.position, building))?.id ?? null
     : null;
@@ -154,6 +159,7 @@ function WorldScene({ world, input }: ThreeWorldProps) {
           local={player.id === world.localPlayerId}
           visualPosition={player.id === world.localPlayerId ? localVisualPosition : undefined}
           correctionRevision={player.id === world.localPlayerId ? world.localCorrectionRevision : 0}
+          groundY={actorGroundY(player.position)}
           selected={player.id === world.selectedPlayerId}
           onClick={(event) => {
             event.stopPropagation();
@@ -171,6 +177,7 @@ function WorldScene({ world, input }: ThreeWorldProps) {
         <CreatureActor
           key={creature.id}
           creature={creature}
+          groundY={actorGroundY(creature.position)}
           selected={creature.id === world.attackTargetId}
           onClick={(event) => {
             event.stopPropagation();
@@ -186,6 +193,7 @@ function WorldScene({ world, input }: ThreeWorldProps) {
         <NpcActor
           key={npc.id}
           npc={npc}
+          groundY={actorGroundY(npc.position)}
           playerPosition={localVisualPosition}
           onClick={(event) => {
             event.stopPropagation();
@@ -583,13 +591,13 @@ function Torch({ position }: { position: Position }) {
 
 type ActorClick = (event: ThreeEvent<MouseEvent>) => void;
 
-type PlayerActorProps = { player: PlayerView; local: boolean; visualPosition?: MutableRefObject<THREE.Vector3>; correctionRevision: number; selected: boolean; onClick: ActorClick; onContextMenu: ActorClick };
+type PlayerActorProps = { player: PlayerView; local: boolean; visualPosition?: MutableRefObject<THREE.Vector3>; correctionRevision: number; groundY: number; selected: boolean; onClick: ActorClick; onContextMenu: ActorClick };
 
-const PlayerActor = memo(function PlayerActor({ player, local, visualPosition, correctionRevision, selected, onClick, onContextMenu }: PlayerActorProps) {
+const PlayerActor = memo(function PlayerActor({ player, local, visualPosition, correctionRevision, groundY, selected, onClick, onContextMenu }: PlayerActorProps) {
   const kind: CharacterKind = player.vocation === "mage" ? "mage" : player.vocation === "ranger" ? "ranger" : "knight";
   const moving = useRef(false);
   return (
-    <SmoothActor id={player.id} position={player.position} visualPosition={visualPosition} moving={moving} correctionRevision={correctionRevision}>
+    <SmoothActor id={player.id} position={player.position} groundY={groundY} visualPosition={visualPosition} moving={moving} correctionRevision={correctionRevision}>
       <group onPointerDown={(event) => event.stopPropagation()} onClick={onClick} onContextMenu={onContextMenu}>
         <SelectionRing active={selected || local} color={local ? "#65b9e8" : "#e2be65"} />
         <AnimatedCharacter kind={kind} position={player.position} moving={moving} />
@@ -598,9 +606,9 @@ const PlayerActor = memo(function PlayerActor({ player, local, visualPosition, c
   );
 }, actorPropsEqual);
 
-type NpcActorProps = { npc: NpcView; playerPosition: MutableRefObject<THREE.Vector3>; onClick: ActorClick; onContextMenu: ActorClick };
+type NpcActorProps = { npc: NpcView; groundY: number; playerPosition: MutableRefObject<THREE.Vector3>; onClick: ActorClick; onContextMenu: ActorClick };
 
-const NpcActor = memo(function NpcActor({ npc, playerPosition, onClick, onContextMenu }: NpcActorProps) {
+const NpcActor = memo(function NpcActor({ npc, groundY, playerPosition, onClick, onContextMenu }: NpcActorProps) {
   const kind: CharacterKind = npc.service === "spell_trainer" ? "mage" : npc.service === "depot" ? "knight" : "rogue";
   const moving = useRef(false);
   const presence = useRef<THREE.Group>(null);
@@ -640,16 +648,16 @@ const NpcActor = memo(function NpcActor({ npc, playerPosition, onClick, onContex
       setCallout(null);
     }
   });
-  return <SmoothActor id={npc.id} position={npc.position} moving={moving}><group onPointerDown={(event) => event.stopPropagation()} onClick={onClick} onContextMenu={onContextMenu}><SelectionRing active color="#d6b65e" /><group ref={presence} rotation={[0, homeFacing, 0]}><AnimatedCharacter kind={kind} position={npc.position} moving={moving} /></group><mesh position={[0, 2.55, 0]}><octahedronGeometry args={[0.11]} /><meshStandardMaterial color="#e7c45f" emissive="#b17f23" emissiveIntensity={1.3} /></mesh>{callout && <SpeechBubble text={callout} />}</group></SmoothActor>;
-}, (previous, next) => previous.npc === next.npc && previous.playerPosition === next.playerPosition);
+  return <SmoothActor id={npc.id} position={npc.position} groundY={groundY} moving={moving}><group onPointerDown={(event) => event.stopPropagation()} onClick={onClick} onContextMenu={onContextMenu}><SelectionRing active color="#d6b65e" /><group ref={presence} rotation={[0, homeFacing, 0]}><AnimatedCharacter kind={kind} position={npc.position} moving={moving} /></group><mesh position={[0, 2.55, 0]}><octahedronGeometry args={[0.11]} /><meshStandardMaterial color="#e7c45f" emissive="#b17f23" emissiveIntensity={1.3} /></mesh>{callout && <SpeechBubble text={callout} />}</group></SmoothActor>;
+}, (previous, next) => previous.npc === next.npc && previous.groundY === next.groundY && previous.playerPosition === next.playerPosition);
 
-type CreatureActorProps = { creature: CreatureView; selected: boolean; onClick: ActorClick; onContextMenu: ActorClick };
+type CreatureActorProps = { creature: CreatureView; groundY: number; selected: boolean; onClick: ActorClick; onContextMenu: ActorClick };
 
-const CreatureActor = memo(function CreatureActor({ creature, selected, onClick, onContextMenu }: CreatureActorProps) {
+const CreatureActor = memo(function CreatureActor({ creature, groundY, selected, onClick, onContextMenu }: CreatureActorProps) {
   const moving = useRef(false);
   const motion = useRef<ActorMotionState>(createActorMotionState());
   return (
-    <SmoothActor id={creature.id} position={creature.position} moving={moving} motion={motion}>
+    <SmoothActor id={creature.id} position={creature.position} groundY={groundY} moving={moving} motion={motion}>
       <group onPointerDown={(event) => event.stopPropagation()} onClick={onClick} onContextMenu={onContextMenu}>
         <SelectionRing active={selected} color="#dc594c" />
         <TargetMarker active={selected} />
@@ -661,7 +669,7 @@ const CreatureActor = memo(function CreatureActor({ creature, selected, onClick,
       </group>
     </SmoothActor>
   );
-}, (previous, next) => previous.creature === next.creature && previous.selected === next.selected);
+}, (previous, next) => previous.creature === next.creature && previous.groundY === next.groundY && previous.selected === next.selected);
 
 function SpeechBubble({ text }: { text: string }) {
   const texture = useMemo(() => {
@@ -691,12 +699,13 @@ function actorPropsEqual(previous: PlayerActorProps, next: PlayerActorProps) {
     && previous.local === next.local
     && previous.visualPosition === next.visualPosition
     && previous.correctionRevision === next.correctionRevision
+    && previous.groundY === next.groundY
     && previous.selected === next.selected;
 }
 
-function SmoothActor({ id, position, visualPosition, moving, motion, correctionRevision = 0, children }: { id: string; position: Position; visualPosition?: MutableRefObject<THREE.Vector3>; moving?: MutableRefObject<boolean>; motion?: MutableRefObject<ActorMotionState>; correctionRevision?: number; children: React.ReactNode }) {
+function SmoothActor({ id, position, groundY = GROUND_ACTOR_Y, visualPosition, moving, motion, correctionRevision = 0, children }: { id: string; position: Position; groundY?: number; visualPosition?: MutableRefObject<THREE.Vector3>; moving?: MutableRefObject<boolean>; motion?: MutableRefObject<ActorMotionState>; correctionRevision?: number; children: React.ReactNode }) {
   const group = useRef<THREE.Group>(null);
-  const current = useRef(new THREE.Vector3(tileCenter(position.x), 0.05, tileCenter(position.y)));
+  const current = useRef(new THREE.Vector3(tileCenter(position.x), groundY, tileCenter(position.y)));
   const segmentStart = useRef(current.current.clone());
   const segmentTarget = useRef(current.current.clone());
   const segmentStartedAt = useRef(performance.now());
@@ -704,7 +713,7 @@ function SmoothActor({ id, position, visualPosition, moving, motion, correctionR
   const lastTargetAt = useRef(performance.now());
   const lastCorrectionRevision = useRef(correctionRevision);
   const previousVisualPosition = useRef(current.current.clone());
-  const target = useMemo(() => new THREE.Vector3(tileCenter(position.x), 0.05, tileCenter(position.y)), [position.x, position.y]);
+  const target = useMemo(() => new THREE.Vector3(tileCenter(position.x), groundY, tileCenter(position.y)), [position.x, position.y, groundY]);
   useLayoutEffect(() => {
     if (target.equals(segmentTarget.current)) return;
     const now = performance.now();
@@ -961,24 +970,24 @@ function Atmosphere({ torches, local }: { torches: readonly Position[]; local?: 
   const { scene } = useThree();
   const sun = useRef<THREE.DirectionalLight>(null);
   const ambient = useRef<THREE.HemisphereLight>(null);
-  const nightSky = useMemo(() => new THREE.Color("#101924"), []);
-  const daySky = useMemo(() => new THREE.Color("#9fb7b0"), []);
-  const sky = useMemo(() => new THREE.Color(), []);
   const activeTorches = useMemo(() => {
     if (!local) return torches.slice(0, 10);
     return [...torches].sort((a, b) => distanceSquared(a, local) - distanceSquared(b, local)).slice(0, 10);
   }, [torches, local?.x, local?.y]);
   useEffect(() => {
+    const previousBackground = scene.background;
+    scene.background = new THREE.Color(0x000000);
     scene.fog = new THREE.FogExp2(0x718079, 0.012);
-    return () => { scene.fog = null; };
+    return () => {
+      scene.background = previousBackground;
+      scene.fog = null;
+    };
   }, [scene]);
   useFrame(({ clock }) => {
     const cycle = (clock.elapsedTime % 180) / 180;
     const daylight = (Math.cos(cycle * Math.PI * 2 - Math.PI) + 1) / 2;
     if (sun.current) sun.current.intensity = 0.18 + daylight * 2.1;
     if (ambient.current) ambient.current.intensity = 0.22 + daylight * 0.85;
-    sky.lerpColors(nightSky, daySky, daylight);
-    scene.background = sky;
   });
   return (
     <>
