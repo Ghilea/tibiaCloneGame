@@ -29,7 +29,9 @@ export function AnimatedCharacter({ kind, position, moving }: { kind: CharacterK
     const cloned = cloneSkeleton(character.scene);
     cloned.traverse((child) => {
       if (!(child instanceof THREE.Mesh)) return;
-      child.castShadow = true;
+      // Actors are animated every frame and use cheap ground anchoring. They
+      // must not invalidate the otherwise static environment shadow map.
+      child.castShadow = false;
       child.receiveShadow = true;
       child.frustumCulled = false;
     });

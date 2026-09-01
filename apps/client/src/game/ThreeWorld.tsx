@@ -63,6 +63,10 @@ export function ThreeWorld({ world, input, onReady }: ThreeWorldProps) {
           gl.outputColorSpace = THREE.SRGBColorSpace;
           gl.shadowMap.enabled = true;
           gl.shadowMap.type = THREE.PCFSoftShadowMap;
+          // The environment is static. Avoid drawing every wall and tree a
+          // second time on every frame just to reproduce the same shadow map.
+          gl.shadowMap.autoUpdate = false;
+          gl.shadowMap.needsUpdate = true;
           gl.setClearColor(0x0b1210);
         }}
       >
@@ -87,6 +91,14 @@ function SceneReady({ onReady }: { onReady?: () => void }) {
     reported.current = true;
     onReady?.();
   });
+  return null;
+}
+
+function StaticShadowMap({ revision, indoorBuildingId }: { revision: MapView; indoorBuildingId: string | null }) {
+  const { gl } = useThree();
+  useLayoutEffect(() => {
+    gl.shadowMap.needsUpdate = true;
+  }, [gl, revision, indoorBuildingId]);
   return null;
 }
 
@@ -132,6 +144,7 @@ function WorldScene({ world, input }: ThreeWorldProps) {
       <FollowCamera target={local?.position} visualTarget={localVisualPosition} mapWidth={map.width} mapHeight={map.height} />
       <Terrain map={region.map} floor={floor} bounds={region.bounds} onGround={onGround} />
       <Structures map={region.map} input={input} floor={floor} indoorBuildingId={indoorBuildingId} />
+      <StaticShadowMap revision={region.map} indoorBuildingId={indoorBuildingId} />
       <OcclusionController target={local?.position} visualTarget={localVisualPosition} sceneRevision={region.map} />
       {players.map((player) => (
         <PlayerActor

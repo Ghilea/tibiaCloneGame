@@ -1,5 +1,5 @@
 import { useFrame } from "@react-three/fiber";
-import { useMemo, useRef, type MutableRefObject } from "react";
+import { useLayoutEffect, useMemo, useRef, type MutableRefObject } from "react";
 import * as THREE from "three";
 
 type CreatureModelProps = {
@@ -9,10 +9,18 @@ type CreatureModelProps = {
 };
 
 export function CreatureModel({ definitionId, immune, moving }: CreatureModelProps) {
-  if (definitionId === "castle_rat") return <RatModel immune={immune} moving={moving} />;
-  if (["crypt_guard", "bone_acolyte", "cellar_warden"].includes(definitionId))
-    return <UndeadModel kind={definitionId} immune={immune} moving={moving} />;
-  return <MireBeastModel kind={definitionId} immune={immune} moving={moving} />;
+  const root = useRef<THREE.Group>(null);
+  useLayoutEffect(() => {
+    root.current?.traverse((node) => {
+      if (node instanceof THREE.Mesh) node.castShadow = false;
+    });
+  }, [definitionId]);
+  const model = definitionId === "castle_rat"
+    ? <RatModel immune={immune} moving={moving} />
+    : ["crypt_guard", "bone_acolyte", "cellar_warden"].includes(definitionId)
+      ? <UndeadModel kind={definitionId} immune={immune} moving={moving} />
+      : <MireBeastModel kind={definitionId} immune={immune} moving={moving} />;
+  return <group ref={root}>{model}</group>;
 }
 
 function MireBeastModel({ kind, immune, moving }: { kind: string; immune: boolean; moving: MutableRefObject<boolean> }) {
