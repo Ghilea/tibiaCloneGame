@@ -161,6 +161,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
   const [showPerformance, setShowPerformance] = useState(true);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [sceneReady, setSceneReady] = useState(false);
+  const pendingGoldPickups = useRef(new Set<string>());
   const emberSigil = world.inventory.find(
     (item) => item.definitionId === "ember_rune" && (item.charges ?? 0) > 0,
   );
@@ -262,6 +263,35 @@ function Game({ onLeave }: { onLeave: () => void }) {
   const local = world.localPlayerId
     ? world.players.get(world.localPlayerId)
     : null;
+  useEffect(() => {
+    const collectNearbyGold = () => {
+      const player = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
+      if (!player) return;
+      const visibleGoldIds = new Set<string>();
+      for (const ground of world.groundItems) {
+        if (
+          ground.position.z !== player.position.z
+          || Math.abs(ground.position.x - player.position.x) > 1
+          || Math.abs(ground.position.y - player.position.y) > 1
+        ) continue;
+        const items = ground.contents.length > 0 ? ground.contents : [ground.item];
+        for (const item of items) {
+          if (item.definitionId !== "gold_coin") continue;
+          visibleGoldIds.add(item.instanceId);
+          if (!pendingGoldPickups.current.has(item.instanceId)) {
+            pendingGoldPickups.current.add(item.instanceId);
+            network.pickup(item.instanceId);
+          }
+        }
+      }
+      for (const itemId of pendingGoldPickups.current) {
+        if (!visibleGoldIds.has(itemId)) pendingGoldPickups.current.delete(itemId);
+      }
+    };
+    const interval = window.setInterval(collectNearbyGold, 250);
+    collectNearbyGold();
+    return () => window.clearInterval(interval);
+  }, []);
   const titles: Record<Panel, string> = {
     inventory: "Inventory",
     crafting: "Crafting & Production",
@@ -1484,7 +1514,8 @@ function nearbyLootGround() {
 }
 
 function lootableGroundItems(ground: GroundItem) {
-  if (ground.contents.length > 0) return ground.contents;
+  if (ground.contents.length > 0) return ground.contents.filter((item) => item.definitionId !== "gold_coin");
+  if (ground.item.definitionId === "gold_coin") return [];
   return world.itemDefinitions.get(ground.item.definitionId)?.pickupable ? [ground.item] : [];
 }
 
@@ -1719,7 +1750,12 @@ function InventoryPanel() {
   const [splitRequest, setSplitRequest] = useState<{ itemId: string; quantity: number; max: number; x: number; y: number } | null>(null);
   const inventoryLayoutKey = `aldoria.inventory-layout.${world.localPlayerId ?? "local"}`;
   const [backpackLayout, setBackpackLayout] = useState<(string | null)[]>(() => loadInventoryLayout(inventoryLayoutKey));
-  const carriedItems = world.inventory.filter((item) => !item.equippedSlot);
+  const gold = world.inventory
+    .filter((item) => item.definitionId === "gold_coin")
+    .reduce((sum, item) => sum + item.quantity, 0);
+  const carriedItems = world.inventory.filter(
+    (item) => !item.equippedSlot && item.definitionId !== "gold_coin",
+  );
   const matchingItemIds = new Set(carriedItems
     .filter((item) => (world.itemDefinitions.get(item.definitionId)?.name ?? item.definitionId).toLowerCase().includes(query.trim().toLowerCase()))
     .map((item) => item.instanceId));
@@ -1867,6 +1903,13 @@ function InventoryPanel() {
                 ? <InventorySlot item={item} onOpenContextMenu={openContextMenu} onPointerDrop={pointerDrop} dropKind="root" dropIndex={index} onDropToArea={(event) => drop(event, "root", index)} key={`backpack-${index}-${item.instanceId}`} />
                 : <div className="inventory-grid-slot empty" data-inventory-drop="root" data-backpack-index={index} onDragOver={allowItemDrop} onDrop={(event) => drop(event, "root", index)} key={`backpack-empty-${index}`} />;
             })}
+          </div>
+          <div className="inventory-currency" aria-label={`${gold} Gold Coins`}>
+            <ItemIcon definitionId="gold_coin" />
+            <span>
+              <small>Currency</small>
+              <strong>{gold.toLocaleString()} Gold Coins</strong>
+            </span>
           </div>
         </section>
       </div>

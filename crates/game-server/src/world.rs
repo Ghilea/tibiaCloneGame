@@ -2848,12 +2848,18 @@ impl World {
         if content_index.is_none() && !definition.pickupable {
             return Err("item_not_pickupable");
         }
+        let is_currency = picked_item.definition_id == "gold_coin";
         let weight = self.inventory_weight(&player.inventory)
-            + definition.weight * f32::from(picked_item.quantity);
+            + if is_currency {
+                0.0
+            } else {
+                definition.weight * f32::from(picked_item.quantity)
+            };
         if weight > player.max_capacity + f32::EPSILON {
             return Err("too_heavy");
         }
-        if !auto_equip_backpack
+        if !is_currency
+            && !auto_equip_backpack
             && !merges_existing_stack
             && self.inventory_slots_used(&player.inventory)
                 >= self.inventory_slot_capacity(&player.inventory)
@@ -3903,6 +3909,7 @@ impl World {
     fn inventory_weight(&self, inventory: &[ItemInstance]) -> f32 {
         inventory
             .iter()
+            .filter(|item| item.definition_id != "gold_coin")
             .filter_map(|item| {
                 self.content
                     .item(&item.definition_id)
@@ -3924,7 +3931,7 @@ impl World {
     fn inventory_slots_used(&self, inventory: &[ItemInstance]) -> usize {
         inventory
             .iter()
-            .filter(|item| item.equipped_slot.is_none())
+            .filter(|item| item.equipped_slot.is_none() && item.definition_id != "gold_coin")
             .count()
     }
 
