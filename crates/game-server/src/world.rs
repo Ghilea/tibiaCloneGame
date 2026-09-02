@@ -1723,7 +1723,7 @@ impl World {
             .cloned()
             .ok_or("shop_offer_not_found")?;
         let player = self.players.get(&player_id).ok_or("unknown_player")?;
-        if !within_reach(player.view.position, npc.position) {
+        if !within_interaction_reach(player.view.position, npc.position) {
             return Err("npc_out_of_reach");
         }
         let cost = u32::from(offer.price) * u32::from(quantity);
@@ -1794,7 +1794,7 @@ impl World {
             .cloned()
             .ok_or("spell_not_found")?;
         let player = self.players.get(&player_id).ok_or("unknown_player")?;
-        if !within_reach(player.view.position, npc.position) {
+        if !within_interaction_reach(player.view.position, npc.position) {
             return Err("npc_out_of_reach");
         }
         if player.learned_spells.contains(spell_id) {
@@ -1851,7 +1851,7 @@ impl World {
             .cloned()
             .ok_or("unknown_rune_recipe")?;
         let player = self.players.get(&player_id).ok_or("unknown_player")?;
-        if !within_reach(player.view.position, npc.position) {
+        if !within_interaction_reach(player.view.position, npc.position) {
             return Err("npc_out_of_reach");
         }
         if player.learned_recipes.contains(recipe_id) {
@@ -2021,7 +2021,7 @@ impl World {
             .find(|npc| npc.id == npc_id && npc.service == "depot")
             .ok_or("depot_not_found")?;
         let player = self.players.get(&player_id).ok_or("unknown_player")?;
-        if !within_reach(player.view.position, npc.position) {
+        if !within_interaction_reach(player.view.position, npc.position) {
             return Err("npc_out_of_reach");
         }
         Ok(())
@@ -2625,7 +2625,7 @@ impl World {
             .view
             .position;
         let door_position = self.doors.get(door_id).ok_or("unknown_door")?.position;
-        if !within_reach(player_position, door_position) {
+        if !within_interaction_reach(player_position, door_position) {
             return Err("door_out_of_reach");
         }
         let closing = self.doors.get(door_id).is_some_and(|door| door.open);
@@ -2662,7 +2662,7 @@ impl World {
             .view
             .position;
         let window = self.windows.get_mut(window_id).ok_or("unknown_window")?;
-        if !within_reach(player_position, window.position) {
+        if !within_interaction_reach(player_position, window.position) {
             return Err("window_out_of_reach");
         }
         window.open = !window.open;
@@ -4375,7 +4375,12 @@ fn deterministic_roll(id: EntityId, salt: u64) -> f32 {
 }
 
 fn within_reach(origin: Position, target: Position) -> bool {
-    origin.z == target.z && (origin.x - target.x).abs() <= 1 && (origin.y - target.y).abs() <= 1
+  origin.z == target.z && (origin.x - target.x).abs() <= 1 && (origin.y - target.y).abs() <= 1
+}
+
+fn within_interaction_reach(origin: Position, target: Position) -> bool {
+    const RANGE: i32 = 2;
+    origin.z == target.z && (origin.x - target.x).abs() <= RANGE && (origin.y - target.y).abs() <= RANGE
 }
 
 fn default_npcs() -> Vec<NpcView> {

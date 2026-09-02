@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createHouseDoorwayLayout } from "./DoorwayLayout";
+import { createHouseDoorwayLayout, createHouseWindowLayout, HOUSE_DOOR_PLACEMENT } from "./DoorwayLayout";
 
 describe("house doorway layout", () => {
   it("derives one passage that fits the leaf and a player with clearance", () => {
@@ -16,5 +16,18 @@ describe("house doorway layout", () => {
     expect(layout.openingBottom).toBeGreaterThan(0);
     expect(layout.openingTop).toBeLessThan(3.2);
     expect(layout.wallTopHeight).toBeCloseTo(3.2 - layout.openingTop);
+  });
+
+  it("gives windows their own bounded facade opening above the shared plinth", () => {
+    const layout = createHouseWindowLayout(3.2);
+    expect(layout.openingBottom).toBeGreaterThan(layout.plinthHeight);
+    expect(layout.openingTop).toBeLessThan(3.2);
+    expect(layout.wallSideWidth * 2 + layout.openingWidth).toBeCloseTo(1.04);
+  });
+
+  it("defines one fixed outward transform that does not depend on the player side", () => {
+    expect(HOUSE_DOOR_PLACEMENT.hingeSide).toBe("left");
+    expect(HOUSE_DOOR_PLACEMENT.closedAngle).toBe(0);
+    expect(HOUSE_DOOR_PLACEMENT.outwardOpenAngle).toBe(Math.PI / 2);
   });
 });

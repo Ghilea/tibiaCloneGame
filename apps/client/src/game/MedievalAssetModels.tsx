@@ -45,6 +45,26 @@ export function MedievalHouseWallAsset({
   );
 }
 
+/** Uses the exact plaster material from the straight house-wall asset. */
+export function useHouseFacadePlasterMaterial() {
+  const gltf = useLoader(GLTFLoader, MEDIEVAL_VILLAGE_ASSET);
+  const material = useMemo(() => {
+    const source = gltf.scenes
+      .map((scene) => scene.getObjectByName(nodeNames.solid))
+      .find((candidate): candidate is THREE.Object3D => candidate !== undefined);
+    let plaster: THREE.Material | undefined;
+    source?.traverse((child) => {
+      if (plaster || !(child instanceof THREE.Mesh)) return;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      plaster = materials.find((candidate) => candidate.name.includes("Plaster"));
+    });
+    if (!plaster) throw new Error("Missing plaster material on medieval house wall");
+    return plaster.clone();
+  }, [gltf.scenes]);
+  useEffect(() => () => material.dispose(), [material]);
+  return material;
+}
+
 export function MedievalWindowShuttersAsset({
   window,
   building,

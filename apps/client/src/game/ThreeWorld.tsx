@@ -18,8 +18,8 @@ import { createActorMotionState, sampleActorMotion, type ActorMotionState } from
 import { AnimatedCharacter, type CharacterKind } from "./AnimatedCharacter";
 import { CreatureModel } from "./CreatureModels";
 import { CLIENT_STEP_MS, InputController } from "./InputController";
-import { GabledRoof, HangingSign, HouseDoorway, HousePlinth, MedievalDoorWall, MedievalWall, MedievalWindowWall, ShutterWindow } from "./MedievalModels";
-import { createHouseDoorwayLayout } from "./DoorwayLayout";
+import { GabledRoof, HangingSign, HouseDoorway, HousePlinth, HouseWindowOpening, MedievalDoorWall, MedievalWall, ShutterWindow } from "./MedievalModels";
+import { createHouseDoorwayLayout, createHouseWindowLayout } from "./DoorwayLayout";
 import { WorldState, type CombatEffectView } from "./WorldState";
 import { tileCenter, worldToTile, WORLD_TILE_SIZE } from "./WorldCoordinates";
 import { worldEnvironment } from "./worldEnvironment";
@@ -493,15 +493,15 @@ const Building = memo(function Building({ building, doors, windows, input }: { b
   const matchingDoors = doors.filter((door) => door.position.z === building.floor && insideBuilding(door.position, building));
   const doorsByKey = new Map(matchingDoors.map((door) => [`${door.position.x}:${door.position.y}`, door]));
   const matchingWindows = windows.filter((window) => window.position.z === building.floor && insideBuilding(window.position, building));
-  const windowKeys = new Set(matchingWindows.map((window) => `${window.position.x}:${window.position.y}`));
-  const wallSegments: { key: string; position: [number, number, number]; size: [number, number, number]; window: boolean; door?: DoorView }[] = [];
+  const windowsByKey = new Map(matchingWindows.map((window) => [`${window.position.x}:${window.position.y}`, window]));
+  const wallSegments: { key: string; position: [number, number, number]; size: [number, number, number]; rotation: number; window?: WindowView; door?: DoorView }[] = [];
   for (let x = building.x; x < maxX; x++) {
-    wallSegments.push({ key: `n${x}`, position: [x + 0.5, height / 2, building.y], size: [1.04, height, 0.13], window: windowKeys.has(`${x}:${building.y}`), door: doorsByKey.get(`${x}:${building.y}`) });
-    wallSegments.push({ key: `s${x}`, position: [x + 0.5, height / 2, maxY], size: [1.04, height, 0.13], window: windowKeys.has(`${x}:${maxY - 1}`), door: doorsByKey.get(`${x}:${maxY - 1}`) });
+    wallSegments.push({ key: `n${x}`, position: [x + 0.5, height / 2, building.y], size: [1.04, height, 0.13], rotation: 0, window: windowsByKey.get(`${x}:${building.y}`), door: doorsByKey.get(`${x}:${building.y}`) });
+    wallSegments.push({ key: `s${x}`, position: [x + 0.5, height / 2, maxY], size: [1.04, height, 0.13], rotation: Math.PI, window: windowsByKey.get(`${x}:${maxY - 1}`), door: doorsByKey.get(`${x}:${maxY - 1}`) });
   }
   for (let y = building.y; y < maxY; y++) {
-    wallSegments.push({ key: `w${y}`, position: [building.x, height / 2, y + 0.5], size: [0.13, height, 1.04], window: windowKeys.has(`${building.x}:${y}`), door: doorsByKey.get(`${building.x}:${y}`) });
-    wallSegments.push({ key: `e${y}`, position: [maxX, height / 2, y + 0.5], size: [0.13, height, 1.04], window: windowKeys.has(`${maxX - 1}:${y}`), door: doorsByKey.get(`${maxX - 1}:${y}`) });
+    wallSegments.push({ key: `w${y}`, position: [building.x, height / 2, y + 0.5], size: [0.13, height, 1.04], rotation: Math.PI / 2, window: windowsByKey.get(`${building.x}:${y}`), door: doorsByKey.get(`${building.x}:${y}`) });
+    wallSegments.push({ key: `e${y}`, position: [maxX, height / 2, y + 0.5], size: [0.13, height, 1.04], rotation: -Math.PI / 2, window: windowsByKey.get(`${maxX - 1}:${y}`), door: doorsByKey.get(`${maxX - 1}:${y}`) });
   }
   return (
     <group>
@@ -514,15 +514,15 @@ const Building = memo(function Building({ building, doors, windows, input }: { b
         {wallSegments.map((wall) => (
           wall.door
             ? building.kind === "house"
-              ? <HouseDoorway key={wall.key} position={wall.position} size={wall.size} layout={createHouseDoorwayLayout(height, Math.max(wall.size[0], wall.size[2]))} open={wall.door.open} onClick={() => input.toggleDoor(wall.door!.id, wall.door!.position)} />
+              ? <HouseDoorway key={wall.key} position={wall.position} size={wall.size} wallRotation={wall.rotation} layout={createHouseDoorwayLayout(height, Math.max(wall.size[0], wall.size[2]))} open={wall.door.open} onClick={() => input.toggleDoor(wall.door!.id, wall.door!.position)} />
               : <MedievalDoorWall key={wall.key} position={wall.position} size={wall.size} keep openingHeight={Math.min(height - 0.15, DOOR_HEIGHT) + 0.1} />
             : wall.window && building.kind === "house"
-            ? <MedievalWindowWall key={wall.key} position={wall.position} size={wall.size} />
+            ? <HouseWindowOpening key={wall.key} position={wall.position} size={wall.size} wallRotation={wall.rotation} layout={createHouseWindowLayout(height, Math.max(wall.size[0], wall.size[2]))} open={wall.window.open} onClick={() => input.toggleWindow(wall.window!.id, wall.window!.position)} />
             : <MedievalWall key={wall.key} position={wall.position} size={wall.size} keep={building.kind === "keep"} />
         ))}
         <HangingSign building={building} wallHeight={height} />
         {building.kind !== "house" && matchingDoors.map((door) => <Door key={door.id} door={door} building={building} input={input} tall={height} />)}
-        {matchingWindows.map((window) => <ShutterWindow key={window.id} window={window} building={building} wallHeight={height} onClick={() => input.toggleWindow(window.id, window.position)} />)}
+        {building.kind !== "house" && matchingWindows.map((window) => <ShutterWindow key={window.id} window={window} building={building} wallHeight={height} onClick={() => input.toggleWindow(window.id, window.position)} />)}
         {building.kind === "keep" && <Battlements building={building} height={height} />}
       </group>
     </group>

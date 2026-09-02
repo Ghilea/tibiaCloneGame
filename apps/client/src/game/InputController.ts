@@ -7,6 +7,7 @@ import { WorldState } from "./WorldState";
 export const CLIENT_STEP_MS = 165;
 export const MOVEMENT_CHORD_GRACE_MS = 30;
 export const DIAGONAL_STEP_FACTOR = Math.SQRT2;
+export const INTERACTION_RANGE_TILES = 2;
 
 export class InputController {
   private lastMove = 0;
@@ -47,8 +48,8 @@ export class InputController {
     const player = this.world.localPlayerId ? this.world.players.get(this.world.localPlayerId) : null;
     if (!npc || !player) return;
     const nearby = npc.position.z === player.position.z
-      && Math.abs(npc.position.x - player.position.x) <= 1
-      && Math.abs(npc.position.y - player.position.y) <= 1;
+      && Math.abs(npc.position.x - player.position.x) <= INTERACTION_RANGE_TILES
+      && Math.abs(npc.position.y - player.position.y) <= INTERACTION_RANGE_TILES;
     if (!nearby) {
       this.world.addSystemMessage(`Move closer to speak with ${npc.name}.`);
       return;
@@ -59,8 +60,8 @@ export class InputController {
   toggleDoor(doorId: string, position: Position) {
     const player = this.world.localPlayerId ? this.world.players.get(this.world.localPlayerId) : null;
     if (!player) return;
-    const nearby = Math.abs(player.position.x - position.x) <= 1
-      && Math.abs(player.position.y - position.y) <= 1
+    const nearby = Math.abs(player.position.x - position.x) <= INTERACTION_RANGE_TILES
+      && Math.abs(player.position.y - position.y) <= INTERACTION_RANGE_TILES
       && player.position.z === position.z;
     if (nearby) this.network.toggleDoor(doorId);
     else this.world.addSystemMessage("Move closer to use that door.");
@@ -69,8 +70,8 @@ export class InputController {
   toggleWindow(windowId: string, position: Position) {
     const player = this.world.localPlayerId ? this.world.players.get(this.world.localPlayerId) : null;
     if (!player) return;
-    const nearby = Math.abs(player.position.x - position.x) <= 1
-      && Math.abs(player.position.y - position.y) <= 1
+    const nearby = Math.abs(player.position.x - position.x) <= INTERACTION_RANGE_TILES
+      && Math.abs(player.position.y - position.y) <= INTERACTION_RANGE_TILES
       && player.position.z === position.z;
     if (nearby) {
       this.world.predictWindowToggle(windowId);

@@ -2,8 +2,8 @@ import { useFrame, useLoader } from "@react-three/fiber";
 import { memo, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { BuildingView, WindowView } from "../protocol";
-import type { DoorwayLayout } from "./DoorwayLayout";
-import { MedievalHouseWallAsset, MedievalWindowShuttersAsset } from "./MedievalAssetModels";
+import { HOUSE_DOOR_PLACEMENT, type DoorwayLayout, type FacadeOpeningLayout } from "./DoorwayLayout";
+import { MedievalHouseWallAsset, useHouseFacadePlasterMaterial } from "./MedievalAssetModels";
 
 export function MedievalWall({
   position,
@@ -44,12 +44,14 @@ export function HousePlinth({ position, size }: { position: [number, number, num
 export function HouseDoorway({
   position,
   size,
+  wallRotation,
   layout,
   open,
   onClick,
 }: {
   position: [number, number, number];
   size: [number, number, number];
+  wallRotation: number;
   layout: DoorwayLayout;
   open: boolean;
   onClick: () => void;
@@ -64,12 +66,19 @@ export function HouseDoorway({
   stone.wrapS = stone.wrapT = THREE.RepeatWrapping;
   stone.colorSpace = THREE.SRGBColorSpace;
   useFrame((_, delta) => {
-    if (hinge.current) hinge.current.rotation.y = THREE.MathUtils.damp(hinge.current.rotation.y, open ? -Math.PI * 0.78 : 0, 14, delta);
+    // A right-angle swing keeps the leaf attached to its hinge and within the
+    // doorway's immediate reveal; there is intentionally no open-state shift.
+    if (hinge.current) hinge.current.rotation.y = THREE.MathUtils.damp(
+      hinge.current.rotation.y,
+      open ? HOUSE_DOOR_PLACEMENT.outwardOpenAngle : HOUSE_DOOR_PLACEMENT.closedAngle,
+      14,
+      delta,
+    );
   });
   const sideCenter = layout.openingWidth / 2 + layout.wallSideWidth / 2;
   const wallHeightAboveBase = size[1] - layout.plinthHeight;
   return (
-    <group position={[position[0], 0, position[2]]} rotation={[0, horizontal ? 0 : Math.PI / 2, 0]} onPointerDown={(event) => { event.stopPropagation(); onClick(); }}>
+    <group position={[position[0], 0, position[2]]} rotation={[0, wallRotation, 0]} onPointerDown={(event) => { event.stopPropagation(); onClick(); }}>
       {/* These five facade pieces are the wall cutout. Nothing is rendered in
           x=-openingWidth/2..openingWidth/2, y=openingBottom..openingTop. */}
       {layout.wallSideWidth > 0 && <>
@@ -108,7 +117,7 @@ export function HouseDoorway({
       <mesh position={[0, layout.thresholdHeight / 2, 0]} castShadow receiveShadow>
         <boxGeometry args={[layout.openingWidth, layout.thresholdHeight, thickness + 0.13]} /><meshStandardMaterial color="#493321" roughness={0.9} />
       </mesh>
-      <group ref={hinge} position={[-layout.leafWidth / 2, layout.openingBottom + 0.04, -layout.leafDepth / 2]}>
+      <group ref={hinge} position={[-layout.leafWidth / 2, layout.openingBottom + 0.04, -layout.leafDepth / 2]} userData={{ hingeSide: HOUSE_DOOR_PLACEMENT.hingeSide, opensOutward: true }}>
         <mesh position={[layout.leafWidth / 2, layout.leafHeight / 2, 0]} castShadow receiveShadow>
           <boxGeometry args={[layout.leafWidth, layout.leafHeight, layout.leafDepth]} /><meshStandardMaterial color="#654128" roughness={0.82} />
         </mesh>
@@ -122,6 +131,50 @@ export function HouseDoorway({
       </mesh>
     </group>
   );
+}
+
+export function HouseWindowOpening({
+  position,
+  size,
+  wallRotation,
+  layout,
+  open,
+  onClick,
+}: {
+  position: [number, number, number];
+  size: [number, number, number];
+  wallRotation: number;
+  layout: FacadeOpeningLayout;
+  open: boolean;
+  onClick: () => void;
+}) {
+  const horizontal = size[0] > size[2];
+  const thickness = horizontal ? size[2] : size[0];
+  const plaster = useHouseFacadePlasterMaterial();
+  const leftShutter = useRef<THREE.Group>(null);
+  const rightShutter = useRef<THREE.Group>(null);
+  useFrame((_, delta) => {
+    const angle = open ? Math.PI * 0.58 : 0;
+    if (leftShutter.current) leftShutter.current.rotation.y = THREE.MathUtils.damp(leftShutter.current.rotation.y, angle, 14, delta);
+    if (rightShutter.current) rightShutter.current.rotation.y = THREE.MathUtils.damp(rightShutter.current.rotation.y, -angle, 14, delta);
+  });
+  const sideCenter = layout.openingWidth / 2 + layout.wallSideWidth / 2;
+  const lowerHeight = layout.openingBottom - layout.plinthHeight;
+  const sillY = layout.openingBottom - layout.frameThickness / 2;
+  return <group position={[position[0], 0, position[2]]} rotation={[0, wallRotation, 0]} onPointerDown={(event) => { event.stopPropagation(); onClick(); }}>
+    {/* The window uses the same explicit opening rectangle as the door: wall
+        panels surround it, never sit behind it. */}
+    <mesh position={[-sideCenter, layout.plinthHeight + (size[1] - layout.plinthHeight) / 2, 0]} castShadow receiveShadow material={plaster}><boxGeometry args={[layout.wallSideWidth, size[1] - layout.plinthHeight, thickness]} /></mesh>
+    <mesh position={[sideCenter, layout.plinthHeight + (size[1] - layout.plinthHeight) / 2, 0]} castShadow receiveShadow material={plaster}><boxGeometry args={[layout.wallSideWidth, size[1] - layout.plinthHeight, thickness]} /></mesh>
+    {lowerHeight > 0 && <mesh position={[0, layout.plinthHeight + lowerHeight / 2, 0]} castShadow receiveShadow material={plaster}><boxGeometry args={[layout.openingWidth, lowerHeight, thickness]} /></mesh>}
+    {layout.wallTopHeight > 0 && <mesh position={[0, layout.openingTop + layout.wallTopHeight / 2, 0]} castShadow receiveShadow material={plaster}><boxGeometry args={[layout.openingWidth, layout.wallTopHeight, thickness]} /></mesh>}
+    <mesh position={[0, sillY, -layout.frameDepth / 2]} castShadow receiveShadow><boxGeometry args={[layout.openingWidth + layout.frameThickness * 2, layout.frameThickness, layout.frameDepth]} /><meshStandardMaterial color="#52361f" roughness={0.9} /></mesh>
+    <mesh position={[0, layout.openingTop + layout.frameThickness / 2, -layout.frameDepth / 2]} castShadow receiveShadow><boxGeometry args={[layout.openingWidth + layout.frameThickness * 2, layout.frameThickness, layout.frameDepth]} /><meshStandardMaterial color="#52361f" roughness={0.9} /></mesh>
+    {[[-1, leftShutter], [1, rightShutter]].map(([direction, ref]) => <group key={String(direction)} ref={ref as React.RefObject<THREE.Group>} position={[Number(direction) * layout.openingWidth / 2, layout.openingBottom + layout.leafHeight / 2, -layout.leafDepth / 2]}>
+      <mesh position={[-Number(direction) * layout.leafWidth / 2, 0, 0]} castShadow receiveShadow><boxGeometry args={[layout.leafWidth, layout.leafHeight, layout.leafDepth]} /><meshStandardMaterial color="#5b3822" roughness={0.85} /></mesh>
+    </group>)}
+    <mesh position={[0, layout.openingBottom + layout.openingHeight / 2, -0.3]}><planeGeometry args={[layout.openingWidth, layout.openingHeight]} /><meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} /></mesh>
+  </group>;
 }
 
 export function MedievalDoorWall({
@@ -259,7 +312,9 @@ export function ShutterWindow({
   wallHeight: number;
   onClick: () => void;
 }) {
-  return <MedievalWindowShuttersAsset window={window} building={building} wallHeight={wallHeight} onClick={onClick} />;
+  // Legacy export retained for non-house callers. House facades compose the
+  // opening and shutters together through HouseWindowOpening.
+  return null;
 }
 
 export function HangingSign({ building, wallHeight }: { building: BuildingView; wallHeight: number }) {
