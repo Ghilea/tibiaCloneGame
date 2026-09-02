@@ -525,10 +525,20 @@ const Structures = memo(function Structures({ map, input, floor, indoorBuildingI
 });
 
 const StaticStructures = memo(function StaticStructures({ map, input, floor, buildings }: { map: NonNullable<WorldState["map"]>; input: InputController; floor: number; buildings: readonly BuildingView[] }) {
+  const visibleObjects = useMemo(() => (map.objects ?? []).filter((entry) => entry.position.z === floor), [floor, map.objects]);
+  const forestTrees = useMemo(() => [
+    ...map.trees.filter((tile) => tile.z === floor),
+    ...visibleObjects.filter((entry) => entry.kind === "forest_tree").map((entry) => entry.position),
+  ], [floor, map.trees, visibleObjects]);
+  const pineTrees = useMemo(() => visibleObjects.filter((entry) => entry.kind === "pine_tree").map((entry) => entry.position), [visibleObjects]);
+  const snowyPines = useMemo(() => visibleObjects.filter((entry) => entry.kind === "snowy_pine").map((entry) => entry.position), [visibleObjects]);
+  const otherObjects = useMemo(() => visibleObjects.filter((entry) => !["forest_tree", "pine_tree", "snowy_pine"].includes(entry.kind)), [visibleObjects]);
   return <>
       <ConnectedWalls positions={map.castleWalls.filter((tile) => tile.z === floor)} castle />
-      <InstancedTrees positions={map.trees.filter((tile) => tile.z === floor)} />
-      <WorldObjects objects={(map.objects ?? []).filter((entry) => entry.position.z === floor)} />
+      <InstancedTrees positions={forestTrees} variant="forest" />
+      <InstancedTrees positions={pineTrees} variant="pine" />
+      <InstancedTrees positions={snowyPines} variant="snowy" />
+      <WorldObjects objects={otherObjects} />
       <InstancedTorches positions={map.torches.filter((tile) => tile.z === floor)} />
       {map.doors.filter((door) => door.position.z === floor && !insideAnyBuilding(door.position, buildings)).map((door) => <Door key={door.id} door={door} input={input} />)}
     </>;
@@ -539,7 +549,6 @@ function WorldObjects({ objects }: { objects: readonly WorldObjectView[] }) {
     const [x, z] = [object.position.x + 0.5, object.position.y + 0.5];
     if (object.kind === "dirt_path" || object.kind === "snow_ground") return <mesh key={object.id} position={[x, 0.045, z]} receiveShadow><boxGeometry args={[0.98, 0.055, 0.98]} /><meshStandardMaterial color={object.kind === "snow_ground" ? "#e6f0ee" : "#8d6c49"} roughness={0.98} /></mesh>;
     if (object.kind === "mountain_wall") return <group key={object.id} position={[x, 0, z]}><mesh castShadow receiveShadow position={[0, 0.78, 0]}><boxGeometry args={[1, 1.56, 0.9]} /><meshStandardMaterial color="#59615d" roughness={0.98} /></mesh><mesh castShadow position={[-0.18, 1.62, 0.05]}><dodecahedronGeometry args={[0.53, 0]} /><meshStandardMaterial color="#778078" roughness={0.98} /></mesh></group>;
-    if (["forest_tree", "pine_tree", "snowy_pine"].includes(object.kind)) { const pine = object.kind !== "forest_tree"; const snowy = object.kind === "snowy_pine"; return <group key={object.id} position={[x, 0, z]}><mesh castShadow position={[0, 0.55, 0]}><cylinderGeometry args={[0.12, 0.18, 1.1, 7]} /><meshStandardMaterial color="#5b3d26" roughness={1} /></mesh><mesh castShadow position={[0, pine ? 1.35 : 1.2, 0]}><coneGeometry args={[pine ? 0.72 : 0.86, pine ? 1.85 : 1.35, pine ? 7 : 8]} /><meshStandardMaterial color={snowy ? "#dce9e7" : pine ? "#285744" : "#386b3c"} roughness={0.96} /></mesh></group>; }
     if (object.kind === "well") return <group key={object.id} position={[x, 0, z]}><mesh castShadow position={[0, 0.3, 0]}><cylinderGeometry args={[0.42, 0.48, 0.55, 10]} /><meshStandardMaterial color="#77807b" roughness={0.98} /></mesh><mesh position={[0, 0.59, 0]}><torusGeometry args={[0.34, 0.09, 6, 10]} /><meshStandardMaterial color="#58615d" roughness={0.95} /></mesh></group>;
     if (object.kind === "snow_bank") return <mesh key={object.id} castShadow position={[x, 0.22, z]}><dodecahedronGeometry args={[0.55, 1]} /><meshStandardMaterial color="#c9dcdf" roughness={1} /></mesh>;
     if (object.kind === "barrel") return <mesh key={object.id} castShadow position={[x, 0.28, z]}><cylinderGeometry args={[0.24, 0.28, 0.56, 10]} /><meshStandardMaterial color="#9b5d2c" roughness={0.85} /></mesh>;
@@ -701,12 +710,14 @@ function Door({ door, input, building, tall = WALL_HEIGHT, showBeacon = true }: 
   );
 }
 
-function InstancedTrees({ positions }: { positions: readonly Position[] }) {
+function InstancedTrees({ positions, variant = "forest" }: { positions: readonly Position[]; variant?: "forest" | "pine" | "snowy" }) {
   const trunks = useRef<THREE.InstancedMesh>(null);
   const lowerCanopies = useRef<THREE.InstancedMesh>(null);
   const upperCanopies = useRef<THREE.InstancedMesh>(null);
+  const pine = variant !== "forest";
+  const snowy = variant === "snowy";
   useLayoutEffect(() => {
-    const matrix = new THREE.Matrix4(); const quaternion = new THREE.Quaternion(); const location = new THREE.Vector3(); const scale = new THREE.Vector3(1.18, 1.22, 1.18);
+    const matrix = new THREE.Matrix4(); const quaternion = new THREE.Quaternion(); const location = new THREE.Vector3(); const scale = pine ? new THREE.Vector3(1.04, 1.18, 1.04) : new THREE.Vector3(1.18, 1.22, 1.18);
     positions.forEach((position, index) => {
       location.set(position.x + 0.5, 0, position.y + 0.5);
       quaternion.setFromEuler(new THREE.Euler(0, stablePhase(tileKey(position)), 0));
@@ -719,12 +730,12 @@ function InstancedTrees({ positions }: { positions: readonly Position[] }) {
       }
     });
     [trunks.current, lowerCanopies.current, upperCanopies.current].forEach((mesh) => mesh?.computeBoundingSphere());
-  }, [positions]);
+  }, [pine, positions]);
   if (!positions.length) return null;
   return <group userData={{ occluder: true }}>
     <instancedMesh ref={trunks} args={[undefined, undefined, positions.length]} castShadow receiveShadow><cylinderGeometry args={[0.14, 0.2, 1.45, 8]} /><meshStandardMaterial color="#604128" roughness={1} /></instancedMesh>
-    <instancedMesh ref={lowerCanopies} args={[undefined, undefined, positions.length]} castShadow><coneGeometry args={[0.82, 1.75, 9]} /><meshStandardMaterial color="#315c38" roughness={0.95} /></instancedMesh>
-    <instancedMesh ref={upperCanopies} args={[undefined, undefined, positions.length]} castShadow><coneGeometry args={[0.61, 1.35, 9]} /><meshStandardMaterial color="#3b7043" roughness={0.95} /></instancedMesh>
+    <instancedMesh ref={lowerCanopies} args={[undefined, undefined, positions.length]} castShadow><coneGeometry args={[pine ? 0.72 : 0.82, pine ? 1.9 : 1.75, pine ? 7 : 9]} /><meshStandardMaterial color={snowy ? "#c5dadd" : pine ? "#285744" : "#315c38"} roughness={0.95} /></instancedMesh>
+    <instancedMesh ref={upperCanopies} args={[undefined, undefined, positions.length]} castShadow><coneGeometry args={[pine ? 0.52 : 0.61, pine ? 1.5 : 1.35, pine ? 7 : 9]} /><meshStandardMaterial color={snowy ? "#e0ebea" : pine ? "#346a50" : "#3b7043"} roughness={0.95} /></instancedMesh>
   </group>;
 }
 
@@ -1213,7 +1224,7 @@ function Atmosphere({ torches, local }: { torches: readonly Position[]; local?: 
   return (
     <>
       <hemisphereLight ref={ambient} args={["#bfd5cb", "#172019", 0.8]} />
-      <directionalLight ref={sun} position={[14, 24, 9]} intensity={1.8} color="#ffe1aa" castShadow shadow-mapSize={[2048, 2048]} shadow-camera-near={1} shadow-camera-far={70} shadow-camera-left={-18} shadow-camera-right={18} shadow-camera-top={18} shadow-camera-bottom={-18} />
+      <directionalLight ref={sun} position={[14, 24, 9]} intensity={1.8} color="#ffe1aa" castShadow shadow-mapSize={[1024, 1024]} shadow-camera-near={1} shadow-camera-far={70} shadow-camera-left={-18} shadow-camera-right={18} shadow-camera-top={18} shadow-camera-bottom={-18} />
       {activeTorches.map((torch) => <pointLight key={tileKey(torch)} position={[torch.x + 0.5, 1.55, torch.y + 0.5]} color="#ff6a24" intensity={5.4} distance={6.1} decay={2} />)}
     </>
   );

@@ -634,15 +634,6 @@ function PrimarySkillProgress({ player }: { player: PlayerView }) {
   return <SkillProgressGrid skills={primarySkills} />;
 }
 
-function SecondarySkillProgress({ player }: { player: PlayerView }) {
-  const professionSkills = player.secondarySkills.map((id) => {
-    const skill = world.professionSkills.get(id);
-    return { name: secondarySkillOptions.find((entry) => entry.id === id)?.name ?? id, level: skill?.level ?? 0, tries: skill?.tries ?? 0 };
-  });
-  if (!professionSkills.length) return null;
-  return <SkillProgressGrid skills={professionSkills} />;
-}
-
 function SkillProgressGrid({ skills }: { skills: { name: string; level: number; tries: number }[] }) {
   return <div className="player-skill-progress" aria-label="Skill progress">
     {skills.map((skill) => <SkillProgress key={skill.name} {...skill} />)}
@@ -1259,7 +1250,6 @@ function CompactCharacterPanel() {
             <small className="skill-group-label">Primary skills</small>
             <PrimarySkillProgress player={player} />
             <SecondarySkillsPicker selected={player.secondarySkills} />
-            <SecondarySkillProgress player={player} />
           </section>
         </aside>
       )}
@@ -1308,7 +1298,11 @@ function SecondarySkillsPicker({ selected }: { selected: SecondarySkill[] }) {
         const active = pending.includes(skill.id);
         const unavailable = !active && pending.length >= 2;
         const progress = world.professionSkills.get(skill.id);
-        return <button key={skill.id} className={active ? "selected" : ""} aria-pressed={active} disabled={unavailable} title={skill.description} onClick={() => toggle(skill.id)}><span>{skill.name}</span><small>{active ? `Level ${progress?.level ?? 0} · ${progress?.tries ?? 0} tries` : unavailable ? "Two selected" : skill.description}</small></button>;
+        const level = progress?.level ?? 0;
+        const tries = progress?.tries ?? 0;
+        const required = 5 + level * 2;
+        const percent = Math.min(100, tries / required * 100);
+        return <button key={skill.id} className={active ? "selected" : ""} aria-pressed={active} disabled={unavailable} title={skill.description} onClick={() => toggle(skill.id)}><span>{skill.name}</span><small>{active ? `Level ${level} · ${Math.max(0, required - tries)} left` : unavailable ? "Two selected" : skill.description}</small>{active && <i className="secondary-skill-meter" aria-label={`${tries} of ${required} uses`}><em style={{ width: `${percent}%` }} /></i>}</button>;
       })}</div>
     </section>
   );
