@@ -129,6 +129,8 @@ export function WorldEditor() {
   const [future, setFuture] = useState<EditorDocument[]>([]);
   const lastPainted = useRef("");
   const panGesture = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const panFrame = useRef<number | null>(null);
+  const pendingPan = useRef<{ x: number; y: number } | null>(null);
   const editorDrag = useRef<EditorDrag | null>(null);
   const dragOrigin = useRef<Position | null>(null);
   const marqueeStart = useRef<Position | null>(null);
@@ -152,6 +154,29 @@ export function WorldEditor() {
   const torches = useMemo(() => new Set(document.torches.filter((entry) => entry.z === activeFloor).map(key)), [document.torches, activeFloor]);
   const terrainByTile = useMemo(() => new Map(document.terrainMaterials.filter((entry) => entry.position.z === activeFloor).map((entry) => [key(entry.position), entry.material])), [document.terrainMaterials, activeFloor]);
   const worldObjectByTile = useMemo(() => new Map(document.objects.filter((entry) => entry.position.z === activeFloor).map((entry) => [key(entry.position), entry])), [document.objects, activeFloor]);
+  const buildingByTile = useMemo(() => {
+    const result = new Map<string, BuildingView>();
+    for (const building of document.buildings) {
+      if (building.floor !== activeFloor) continue;
+      for (let y = building.y; y < building.y + building.height; y += 1) {
+        for (let x = building.x; x < building.x + building.width; x += 1) {
+          result.set(key({ x, y, z: building.floor }), building);
+        }
+      }
+    }
+    return result;
+  }, [document.buildings, activeFloor]);
+  const authoredTileKeys = useMemo(() => {
+    const result = new Set<string>();
+    for (const layer of tileLayers) for (const tileKey of layerSets[layer]) result.add(tileKey);
+    for (const collection of [spawnByTile, doorByTile, stairsByTile, npcByTile, resourceNodeByTile, terrainByTile, worldObjectByTile, buildingByTile]) {
+      for (const tileKey of collection.keys()) result.add(tileKey);
+    }
+    for (const tileKey of windows) result.add(tileKey);
+    for (const tileKey of torches) result.add(tileKey);
+    if (document.playerSpawn.z === activeFloor) result.add(key(document.playerSpawn));
+    return result;
+  }, [activeFloor, buildingByTile, document.playerSpawn, doorByTile, layerSets, npcByTile, resourceNodeByTile, spawnByTile, stairsByTile, terrainByTile, torches, windows, worldObjectByTile]);
   const viewportX = Math.max(0, Math.min(viewX, Math.max(0, document.width - VIEW_COLUMNS)));
   const viewportY = Math.max(0, Math.min(viewY, Math.max(0, document.height - VIEW_ROWS)));
   const visibleWidth = Math.min(document.width - viewportX, Math.max(VIEW_COLUMNS, Math.floor((mapViewport.width - 40) / (EDITOR_TILE_SIZE * zoom))));
@@ -175,6 +200,9 @@ export function WorldEditor() {
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
+  }, []);
+  useEffect(() => () => {
+    if (panFrame.current !== null) cancelAnimationFrame(panFrame.current);
   }, []);
 
   const commit = (next: EditorDocument, recordHistory = true) => {
@@ -390,9 +418,25 @@ export function WorldEditor() {
   const panTo = (x: number, y: number) => { const nextX = Number.isFinite(x) ? Math.trunc(x) : viewportX; const nextY = Number.isFinite(y) ? Math.trunc(y) : viewportY; setViewX(Math.max(0, Math.min(nextX, Math.max(0, document.width - VIEW_COLUMNS)))); setViewY(Math.max(0, Math.min(nextY, Math.max(0, document.height - VIEW_ROWS)))); };
   const newWorld = () => { const next = blankDocument(); worldFileHandle.current = null; setSaveStatus("New map — choose where to save"); setWorldWidth(next.width); setWorldHeight(next.height); setActiveFloor(next.floor); setViewX(0); setViewY(0); commit(next); };
   const beginPan = (event: ReactPointerEvent<HTMLDivElement>) => { const spacePan = window.document.body.classList.contains("editor-space-pan"); if (event.button !== 1 && event.button !== 2 && !(event.button === 0 && spacePan)) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); panGesture.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: viewportX, originY: viewportY }; };
-  const movePan = (event: ReactPointerEvent<HTMLDivElement>) => { const gesture = panGesture.current; if (!gesture || gesture.pointerId !== event.pointerId) return; const tileX = (event.clientX - gesture.startX) / (EDITOR_TILE_SIZE * zoom); const tileY = (event.clientY - gesture.startY) / (EDITOR_TILE_SIZE * zoom); panTo(gesture.originX - Math.round(tileX), gesture.originY - Math.round(tileY)); };
-  const endPan = (event: ReactPointerEvent<HTMLDivElement>) => { if (panGesture.current?.pointerId !== event.pointerId) return; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); panGesture.current = null; };
-  const objectAt = (position: Position): EditorDrag | null => { if (same(document.playerSpawn, position)) return { kind: "playerSpawn" }; const npc = npcByTile.get(key(position)); if (npc) return { kind: "npc", id: npc.id }; const resourceNode = resourceNodeByTile.get(key(position)); if (resourceNode) return { kind: "resourceNode", id: resourceNode.id }; const door = doorByTile.get(key(position)); if (door) return { kind: "door", id: door.id }; if (windows.has(key(position))) return { kind: "window", position }; if (torches.has(key(position))) return { kind: "torch", position }; const stairs = stairsByTile.get(key(position)); if (stairs) return { kind: "stairs", id: stairs.id }; const spawn = spawnByTile.get(key(position)); if (spawn) return { kind: "spawn", id: spawn.id }; const building = document.buildings.find((entry) => entry.floor === position.z && position.x >= entry.x && position.y >= entry.y && position.x < entry.x + entry.width && position.y < entry.y + entry.height); return building ? { kind: "building", id: building.id, offsetX: position.x - building.x, offsetY: position.y - building.y } : hasAuthoredContent(document, position) ? { kind: "tile", position } : null; };
+  const movePan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = panGesture.current; if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const tileX = (event.clientX - gesture.startX) / (EDITOR_TILE_SIZE * zoom); const tileY = (event.clientY - gesture.startY) / (EDITOR_TILE_SIZE * zoom);
+    pendingPan.current = { x: gesture.originX - Math.round(tileX), y: gesture.originY - Math.round(tileY) };
+    if (panFrame.current !== null) return;
+    panFrame.current = requestAnimationFrame(() => {
+      panFrame.current = null;
+      const target = pendingPan.current; pendingPan.current = null;
+      if (target) panTo(target.x, target.y);
+    });
+  };
+  const endPan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (panGesture.current?.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    panGesture.current = null;
+    const target = pendingPan.current; pendingPan.current = null;
+    if (target) panTo(target.x, target.y);
+  };
+  const objectAt = (position: Position): EditorDrag | null => { const tileKey = key(position); if (same(document.playerSpawn, position)) return { kind: "playerSpawn" }; const npc = npcByTile.get(tileKey); if (npc) return { kind: "npc", id: npc.id }; const resourceNode = resourceNodeByTile.get(tileKey); if (resourceNode) return { kind: "resourceNode", id: resourceNode.id }; const door = doorByTile.get(tileKey); if (door) return { kind: "door", id: door.id }; if (windows.has(tileKey)) return { kind: "window", position }; if (torches.has(tileKey)) return { kind: "torch", position }; const stairs = stairsByTile.get(tileKey); if (stairs) return { kind: "stairs", id: stairs.id }; const spawn = spawnByTile.get(tileKey); if (spawn) return { kind: "spawn", id: spawn.id }; const building = buildingByTile.get(tileKey); return building ? { kind: "building", id: building.id, offsetX: position.x - building.x, offsetY: position.y - building.y } : authoredTileKeys.has(tileKey) ? { kind: "tile", position } : null; };
   const moveObject = (target: Position) => {
     const dragged = editorDrag.current; if (!dragged) return; const next = structuredClone(documentRef.current);
     if (dragged.kind === "selection") {
@@ -479,11 +523,11 @@ export function WorldEditor() {
               draggable={false}
               className={`editor-tile ${classes} ${material ? `material-${material}` : ""} ${worldObject ? `world-object world-object-${worldObject.kind}` : ""} ${waterEdgeClasses(position)} ${playerSpawn ? "player-spawn" : ""} ${npc?.id === selectedNpcId ? "npc-selected" : ""} ${selected || areaSelected ? "selected" : ""} ${marqueeSelected ? "marquee-selected" : ""} ${editorObject ? "movable" : ""} ${dragPreviewIncludes(position) ? "drag-preview" : ""}`}
               style={{ width: EDITOR_TILE_SIZE * zoom, height: EDITOR_TILE_SIZE * zoom, left: column * EDITOR_TILE_SIZE * zoom, top: row * EDITOR_TILE_SIZE * zoom, zIndex: 1 }}
-              key={tileKey}
+              key={index}
               onPointerDown={(event) => { const panning = window.document.body.classList.contains("editor-space-pan"); if (event.button !== 0 || panning) return; if (tool === "select") { event.preventDefault(); if (selectedArea && insideSelection(position, selectedArea)) { editorDrag.current = { kind: "selection", bounds: selectedArea, origin: position }; dragOrigin.current = position; setDragTarget(position); return; } marqueeStart.current = position; marqueeEnd.current = position; setMarqueeArea(selectionBounds(position, position)); setSelectedArea(null); setSelectedPosition(null); return; } if (continuousTool(tool)) paint(x, y); }}
-              onClick={() => { if (tool === "select") { if (suppressSelectClick.current) { suppressSelectClick.current = false; return; } setSelectedArea(null); setSelectedPosition(hasAuthoredContent(document, position) ? position : null); setSelectedNpcId(npc?.id ?? null); return; } if (npc) { setSelectedNpcId(npc.id); return; } if (!continuousTool(tool)) paint(x, y); }}
+              onClick={() => { if (tool === "select") { if (suppressSelectClick.current) { suppressSelectClick.current = false; return; } setSelectedArea(null); setSelectedPosition(authoredTileKeys.has(tileKey) ? position : null); setSelectedNpcId(npc?.id ?? null); return; } if (npc) { setSelectedNpcId(npc.id); return; } if (!continuousTool(tool)) paint(x, y); }}
               onPointerEnter={(event) => { if (event.buttons !== 1 || window.document.body.classList.contains("editor-space-pan")) return; if (tool === "select" && marqueeStart.current) { marqueeEnd.current = position; setMarqueeArea(selectionBounds(marqueeStart.current, position)); return; } if (tool === "select" && editorDrag.current) { setDragTarget(position); return; } if (continuousTool(tool)) paint(x, y, true); }}
-              onPointerUp={() => { if (tool === "select" && marqueeStart.current) { const start = marqueeStart.current; const selection = selectionBounds(start, position); marqueeStart.current = null; marqueeEnd.current = null; setMarqueeArea(null); setSelectedArea(hasAuthoredContent(document, position) || !same(start, position) ? selection : null); suppressSelectClick.current = true; return; } if (tool === "select" && editorDrag.current) { const origin = dragOrigin.current; if (origin && !same(origin, position)) moveObject(position); else { editorDrag.current = null; setDragTarget(null); suppressSelectClick.current = true; } dragOrigin.current = null; } lastPainted.current = ""; saveLocal(documentRef.current); }}
+              onPointerUp={() => { if (tool === "select" && marqueeStart.current) { const start = marqueeStart.current; const selection = selectionBounds(start, position); marqueeStart.current = null; marqueeEnd.current = null; setMarqueeArea(null); setSelectedArea(authoredTileKeys.has(tileKey) || !same(start, position) ? selection : null); suppressSelectClick.current = true; return; } if (tool === "select" && editorDrag.current) { const origin = dragOrigin.current; if (origin && !same(origin, position)) moveObject(position); else { editorDrag.current = null; setDragTarget(null); suppressSelectClick.current = true; } dragOrigin.current = null; } lastPainted.current = ""; saveLocal(documentRef.current); }}
             >{playerSpawn ? "P" : npc ? "N" : resourceNode ? "⛏" : door ? "D" : windows.has(tileKey) ? "W" : torches.has(tileKey) ? "T" : stairs ? (stairs.to.z < activeFloor ? "U" : "D") : spawn ? "C" : ""}</button>;
           })}
           {selectedArea && <div className="editor-selection-frame" aria-hidden="true" style={{ left: (selectedArea.minX - viewportX) * EDITOR_TILE_SIZE * zoom, top: (selectedArea.minY - viewportY) * EDITOR_TILE_SIZE * zoom, width: (selectedArea.maxX - selectedArea.minX + 1) * EDITOR_TILE_SIZE * zoom, height: (selectedArea.maxY - selectedArea.minY + 1) * EDITOR_TILE_SIZE * zoom }} />}

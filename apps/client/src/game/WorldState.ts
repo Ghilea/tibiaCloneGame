@@ -1,4 +1,5 @@
 import type { BuildingView, CreatureView, DoorView, GroundItem, ItemDefinition, ItemInstance, MapView, NpcView, PlayerView, Position, ProfessionSkillView, ResourceNodeView, RuneRecipe, ServerMessage, SpellDefinition, WindowView } from "../protocol";
+import { playerFacingFromMovement, type PlayerFacing } from "./PlayerFacing";
 
 export type WorldListener = () => void;
 export type ChatLine = { id: string; speaker: string; text: string };
@@ -30,6 +31,7 @@ export class WorldState {
   maxCapacity = 0;
   map: MapView | null = null;
   localPlayerId: string | null = null;
+  localPlayerFacing: PlayerFacing = 4;
   attackTargetId: string | null = null;
   selectedPlayerId: string | null = null;
   playerContext: { playerId: string; x: number; y: number } | null = null;
@@ -124,6 +126,7 @@ export class WorldState {
         this.trade = null;
         this.pendingLocalMoves.clear();
         this.localCorrectionRevision = 0;
+        this.localPlayerFacing = 4;
         for (const player of [...message.players, message.player]) this.players.set(player.id, player);
         this.localPlayerId = message.player.id;
         this.selectedPlayerId = null;
@@ -428,6 +431,11 @@ export class WorldState {
     if (!this.localPlayerId) return;
     const player = this.players.get(this.localPlayerId);
     if (player) {
+      this.localPlayerFacing = playerFacingFromMovement(
+        position.x - player.position.x,
+        position.y - player.position.y,
+        this.localPlayerFacing,
+      );
       this.pendingLocalMoves.set(sequence, position);
       this.players.set(player.id, { ...player, position });
       this.notifyVisual();

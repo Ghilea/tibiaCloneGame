@@ -1528,7 +1528,7 @@ async fn mine_resource(state: &AppState, player_id: Uuid, node_id: &str) {
 fn mining_error_message(code: &str) -> &'static str {
     match code {
         "mining_not_selected" => "Choose Mining as one of your two professions first",
-        "pickaxe_required" => "Equip a pickaxe before mining",
+        "pickaxe_required" => "Equip a pickaxe in the Mining tool slot before mining",
         "resource_out_of_reach" => "Move next to the resource first",
         "resource_depleted" => "That vein is depleted and must recover",
         "mining_skill_too_low" => "Your Mining skill is too low for that vein",

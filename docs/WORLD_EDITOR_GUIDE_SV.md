@@ -169,7 +169,8 @@ Allowed shop items:
 
     blank_rune, ember_rune, traveler_blade, ashwood_bow, rough_arrow,
     field_backpack, mire_fiber, gold_coin, field_bread, smoked_mire_meat,
-    bog_ichor, reed_hide, fen_tusk, iron_pickaxe, copper_ore
+    bog_ichor, reed_hide, fen_tusk, worn_cap, patched_tunic, frayed_trousers,
+    work_boots, wooden_buckler, iron_pickaxe, copper_ore
 
 ## Prompt for image-assisted world design
 
@@ -208,4 +209,3 @@ After approving the plan, send this:
 
 Ask for no more than roughly a 128 x 128 region in one JSON response. Import it,
 inspect it in the editor, then expand from the natural roads, rivers and passes.
-

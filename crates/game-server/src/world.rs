@@ -1677,7 +1677,8 @@ impl World {
             return Err("resource_out_of_reach");
         }
         let has_pickaxe = player.inventory.iter().any(|item| {
-            item.definition_id == "iron_pickaxe" && item.equipped_slot.as_deref() == Some("weapon")
+            item.definition_id == "iron_pickaxe"
+                && item.equipped_slot.as_deref() == Some("mining_tool")
         });
         if !has_pickaxe {
             return Err("pickaxe_required");
@@ -6741,7 +6742,7 @@ mod tests {
             quantity: 1,
             charges: None,
             container_id: None,
-            equipped_slot: Some("weapon".into()),
+            equipped_slot: Some("mining_tool".into()),
         });
         let mut world = World::new(ContentCatalog::load().unwrap(), vec![]);
         world.insert_player(player);

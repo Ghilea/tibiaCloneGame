@@ -9,8 +9,13 @@
     "offers": [
       { "id": "blank_sigil", "itemDefinitionId": "blank_rune", "quantity": 1, "price": 2 },
       { "id": "rough_arrows", "itemDefinitionId": "rough_arrow", "quantity": 10, "price": 3 },
-      { "id": "field_bread", "itemDefinitionId": "field_bread", "quantity": 2, "price": 3 }
-      ,{ "id": "iron_pickaxe", "itemDefinitionId": "iron_pickaxe", "quantity": 1, "price": 12 }
+      { "id": "field_bread", "itemDefinitionId": "field_bread", "quantity": 2, "price": 3 },
+      { "id": "worn_cap", "itemDefinitionId": "worn_cap", "quantity": 1, "price": 3 },
+      { "id": "patched_tunic", "itemDefinitionId": "patched_tunic", "quantity": 1, "price": 6 },
+      { "id": "frayed_trousers", "itemDefinitionId": "frayed_trousers", "quantity": 1, "price": 4 },
+      { "id": "work_boots", "itemDefinitionId": "work_boots", "quantity": 1, "price": 4 },
+      { "id": "wooden_buckler", "itemDefinitionId": "wooden_buckler", "quantity": 1, "price": 5 },
+      { "id": "iron_pickaxe", "itemDefinitionId": "iron_pickaxe", "quantity": 1, "price": 12 }
     ],
     "spellIds": [],
     "recipeIds": []

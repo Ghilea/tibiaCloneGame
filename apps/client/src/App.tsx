@@ -14,6 +14,7 @@ import { authenticate } from "./api";
 import { CharacterLobby, CharacterPreview } from "./CharacterLobby";
 import { MenuMusic, WorldMusic } from "./audio/WorldMusic";
 import { InputController } from "./game/InputController";
+import { GameMinimap } from "./game/GameMinimap";
 import { ThreeWorld } from "./game/ThreeWorld";
 import { NetworkClient } from "./game/NetworkClient";
 import { WorldState } from "./game/WorldState";
@@ -316,6 +317,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
           Greyhaven · {world.players.size} online · {world.ping} ms
         </span>
       </header>
+      <GameMinimap world={world} />
       <WorldClock />
       <section className="unit-frame">
         <div className="portrait">{local?.name.slice(0, 1)}</div>
@@ -775,6 +777,11 @@ const itemSpriteOrder = [
 ];
 function ItemIcon({ definitionId }: { definitionId: string }) {
   if (definitionId === "iron_pickaxe") return <i className="item-icon food-icon">⛏</i>;
+  if (definitionId === "worn_cap") return <i className="item-icon food-icon">🧢</i>;
+  if (definitionId === "patched_tunic") return <i className="item-icon food-icon">🥋</i>;
+  if (definitionId === "frayed_trousers") return <i className="item-icon food-icon">👖</i>;
+  if (definitionId === "work_boots") return <i className="item-icon food-icon">🥾</i>;
+  if (definitionId === "wooden_buckler") return <i className="item-icon food-icon">🛡️</i>;
   if (definitionId === "copper_ore") return <i className="item-icon food-icon">◆</i>;
   if (definitionId === "ember_sigil_formula") return <i className="item-icon food-icon">📜</i>;
   if (definitionId === "field_bread") return <i className="item-icon food-icon">🥖</i>;
@@ -1079,6 +1086,7 @@ function PlayerContextMenu() {
 
 const equipmentLayout = [
   { id: "helmet", label: "Helmet", aliases: ["helmet", "head"] },
+  { id: "chest", label: "Chest", aliases: ["chest", "torso", "body"] },
   { id: "back", label: "Back", aliases: ["back", "cape"] },
   { id: "amulet", label: "Amulet", aliases: ["amulet", "neck"] },
   { id: "left-hand", label: "Left hand", aliases: ["left_hand", "offhand", "shield"] },
@@ -1088,6 +1096,10 @@ const equipmentLayout = [
   { id: "legs", label: "Legs", aliases: ["legs"] },
   { id: "shoes", label: "Shoes", aliases: ["shoes", "feet", "boots"] },
   { id: "backpack", label: "Backpack", aliases: ["backpack", "bag"] },
+];
+
+const professionToolLayout = [
+  { id: "mining_tool", label: "Mining tool", glyph: "⛏" },
 ];
 
 function CompactCharacterPanel() {
@@ -1194,7 +1206,7 @@ function EquipmentPaperdoll({ interactive }: { interactive: boolean }) {
   const player = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
   if (!player) return null;
   const equipped = world.inventory.filter((item) => item.equippedSlot);
-  return (
+  return <>
     <div className={`equipment-paperdoll ${interactive ? "interactive-paperdoll" : ""}`} data-inventory-drop="equipment">
       <div className="character-model-preview" aria-label={`${player.name} character preview`}>
         <CharacterPreview outfit={player.outfit} />
@@ -1221,7 +1233,26 @@ function EquipmentPaperdoll({ interactive }: { interactive: boolean }) {
         );
       })}
     </div>
-  );
+    <section className={`profession-tool-slots ${interactive ? "interactive-profession-tools" : ""}`} aria-label="Profession tools" data-inventory-drop="equipment">
+      <header><small>Profession slots</small><strong>Tools do not use backpack space</strong></header>
+      <div>
+        {professionToolLayout.map(({ id, label, glyph }) => {
+          const item = equipped.find((entry) => entry.equippedSlot === id);
+          const itemName = item ? world.itemDefinitions.get(item.definitionId)?.name ?? item.definitionId : label;
+          return <button type="button" className={`profession-tool-slot ${item ? "filled" : ""}`} data-inventory-drop="equipment" data-equipment-slot={id} key={id} title={itemName}
+            onDoubleClick={interactive && item ? () => network.moveToRoot(item.instanceId) : undefined}
+            onPointerDown={interactive && item ? (event) => beginPointerItemDrag(event, item.instanceId) : undefined}
+            onPointerMove={interactive && item ? movePointerItemDrag : undefined}
+            onPointerUp={interactive && item ? (event) => endPointerItemDrag(event, routeEquipmentPointerDrop) : undefined}
+            onPointerCancel={interactive && item ? cancelPointerItemDrag : undefined}
+          >
+            {item ? <ItemIcon definitionId={item.definitionId} /> : <span aria-hidden="true">{glyph}</span>}
+            <small>{itemName}</small>
+          </button>;
+        })}
+      </div>
+    </section>
+  </>;
 }
 
 function moveEquippedItem(itemId: string, target: HTMLElement | null) {
@@ -1987,6 +2018,7 @@ function InventorySlot({ item, onOpenContextMenu, onPointerDrop, dropKind, dropI
       title={`${definition?.name ?? item.definitionId}${definition?.containerSlots ? ` · ${children.length}/${definition.containerSlots} slots` : ""}`}
     >
       <ItemIcon definitionId={item.definitionId} />
+      <small className="inventory-slot-name">{definition?.name ?? item.definitionId}</small>
       {item.quantity > 1 && <b>{item.quantity}</b>}
       {item.charges !== undefined && <b>{item.charges}</b>}
       {item.equippedSlot && <i className="inventory-slot-state">{item.equippedSlot}</i>}
