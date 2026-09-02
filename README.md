@@ -33,6 +33,10 @@ It opens at `http://localhost:1421/editor.html`. The editor uses a straight top-
 
 To generate a compatible world draft with ChatGPT, use the copy-ready schema, content IDs, building rules, and validation checklist in [`docs/WORLD_JSON_CHATGPT_PROMPT.md`](docs/WORLD_JSON_CHATGPT_PROMPT.md).
 
+For a current Swedish guide to editor tools, world JSON, validation rules, and
+image-assisted ChatGPT prompts, see
+[WORLD_EDITOR_GUIDE_SV.md](docs/WORLD_EDITOR_GUIDE_SV.md).
+
 Walls, doors, house roofs, and keeps retain distinct elevated faces in the editor's top-down view.
 
 The server automatically loads `worlds/northwest-first-marches.world.json` when it exists, so the normal command is:
