@@ -12,6 +12,7 @@ import {
 } from "react";
 import { authenticate } from "./api";
 import { CharacterLobby, CharacterPreview } from "./CharacterLobby";
+import { MenuMusic, WorldMusic } from "./audio/WorldMusic";
 import { InputController } from "./game/InputController";
 import { ThreeWorld } from "./game/ThreeWorld";
 import { NetworkClient } from "./game/NetworkClient";
@@ -45,7 +46,7 @@ export default function App() {
   }, []);
   if (world.connection === "online" && world.localPlayerId)
     return <Game onLeave={() => network.disconnect()} />;
-  if (!sessionToken) return <AccountLogin onAuthenticated={authenticated} />;
+  if (!sessionToken) return <><MenuMusic /><AccountLogin onAuthenticated={authenticated} /></>;
   if (world.connection === "connecting") {
     return (
       <main className="game-shell loading-shell">
@@ -56,12 +57,15 @@ export default function App() {
     );
   }
   return (
-    <CharacterLobby
-      token={sessionToken}
-      connecting={false}
-      onPlay={(characterId) => network.connect(sessionToken, characterId)}
-      onLogout={logout}
-    />
+    <>
+      <MenuMusic />
+      <CharacterLobby
+        token={sessionToken}
+        connecting={false}
+        onPlay={(characterId) => network.connect(sessionToken, characterId)}
+        onLogout={logout}
+      />
+    </>
   );
 }
 
@@ -301,6 +305,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
   };
   return (
     <main className={`game-shell ${reducedMotion ? "reduced-motion" : ""}`}>
+      <WorldMusic world={world} />
       <section className="viewport">
         <ThreeWorld world={world} input={input} showDebug={showPerformance} onReady={() => setSceneReady(true)} />
         {!sceneReady && <WorldLoadingScreen />}
