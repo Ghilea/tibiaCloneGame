@@ -24,7 +24,7 @@ type EditorDocument = {
 
 const tileLayers = ["blocked", "water", "bridges", "trees", "roads", "floors", "houseWalls", "castleWalls"] as const;
 const toolGroups: { id: ToolGroup; label: string }[] = [
-  { id: "navigate", label: "Select" }, { id: "terrain", label: "Terrain" }, { id: "structures", label: "Build" }, { id: "objects", label: "Object" }, { id: "entities", label: "Life" },
+  { id: "navigate", label: "Select" }, { id: "terrain", label: "Terrain" }, { id: "structures", label: "Build" }, { id: "objects", label: "Objects" }, { id: "entities", label: "Life" },
 ];
 const tools: { id: PaintLayer; label: string; swatch: string; group: ToolGroup; description: string }[] = [
   { id: "select", label: "Select", swatch: "#e3bd73", group: "navigate", description: "Drag across tiles to select an area. Drag the area to move it; press Delete to remove it." },
@@ -48,7 +48,6 @@ const tools: { id: PaintLayer; label: string; swatch: string; group: ToolGroup; 
   { id: "object_dirt_path", label: "Dirt path", swatch: "#96734f", group: "objects", description: "Paint a worn country path." },
   { id: "object_snow_ground", label: "Snow ground", swatch: "#e4eee9", group: "objects", description: "Paint crisp snow ground." },
   { id: "object_snow_bank", label: "Snow bank", swatch: "#b9d0d2", group: "objects", description: "Place an impassable snow bank." },
-  { id: "trees", label: "Oak tree", swatch: "#47733d", group: "entities", description: "Plant a full-sized oak with automatic collision." },
   { id: "house", label: "House", swatch: "#b9875d", group: "structures", description: "Place a complete timber house using the selected size." },
   { id: "keep", label: "Keep", swatch: "#818b87", group: "structures", description: "Place a complete fortified stone building." },
   { id: "houseWalls", label: "House wall", swatch: "#9a7654", group: "structures", description: "Paint individual timber-and-plaster wall sections." },
@@ -64,6 +63,7 @@ const tools: { id: PaintLayer; label: string; swatch: string; group: ToolGroup; 
   { id: "resourceNode", label: "Copper vein", swatch: "#bd7548", group: "entities", description: "Place a mineable copper vein with configurable respawn and skill requirement." },
 ];
 const creatureIds = ["castle_rat", "crypt_guard", "bone_acolyte", "cellar_warden", "mireling", "mire_skulker", "reed_stalker", "fen_brute"];
+const worldObjectKinds: WorldObjectKind[] = ["chair", "table", "bench", "well", "barrel", "mountain_wall", "forest_tree", "pine_tree", "snowy_pine", "dirt_path", "snow_ground", "snow_bank"];
 const itemIds = ["blank_rune", "ember_rune", "traveler_blade", "ashwood_bow", "rough_arrow", "field_backpack", "mire_fiber", "gold_coin", "field_bread", "smoked_mire_meat", "bog_ichor", "reed_hide", "fen_tusk", "iron_pickaxe", "copper_ore"];
 const spellIds = ["ember_bolt"];
 const recipeIds = ["mark_ember_sigil", "fletch_rough_arrows", "forge_copper_blade"];
@@ -471,9 +471,24 @@ export function WorldEditor() {
     editorDrag.current = null; setDragTarget(null); setSelectedPosition(target); commit(next);
   };
   const selectedNpc = selectedNpcId ? document.npcs.find((npc) => npc.id === selectedNpcId) : undefined;
+  const selectedResourceNode = selectedPosition ? document.resourceNodes.find((entry) => same(entry.position, selectedPosition)) : undefined;
+  const selectedObject = selectedPosition ? document.objects.find((entry) => same(entry.position, selectedPosition)) : undefined;
+  const selectedSpawn = selectedPosition ? document.spawns.find((entry) => same(entry.position, selectedPosition)) : undefined;
+  const selectedDoor = selectedPosition ? document.doors.find((entry) => same(entry.position, selectedPosition)) : undefined;
+  const selectedStairs = selectedPosition ? document.stairs.find((entry) => same(entry.from, selectedPosition)) : undefined;
+  const selectedMaterial = selectedPosition ? document.terrainMaterials.find((entry) => same(entry.position, selectedPosition)) : undefined;
+  const selectedBuilding = selectedPosition ? document.buildings.find((entry) => entry.floor === selectedPosition.z && selectedPosition.x >= entry.x && selectedPosition.y >= entry.y && selectedPosition.x < entry.x + entry.width && selectedPosition.y < entry.y + entry.height) : undefined;
   const activeTool = tools.find((entry) => entry.id === tool) ?? tools[0];
   const updateNpc = (npc: NpcView, recordHistory = false) => { const next = structuredClone(documentRef.current); const index = next.npcs.findIndex((entry) => entry.id === selectedNpcId); if (index < 0) return; next.npcs[index] = npc; setSelectedNpcId(npc.id); if (recordHistory) commit(next); else restore(next); };
   const removeNpc = () => { if (!selectedNpcId) return; const next = structuredClone(documentRef.current); next.npcs = next.npcs.filter((npc) => npc.id !== selectedNpcId); setSelectedNpcId(null); commit(next); };
+  const updateResourceNode = (node: ResourceNodeDocument) => { const next = structuredClone(documentRef.current); next.resourceNodes = next.resourceNodes.map((entry) => same(entry.position, node.position) ? node : entry); restore(next); };
+  const applyResourceSettingsToKind = (node: ResourceNodeDocument) => { const next = structuredClone(documentRef.current); next.resourceNodes = next.resourceNodes.map((entry) => entry.kind === node.kind ? { ...entry, respawnMs: node.respawnMs, requiredSkillLevel: node.requiredSkillLevel } : entry); restore(next); };
+  const updateObject = (object: WorldObjectView) => { const next = structuredClone(documentRef.current); next.objects = next.objects.map((entry) => same(entry.position, object.position) ? object : entry); restore(next); };
+  const updateSpawn = (spawn: SpawnView) => { const next = structuredClone(documentRef.current); next.spawns = next.spawns.map((entry) => same(entry.position, spawn.position) ? spawn : entry); restore(next); };
+  const updateDoor = (door: DoorView) => { const next = structuredClone(documentRef.current); next.doors = next.doors.map((entry) => same(entry.position, door.position) ? door : entry); restore(next); };
+  const updateStairs = (stairs: StairView) => { const next = structuredClone(documentRef.current); next.stairs = next.stairs.map((entry) => same(entry.from, stairs.from) ? stairs : entry); restore(next); };
+  const updateMaterial = (material: TerrainMaterialView) => { const next = structuredClone(documentRef.current); next.terrainMaterials = next.terrainMaterials.map((entry) => same(entry.position, material.position) ? material : entry); restore(next); };
+  const updateBuilding = (building: BuildingView) => { const next = structuredClone(documentRef.current); next.buildings = next.buildings.map((entry) => entry.id === selectedBuilding?.id ? building : entry); restore(next); };
   const dragPreviewIncludes = (position: Position) => {
     const dragged = editorDrag.current;
     if (!dragged || !dragTarget || position.z !== dragTarget.z) return false;
@@ -504,6 +519,7 @@ export function WorldEditor() {
         {tool === "resourceNode" && <><label>Respawn (seconds)<input type="number" min="1" max="3600" value={resourceRespawnSeconds} onChange={(event) => setResourceRespawnSeconds(Math.max(1, Math.min(3600, Number(event.target.value) || 1)))} /></label><label>Required Mining level<input type="number" min="0" max="100" value={resourceSkillLevel} onChange={(event) => setResourceSkillLevel(Math.max(0, Math.min(100, Number(event.target.value) || 0)))} /></label></>}
         {tool === "stairs" && <label>Stairs lead to<select value={destinationFloor} onChange={(event) => setDestinationFloor(Number(event.target.value))}>{[6, 7, 8, 9].map((floor) => <option key={floor}>{floor}</option>)}</select></label>}
       </section>
+      {selectedPosition && <SelectionInspector position={selectedPosition} resourceNode={selectedResourceNode} resourceKindCount={selectedResourceNode ? document.resourceNodes.filter((entry) => entry.kind === selectedResourceNode.kind).length : 0} object={selectedObject} spawn={selectedSpawn} door={selectedDoor} stairs={selectedStairs} material={selectedMaterial} building={selectedBuilding} playerSpawn={same(document.playerSpawn, selectedPosition)} window={windows.has(key(selectedPosition))} torch={torches.has(key(selectedPosition))} onResourceChange={updateResourceNode} onApplyResourceSettingsToKind={applyResourceSettingsToKind} onObjectChange={updateObject} onSpawnChange={updateSpawn} onDoorChange={updateDoor} onStairsChange={updateStairs} onMaterialChange={updateMaterial} onBuildingChange={updateBuilding} onRemove={() => removeAt(selectedPosition)} />}
       {selectedNpc && <NpcInspector npc={selectedNpc} onChange={updateNpc} onRemove={removeNpc} />}
       <details className="world-settings"><summary>World settings</summary><label>Map size (tiles)<span className="number-pair"><input type="number" min="8" max={MAX_WORLD_SIZE} value={worldWidth} onChange={(event) => setWorldWidth(Number(event.target.value))} /><b>x</b><input type="number" min="8" max={MAX_WORLD_SIZE} value={worldHeight} onChange={(event) => setWorldHeight(Number(event.target.value))} /></span></label><button className="resize-button" onClick={resizeWorld}>Apply map size</button><small>Maximum {MAX_WORLD_SIZE.toLocaleString()} × {MAX_WORLD_SIZE.toLocaleString()}. Sparse maps only store authored tiles.</small></details>
     </aside>
@@ -527,7 +543,7 @@ export function WorldEditor() {
               onPointerDown={(event) => { const panning = window.document.body.classList.contains("editor-space-pan"); if (event.button !== 0 || panning) return; if (tool === "select") { event.preventDefault(); if (selectedArea && insideSelection(position, selectedArea)) { editorDrag.current = { kind: "selection", bounds: selectedArea, origin: position }; dragOrigin.current = position; setDragTarget(position); return; } marqueeStart.current = position; marqueeEnd.current = position; setMarqueeArea(selectionBounds(position, position)); setSelectedArea(null); setSelectedPosition(null); return; } if (continuousTool(tool)) paint(x, y); }}
               onClick={() => { if (tool === "select") { if (suppressSelectClick.current) { suppressSelectClick.current = false; return; } setSelectedArea(null); setSelectedPosition(authoredTileKeys.has(tileKey) ? position : null); setSelectedNpcId(npc?.id ?? null); return; } if (npc) { setSelectedNpcId(npc.id); return; } if (!continuousTool(tool)) paint(x, y); }}
               onPointerEnter={(event) => { if (event.buttons !== 1 || window.document.body.classList.contains("editor-space-pan")) return; if (tool === "select" && marqueeStart.current) { marqueeEnd.current = position; setMarqueeArea(selectionBounds(marqueeStart.current, position)); return; } if (tool === "select" && editorDrag.current) { setDragTarget(position); return; } if (continuousTool(tool)) paint(x, y, true); }}
-              onPointerUp={() => { if (tool === "select" && marqueeStart.current) { const start = marqueeStart.current; const selection = selectionBounds(start, position); marqueeStart.current = null; marqueeEnd.current = null; setMarqueeArea(null); setSelectedArea(authoredTileKeys.has(tileKey) || !same(start, position) ? selection : null); suppressSelectClick.current = true; return; } if (tool === "select" && editorDrag.current) { const origin = dragOrigin.current; if (origin && !same(origin, position)) moveObject(position); else { editorDrag.current = null; setDragTarget(null); suppressSelectClick.current = true; } dragOrigin.current = null; } lastPainted.current = ""; saveLocal(documentRef.current); }}
+              onPointerUp={() => { if (tool === "select" && marqueeStart.current) { const start = marqueeStart.current; const selection = selectionBounds(start, position); const isSingleTile = same(start, position); marqueeStart.current = null; marqueeEnd.current = null; setMarqueeArea(null); if (isSingleTile) { setSelectedArea(null); setSelectedPosition(authoredTileKeys.has(tileKey) ? position : null); setSelectedNpcId(npc?.id ?? null); } else { setSelectedArea(selection); setSelectedPosition(null); } suppressSelectClick.current = true; return; } if (tool === "select" && editorDrag.current) { const origin = dragOrigin.current; if (origin && !same(origin, position)) moveObject(position); else { editorDrag.current = null; setDragTarget(null); suppressSelectClick.current = true; } dragOrigin.current = null; } lastPainted.current = ""; saveLocal(documentRef.current); }}
             >{playerSpawn ? "P" : npc ? "N" : resourceNode ? "⛏" : door ? "D" : windows.has(tileKey) ? "W" : torches.has(tileKey) ? "T" : stairs ? (stairs.to.z < activeFloor ? "U" : "D") : spawn ? "C" : ""}</button>;
           })}
           {selectedArea && <div className="editor-selection-frame" aria-hidden="true" style={{ left: (selectedArea.minX - viewportX) * EDITOR_TILE_SIZE * zoom, top: (selectedArea.minY - viewportY) * EDITOR_TILE_SIZE * zoom, width: (selectedArea.maxX - selectedArea.minX + 1) * EDITOR_TILE_SIZE * zoom, height: (selectedArea.maxY - selectedArea.minY + 1) * EDITOR_TILE_SIZE * zoom }} />}
@@ -691,6 +707,23 @@ function drawMinimapMaterials(context: CanvasRenderingContext2D, entries: readon
   }
 }
 
+function SelectionInspector({ position, resourceNode, resourceKindCount, object, spawn, door, stairs, material, building, playerSpawn, window, torch, onResourceChange, onApplyResourceSettingsToKind, onObjectChange, onSpawnChange, onDoorChange, onStairsChange, onMaterialChange, onBuildingChange, onRemove }: { position: Position; resourceNode?: ResourceNodeDocument; resourceKindCount: number; object?: WorldObjectView; spawn?: SpawnView; door?: DoorView; stairs?: StairView; material?: TerrainMaterialView; building?: BuildingView; playerSpawn: boolean; window: boolean; torch: boolean; onResourceChange: (node: ResourceNodeDocument) => void; onApplyResourceSettingsToKind: (node: ResourceNodeDocument) => void; onObjectChange: (object: WorldObjectView) => void; onSpawnChange: (spawn: SpawnView) => void; onDoorChange: (door: DoorView) => void; onStairsChange: (stairs: StairView) => void; onMaterialChange: (material: TerrainMaterialView) => void; onBuildingChange: (building: BuildingView) => void; onRemove: () => void }) {
+  const hasInspectable = resourceNode || object || spawn || door || stairs || material || building || playerSpawn || window || torch;
+  if (!hasInspectable) return null;
+  const stableId = (value: string) => value.toLowerCase().replace(/[^a-z0-9_]/g, "_");
+  return <section className="selection-inspector"><hr /><h2>Selected tile</h2><small>Position {position.x}, {position.y}, {position.z}. Values save directly into the world JSON.</small>
+    {resourceNode && <fieldset><legend>Resource node</legend><label>Stable ID<input value={resourceNode.id} onChange={(event) => onResourceChange({ ...resourceNode, id: stableId(event.target.value) })} /></label><label>Resource type<select value={resourceNode.kind} onChange={(event) => onResourceChange({ ...resourceNode, kind: event.target.value as "copper_vein" })}><option value="copper_vein">Copper vein</option></select></label><label>Respawn (seconds)<input type="number" min="1" max="3600" value={Math.round(resourceNode.respawnMs / 1000)} onChange={(event) => onResourceChange({ ...resourceNode, respawnMs: Math.max(1, Math.min(3600, Number(event.target.value) || 1)) * 1000 })} /></label><label>Required Mining level<input type="number" min="0" max="100" value={resourceNode.requiredSkillLevel} onChange={(event) => onResourceChange({ ...resourceNode, requiredSkillLevel: Math.max(0, Math.min(100, Number(event.target.value) || 0)) })} /></label><button type="button" className="apply-resource-settings" onClick={() => onApplyResourceSettingsToKind(resourceNode)}>Apply these settings to all {resourceKindCount} copper veins</button></fieldset>}
+    {object && <fieldset><legend>World object</legend><label>Stable ID<input value={object.id} onChange={(event) => onObjectChange({ ...object, id: stableId(event.target.value) })} /></label><label>Object type<select value={object.kind} onChange={(event) => onObjectChange({ ...object, kind: event.target.value as WorldObjectKind })}>{worldObjectKinds.map((kind) => <option key={kind} value={kind}>{kind.replaceAll("_", " ")}</option>)}</select></label></fieldset>}
+    {spawn && <fieldset><legend>Creature spawn</legend><label>Stable ID<input value={spawn.id} onChange={(event) => onSpawnChange({ ...spawn, id: stableId(event.target.value) })} /></label><label>Creature<select value={spawn.definitionId} onChange={(event) => onSpawnChange({ ...spawn, definitionId: event.target.value })}>{creatureIds.map((id) => <option key={id}>{id}</option>)}</select></label></fieldset>}
+    {door && <fieldset><legend>Door</legend><label>Stable ID<input value={door.id} onChange={(event) => onDoorChange({ ...door, id: stableId(event.target.value) })} /></label><label className="property-toggle"><input type="checkbox" checked={door.open} onChange={(event) => onDoorChange({ ...door, open: event.target.checked })} />Starts open</label></fieldset>}
+    {stairs && <fieldset><legend>Stairs</legend><label>Stable ID<input value={stairs.id} onChange={(event) => onStairsChange({ ...stairs, id: stableId(event.target.value) })} /></label><label>Destination floor<select value={stairs.to.z} onChange={(event) => onStairsChange({ ...stairs, to: { ...stairs.to, z: Number(event.target.value) } })}>{[6, 7, 8, 9].map((floor) => <option key={floor} value={floor}>{floor}</option>)}</select></label></fieldset>}
+    {material && <fieldset><legend>Terrain material</legend><label>Material<select value={material.material} onChange={(event) => onMaterialChange({ ...material, material: event.target.value as TerrainMaterialId })}><option value="packed_earth">Packed earth</option><option value="moss_stone">Moss stone</option><option value="sandstone">Sandstone</option></select></label></fieldset>}
+    {building && <fieldset><legend>{building.kind === "keep" ? "Keep" : "House"}</legend><label>Stable ID<input value={building.id} onChange={(event) => onBuildingChange({ ...building, id: stableId(event.target.value) })} /></label><label>Display name<input value={building.name} onChange={(event) => onBuildingChange({ ...building, name: event.target.value })} /></label><small>{building.width} × {building.height} tiles · use Move objects to relocate.</small></fieldset>}
+    {(playerSpawn || window || torch) && <fieldset><legend>Tile markers</legend>{playerSpawn && <small>Player start</small>}{window && <small>Window</small>}{torch && <small>Torch</small>}</fieldset>}
+    <button type="button" className="remove-selected" onClick={onRemove}>Remove selected content</button>
+  </section>;
+}
+
 function NpcInspector({ npc, onChange, onRemove }: { npc: NpcView; onChange: (npc: NpcView, recordHistory?: boolean) => void; onRemove: () => void }) {
   const [offerItem, setOfferItem] = useState("blank_rune"); const [offerQuantity, setOfferQuantity] = useState(1); const [offerPrice, setOfferPrice] = useState(1);
   const updateOffer = (index: number, patch: Partial<NpcView["offers"][number]>) => onChange({ ...npc, offers: npc.offers.map((offer, offerIndex) => offerIndex === index ? { ...offer, ...patch } : offer) });
@@ -707,6 +740,15 @@ function firstSafeBaseTile(document: EditorDocument): Position { const blocked =
 function nextBrowserPaint() { return new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))); }
 function normalizeDocument(document: EditorDocument): EditorDocument {
   const normalized = { ...document, bridges: document.bridges ?? [], trees: document.trees ?? [], windows: document.windows ?? [], torches: document.torches ?? [], terrainMaterials: document.terrainMaterials ?? [], objects: document.objects ?? [], npcs: document.npcs ?? [], resourceNodes: document.resourceNodes ?? [], playerSpawn: document.playerSpawn ?? { x: 0, y: 0, z: document.floor } };
+  // `trees` was the original special-case layer. Normalize it into the same
+  // object collection as every other placeable so newly saved worlds have one
+  // consistent source of truth for nature objects.
+  const occupiedObjectPositions = new Set(normalized.objects.map((entry) => key(entry.position)));
+  for (const tree of normalized.trees) {
+    if (occupiedObjectPositions.has(key(tree))) continue;
+    normalized.objects.push({ id: `legacy_oak_${tree.z}_${tree.x}_${tree.y}`, kind: "forest_tree", position: tree });
+  }
+  normalized.trees = [];
   normalized.buildings = alignHouseBuildingsToWalls(normalized);
   if (!document.playerSpawn) normalized.playerSpawn = firstSafeBaseTile(normalized);
   return normalized;

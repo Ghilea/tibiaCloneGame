@@ -589,7 +589,12 @@ impl WorldMap {
                 (position.x == building.x || position.x == max_x)
                     && (position.y == building.y || position.y == max_y)
             };
-            if document.trees.iter().copied().any(inside) {
+            let tree_inside_building = document.trees.iter().copied().any(inside)
+                || document.objects.iter().any(|entry| {
+                    matches!(entry.kind.as_str(), "forest_tree" | "pine_tree" | "snowy_pine")
+                        && inside(entry.position)
+                });
+            if tree_inside_building {
                 bail!("tree cannot be inside building: {}", building.id);
             }
             if document

@@ -47,7 +47,7 @@ Objects use the objects field. The allowed kinds are:
     mountain_wall, forest_tree, pine_tree, snowy_pine,
     dirt_path, snow_ground, snow_bank
 
-Table, well, mountain_wall, all tree objects and snow_bank block movement. Chair, bench, barrel, dirt_path and snow_ground do not. The Oak tree tool uses the trees field.
+Table, well, mountain_wall, all tree objects and snow_bank block movement. Chair, bench, barrel, dirt_path and snow_ground do not. All new trees are placed as objects; older `trees` entries are automatically converted to `forest_tree` objects when the world is opened and saved again in the editor.
 
 ### Life
 
@@ -57,6 +57,19 @@ Table, well, mountain_wall, all tree objects and snow_bank block movement. Chair
 | NPC | npcs | shop, depot, spell_trainer, craft_trainer |
 | Creature | spawns | castle_rat, mireling, mire_skulker, reed_stalker, fen_brute, crypt_guard, bone_acolyte, cellar_warden |
 | Copper vein | resourceNodes | copper_vein, Mining level 0 to 100 |
+
+## Edit placed content
+
+Choose **Select**, then click a placed tile. The Selected tile inspector shows the values that are actually saved in JSON.
+
+- Resource nodes: stable ID, resource type, respawn time and required Mining level.
+- Objects: stable ID and object type.
+- Creature spawns: stable ID and creature definition.
+- Doors and stairs: stable ID, starting open state or destination floor.
+- Buildings: stable ID and display name.
+- Terrain materials: material type.
+
+NPCs retain their separate inspector because they also contain dialogue, services and shop offers. Use **Remove selected content** in the inspector or Delete to remove a selection.
 
 ## Rules that must always be followed
 

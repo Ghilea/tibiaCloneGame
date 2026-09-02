@@ -19,7 +19,7 @@ import { ThreeWorld } from "./game/ThreeWorld";
 import { NetworkClient } from "./game/NetworkClient";
 import { WorldState } from "./game/WorldState";
 import { isWorldTimePaused, setWorldTime, setWorldTimePaused, worldEnvironment, worldTimeLabel } from "./game/worldEnvironment";
-import { PROTOCOL_VERSION, type CharacterOutfit, type GroundItem, type ItemInstance, type SecondarySkill } from "./protocol";
+import { PROTOCOL_VERSION, type BuildingView, type CharacterOutfit, type GroundItem, type ItemInstance, type PlayerView, type Position, type SecondarySkill } from "./protocol";
 
 const world = new WorldState();
 const network = new NetworkClient(world);
@@ -311,6 +311,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
         <ThreeWorld world={world} input={input} showDebug={showPerformance} onReady={() => setSceneReady(true)} />
         {!sceneReady && <WorldLoadingScreen />}
       </section>
+      <AreaTransition world={world} />
       <header className="world-header">
         <strong>Embers of Aldoria</strong>
         <span>
@@ -318,7 +319,6 @@ function Game({ onLeave }: { onLeave: () => void }) {
         </span>
       </header>
       <GameMinimap world={world} />
-      <WorldClock />
       <section className="unit-frame">
         <div className="portrait">{local?.name.slice(0, 1)}</div>
         <div>
@@ -326,6 +326,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
           <small>
             Level {local?.level} · {local?.experience} XP
           </small>
+          {local && <PlayerProgress player={local} />}
           <ResourceBar
             kind="health"
             value={local?.health ?? 0}
@@ -485,6 +486,88 @@ function Game({ onLeave }: { onLeave: () => void }) {
   );
 }
 
+const settlementPrefixes: [string, string][] = [
+  ["rivercross", "Rivercross"], ["greenshade", "Greenshade"], ["westwood", "Westwood"],
+  ["reedmere", "Reedmere"], ["greyford", "Greyford"], ["east_", "East March"],
+  ["deepwood", "Deepwood"], ["mossford", "Mossford"], ["fenwatch", "Fenwatch"],
+  ["southroad", "Southroad"], ["stonebrook", "Stonebrook"], ["blackfen", "Blackfen"],
+  ["pinewatch", "Pinewatch"], ["highpass", "Highpass"], ["ravenmoor", "Ravenmoor"],
+  ["old_march", "Old March"], ["ravenmere", "Ravenmere"], ["ironvale", "Ironvale"],
+  ["veilwatch", "Veilwatch"],
+];
+
+function AreaTransition({ world: gameWorld }: { world: WorldState }) {
+  useSyncExternalStore(
+    (listener) => {
+      const stopWorld = gameWorld.subscribe(listener);
+      const stopVisual = gameWorld.subscribeVisual(listener);
+      return () => { stopWorld(); stopVisual(); };
+    },
+    () => `${gameWorld.revision}:${gameWorld.visualRevision}`,
+  );
+  const player = gameWorld.localPlayerId ? gameWorld.players.get(gameWorld.localPlayerId) : null;
+  const area = player && gameWorld.map ? resolveArea(player.position, gameWorld.map.buildings) : null;
+  const lastArea = useRef<string | null>(null);
+  const timer = useRef<number | null>(null);
+  const [announcement, setAnnouncement] = useState<{ key: number; title: string; subtitle: string } | null>(null);
+
+  useEffect(() => {
+    if (!area || area.id === lastArea.current) return;
+    lastArea.current = area.id;
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    setAnnouncement({ key: Date.now(), title: area.title, subtitle: area.subtitle });
+    timer.current = window.setTimeout(() => setAnnouncement(null), 4_200);
+  }, [area?.id]);
+  useEffect(() => () => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+  }, []);
+
+  if (!announcement) return null;
+  return <section className="area-transition" key={announcement.key} aria-live="polite">
+    <small>{announcement.subtitle}</small>
+    <strong>{announcement.title}</strong>
+    <i />
+  </section>;
+}
+
+function resolveArea(position: Position, buildings: readonly BuildingView[]) {
+  if (position.z !== 7) return position.z > 7
+    ? { id: `depth-${position.z}`, title: `Depth ${position.z}`, subtitle: "Beneath the First Marches" }
+    : { id: `height-${position.z}`, title: `Upper Floor ${position.z}`, subtitle: "The First Marches" };
+  const inside = buildings.find((building) => building.floor === position.z && pointInsideBuilding(position, building));
+  if (inside) {
+    const settlement = settlementName(inside);
+    return { id: `building:${inside.id}`, title: inside.name, subtitle: settlement ?? "Interior" };
+  }
+  let nearest: { building: BuildingView; distance: number } | null = null;
+  for (const building of buildings) {
+    if (building.floor !== position.z || !settlementName(building)) continue;
+    const distance = distanceToBuilding(position, building);
+    if (!nearest || distance < nearest.distance) nearest = { building, distance };
+  }
+  if (nearest && nearest.distance <= 36) {
+    const settlement = settlementName(nearest.building)!;
+    return { id: `settlement:${settlement}`, title: settlement, subtitle: "The First Marches" };
+  }
+  return { id: "first-marches", title: "The First Marches", subtitle: "Northwestern Aldoria" };
+}
+
+function settlementName(building: BuildingView) {
+  const id = building.id.toLowerCase();
+  return settlementPrefixes.find(([prefix]) => id.startsWith(prefix))?.[1] ?? null;
+}
+
+function pointInsideBuilding(position: Position, building: BuildingView) {
+  return position.x >= building.x && position.x < building.x + building.width
+    && position.y >= building.y && position.y < building.y + building.height;
+}
+
+function distanceToBuilding(position: Position, building: BuildingView) {
+  const dx = Math.max(building.x - position.x, 0, position.x - (building.x + building.width - 1));
+  const dy = Math.max(building.y - position.y, 0, position.y - (building.y + building.height - 1));
+  return Math.hypot(dx, dy);
+}
+
 function NpcProximityGuard() {
   useSyncExternalStore(subscribeWorldVisual, worldVisualSnapshot);
   const npc = world.activeNpcId ? world.npcs.get(world.activeNpcId) : null;
@@ -528,6 +611,56 @@ function ResourceBar({
       <small>{label}</small>
     </div>
   );
+}
+
+function PlayerProgress({ player }: { player: PlayerView }) {
+  const currentLevelExperience = Math.max(0, player.level - 1) ** 2 * 100;
+  const nextLevelExperience = player.level ** 2 * 100;
+  const earnedExperience = Math.max(0, player.experience - currentLevelExperience);
+  const requiredExperience = Math.max(1, nextLevelExperience - currentLevelExperience);
+  const remainingExperience = Math.max(0, nextLevelExperience - player.experience);
+  return <div className="player-progression">
+    <ProgressBar className="experience" label={`XP · ${remainingExperience.toLocaleString()} to level ${player.level + 1}`} value={earnedExperience} max={requiredExperience} detail={`${earnedExperience.toLocaleString()} / ${requiredExperience.toLocaleString()} XP`} />
+  </div>;
+}
+
+function PrimarySkillProgress({ player }: { player: PlayerView }) {
+  const primarySkills = [
+    { name: "Melee", level: player.swordSkill, tries: player.swordTries },
+    { name: "Distance", level: player.distanceSkill, tries: player.distanceTries },
+    { name: "Fletching", level: player.fletchingSkill, tries: player.fletchingTries },
+    { name: "Magic", level: player.magicLevel, tries: player.magicTries },
+  ];
+  return <SkillProgressGrid skills={primarySkills} />;
+}
+
+function SecondarySkillProgress({ player }: { player: PlayerView }) {
+  const professionSkills = player.secondarySkills.map((id) => {
+    const skill = world.professionSkills.get(id);
+    return { name: secondarySkillOptions.find((entry) => entry.id === id)?.name ?? id, level: skill?.level ?? 0, tries: skill?.tries ?? 0 };
+  });
+  if (!professionSkills.length) return null;
+  return <SkillProgressGrid skills={professionSkills} />;
+}
+
+function SkillProgressGrid({ skills }: { skills: { name: string; level: number; tries: number }[] }) {
+  return <div className="player-skill-progress" aria-label="Skill progress">
+    {skills.map((skill) => <SkillProgress key={skill.name} {...skill} />)}
+  </div>;
+}
+
+function SkillProgress({ name, level, tries }: { name: string; level: number; tries: number }) {
+  const required = 5 + level * 2;
+  const remaining = Math.max(0, required - tries);
+  return <ProgressBar className="skill" label={`${name} ${level} · ${remaining} left`} value={tries} max={required} detail={`${tries} / ${required}`} />;
+}
+
+function ProgressBar({ className, label, value, max, detail }: { className: "experience" | "skill"; label: string; value: number; max: number; detail: string }) {
+  const progress = Math.min(100, Math.max(0, value / Math.max(1, max) * 100));
+  return <div className={`player-progress-bar ${className}`} title={`${label}: ${detail}`}>
+    <span><b>{label}</b><small>{detail}</small></span>
+    <i><em style={{ width: `${progress}%` }} /></i>
+  </div>;
 }
 
 function NourishmentBar() {
@@ -1124,14 +1257,9 @@ function CompactCharacterPanel() {
           <header><span><small>Progression</small><h3>Skills</h3></span><button aria-label="Hide skills" onClick={() => setShowDetails(false)}>×</button></header>
           <section className="character-skills-view">
             <small className="skill-group-label">Primary skills</small>
-            <div className="compact-character-details" aria-label="Primary character skills">
-              <CompactSkill name="Melee" level={player.swordSkill} description="Swords, axes, clubs and other close-combat weapons" />
-              <CompactSkill name="Distance" level={player.distanceSkill} description="Bows and future ranged weapons" />
-              <CompactSkill name="Magic" level={player.magicLevel} description="Spells, sigils and magical disciplines" />
-              <CompactSkill name="Fletching" level={player.fletchingSkill} description="Crafting arrows and ranged supplies" />
-              <CompactSkill name="Defense" description="Blocking, shields and armor control" />
-            </div>
+            <PrimarySkillProgress player={player} />
             <SecondarySkillsPicker selected={player.secondarySkills} />
+            <SecondarySkillProgress player={player} />
           </section>
         </aside>
       )}
@@ -1322,6 +1450,11 @@ function CharacterPanel() {
         />
         <UntrainedSkillRow name="Defense" description="Blocking, shields and armor control." />
         <SecondarySkillsPicker selected={player.secondarySkills} />
+        {player.secondarySkills.map((id) => {
+          const skill = world.professionSkills.get(id);
+          const definition = secondarySkillOptions.find((entry) => entry.id === id);
+          return <SkillRow key={id} name={definition?.name ?? id} level={skill?.level ?? 0} tries={skill?.tries ?? 0} description={definition?.description ?? "Profession skill."} />;
+        })}
         <p className="skill-note">
           Levels 1–50 are free specialization. Levels above 50 consume the shared
           mastery budget; higher tiers cost increasingly more. Every skill caps at 100.
@@ -1614,19 +1747,6 @@ function LootWindow({ groundItems, onLootAll }: { groundItems: GroundItem[]; onL
   );
 }
 
-function WorldClock() {
-  const [environment, setEnvironment] = useState(() => worldEnvironment());
-  useEffect(() => {
-    const timer = window.setInterval(() => setEnvironment(worldEnvironment()), 500);
-    return () => window.clearInterval(timer);
-  }, []);
-  return (
-    <section className="world-clock" data-period={environment.period.toLowerCase()} data-weather={environment.weather}>
-      <span aria-hidden="true">{environment.period === "Night" ? "☾" : environment.weather === "rain" ? "☂" : "☀"}</span>
-      <div><strong>{worldTimeLabel(environment)}</strong><small>Day {environment.day} · {environment.period} · {environment.weather === "rain" ? "Rain" : "Clear"}</small></div>
-    </section>
-  );
-}
 function HelpPanel() {
   return (
     <div className="help-grid">

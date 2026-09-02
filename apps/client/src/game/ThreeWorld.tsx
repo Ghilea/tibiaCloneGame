@@ -42,10 +42,11 @@ const GROUND_ACTOR_Y = 0.05;
 const BRIDGE_ACTOR_Y = 0.23;
 // The server already streams a radius-48 region. Rebuilding the entire static
 // Three.js scene every 16 walked tiles caused a visible main-thread/GPU hitch.
-// A 64-tile render chunk consumes the already available streamed payload and
-// keeps the default 56x38 map stable for its full lifetime.
-const RENDER_CHUNK_SIZE = 64;
-const RENDER_PADDING = 20;
+// Keep the static scene close to the camera. A 32 + 12 + 12 tile region is
+// comfortably larger than the viewport but contains far less geometry than
+// the previous 104x104 region when streamed map data changes.
+const RENDER_CHUNK_SIZE = 32;
+const RENDER_PADDING = 12;
 
 type ThreeWorldProps = {
   world: WorldState;
@@ -582,10 +583,11 @@ const Building = memo(function Building({ building, doors, windows, input }: { b
             : building.kind === "house" ? null : <MedievalWall key={wall.key} position={wall.position} size={wall.size} keep />
         ))}
         <HangingSign building={building} wallHeight={height} />
-        {building.kind !== "house" && matchingDoors.map((door) => <Door key={door.id} door={door} building={building} input={input} tall={height} />)}
+        {building.kind !== "house" && matchingDoors.map((door) => <Door key={door.id} door={door} building={building} input={input} tall={height} showBeacon={false} />)}
         {building.kind !== "house" && matchingWindows.map((window) => <ShutterWindow key={window.id} window={window} building={building} wallHeight={height} onClick={() => input.toggleWindow(window.id, window.position)} />)}
         {building.kind === "keep" && <Battlements building={building} height={height} />}
       </group>
+      {matchingDoors.map((door) => <DoorBeacon key={`beacon-${door.id}`} door={door} building={building} onOpen={() => input.toggleDoor(door.id, door.position)} />)}
     </group>
   );
 });
@@ -647,7 +649,27 @@ function Battlements({ building, height }: { building: BuildingView; height: num
   return <>{points.map((point, index) => <mesh key={index} position={point} castShadow><boxGeometry args={[0.34, 0.48, 0.34]} /><meshStandardMaterial color="#87908c" roughness={0.96} /></mesh>)}</>;
 }
 
-function Door({ door, input, building, tall = WALL_HEIGHT }: { door: DoorView; input: InputController; building?: BuildingView; tall?: number }) {
+function DoorBeacon({ door, building, onOpen }: { door: DoorView; building?: BuildingView; onOpen: () => void }) {
+  const transform = doorTransform(door, building);
+  return (
+    <group
+      position={[transform.x, 0, transform.z]}
+      onPointerDown={(event) => { event.stopPropagation(); onOpen(); }}
+      userData={{ doorBeacon: true }}
+    >
+      <mesh position={[0, 0.075, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={16}>
+        <ringGeometry args={[0.39, 0.52, 28]} />
+        <meshBasicMaterial color={door.open ? "#8ee0b0" : "#f2c45d"} transparent opacity={0.9} depthWrite={false} />
+      </mesh>
+      <mesh position={[0, 0.74, 0]} rotation={[0, Math.PI / 4, Math.PI / 4]} renderOrder={17}>
+        <octahedronGeometry args={[0.13]} />
+        <meshStandardMaterial color={door.open ? "#b5f0ca" : "#ffe08a"} emissive={door.open ? "#2f9b5b" : "#bd7424"} emissiveIntensity={1.9} depthWrite={false} />
+      </mesh>
+    </group>
+  );
+}
+
+function Door({ door, input, building, tall = WALL_HEIGHT, showBeacon = true }: { door: DoorView; input: InputController; building?: BuildingView; tall?: number; showBeacon?: boolean }) {
   const group = useRef<THREE.Group>(null);
   const transform = doorTransform(door, building);
   const leafHeight = Math.min(tall - 0.15, DOOR_HEIGHT);
@@ -659,6 +681,7 @@ function Door({ door, input, building, tall = WALL_HEIGHT }: { door: DoorView; i
     group.current.rotation.y = THREE.MathUtils.damp(group.current.rotation.y, target, 12, delta);
   });
   return (
+    <>
     <group position={[transform.x, 0, transform.z]} rotation={[0, transform.rotation, 0]} onPointerDown={(event) => { event.stopPropagation(); input.toggleDoor(door.id, door.position); }}>
       <>
         <mesh position={[-0.49, leafHeight / 2, 0]} castShadow><boxGeometry args={[0.1, leafHeight + 0.12, 0.16]} /><meshStandardMaterial color="#49301f" roughness={0.9} /></mesh>
@@ -673,6 +696,8 @@ function Door({ door, input, building, tall = WALL_HEIGHT }: { door: DoorView; i
         <mesh position={[leafWidth * 0.84, leafHeight * 0.52, 0.07]}><sphereGeometry args={[0.045, 10, 8]} /><meshStandardMaterial color="#d6aa54" metalness={0.65} /></mesh>
       </group>
     </group>
+    {showBeacon && <DoorBeacon door={door} building={building} onOpen={() => input.toggleDoor(door.id, door.position)} />}
+    </>
   );
 }
 

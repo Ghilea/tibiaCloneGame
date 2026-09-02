@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Position, WorldObjectView } from "../protocol";
 import type { WorldState } from "./WorldState";
+import { worldEnvironment, worldTimeLabel } from "./worldEnvironment";
 
 const CANVAS_SIZE = 220;
 
 export function GameMinimap({ world }: { world: WorldState }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [radius, setRadius] = useState(22);
+  const [environment, setEnvironment] = useState(() => worldEnvironment());
   const revision = useSyncExternalStore(
     (listener) => {
       const stopWorld = world.subscribe(listener);
@@ -16,6 +18,11 @@ export function GameMinimap({ world }: { world: WorldState }) {
     () => `${world.revision}:${world.visualRevision}`,
   );
   const player = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setEnvironment(worldEnvironment()), 500);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -46,7 +53,11 @@ export function GameMinimap({ world }: { world: WorldState }) {
         <button type="button" disabled={radius === 14} onClick={() => zoom(-1)} aria-label="Zoom minimap in">+</button>
         <button type="button" disabled={radius === 32} onClick={() => zoom(1)} aria-label="Zoom minimap out">−</button>
       </div>
-      <footer>{player ? `${player.position.x}, ${player.position.y}` : "—"}</footer>
+      <footer data-period={environment.period.toLowerCase()} data-weather={environment.weather}>
+        <span aria-hidden="true">{environment.period === "Night" ? "☾" : environment.weather === "rain" ? "☂" : "☀"}</span>
+        <div><strong>{worldTimeLabel(environment)}</strong><small>Day {environment.day} · {environment.period}</small></div>
+        <em>{player ? `${player.position.x}, ${player.position.y}` : "—"}</em>
+      </footer>
     </section>
   );
 }
@@ -109,6 +120,7 @@ function drawMinimap(context: CanvasRenderingContext2D, world: WorldState, cente
     for (const position of map.houseWalls) tile(position, "#d7ae72", scale * 0.7);
     for (const position of map.castleWalls) tile(position, "#d0d7d3", scale * 0.75);
     for (const position of map.trees) dot(position, "#153f21", Math.max(1.5, scale * 0.55));
+    for (const door of map.doors) dot(door.position, door.open ? "#8ee0b0" : "#ffd166", 2.7);
     for (const object of map.objects ?? []) drawObject(dot, object);
   }
 
