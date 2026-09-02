@@ -68,9 +68,28 @@ select {
 }
 .palette {
   padding: 14px;
-  overflow: auto;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: #111814;
   border-right: 1px solid #3f4a43;
+  scrollbar-width: thin;
+  scrollbar-color: #80683e #0b100d;
+}
+.palette::-webkit-scrollbar {
+  width: 9px;
+}
+.palette::-webkit-scrollbar-track {
+  background: #0b100d;
+  border-left: 1px solid #26342b;
+}
+.palette::-webkit-scrollbar-thumb {
+  background: linear-gradient(#a9854e, #5d4a2f);
+  border: 2px solid #0b100d;
+  border-radius: 8px;
+}
+.palette::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(#d0ad68, #80683e);
 }
 .palette h2 {
   margin: 0 0 12px;
@@ -124,6 +143,7 @@ select {
   border-color: #7b6843;
 }
 .npc-inspector {
+  min-width: 0;
   margin-top: 16px;
   padding-top: 2px;
 }
@@ -144,18 +164,104 @@ select {
   font-size: 11px;
 }
 .npc-service-editor {
+  min-width: 0;
+  max-width: 100%;
   padding: 8px;
   background: #0b100d;
   border: 1px solid #334139;
   border-radius: 6px;
 }
 .offer-editor {
+  min-width: 0;
+  max-width: 100%;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 5px;
   margin-bottom: 8px;
-  padding-bottom: 8px;
+  padding: 8px;
   border-bottom: 1px solid #ffffff12;
+  border: 1px solid #334139;
+  border-radius: 6px;
+  background: #111914;
+}
+.shop-offers-heading,
+.offer-editor-title,
+.offer-add-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.shop-offers-heading {
+  margin-bottom: 8px;
+}
+.shop-offers-heading h3,
+.offer-add-title strong,
+.offer-editor-title strong {
+  margin: 0;
+  color: #e8d5a9;
+  font-size: 11px;
+}
+.shop-offers-heading span {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  color: #d8bb79;
+  background: #2a2519;
+  border: 1px solid #665333;
+  border-radius: 999px;
+  font-size: 9px;
+}
+.shop-offers-heading small,
+.offer-add-title small {
+  margin-top: 3px;
+}
+.offer-editor-title,
+.offer-add-title {
+  grid-column: 1 / -1;
+  align-items: center;
+}
+.offer-editor-title button {
+  width: auto;
+  padding: 4px 7px;
+  color: #f0b0a5;
+  background: #3a211e;
+  border-color: #874d45;
+  font-size: 9px;
+}
+.offer-editor label,
+.offer-add label {
+  min-width: 0;
+  margin: 3px 0;
+  color: #8f9c94;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.offer-editor label input,
+.offer-editor label select,
+.offer-add label input,
+.offer-add label select {
+  min-width: 0;
+  width: 100%;
+  margin-top: 2px;
+}
+.empty-offers {
+  margin: 8px 0 12px;
+  padding: 8px;
+  color: #89978e;
+  background: #111914;
+  border: 1px dashed #46564b;
+  border-radius: 5px;
+  font-size: 10px;
+}
+.offer-editor > *,
+.offer-add > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.offer-editor select,
+.offer-add select {
+  width: 100%;
 }
 .offer-editor button,
 .offer-add button {
@@ -163,9 +269,13 @@ select {
   margin: 0;
 }
 .offer-add {
+  min-width: 0;
+  margin-top: 10px;
+  padding-top: 10px;
   display: grid;
   grid-template-columns: 1fr 52px 52px;
   gap: 5px;
+  border-top: 1px solid #ffffff18;
 }
 .offer-add button {
   grid-column: 1 / 4;
