@@ -28,7 +28,7 @@ export function MedievalWindowWall({
   return <MedievalHouseWallAsset kind="window" position={position} size={size} />;
 }
 
-export function InstancedHouseWalls({ segments }: { segments: readonly { position: [number, number, number]; size: [number, number, number]; rotation: number }[] }) {
+export function InstancedHouseWalls({ segments }: { segments: readonly { position: [number, number, number]; size: [number, number, number] }[] }) {
   return <InstancedMedievalHouseWalls segments={segments} />;
 }
 
