@@ -1,4 +1,4 @@
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useLoader } from "@react-three/fiber";
 import { memo, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { BuildingView, WindowView } from "../protocol";
@@ -38,6 +38,9 @@ export function MedievalDoorWall({
   keep: boolean;
   openingHeight: number;
 }) {
+  const castleTexture = useLoader(THREE.TextureLoader, "/assets/world/aldoria-castle-stone-v2.png");
+  castleTexture.wrapS = castleTexture.wrapT = THREE.RepeatWrapping;
+  castleTexture.colorSpace = THREE.SRGBColorSpace;
   if (!keep) return <MedievalHouseWallAsset kind="door" position={position} size={size} />;
   const horizontal = size[0] > size[2];
   const openingWidth = 0.98;
@@ -49,15 +52,15 @@ export function MedievalDoorWall({
     <group position={[position[0], 0, position[2]]}>
       <mesh position={horizontal ? [-openingWidth / 2 - sideWidth / 2, size[1] / 2, 0] : [0, size[1] / 2, -openingWidth / 2 - sideWidth / 2]} castShadow receiveShadow>
         <boxGeometry args={horizontal ? [sideWidth, size[1], size[2]] : [size[0], size[1], sideWidth]} />
-        <meshStandardMaterial color={wallColor} roughness={0.97} />
+        <meshStandardMaterial map={castleTexture} color={wallColor} roughness={0.97} />
       </mesh>
       <mesh position={horizontal ? [openingWidth / 2 + sideWidth / 2, size[1] / 2, 0] : [0, size[1] / 2, openingWidth / 2 + sideWidth / 2]} castShadow receiveShadow>
         <boxGeometry args={horizontal ? [sideWidth, size[1], size[2]] : [size[0], size[1], sideWidth]} />
-        <meshStandardMaterial color={wallColor} roughness={0.97} />
+        <meshStandardMaterial map={castleTexture} color={wallColor} roughness={0.97} />
       </mesh>
       <mesh position={[0, openingHeight + topHeight / 2, 0]} castShadow receiveShadow>
         <boxGeometry args={horizontal ? [openingWidth, topHeight, size[2]] : [size[0], topHeight, openingWidth]} />
-        <meshStandardMaterial color={wallColor} roughness={0.97} />
+        <meshStandardMaterial map={castleTexture} color={wallColor} roughness={0.97} />
       </mesh>
       <mesh position={horizontal ? [0, openingHeight, size[2] * 0.6] : [size[0] * 0.6, openingHeight, 0]} castShadow>
         <boxGeometry args={horizontal ? [openingWidth + 0.16, 0.13, 0.08] : [0.08, 0.13, openingWidth + 0.16]} />
@@ -68,16 +71,22 @@ export function MedievalDoorWall({
 }
 
 function CastleMasonry({ position, size }: { position: [number, number, number]; size: [number, number, number] }) {
+  const texture = useLoader(THREE.TextureLoader, "/assets/world/aldoria-castle-stone-v2.png");
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
   return (
     <mesh position={position} castShadow receiveShadow>
       <boxGeometry args={size} />
-      <meshStandardMaterial color="#6d7773" roughness={1} />
+      <meshStandardMaterial map={texture} color="#6d7773" roughness={1} />
     </mesh>
   );
 }
 
 export const GabledRoof = memo(function GabledRoof({ building, wallHeight, roofVisible = true, roofFade = 1 }: { building: BuildingView; wallHeight: number; roofVisible?: boolean; roofFade?: number }) {
   const geometry = useMemo(() => roofGeometry(building.width + 0.7, building.height + 0.7), [building.width, building.height]);
+  const texture = useLoader(THREE.TextureLoader, "/assets/world/aldoria-roof-tiles-v1.png");
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
   const material = useRef<THREE.MeshStandardMaterial>(null);
   useEffect(() => () => geometry.dispose(), [geometry]);
   useFrame((_, delta) => {
@@ -93,7 +102,7 @@ export const GabledRoof = memo(function GabledRoof({ building, wallHeight, roofV
       userData={{ occluder: true, occluderKind: "roof", buildingId: building.id }}
     >
       <mesh geometry={geometry} receiveShadow>
-        <meshStandardMaterial ref={material} color={building.kind === "keep" ? "#45504d" : "#71372d"} roughness={0.91} side={THREE.DoubleSide} transparent opacity={roofFade} />
+        <meshStandardMaterial ref={material} map={texture} color={building.kind === "keep" ? "#45504d" : "#71372d"} roughness={0.91} side={THREE.DoubleSide} transparent opacity={roofFade} />
       </mesh>
       <group visible={roofVisible}><Chimney x={building.width * 0.22} z={-building.height * 0.18} keep={building.kind === "keep"} /></group>
     </group>
@@ -121,6 +130,11 @@ function roofGeometry(width: number, depth: number) {
   const indices = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14];
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+  const uvs: number[] = [];
+  for (let index = 0; index < vertices.length; index += 3) {
+    uvs.push(vertices[index] / width + 0.5, vertices[index + 1] / rise);
+  }
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   return geometry;

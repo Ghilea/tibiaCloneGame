@@ -32,7 +32,9 @@ export function MedievalHouseWallAsset({
   const horizontal = size[0] > size[2];
   const longSize = horizontal ? size[0] : size[2];
   const thickness = horizontal ? size[2] : size[0];
-  const object = useAssetObject(gltf.scenes, nodeNames[kind]);
+  // The model already has the right medieval timber/plaster geometry. Keep
+  // the material simple so the wall reads as construction, not noisy wallpaper.
+  const object = useAssetObject(gltf.scenes, nodeNames[kind], false, null);
 
   return (
     <group
@@ -113,7 +115,7 @@ export function MedievalDoorLeafAsset({
   );
 }
 
-function useAssetObject(scenes: THREE.Group[], nodeName: string, hideWindowGlass = false) {
+function useAssetObject(scenes: THREE.Group[], nodeName: string, hideWindowGlass = false, overrideTexture?: THREE.Texture | null) {
   const object = useMemo(() => {
     const source = scenes
       .map((scene) => scene.getObjectByName(nodeName))
@@ -127,6 +129,13 @@ function useAssetObject(scenes: THREE.Group[], nodeName: string, hideWindowGlass
       child.material = Array.isArray(child.material)
         ? child.material.map((material) => material.clone())
         : child.material.clone();
+      const clonedMaterials = Array.isArray(child.material) ? child.material : [child.material];
+      clonedMaterials.forEach((material) => {
+        if (overrideTexture !== undefined && "map" in material) {
+          (material as THREE.MeshStandardMaterial).map = overrideTexture;
+          material.needsUpdate = true;
+        }
+      });
       child.geometry = child.geometry.clone();
       widenOpeningGeometry(child.geometry, nodeName);
       if (!hideWindowGlass) return;
@@ -139,7 +148,7 @@ function useAssetObject(scenes: THREE.Group[], nodeName: string, hideWindowGlass
       });
     });
     return clone;
-  }, [hideWindowGlass, nodeName, scenes]);
+  }, [hideWindowGlass, nodeName, overrideTexture, scenes]);
   useEffect(() => () => {
     object.traverse((child) => {
       if (!(child instanceof THREE.Mesh)) return;

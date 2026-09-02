@@ -274,6 +274,7 @@ const Terrain = memo(function Terrain({
   const packedEarthTexture = useWorldTexture("/assets/world/aldoria-packed-earth-v1.png");
   const mossStoneTexture = useWorldTexture("/assets/world/aldoria-moss-stone-v1.png");
   const sandstoneTexture = useWorldTexture("/assets/world/aldoria-sandstone-v1.png");
+  const bridgeTexture = useWorldTexture("/assets/world/aldoria-bridge-planks-v1.png");
   const onFloor = (positions: readonly Position[]) => positions.filter((tile) => tile.z === floor);
   const materials = new Map(map.terrainMaterials.filter((entry) => entry.position.z === floor).map((entry) => [`${entry.position.x}:${entry.position.y}`, entry.material]));
   const materialTiles = (id: string) => [...materials.entries()].filter(([, value]) => value === id).map(([key]) => {
@@ -300,7 +301,7 @@ const Terrain = memo(function Terrain({
       <InstancedTiles positions={materialTiles("moss_stone")} color="#a4ad9a" texture={mossStoneTexture} height={0.052} y={0.034} />
       <InstancedTiles positions={materialTiles("sandstone")} color="#d0ba91" texture={sandstoneTexture} height={0.052} y={0.034} />
       <WaterTiles positions={onFloor(map.water)} />
-      <InstancedTiles positions={onFloor(map.bridges)} color="#795334" height={0.14} y={0.09} />
+      <BridgeTiles positions={onFloor(map.bridges)} texture={bridgeTexture} />
       <InstancedTiles positions={visibleRocks} color="#626d66" height={0.55} y={0.275} scale={0.72} castShadow />
     </group>
   );
@@ -358,6 +359,52 @@ function InstancedTiles({
   );
 }
 
+function BridgeTiles({ positions, texture }: { positions: readonly Position[]; texture: THREE.Texture }) {
+  const bridgeSet = useMemo(() => new Set(positions.map(tileKey)), [positions]);
+  const railSegments = useMemo(() => {
+    const segments: { key: string; position: [number, number, number]; size: [number, number, number] }[] = [];
+    for (const tile of positions) {
+      const x = tile.x + 0.5;
+      const z = tile.y + 0.5;
+      const edge = (dx: number, dz: number) => !bridgeSet.has(`${tile.x + dx}:${tile.y + dz}:${tile.z}`);
+      if (edge(0, -1)) segments.push({ key: `${tileKey(tile)}-n`, position: [x, 0.55, tile.y + 0.06], size: [0.9, 0.09, 0.09] });
+      if (edge(0, 1)) segments.push({ key: `${tileKey(tile)}-s`, position: [x, 0.55, tile.y + 0.94], size: [0.9, 0.09, 0.09] });
+      if (edge(-1, 0)) segments.push({ key: `${tileKey(tile)}-w`, position: [tile.x + 0.06, 0.55, z], size: [0.09, 0.09, 0.9] });
+      if (edge(1, 0)) segments.push({ key: `${tileKey(tile)}-e`, position: [tile.x + 0.94, 0.55, z], size: [0.09, 0.09, 0.9] });
+    }
+    return segments;
+  }, [bridgeSet, positions]);
+  if (!positions.length) return null;
+  return (
+    <group>
+      <InstancedTiles positions={positions} color="#80603c" texture={texture} height={0.14} y={0.09} />
+      {railSegments.map((segment) => (
+        <group key={segment.key}>
+          <mesh position={segment.position} castShadow receiveShadow>
+            <boxGeometry args={segment.size} />
+            <meshStandardMaterial map={texture} color="#725334" roughness={0.9} />
+          </mesh>
+          <mesh position={[segment.position[0], segment.position[1] + 0.3, segment.position[2]]} castShadow receiveShadow>
+            <boxGeometry args={segment.size} />
+            <meshStandardMaterial map={texture} color="#725334" roughness={0.9} />
+          </mesh>
+          {segment.size[0] > segment.size[2] ? (
+            <>
+              <mesh position={[segment.position[0] - 0.38, 0.48, segment.position[2]]} castShadow><cylinderGeometry args={[0.07, 0.08, 0.78, 8]} /><meshStandardMaterial map={texture} color="#684a2f" roughness={0.92} /></mesh>
+              <mesh position={[segment.position[0] + 0.38, 0.48, segment.position[2]]} castShadow><cylinderGeometry args={[0.07, 0.08, 0.78, 8]} /><meshStandardMaterial map={texture} color="#684a2f" roughness={0.92} /></mesh>
+            </>
+          ) : (
+            <>
+              <mesh position={[segment.position[0], 0.48, segment.position[2] - 0.38]} castShadow><cylinderGeometry args={[0.07, 0.08, 0.78, 8]} /><meshStandardMaterial map={texture} color="#684a2f" roughness={0.92} /></mesh>
+              <mesh position={[segment.position[0], 0.48, segment.position[2] + 0.38]} castShadow><cylinderGeometry args={[0.07, 0.08, 0.78, 8]} /><meshStandardMaterial map={texture} color="#684a2f" roughness={0.92} /></mesh>
+            </>
+          )}
+        </group>
+      ))}
+    </group>
+  );
+}
+
 function WaterTiles({ positions }: { positions: readonly Position[] }) {
   const mesh = useRef<THREE.InstancedMesh>(null);
   const waterTexture = useWorldTexture("/assets/world/aldoria-water-v1.png");
@@ -386,10 +433,11 @@ function WaterTiles({ positions }: { positions: readonly Position[] }) {
   }, [positions]);
   useEffect(() => () => material.dispose(), [material]);
   useFrame(({ clock }) => {
-    const wave = Math.sin(clock.elapsedTime * 1.15) * 0.035;
+    const wave = Math.sin(clock.elapsedTime * 1.6) * 0.035;
     material.roughness = 0.2 + wave;
-    material.emissiveIntensity = 0.08 + wave;
-    waterTexture.offset.set(clock.elapsedTime * 0.012, clock.elapsedTime * 0.007);
+    material.opacity = 0.84 + Math.sin(clock.elapsedTime * 1.25) * 0.035;
+    material.emissiveIntensity = 0.1 + wave;
+    waterTexture.offset.set(clock.elapsedTime * 0.032, clock.elapsedTime * 0.019);
   });
   if (!positions.length) return null;
   return (
@@ -514,6 +562,10 @@ function ConnectedWallTile({ position, height, castle, west, east, north, south 
   north: boolean;
   south: boolean;
 }) {
+  const castleTexture = useLoader(THREE.TextureLoader, "/assets/world/aldoria-castle-stone-v2.png");
+  castleTexture.wrapS = castleTexture.wrapT = THREE.RepeatWrapping;
+  castleTexture.repeat.set(1.35, 1.35);
+  castleTexture.colorSpace = THREE.SRGBColorSpace;
   const geometry = useMemo(() => {
     const thickness = castle ? 0.28 : 0.18;
     const centerSize = castle ? 0.3 : 0.24;
@@ -538,7 +590,7 @@ function ConnectedWallTile({ position, height, castle, west, east, north, south 
   }, [castle, east, height, north, south, west]);
   useEffect(() => () => geometry.dispose(), [geometry]);
   return <mesh geometry={geometry} position={position} castShadow receiveShadow userData={{ occluder: true }}>
-    <meshStandardMaterial color={castle ? "#6d7773" : "#aa987c"} roughness={0.98} />
+    <meshStandardMaterial map={castle ? castleTexture : undefined} color={castle ? "#d0d0c5" : "#aa987c"} roughness={0.98} />
   </mesh>;
 }
 
