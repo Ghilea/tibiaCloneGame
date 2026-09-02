@@ -41,10 +41,13 @@ export type MapView = {
   windows: WindowView[];
   torches: Position[];
   terrainMaterials: TerrainMaterialView[];
+  objects?: WorldObjectView[];
   buildings: BuildingView[];
   doors: DoorView[];
   stairs: StairView[];
 };
+export type WorldObjectKind = "chair" | "table" | "bench" | "well" | "barrel" | "mountain_wall" | "forest_tree" | "pine_tree" | "snowy_pine" | "dirt_path" | "snow_ground" | "snow_bank";
+export type WorldObjectView = { id: string; kind: WorldObjectKind; position: Position };
 export type TerrainMaterialId = "packed_earth" | "moss_stone" | "sandstone";
 export type TerrainMaterialView = { position: Position; material: TerrainMaterialId };
 export type BuildingView = { id: string; name: string; kind: "keep" | "house"; x: number; y: number; width: number; height: number; floor: number };

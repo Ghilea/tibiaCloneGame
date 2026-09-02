@@ -12,6 +12,7 @@ import type {
   Position,
   ResourceNodeView,
   WindowView,
+  WorldObjectView,
 } from "../protocol";
 import { CastleRatSprite } from "../actors/CastleRatSprite";
 import { createActorMotionState, sampleActorMotion, type ActorMotionState } from "../actors/actorMotion";
@@ -70,7 +71,7 @@ export function ThreeWorld({ world, input, onReady, showDebug = true }: ThreeWor
         onCreated={({ gl }) => {
           gl.outputColorSpace = THREE.SRGBColorSpace;
           gl.shadowMap.enabled = true;
-          gl.shadowMap.type = THREE.PCFSoftShadowMap;
+          gl.shadowMap.type = THREE.PCFShadowMap;
           // The environment is static. Avoid drawing every wall and tree a
           // second time on every frame just to reproduce the same shadow map.
           gl.shadowMap.autoUpdate = false;
@@ -526,10 +527,24 @@ const StaticStructures = memo(function StaticStructures({ map, input, floor, bui
   return <>
       <ConnectedWalls positions={map.castleWalls.filter((tile) => tile.z === floor)} castle />
       <InstancedTrees positions={map.trees.filter((tile) => tile.z === floor)} />
+      <WorldObjects objects={(map.objects ?? []).filter((entry) => entry.position.z === floor)} />
       <InstancedTorches positions={map.torches.filter((tile) => tile.z === floor)} />
       {map.doors.filter((door) => door.position.z === floor && !insideAnyBuilding(door.position, buildings)).map((door) => <Door key={door.id} door={door} input={input} />)}
     </>;
 });
+
+function WorldObjects({ objects }: { objects: readonly WorldObjectView[] }) {
+  return <group>{objects.map((object) => {
+    const [x, z] = [object.position.x + 0.5, object.position.y + 0.5];
+    if (object.kind === "dirt_path" || object.kind === "snow_ground") return <mesh key={object.id} position={[x, 0.045, z]} receiveShadow><boxGeometry args={[0.98, 0.055, 0.98]} /><meshStandardMaterial color={object.kind === "snow_ground" ? "#e6f0ee" : "#8d6c49"} roughness={0.98} /></mesh>;
+    if (object.kind === "mountain_wall") return <group key={object.id} position={[x, 0, z]}><mesh castShadow receiveShadow position={[0, 0.78, 0]}><boxGeometry args={[1, 1.56, 0.9]} /><meshStandardMaterial color="#59615d" roughness={0.98} /></mesh><mesh castShadow position={[-0.18, 1.62, 0.05]}><dodecahedronGeometry args={[0.53, 0]} /><meshStandardMaterial color="#778078" roughness={0.98} /></mesh></group>;
+    if (["forest_tree", "pine_tree", "snowy_pine"].includes(object.kind)) { const pine = object.kind !== "forest_tree"; const snowy = object.kind === "snowy_pine"; return <group key={object.id} position={[x, 0, z]}><mesh castShadow position={[0, 0.55, 0]}><cylinderGeometry args={[0.12, 0.18, 1.1, 7]} /><meshStandardMaterial color="#5b3d26" roughness={1} /></mesh><mesh castShadow position={[0, pine ? 1.35 : 1.2, 0]}><coneGeometry args={[pine ? 0.72 : 0.86, pine ? 1.85 : 1.35, pine ? 7 : 8]} /><meshStandardMaterial color={snowy ? "#dce9e7" : pine ? "#285744" : "#386b3c"} roughness={0.96} /></mesh></group>; }
+    if (object.kind === "well") return <group key={object.id} position={[x, 0, z]}><mesh castShadow position={[0, 0.3, 0]}><cylinderGeometry args={[0.42, 0.48, 0.55, 10]} /><meshStandardMaterial color="#77807b" roughness={0.98} /></mesh><mesh position={[0, 0.59, 0]}><torusGeometry args={[0.34, 0.09, 6, 10]} /><meshStandardMaterial color="#58615d" roughness={0.95} /></mesh></group>;
+    if (object.kind === "snow_bank") return <mesh key={object.id} castShadow position={[x, 0.22, z]}><dodecahedronGeometry args={[0.55, 1]} /><meshStandardMaterial color="#c9dcdf" roughness={1} /></mesh>;
+    if (object.kind === "barrel") return <mesh key={object.id} castShadow position={[x, 0.28, z]}><cylinderGeometry args={[0.24, 0.28, 0.56, 10]} /><meshStandardMaterial color="#9b5d2c" roughness={0.85} /></mesh>;
+    const isTable = object.kind === "table"; return <group key={object.id} position={[x, 0, z]}><mesh castShadow position={[0, isTable ? 0.58 : 0.35, 0]}><boxGeometry args={[isTable ? 0.78 : 0.9, 0.13, isTable ? 0.58 : 0.25]} /><meshStandardMaterial color="#80502d" roughness={0.9} /></mesh>{isTable && [-0.29, 0.29].flatMap((dx) => [-0.2, 0.2].map((dz) => <mesh key={`${dx}:${dz}`} castShadow position={[dx, 0.28, dz]}><boxGeometry args={[0.1, 0.56, 0.1]} /><meshStandardMaterial color="#61391f" roughness={1} /></mesh>))}</group>;
+  })}</group>;
+}
 
 const Building = memo(function Building({ building, doors, windows, input }: { building: BuildingView; doors: readonly DoorView[]; windows: readonly WindowView[]; input: InputController }) {
   const height = buildingWallHeight(building);
@@ -586,6 +601,9 @@ function ConnectedWalls({ positions, castle }: { positions: readonly Position[];
   castleTexture.repeat.set(1.35, 1.35);
   castleTexture.colorSpace = THREE.SRGBColorSpace;
   const geometry = useMemo(() => {
+    // BufferGeometryUtils assumes at least one geometry and dereferences
+    // geometries[0]. Empty authored layers are valid, especially on a new map.
+    if (positions.length === 0) return null;
     const set = new Set(positions.map(tileKey));
     const thickness = castle ? 0.28 : 0.18;
     const centerSize = castle ? 0.3 : 0.24;
@@ -604,14 +622,15 @@ function ConnectedWalls({ positions, castle }: { positions: readonly Position[];
       if (set.has(`${tile.x}:${tile.y + 1}:${tile.z}`)) addBox([thickness, height, 0.42], [x, height / 2, z + 0.32]);
       if (castle) addBox([0.25, 0.36, 0.25], [x, height + 0.18, z]);
     });
-    const merged = mergeGeometries(pieces, false);
+    const merged = pieces.length > 0 ? mergeGeometries(pieces, false) : null;
     pieces.forEach((piece) => piece.dispose());
     if (!merged) throw new Error("Unable to merge connected wall geometry");
     merged.computeBoundingBox();
     merged.computeBoundingSphere();
     return merged;
   }, [castle, height, positions]);
-  useEffect(() => () => geometry.dispose(), [geometry]);
+  useEffect(() => () => geometry?.dispose(), [geometry]);
+  if (!geometry) return null;
   return <mesh geometry={geometry} castShadow receiveShadow userData={{ occluder: true }}>
     <meshStandardMaterial map={castle ? castleTexture : undefined} color={castle ? "#d0d0c5" : "#aa987c"} roughness={0.98} />
   </mesh>;
@@ -1288,6 +1307,7 @@ function createRenderRegion(map: MapView, floor: number, chunkX: number, chunkY:
     windows: map.windows.filter((entry) => insideRenderBounds(entry.position, bounds) || belongsToVisibleBuilding(entry.position)),
     torches: positions(map.torches),
     terrainMaterials: map.terrainMaterials.filter((entry) => insideRenderBounds(entry.position, bounds)),
+    objects: (map.objects ?? []).filter((entry) => insideRenderBounds(entry.position, bounds)),
     buildings,
     doors: map.doors.filter((entry) => insideRenderBounds(entry.position, bounds) || belongsToVisibleBuilding(entry.position)),
     stairs: map.stairs.filter((entry) => insideRenderBounds(entry.from, bounds) || insideRenderBounds(entry.to, bounds)),

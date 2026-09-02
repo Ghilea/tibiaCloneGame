@@ -16,7 +16,7 @@
     "@types/three": "^0.185.4",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "three": "^0.185.1"
+    "three": "0.182.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",

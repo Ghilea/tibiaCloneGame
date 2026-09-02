@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::{Context, bail};
 use game_protocol::{
-    BuildingView, DoorView, ItemDestination, MapView, StairView, TerrainMaterialView, WindowView,
+    BuildingView, DoorView, ItemDestination, MapView, StairView, TerrainMaterialView, WindowView, WorldObjectView,
 };
 use game_types::{
     CreatureAttack, CreatureView, EntityId, GroundItem, ItemDefinition, ItemInstance,
@@ -247,6 +247,8 @@ struct WorldDocument {
     torches: Vec<Position>,
     #[serde(default)]
     terrain_materials: Vec<TerrainMaterialView>,
+    #[serde(default)]
+    objects: Vec<WorldObjectView>,
     buildings: Vec<BuildingView>,
     doors: Vec<DoorView>,
     stairs: Vec<StairView>,
@@ -329,6 +331,7 @@ struct MapSpatialIndex {
     castle_walls: PositionChunkIndex,
     torches: PositionChunkIndex,
     terrain_materials: PositionChunkIndex,
+    objects: PositionChunkIndex,
 }
 
 impl MapSpatialIndex {
@@ -338,6 +341,7 @@ impl MapSpatialIndex {
             .iter()
             .map(|entry| entry.position)
             .collect();
+        let object_positions: Vec<_> = view.objects.iter().map(|entry| entry.position).collect();
         Self {
             blocked: PositionChunkIndex::from_positions(&view.blocked),
             water: PositionChunkIndex::from_positions(&view.water),
@@ -349,6 +353,7 @@ impl MapSpatialIndex {
             castle_walls: PositionChunkIndex::from_positions(&view.castle_walls),
             torches: PositionChunkIndex::from_positions(&view.torches),
             terrain_materials: PositionChunkIndex::from_positions(&terrain_positions),
+            objects: PositionChunkIndex::from_positions(&object_positions),
         }
     }
 }
@@ -408,6 +413,11 @@ impl WorldMap {
         }) {
             bail!("terrain material must be packed_earth, moss_stone, or sandstone");
         }
+        let valid_object_kind = |kind: &str| matches!(kind, "chair" | "table" | "bench" | "well" | "barrel" | "mountain_wall" | "forest_tree" | "pine_tree" | "snowy_pine" | "dirt_path" | "snow_ground" | "snow_bank");
+        let mut object_ids = HashSet::new();
+        if view.objects.iter().any(|entry| entry.id.trim().is_empty() || !valid_object_kind(&entry.kind) || !object_ids.insert(entry.id.as_str())) {
+            bail!("world object ids must be unique and kinds must be supported");
+        }
         let mut material_positions = HashSet::new();
         if view
             .terrain_materials
@@ -433,6 +443,7 @@ impl WorldMap {
         view.blocked.extend(view.house_walls.iter().copied());
         view.blocked.extend(view.castle_walls.iter().copied());
         view.blocked.extend(view.trees.iter().copied());
+        view.blocked.extend(view.objects.iter().filter(|entry| matches!(entry.kind.as_str(), "mountain_wall" | "forest_tree" | "pine_tree" | "snowy_pine" | "snow_bank" | "well" | "table")).map(|entry| entry.position));
         let bridges: HashSet<_> = view.bridges.iter().copied().collect();
         view.blocked.retain(|position| !bridges.contains(position));
         let authored_house_walls: HashSet<_> = view.house_walls.iter().copied().collect();
@@ -580,6 +591,7 @@ impl WorldMap {
                 .collect(),
             torches: document.torches,
             terrain_materials: document.terrain_materials,
+            objects: document.objects,
             buildings: document.buildings,
             doors: document.doors,
             stairs: document.stairs,
@@ -843,6 +855,7 @@ fn map_positions(view: &MapView) -> impl Iterator<Item = Position> + '_ {
         .chain(view.torches.iter())
         .copied()
         .chain(view.terrain_materials.iter().map(|entry| entry.position))
+        .chain(view.objects.iter().map(|entry| entry.position))
         .chain(view.doors.iter().map(|door| door.position))
         .chain(
             view.stairs
@@ -2742,6 +2755,7 @@ impl World {
                 radius,
                 |entry| entry.position,
             ),
+            objects: self.map.spatial.objects.near(&source.objects, center, radius, |entry| entry.position),
             buildings: source
                 .buildings
                 .iter()
@@ -4429,6 +4443,7 @@ fn map_view_with_doors(doors: Vec<DoorView>) -> MapView {
             Position { x: 16, y: 13, z: 8 },
         ],
         terrain_materials: vec![],
+        objects: vec![],
         buildings: building_views(),
         doors,
         stairs: stair_views(),

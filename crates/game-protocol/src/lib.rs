@@ -336,9 +336,19 @@ pub struct MapView {
     pub torches: Vec<Position>,
     #[serde(default)]
     pub terrain_materials: Vec<TerrainMaterialView>,
+    #[serde(default)]
+    pub objects: Vec<WorldObjectView>,
     pub buildings: Vec<BuildingView>,
     pub doors: Vec<DoorView>,
     pub stairs: Vec<StairView>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorldObjectView {
+    pub id: String,
+    pub kind: String,
+    pub position: Position,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

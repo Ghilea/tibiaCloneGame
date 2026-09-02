@@ -426,6 +426,26 @@ select {
   box-shadow: inset 0 0 0 2px #fff1b0, 0 0 14px rgba(244, 210, 127, 0.55);
   z-index: 4 !important;
 }
+.editor-tile.marquee-selected {
+  outline: 2px dashed rgba(244, 210, 127, 0.95);
+  outline-offset: -3px;
+}
+.editor-selection-frame,
+.editor-marquee {
+  position: absolute;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+.editor-selection-frame {
+  z-index: 5;
+  border: 3px solid #f4d27f;
+  box-shadow: inset 0 0 0 1px #fff1b0, 0 0 13px rgba(244, 210, 127, 0.55);
+}
+.editor-marquee {
+  z-index: 6;
+  border: 2px dashed #f4d27f;
+  background: rgba(244, 210, 127, 0.16);
+}
 .editor-tile.drag-preview {
   opacity: 0.58;
   outline: 3px solid #87e6b0;
@@ -799,12 +819,21 @@ select {
 }
 .editor-tile.trees {
   background-color: #40513d;
-  background-image: url("/assets/world/aldoria-oak-v1.png"), url("/assets/world/greyhaven-grass.png");
-  background-position: center 75%, center;
+  background-image: radial-gradient(ellipse at 50% 42%, #609047 0 24%, #315e35 26% 42%, transparent 44%), url("/assets/world/greyhaven-grass.png");
+  background-position: center, center;
   background-repeat: no-repeat, repeat;
-  background-size: 62% auto, 170px 170px;
+  background-size: auto, 170px 170px;
   box-shadow: inset 0 0 0 2px rgba(101, 150, 78, 0.72);
 }
+.editor-tile.world-object { color: #fff0c5; background-position: center; background-repeat: no-repeat; font-size: 15px; }
+.editor-tile.world-object-chair, .editor-tile.world-object-table, .editor-tile.world-object-bench, .editor-tile.world-object-barrel { background-color: #40513d; background-image: radial-gradient(ellipse at center, #a46b3d 0 30%, #694025 32% 48%, transparent 50%), url("/assets/world/greyhaven-grass.png"); background-size: auto, 170px 170px; }
+.editor-tile.world-object-well { background-color: #40513d; background-image: radial-gradient(circle at center, #233638 0 17%, #aeb7ae 19% 32%, #5c6764 34% 44%, transparent 46%), url("/assets/world/greyhaven-grass.png"); background-size: auto, 170px 170px; }
+.editor-tile.world-object-mountain_wall { background-color: #65706c; background-image: linear-gradient(135deg, #88908a 0 20%, #4d5553 21% 45%, #737b75 46% 65%, #454d4c 66%); }
+.editor-tile.world-object-forest_tree, .editor-tile.world-object-pine_tree, .editor-tile.world-object-snowy_pine { background-color: #40513d; background-image: radial-gradient(ellipse at center 42%, #4d8146 0 26%, #24462f 28% 43%, transparent 45%), url("/assets/world/greyhaven-grass.png"); background-size: auto, 170px 170px; }
+.editor-tile.world-object-snowy_pine { background-image: radial-gradient(ellipse at center 42%, #e4efeb 0 22%, #35634d 24% 42%, transparent 45%), url("/assets/world/greyhaven-grass.png"); }
+.editor-tile.world-object-dirt_path { background-image: url("/assets/world/aldoria-wilderness-atlas-v1.png"); background-size: 300% 200%; background-position: 0 0; }
+.editor-tile.world-object-snow_ground { background-image: url("/assets/world/aldoria-wilderness-atlas-v1.png"); background-size: 300% 200%; background-position: 50% 0; }
+.editor-tile.world-object-snow_bank { background-image: radial-gradient(ellipse at 50% 60%, #d8e8e9 0 42%, #a9c4ca 44% 48%, transparent 50%), url("/assets/world/aldoria-wilderness-atlas-v1.png"); background-size: auto, 300% 200%; background-position: center, 50% 0; background-color: #e4eeeb; }
 @media (max-width: 1050px) {
   .editor-shell { grid-template-columns: 250px 1fr; }
   .tool-grid { grid-template-columns: 1fr; }
@@ -812,22 +841,20 @@ select {
   .pan-controls label { display: none; }
 }
 
-/* Category rail: keeps the palette focused while the main tools remain vertical. */
+/* Category tabs live inside the palette so they never obscure world tiles. */
 .tool-tabs {
-  position: fixed;
-  top: 152px;
-  left: 292px;
-  z-index: 8;
-  display: flex;
-  flex-direction: column;
+  position: static;
+  z-index: auto;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  flex-direction: initial;
   gap: 4px;
-  width: 74px;
+  width: auto;
   padding: 5px;
   background: #111814;
   border: 1px solid #3f4a43;
-  border-left: 0;
-  border-radius: 0 9px 9px 0;
-  box-shadow: 8px 10px 20px #0005;
+  border-radius: 9px;
+  box-shadow: 0 7px 18px #0003;
 }
 .palette .tool-tabs button {
   width: 100%;
@@ -848,5 +875,5 @@ select {
   background: #d1ad67;
 }
 @media (max-width: 1050px) {
-  .tool-tabs { left: 250px; }
+  .tool-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }

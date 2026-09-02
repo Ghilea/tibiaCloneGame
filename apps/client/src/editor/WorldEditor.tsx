@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import type { BuildingView, DoorView, NpcView, Position, StairView, TerrainMaterialId, TerrainMaterialView } from "../protocol";
+import type { BuildingView, DoorView, NpcView, Position, StairView, TerrainMaterialId, TerrainMaterialView, WorldObjectKind, WorldObjectView } from "../protocol";
 import { waterEdgesAt } from "../game/WaterEdges";
 
-type PaintLayer = "select" | "blocked" | "water" | "bridges" | "trees" | "roads" | "floors" | "packed_earth" | "moss_stone" | "sandstone" | "houseWalls" | "castleWalls" | "house" | "keep" | "removeBuilding" | "door" | "window" | "torch" | "stairs" | "spawn" | "npc" | "resourceNode" | "playerSpawn";
-type ToolGroup = "navigate" | "terrain" | "structures" | "entities";
+type PaintLayer = "select" | "blocked" | "water" | "bridges" | "trees" | "roads" | "floors" | "packed_earth" | "moss_stone" | "sandstone" | "houseWalls" | "castleWalls" | "house" | "keep" | "removeBuilding" | "door" | "window" | "torch" | "stairs" | "spawn" | "npc" | "resourceNode" | "playerSpawn" | `object_${WorldObjectKind}`;
+type ToolGroup = "navigate" | "terrain" | "structures" | "objects" | "entities";
 type SpawnView = { id: string; definitionId: string; position: Position };
 type ResourceNodeDocument = { id: string; kind: "copper_vein"; position: Position; respawnMs: number; requiredSkillLevel: number };
 type WorldFileHandle = { name: string; createWritable: () => Promise<{ write: (data: Blob) => Promise<void>; close: () => Promise<void> }> };
 type SavePickerWindow = Window & { showSaveFilePicker?: (options: { suggestedName: string; types: { description: string; accept: Record<string, string[]> }[] }) => Promise<WorldFileHandle> };
-type EditorDrag = { kind: "playerSpawn" } | { kind: "door"; id: string } | { kind: "window"; position: Position } | { kind: "torch"; position: Position } | { kind: "stairs"; id: string } | { kind: "spawn"; id: string } | { kind: "npc"; id: string } | { kind: "resourceNode"; id: string } | { kind: "building"; id: string; offsetX: number; offsetY: number } | { kind: "tile"; position: Position };
+type SelectionBounds = { minX: number; minY: number; maxX: number; maxY: number; z: number };
+type EditorDrag = { kind: "selection"; bounds: SelectionBounds; origin: Position } | { kind: "playerSpawn" } | { kind: "door"; id: string } | { kind: "window"; position: Position } | { kind: "torch"; position: Position } | { kind: "stairs"; id: string } | { kind: "spawn"; id: string } | { kind: "npc"; id: string } | { kind: "resourceNode"; id: string } | { kind: "building"; id: string; offsetX: number; offsetY: number } | { kind: "tile"; position: Position };
 type EditorDocument = {
   version: 1; name: string; width: number; height: number; floor: number;
   blocked: Position[]; water: Position[]; bridges: Position[]; trees: Position[]; roads: Position[]; floors: Position[];
@@ -18,14 +19,15 @@ type EditorDocument = {
   playerSpawn: Position;
   npcs: NpcView[];
   resourceNodes: ResourceNodeDocument[];
+  objects: WorldObjectView[];
 };
 
 const tileLayers = ["blocked", "water", "bridges", "trees", "roads", "floors", "houseWalls", "castleWalls"] as const;
 const toolGroups: { id: ToolGroup; label: string }[] = [
-  { id: "navigate", label: "Select" }, { id: "terrain", label: "Terrain" }, { id: "structures", label: "Build" }, { id: "entities", label: "Life" },
+  { id: "navigate", label: "Select" }, { id: "terrain", label: "Terrain" }, { id: "structures", label: "Build" }, { id: "objects", label: "Object" }, { id: "entities", label: "Life" },
 ];
 const tools: { id: PaintLayer; label: string; swatch: string; group: ToolGroup; description: string }[] = [
-  { id: "select", label: "Select", swatch: "#e3bd73", group: "navigate", description: "Select anything placed on the map. Press Delete to remove it." },
+  { id: "select", label: "Select", swatch: "#e3bd73", group: "navigate", description: "Drag across tiles to select an area. Drag the area to move it; press Delete to remove it." },
   { id: "roads", label: "Road", swatch: "#716b5f", group: "terrain", description: "Paint walkable cobblestone roads." },
   { id: "floors", label: "Floor", swatch: "#805d3e", group: "terrain", description: "Paint authored floors, including upper and lower levels." },
   { id: "water", label: "Water", swatch: "#245b65", group: "terrain", description: "Paint static water with automatic shores and collision." },
@@ -34,6 +36,18 @@ const tools: { id: PaintLayer; label: string; swatch: string; group: ToolGroup; 
   { id: "packed_earth", label: "Packed earth", swatch: "#76583b", group: "terrain", description: "Paint a compacted earthen terrain material." },
   { id: "moss_stone", label: "Moss stone", swatch: "#4d5740", group: "terrain", description: "Paint old damp flagstones with mossy joints." },
   { id: "sandstone", label: "Sandstone", swatch: "#c9a66c", group: "terrain", description: "Paint warm worn sandstone paving." },
+  { id: "object_chair", label: "Chair", swatch: "#9d6638", group: "objects", description: "Place a wooden chair." },
+  { id: "object_table", label: "Table", swatch: "#704526", group: "objects", description: "Place a solid wooden table." },
+  { id: "object_bench", label: "Bench", swatch: "#a66d3f", group: "objects", description: "Place a village bench." },
+  { id: "object_well", label: "Well", swatch: "#75817e", group: "objects", description: "Place a stone water well." },
+  { id: "object_barrel", label: "Barrel", swatch: "#9e6330", group: "objects", description: "Place a wooden barrel." },
+  { id: "object_mountain_wall", label: "Mountain wall", swatch: "#626d70", group: "objects", description: "Place an impassable rocky cliff wall." },
+  { id: "object_forest_tree", label: "Forest tree", swatch: "#315d37", group: "objects", description: "Place a broadleaf forest tree." },
+  { id: "object_pine_tree", label: "Pine tree", swatch: "#245242", group: "objects", description: "Place a tall pine tree." },
+  { id: "object_snowy_pine", label: "Snowy pine", swatch: "#d9e4df", group: "objects", description: "Place a snow-covered pine tree." },
+  { id: "object_dirt_path", label: "Dirt path", swatch: "#96734f", group: "objects", description: "Paint a worn country path." },
+  { id: "object_snow_ground", label: "Snow ground", swatch: "#e4eee9", group: "objects", description: "Paint crisp snow ground." },
+  { id: "object_snow_bank", label: "Snow bank", swatch: "#b9d0d2", group: "objects", description: "Place an impassable snow bank." },
   { id: "trees", label: "Oak tree", swatch: "#47733d", group: "entities", description: "Plant a full-sized oak with automatic collision." },
   { id: "house", label: "House", swatch: "#b9875d", group: "structures", description: "Place a complete timber house using the selected size." },
   { id: "keep", label: "Keep", swatch: "#818b87", group: "structures", description: "Place a complete fortified stone building." },
@@ -61,10 +75,13 @@ const MAX_LOCAL_AUTOSAVE_ENTRIES = 60_000;
 const EDITOR_TILE_SIZE = 32;
 
 function blankDocument(): EditorDocument {
-  return { version: 1, name: "New Aldoria Region", width: 32, height: 24, floor: 7, blocked: [], water: [], bridges: [], trees: [], roads: [], floors: [], houseWalls: [], castleWalls: [], windows: [], torches: [], terrainMaterials: [], buildings: [], doors: [], stairs: [], spawns: [], playerSpawn: { x: 1, y: 1, z: 7 }, npcs: [], resourceNodes: [] };
+  return { version: 1, name: "New Aldoria Region", width: 32, height: 24, floor: 7, blocked: [], water: [], bridges: [], trees: [], roads: [], floors: [], houseWalls: [], castleWalls: [], windows: [], torches: [], terrainMaterials: [], buildings: [], doors: [], stairs: [], spawns: [], playerSpawn: { x: 1, y: 1, z: 7 }, npcs: [], resourceNodes: [], objects: [] };
 }
 const key = (position: Position) => `${position.x}:${position.y}:${position.z}`;
 const same = (left: Position, right: Position) => left.x === right.x && left.y === right.y && left.z === right.z;
+const selectionBounds = (start: Position, end: Position): SelectionBounds => ({ minX: Math.min(start.x, end.x), minY: Math.min(start.y, end.y), maxX: Math.max(start.x, end.x), maxY: Math.max(start.y, end.y), z: start.z });
+const insideSelection = (position: Position, selection: SelectionBounds) => position.z === selection.z && position.x >= selection.minX && position.x <= selection.maxX && position.y >= selection.minY && position.y <= selection.maxY;
+const buildingTouchesSelection = (building: BuildingView, selection: SelectionBounds) => building.floor === selection.z && building.x <= selection.maxX && building.y <= selection.maxY && building.x + building.width - 1 >= selection.minX && building.y + building.height - 1 >= selection.minY;
 function hasAuthoredContent(document: EditorDocument, position: Position) {
   return same(document.playerSpawn, position)
     || tileLayers.some((layer) => document[layer].some((tile) => same(tile, position)))
@@ -76,12 +93,13 @@ function hasAuthoredContent(document: EditorDocument, position: Position) {
     || document.stairs.some((entry) => same(entry.from, position))
     || document.spawns.some((entry) => same(entry.position, position))
     || document.npcs.some((entry) => same(entry.position, position))
-    || document.resourceNodes.some((entry) => same(entry.position, position));
+    || document.resourceNodes.some((entry) => same(entry.position, position))
+    || document.objects.some((entry) => same(entry.position, position));
 }
 const saveLocal = (document: EditorDocument) => {
   const authoredEntries = tileLayers.reduce((total, layer) => total + document[layer].length, 0)
     + document.windows.length + document.torches.length + document.terrainMaterials.length
-    + document.buildings.length + document.doors.length + document.stairs.length
+    + document.buildings.length + document.doors.length + document.stairs.length + document.objects.length
     + document.spawns.length + document.npcs.length + document.resourceNodes.length;
   if (authoredEntries > MAX_LOCAL_AUTOSAVE_ENTRIES) return;
   try { localStorage.setItem("aldoria-world-editor", JSON.stringify(document)); } catch { /* JSON file saving remains available. */ }
@@ -113,8 +131,13 @@ export function WorldEditor() {
   const panGesture = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
   const editorDrag = useRef<EditorDrag | null>(null);
   const dragOrigin = useRef<Position | null>(null);
+  const marqueeStart = useRef<Position | null>(null);
+  const marqueeEnd = useRef<Position | null>(null);
+  const suppressSelectClick = useRef(false);
   const worldFileHandle = useRef<WorldFileHandle | null>(null);
   const [dragTarget, setDragTarget] = useState<Position | null>(null);
+  const [selectedArea, setSelectedArea] = useState<SelectionBounds | null>(null);
+  const [marqueeArea, setMarqueeArea] = useState<SelectionBounds | null>(null);
   const [mapViewport, setMapViewport] = useState({ width: 1280, height: 800 });
   const mapScrollRef = useRef<HTMLDivElement>(null);
   const [saveStatus, setSaveStatus] = useState("Autosaved locally");
@@ -128,6 +151,7 @@ export function WorldEditor() {
   const windows = useMemo(() => new Set(document.windows.filter((entry) => entry.z === activeFloor).map(key)), [document.windows, activeFloor]);
   const torches = useMemo(() => new Set(document.torches.filter((entry) => entry.z === activeFloor).map(key)), [document.torches, activeFloor]);
   const terrainByTile = useMemo(() => new Map(document.terrainMaterials.filter((entry) => entry.position.z === activeFloor).map((entry) => [key(entry.position), entry.material])), [document.terrainMaterials, activeFloor]);
+  const worldObjectByTile = useMemo(() => new Map(document.objects.filter((entry) => entry.position.z === activeFloor).map((entry) => [key(entry.position), entry])), [document.objects, activeFloor]);
   const viewportX = Math.max(0, Math.min(viewX, Math.max(0, document.width - VIEW_COLUMNS)));
   const viewportY = Math.max(0, Math.min(viewY, Math.max(0, document.height - VIEW_ROWS)));
   const visibleWidth = Math.min(document.width - viewportX, Math.max(VIEW_COLUMNS, Math.floor((mapViewport.width - 40) / (EDITOR_TILE_SIZE * zoom))));
@@ -194,6 +218,13 @@ export function WorldEditor() {
     } else if (["packed_earth", "moss_stone", "sandstone"].includes(tool)) {
       next.terrainMaterials = next.terrainMaterials.filter((entry) => !same(entry.position, position));
       next.terrainMaterials.push({ position, material: tool as TerrainMaterialId });
+    } else if (tool.startsWith("object_")) {
+      const kind = tool.slice("object_".length) as WorldObjectKind;
+      const solid = ["mountain_wall", "forest_tree", "pine_tree", "snowy_pine", "snow_bank", "well", "table"].includes(kind);
+      if (same(next.playerSpawn, position) || next.water.some((tile) => same(tile, position))) return;
+      next.objects = next.objects.filter((entry) => !same(entry.position, position));
+      next.objects.push({ id: `object_${kind}_${activeFloor}_${x}_${y}`, kind, position });
+      if (solid && !next.blocked.some((tile) => same(tile, position))) next.blocked.push(position);
     } else if (tool === "door" && !next.doors.some((entry) => same(entry.position, position))) {
       next.houseWalls = next.houseWalls.filter((tile) => !same(tile, position)); next.castleWalls = next.castleWalls.filter((tile) => !same(tile, position)); next.trees = next.trees.filter((tile) => !same(tile, position)); next.blocked = next.blocked.filter((tile) => !same(tile, position));
       next.windows = next.windows.filter((entry) => !same(entry, position));
@@ -258,9 +289,26 @@ export function WorldEditor() {
     next.torches = next.torches.filter((entry) => !insideBuilding(entry) && !same(entry, position));
     next.terrainMaterials = next.terrainMaterials.filter((entry) => !same(entry.position, position));
     next.resourceNodes = next.resourceNodes.filter((entry) => !same(entry.position, position));
+    next.objects = next.objects.filter((entry) => !same(entry.position, position));
     next.npcs = next.npcs.filter((entry) => !same(entry.position, position));
     if (same(next.playerSpawn, position)) next.playerSpawn = firstSafeBaseTile(next);
     setSelectedPosition(null); setSelectedNpcId(null); commit(next);
+  };
+  const removeSelection = (selection: SelectionBounds) => {
+    const source = documentRef.current;
+    const removedBuildings = source.buildings.filter((building) => buildingTouchesSelection(building, selection));
+    const insideRemovedBuilding = (position: Position) => removedBuildings.some((building) => position.z === building.floor && position.x >= building.x && position.y >= building.y && position.x < building.x + building.width && position.y < building.y + building.height);
+    const selected = (position: Position) => insideSelection(position, selection) || insideRemovedBuilding(position);
+    if (!tileLayers.some((layer) => source[layer].some(selected)) && !source.buildings.some((building) => buildingTouchesSelection(building, selection)) && !source.windows.some(selected) && !source.torches.some(selected) && !source.terrainMaterials.some((entry) => selected(entry.position)) && !source.doors.some((entry) => selected(entry.position)) && !source.stairs.some((entry) => selected(entry.from)) && !source.spawns.some((entry) => selected(entry.position)) && !source.npcs.some((entry) => selected(entry.position)) && !source.resourceNodes.some((entry) => selected(entry.position)) && !source.objects.some((entry) => selected(entry.position)) && !selected(source.playerSpawn)) return;
+    const next = structuredClone(source);
+    for (const layer of tileLayers) next[layer] = next[layer].filter((entry) => !selected(entry));
+    next.buildings = next.buildings.filter((building) => !buildingTouchesSelection(building, selection));
+    next.windows = next.windows.filter((entry) => !selected(entry)); next.torches = next.torches.filter((entry) => !selected(entry));
+    next.terrainMaterials = next.terrainMaterials.filter((entry) => !selected(entry.position)); next.doors = next.doors.filter((entry) => !selected(entry.position));
+    next.stairs = next.stairs.filter((entry) => !selected(entry.from)); next.spawns = next.spawns.filter((entry) => !selected(entry.position));
+    next.npcs = next.npcs.filter((entry) => !selected(entry.position)); next.resourceNodes = next.resourceNodes.filter((entry) => !selected(entry.position)); next.objects = next.objects.filter((entry) => !selected(entry.position));
+    if (selected(next.playerSpawn)) next.playerSpawn = firstSafeBaseTile(next);
+    setSelectedArea(null); setSelectedPosition(null); setSelectedNpcId(null); commit(next);
   };
   const undo = () => { const previous = history.at(-1); if (!previous) return; setFuture((items) => [documentRef.current, ...items]); setHistory((items) => items.slice(0, -1)); restore(previous); };
   const redo = () => { const next = future[0]; if (!next) return; setHistory((items) => [...items, documentRef.current]); setFuture((items) => items.slice(1)); restore(next); };
@@ -296,13 +344,13 @@ export function WorldEditor() {
       if (!editing && event.ctrlKey && event.key.toLowerCase() === "z") { event.preventDefault(); event.shiftKey ? redo() : undo(); }
       if (!editing && event.ctrlKey && event.key.toLowerCase() === "y") { event.preventDefault(); redo(); }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); void saveWorld(event.shiftKey); }
-      if (!editing && (event.key === "Delete" || event.key === "Backspace") && selectedPosition) { event.preventDefault(); removeAt(selectedPosition); }
-      if (!editing && event.key === "Escape") { setSelectedNpcId(null); setSelectedPosition(null); }
+      if (!editing && (event.key === "Delete" || event.key === "Backspace")) { if (selectedArea) { event.preventDefault(); removeSelection(selectedArea); } else if (selectedPosition) { event.preventDefault(); removeAt(selectedPosition); } }
+      if (!editing && event.key === "Escape") { setSelectedNpcId(null); setSelectedPosition(null); setSelectedArea(null); setMarqueeArea(null); marqueeStart.current = null; marqueeEnd.current = null; }
     };
     const keyUp = (event: KeyboardEvent) => { if (event.code === "Space") window.document.body.classList.remove("editor-space-pan"); };
     window.addEventListener("keydown", keyDown); window.addEventListener("keyup", keyUp);
     return () => { window.removeEventListener("keydown", keyDown); window.removeEventListener("keyup", keyUp); window.document.body.classList.remove("editor-space-pan"); };
-  }, [history, future, selectedPosition]);
+  }, [history, future, selectedPosition, selectedArea]);
   const importWorld = async (file?: File) => {
     if (!file) return;
     setLoadingMessage(`Reading ${file.name}`);
@@ -326,6 +374,7 @@ export function WorldEditor() {
       + document.spawns.filter((entry) => !inBounds(entry.position)).length + document.buildings.filter((entry) => entry.x < 0 || entry.y < 0 || entry.x + entry.width > width || entry.y + entry.height > height).length
       + document.npcs.filter((entry) => !inBounds(entry.position)).length + document.windows.filter((entry) => !inBounds(entry)).length
       + document.resourceNodes.filter((entry) => !inBounds(entry.position)).length
+      + document.objects.filter((entry) => !inBounds(entry.position)).length
       + document.torches.filter((entry) => !inBounds(entry)).length + document.terrainMaterials.filter((entry) => !inBounds(entry.position)).length
       + (inBounds(document.playerSpawn) ? 0 : 1);
     if (removed > 0 && !window.confirm(`Shrinking the world removes ${removed} out-of-bounds entries. Continue?`)) return;
@@ -334,6 +383,7 @@ export function WorldEditor() {
     next.doors = next.doors.filter((entry) => inBounds(entry.position)); next.stairs = next.stairs.filter((entry) => inBounds(entry.from) && inBounds(entry.to)); next.spawns = next.spawns.filter((entry) => inBounds(entry.position)); next.npcs = next.npcs.filter((entry) => inBounds(entry.position)); next.buildings = next.buildings.filter((entry) => entry.x >= 0 && entry.y >= 0 && entry.x + entry.width <= width && entry.y + entry.height <= height);
     next.windows = next.windows.filter(inBounds); next.torches = next.torches.filter(inBounds); next.terrainMaterials = next.terrainMaterials.filter((entry) => inBounds(entry.position));
     next.resourceNodes = next.resourceNodes.filter((entry) => inBounds(entry.position));
+    next.objects = next.objects.filter((entry) => inBounds(entry.position));
     if (!inBounds(next.playerSpawn)) next.playerSpawn = firstSafeBaseTile(next);
     setWorldWidth(width); setWorldHeight(height); commit(next);
   };
@@ -345,7 +395,21 @@ export function WorldEditor() {
   const objectAt = (position: Position): EditorDrag | null => { if (same(document.playerSpawn, position)) return { kind: "playerSpawn" }; const npc = npcByTile.get(key(position)); if (npc) return { kind: "npc", id: npc.id }; const resourceNode = resourceNodeByTile.get(key(position)); if (resourceNode) return { kind: "resourceNode", id: resourceNode.id }; const door = doorByTile.get(key(position)); if (door) return { kind: "door", id: door.id }; if (windows.has(key(position))) return { kind: "window", position }; if (torches.has(key(position))) return { kind: "torch", position }; const stairs = stairsByTile.get(key(position)); if (stairs) return { kind: "stairs", id: stairs.id }; const spawn = spawnByTile.get(key(position)); if (spawn) return { kind: "spawn", id: spawn.id }; const building = document.buildings.find((entry) => entry.floor === position.z && position.x >= entry.x && position.y >= entry.y && position.x < entry.x + entry.width && position.y < entry.y + entry.height); return building ? { kind: "building", id: building.id, offsetX: position.x - building.x, offsetY: position.y - building.y } : hasAuthoredContent(document, position) ? { kind: "tile", position } : null; };
   const moveObject = (target: Position) => {
     const dragged = editorDrag.current; if (!dragged) return; const next = structuredClone(documentRef.current);
-    if (dragged.kind === "playerSpawn") { next.playerSpawn = target; next.resourceNodes = next.resourceNodes.filter((entry) => !same(entry.position, target)); next.blocked = next.blocked.filter((tile) => !same(tile, target)); next.water = next.water.filter((tile) => !same(tile, target)); next.bridges = next.bridges.filter((tile) => !same(tile, target)); next.trees = next.trees.filter((tile) => !same(tile, target)); next.houseWalls = next.houseWalls.filter((tile) => !same(tile, target)); next.castleWalls = next.castleWalls.filter((tile) => !same(tile, target)); next.doors = next.doors.filter((door) => !same(door.position, target)); next.spawns = next.spawns.filter((spawn) => !same(spawn.position, target)); next.npcs = next.npcs.filter((npc) => !same(npc.position, target)); if (target.z !== next.floor && !next.floors.some((tile) => same(tile, target))) next.floors.push(target); }
+    if (dragged.kind === "selection") {
+      const dx = target.x - dragged.origin.x; const dy = target.y - dragged.origin.y; if (dx === 0 && dy === 0) { editorDrag.current = null; setDragTarget(null); return; }
+      const selectedBuildings = next.buildings.filter((building) => buildingTouchesSelection(building, dragged.bounds));
+      const selected = (position: Position) => insideSelection(position, dragged.bounds) || selectedBuildings.some((building) => position.z === building.floor && position.x >= building.x && position.y >= building.y && position.x < building.x + building.width && position.y < building.y + building.height);
+      const shift = (position: Position) => selected(position) ? { x: position.x + dx, y: position.y + dy, z: position.z } : position;
+      const inBounds = (position: Position) => position.x >= 0 && position.y >= 0 && position.x < next.width && position.y < next.height;
+      const positions = [...tileLayers.flatMap((layer) => next[layer]), ...next.windows, ...next.torches, ...next.terrainMaterials.map((entry) => entry.position), ...next.doors.map((entry) => entry.position), ...next.stairs.map((entry) => entry.from), ...next.spawns.map((entry) => entry.position), ...next.npcs.map((entry) => entry.position), ...next.resourceNodes.map((entry) => entry.position), ...next.objects.map((entry) => entry.position), next.playerSpawn];
+      if (positions.some((position) => selected(position) && !inBounds(shift(position))) || selectedBuildings.some((building) => building.x + dx < 0 || building.y + dy < 0 || building.x + dx + building.width > next.width || building.y + dy + building.height > next.height)) return;
+      for (const layer of tileLayers) next[layer] = next[layer].map(shift);
+      next.buildings = next.buildings.map((building) => selectedBuildings.some((entry) => entry.id === building.id) ? { ...building, x: building.x + dx, y: building.y + dy } : building);
+      next.windows = next.windows.map(shift); next.torches = next.torches.map(shift); next.terrainMaterials = next.terrainMaterials.map((entry) => ({ ...entry, position: shift(entry.position) })); next.doors = next.doors.map((entry) => ({ ...entry, position: shift(entry.position) }));
+      next.stairs = next.stairs.map((entry) => selected(entry.from) ? { ...entry, from: shift(entry.from), to: { x: entry.to.x + dx, y: entry.to.y + dy, z: entry.to.z } } : entry);
+      next.spawns = next.spawns.map((entry) => ({ ...entry, position: shift(entry.position) })); next.npcs = next.npcs.map((entry) => ({ ...entry, position: shift(entry.position) })); next.resourceNodes = next.resourceNodes.map((entry) => ({ ...entry, position: shift(entry.position) })); next.objects = next.objects.map((entry) => ({ ...entry, position: shift(entry.position) })); next.playerSpawn = shift(next.playerSpawn);
+      const movedSelection = { ...dragged.bounds, minX: dragged.bounds.minX + dx, maxX: dragged.bounds.maxX + dx, minY: dragged.bounds.minY + dy, maxY: dragged.bounds.maxY + dy }; setSelectedArea(movedSelection); setSelectedPosition(target);
+    } else if (dragged.kind === "playerSpawn") { next.playerSpawn = target; next.resourceNodes = next.resourceNodes.filter((entry) => !same(entry.position, target)); next.blocked = next.blocked.filter((tile) => !same(tile, target)); next.water = next.water.filter((tile) => !same(tile, target)); next.bridges = next.bridges.filter((tile) => !same(tile, target)); next.trees = next.trees.filter((tile) => !same(tile, target)); next.houseWalls = next.houseWalls.filter((tile) => !same(tile, target)); next.castleWalls = next.castleWalls.filter((tile) => !same(tile, target)); next.doors = next.doors.filter((door) => !same(door.position, target)); next.spawns = next.spawns.filter((spawn) => !same(spawn.position, target)); next.npcs = next.npcs.filter((npc) => !same(npc.position, target)); if (target.z !== next.floor && !next.floors.some((tile) => same(tile, target))) next.floors.push(target); }
     else if (dragged.kind === "door") { const door = next.doors.find((entry) => entry.id === dragged.id); if (!door || next.doors.some((entry) => entry.id !== door.id && same(entry.position, target))) return; door.position = target; next.houseWalls = next.houseWalls.filter((tile) => !same(tile, target)); next.castleWalls = next.castleWalls.filter((tile) => !same(tile, target)); next.trees = next.trees.filter((tile) => !same(tile, target)); next.blocked = next.blocked.filter((tile) => !same(tile, target)); }
     else if (dragged.kind === "window") { const onHouseWall = next.houseWalls.some((tile) => same(tile, target)) || next.buildings.some((building) => building.kind === "house" && building.floor === target.z && target.x >= building.x && target.y >= building.y && target.x < building.x + building.width && target.y < building.y + building.height && (target.x === building.x || target.y === building.y || target.x === building.x + building.width - 1 || target.y === building.y + building.height - 1)); if (!onHouseWall || next.doors.some((entry) => same(entry.position, target))) return; next.windows = next.windows.filter((entry) => !same(entry, dragged.position) && !same(entry, target)); next.windows.push(target); }
     else if (dragged.kind === "torch") { if (next.water.some((tile) => same(tile, target))) return; next.torches = next.torches.filter((entry) => !same(entry, dragged.position) && !same(entry, target)); next.torches.push(target); }
@@ -369,6 +433,10 @@ export function WorldEditor() {
   const dragPreviewIncludes = (position: Position) => {
     const dragged = editorDrag.current;
     if (!dragged || !dragTarget || position.z !== dragTarget.z) return false;
+    if (dragged.kind === "selection") {
+      const dx = dragTarget.x - dragged.origin.x; const dy = dragTarget.y - dragged.origin.y;
+      return insideSelection({ x: position.x - dx, y: position.y - dy, z: position.z }, dragged.bounds);
+    }
     if (dragged.kind !== "building") return same(position, dragTarget);
     const building = document.buildings.find((entry) => entry.id === dragged.id);
     if (!building) return false;
@@ -376,7 +444,7 @@ export function WorldEditor() {
     return position.x >= originX && position.y >= originY && position.x < originX + building.width && position.y < originY + building.height;
   };
   const continuousTool = (value: PaintLayer) => (tileLayers as readonly string[]).includes(value)
-    || ["packed_earth", "moss_stone", "sandstone"].includes(value);
+    || ["packed_earth", "moss_stone", "sandstone"].includes(value) || value.startsWith("object_");
 
   return <main className="editor-shell">
     {loadingMessage && <div className="editor-loading" role="status"><i /><strong>Loading world</strong><span>{loadingMessage}</span><small>Large maps stay file-based instead of being duplicated into browser storage.</small></div>}
@@ -403,21 +471,23 @@ export function WorldEditor() {
             const x = viewportX + column; const y = viewportY + row; const position = { x, y, z: activeFloor }; const tileKey = key(position);
             const spawn = spawnByTile.get(tileKey); const npc = npcByTile.get(tileKey); const door = doorByTile.get(tileKey); const stairs = stairsByTile.get(tileKey);
             const resourceNode = resourceNodeByTile.get(tileKey);
-            const playerSpawn = same(document.playerSpawn, position); const editorObject = objectAt(position); const material = terrainByTile.get(tileKey); const selected = selectedPosition ? same(selectedPosition, position) : false;
+            const playerSpawn = same(document.playerSpawn, position); const editorObject = objectAt(position); const material = terrainByTile.get(tileKey); const worldObject = worldObjectByTile.get(tileKey); const selected = selectedPosition ? same(selectedPosition, position) : false; const areaSelected = selectedArea ? insideSelection(position, selectedArea) : false; const marqueeSelected = marqueeArea ? insideSelection(position, marqueeArea) : false;
             const classes = tileLayers.filter((layer) => layerSets[layer].has(tileKey)).join(" ");
             return <button
               title={npc ? `${npc.name} — ${npc.title}` : `Tile ${x}, ${y}, floor ${activeFloor}`}
               aria-label={`Tile ${x}, ${y}`}
               draggable={false}
-              className={`editor-tile ${classes} ${material ? `material-${material}` : ""} ${waterEdgeClasses(position)} ${playerSpawn ? "player-spawn" : ""} ${npc?.id === selectedNpcId ? "npc-selected" : ""} ${selected ? "selected" : ""} ${editorObject ? "movable" : ""} ${dragPreviewIncludes(position) ? "drag-preview" : ""}`}
+              className={`editor-tile ${classes} ${material ? `material-${material}` : ""} ${worldObject ? `world-object world-object-${worldObject.kind}` : ""} ${waterEdgeClasses(position)} ${playerSpawn ? "player-spawn" : ""} ${npc?.id === selectedNpcId ? "npc-selected" : ""} ${selected || areaSelected ? "selected" : ""} ${marqueeSelected ? "marquee-selected" : ""} ${editorObject ? "movable" : ""} ${dragPreviewIncludes(position) ? "drag-preview" : ""}`}
               style={{ width: EDITOR_TILE_SIZE * zoom, height: EDITOR_TILE_SIZE * zoom, left: column * EDITOR_TILE_SIZE * zoom, top: row * EDITOR_TILE_SIZE * zoom, zIndex: 1 }}
               key={tileKey}
-              onPointerDown={(event) => { const panning = window.document.body.classList.contains("editor-space-pan"); if (event.button !== 0 || panning) return; if (tool === "select" && editorObject) { event.preventDefault(); setSelectedPosition(position); if (npc) setSelectedNpcId(npc.id); editorDrag.current = editorObject; dragOrigin.current = position; setDragTarget(position); return; } if (continuousTool(tool)) paint(x, y); }}
-              onClick={() => { if (tool === "select") { setSelectedPosition(hasAuthoredContent(document, position) ? position : null); setSelectedNpcId(npc?.id ?? null); return; } if (npc) { setSelectedNpcId(npc.id); return; } if (!continuousTool(tool)) paint(x, y); }}
-              onPointerEnter={(event) => { if (event.buttons !== 1 || window.document.body.classList.contains("editor-space-pan")) return; if (tool === "select" && editorDrag.current) { setDragTarget(position); return; } if (continuousTool(tool)) paint(x, y, true); }}
-              onPointerUp={() => { if (tool === "select" && editorDrag.current) { const origin = dragOrigin.current; if (origin && !same(origin, position)) moveObject(position); else { editorDrag.current = null; setDragTarget(null); } dragOrigin.current = null; } lastPainted.current = ""; saveLocal(documentRef.current); }}
+              onPointerDown={(event) => { const panning = window.document.body.classList.contains("editor-space-pan"); if (event.button !== 0 || panning) return; if (tool === "select") { event.preventDefault(); if (selectedArea && insideSelection(position, selectedArea)) { editorDrag.current = { kind: "selection", bounds: selectedArea, origin: position }; dragOrigin.current = position; setDragTarget(position); return; } marqueeStart.current = position; marqueeEnd.current = position; setMarqueeArea(selectionBounds(position, position)); setSelectedArea(null); setSelectedPosition(null); return; } if (continuousTool(tool)) paint(x, y); }}
+              onClick={() => { if (tool === "select") { if (suppressSelectClick.current) { suppressSelectClick.current = false; return; } setSelectedArea(null); setSelectedPosition(hasAuthoredContent(document, position) ? position : null); setSelectedNpcId(npc?.id ?? null); return; } if (npc) { setSelectedNpcId(npc.id); return; } if (!continuousTool(tool)) paint(x, y); }}
+              onPointerEnter={(event) => { if (event.buttons !== 1 || window.document.body.classList.contains("editor-space-pan")) return; if (tool === "select" && marqueeStart.current) { marqueeEnd.current = position; setMarqueeArea(selectionBounds(marqueeStart.current, position)); return; } if (tool === "select" && editorDrag.current) { setDragTarget(position); return; } if (continuousTool(tool)) paint(x, y, true); }}
+              onPointerUp={() => { if (tool === "select" && marqueeStart.current) { const start = marqueeStart.current; const selection = selectionBounds(start, position); marqueeStart.current = null; marqueeEnd.current = null; setMarqueeArea(null); setSelectedArea(hasAuthoredContent(document, position) || !same(start, position) ? selection : null); suppressSelectClick.current = true; return; } if (tool === "select" && editorDrag.current) { const origin = dragOrigin.current; if (origin && !same(origin, position)) moveObject(position); else { editorDrag.current = null; setDragTarget(null); suppressSelectClick.current = true; } dragOrigin.current = null; } lastPainted.current = ""; saveLocal(documentRef.current); }}
             >{playerSpawn ? "P" : npc ? "N" : resourceNode ? "⛏" : door ? "D" : windows.has(tileKey) ? "W" : torches.has(tileKey) ? "T" : stairs ? (stairs.to.z < activeFloor ? "U" : "D") : spawn ? "C" : ""}</button>;
           })}
+          {selectedArea && <div className="editor-selection-frame" aria-hidden="true" style={{ left: (selectedArea.minX - viewportX) * EDITOR_TILE_SIZE * zoom, top: (selectedArea.minY - viewportY) * EDITOR_TILE_SIZE * zoom, width: (selectedArea.maxX - selectedArea.minX + 1) * EDITOR_TILE_SIZE * zoom, height: (selectedArea.maxY - selectedArea.minY + 1) * EDITOR_TILE_SIZE * zoom }} />}
+          {marqueeArea && <div className="editor-marquee" aria-hidden="true" style={{ left: (marqueeArea.minX - viewportX) * EDITOR_TILE_SIZE * zoom, top: (marqueeArea.minY - viewportY) * EDITOR_TILE_SIZE * zoom, width: (marqueeArea.maxX - marqueeArea.minX + 1) * EDITOR_TILE_SIZE * zoom, height: (marqueeArea.maxY - marqueeArea.minY + 1) * EDITOR_TILE_SIZE * zoom }} />}
         </div>
       </div>
     </section>
@@ -589,10 +659,10 @@ function NpcInspector({ npc, onChange, onRemove }: { npc: NpcView; onChange: (np
   </section>;
 }
 
-function firstSafeBaseTile(document: EditorDocument): Position { const blocked = new Set(document.blocked.filter((tile) => tile.z === document.floor).map(key)); const occupied = new Set([...(document.spawns ?? []).map((entry) => key(entry.position)), ...(document.npcs ?? []).map((entry) => key(entry.position)), ...(document.resourceNodes ?? []).map((entry) => key(entry.position))]); for (let y = 0; y < document.height; y += 1) for (let x = 0; x < document.width; x += 1) { const position = { x, y, z: document.floor }; if (!blocked.has(key(position)) && !occupied.has(key(position))) return position; } return { x: 0, y: 0, z: document.floor }; }
+function firstSafeBaseTile(document: EditorDocument): Position { const blocked = new Set(document.blocked.filter((tile) => tile.z === document.floor).map(key)); const occupied = new Set([...(document.spawns ?? []).map((entry) => key(entry.position)), ...(document.npcs ?? []).map((entry) => key(entry.position)), ...(document.resourceNodes ?? []).map((entry) => key(entry.position)), ...(document.objects ?? []).filter((entry) => ["mountain_wall", "forest_tree", "pine_tree", "snowy_pine", "snow_bank", "well", "table"].includes(entry.kind)).map((entry) => key(entry.position))]); for (let y = 0; y < document.height; y += 1) for (let x = 0; x < document.width; x += 1) { const position = { x, y, z: document.floor }; if (!blocked.has(key(position)) && !occupied.has(key(position))) return position; } return { x: 0, y: 0, z: document.floor }; }
 function nextBrowserPaint() { return new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))); }
 function normalizeDocument(document: EditorDocument): EditorDocument {
-  const normalized = { ...document, bridges: document.bridges ?? [], trees: document.trees ?? [], windows: document.windows ?? [], torches: document.torches ?? [], terrainMaterials: document.terrainMaterials ?? [], npcs: document.npcs ?? [], resourceNodes: document.resourceNodes ?? [], playerSpawn: document.playerSpawn ?? { x: 0, y: 0, z: document.floor } };
+  const normalized = { ...document, bridges: document.bridges ?? [], trees: document.trees ?? [], windows: document.windows ?? [], torches: document.torches ?? [], terrainMaterials: document.terrainMaterials ?? [], objects: document.objects ?? [], npcs: document.npcs ?? [], resourceNodes: document.resourceNodes ?? [], playerSpawn: document.playerSpawn ?? { x: 0, y: 0, z: document.floor } };
   normalized.buildings = alignHouseBuildingsToWalls(normalized);
   if (!document.playerSpawn) normalized.playerSpawn = firstSafeBaseTile(normalized);
   return normalized;
