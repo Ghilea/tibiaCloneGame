@@ -18,6 +18,7 @@ export class WorldState {
   readonly npcs = new Map<string, NpcView>();
   readonly spells = new Map<string, SpellDefinition>();
   readonly learnedSpellIds = new Set<string>();
+  readonly learnedRecipeIds = new Set<string>();
   readonly combatEffects: CombatEffectView[] = [];
   readonly areaWarnings: AreaWarningView[] = [];
   inventory: ItemInstance[] = [];
@@ -136,6 +137,8 @@ export class WorldState {
         for (const spell of message.spells) this.spells.set(spell.id, spell);
         this.learnedSpellIds.clear();
         for (const spellId of message.learned_spell_ids) this.learnedSpellIds.add(spellId);
+        this.learnedRecipeIds.clear();
+        for (const recipeId of message.learned_recipe_ids) this.learnedRecipeIds.add(recipeId);
         this.npcs.clear();
         this.npcsByTile.clear();
         for (const npc of message.npcs) {
@@ -249,6 +252,12 @@ export class WorldState {
         if (this.localPlayerId === message.player_id) {
           this.learnedSpellIds.clear();
           for (const spellId of message.learned_spell_ids) this.learnedSpellIds.add(spellId);
+        }
+        break;
+      case "recipes_changed":
+        if (this.localPlayerId === message.player_id) {
+          this.learnedRecipeIds.clear();
+          for (const recipeId of message.learned_recipe_ids) this.learnedRecipeIds.add(recipeId);
         }
         break;
       case "ground_items_changed":

@@ -344,6 +344,15 @@ impl Database {
         .await
     }
 
+    pub async fn load_recipes(&self, character_id: EntityId) -> Result<Vec<String>, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT recipe_id FROM character_recipes WHERE character_id = $1 ORDER BY recipe_id",
+        )
+        .bind(character_id)
+        .fetch_all(&self.pool)
+        .await
+    }
+
     pub async fn load_depot(
         &self,
         character_id: EntityId,
@@ -446,6 +455,24 @@ impl Database {
         sqlx::query("INSERT INTO character_spells (character_id, spell_id) VALUES ($1, $2)")
             .bind(character_id)
             .bind(spell_id)
+            .execute(&mut *transaction)
+            .await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    pub async fn persist_recipe_learning(
+        &self,
+        character_id: EntityId,
+        inventory: &[ItemInstance],
+        recipe_id: &str,
+    ) -> Result<(), sqlx::Error> {
+        let mut transaction = self.pool.begin().await?;
+        clear_inventory(&mut transaction, character_id).await?;
+        insert_inventory(&mut transaction, character_id, inventory).await?;
+        sqlx::query("INSERT INTO character_recipes (character_id, recipe_id) VALUES ($1, $2)")
+            .bind(character_id)
+            .bind(recipe_id)
             .execute(&mut *transaction)
             .await?;
         transaction.commit().await?;

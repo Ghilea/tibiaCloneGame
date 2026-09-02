@@ -4,7 +4,7 @@ use game_types::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u16 = 22;
+pub const PROTOCOL_VERSION: u16 = 23;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -101,6 +101,13 @@ pub enum ClientMessage {
         npc_id: String,
         spell_id: String,
     },
+    LearnRecipeFromNpc {
+        npc_id: String,
+        recipe_id: String,
+    },
+    LearnRecipeFromItem {
+        instance_id: game_types::EntityId,
+    },
     CastSpell {
         spell_id: String,
         target_id: game_types::EntityId,
@@ -127,6 +134,7 @@ pub enum ServerMessage {
         rune_recipes: Vec<RuneRecipe>,
         spells: Vec<SpellDefinition>,
         learned_spell_ids: Vec<String>,
+        learned_recipe_ids: Vec<String>,
         inventory: Vec<ItemInstance>,
         depot: Vec<ItemInstance>,
         inventory_weight: f32,
@@ -194,6 +202,10 @@ pub enum ServerMessage {
     SpellsChanged {
         player_id: game_types::EntityId,
         learned_spell_ids: Vec<String>,
+    },
+    RecipesChanged {
+        player_id: game_types::EntityId,
+        learned_recipe_ids: Vec<String>,
     },
     GroundItemsChanged {
         ground_items: Vec<GroundItem>,

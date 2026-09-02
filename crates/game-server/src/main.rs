@@ -463,6 +463,24 @@ async fn session(mut socket: WebSocket, state: AppState) {
             },
             None => Default::default(),
         },
+        learned_recipes: match &state.database {
+            Some(database) => match database.load_recipes(id).await {
+                Ok(recipes) => recipes.into_iter().collect(),
+                Err(error) => {
+                    warn!(%id, %error, "failed to load learned recipes");
+                    send(
+                        &mut socket,
+                        &ServerMessage::Error {
+                            code: "recipes_load_failed".into(),
+                            message: "Your learned recipes could not be loaded".into(),
+                        },
+                    )
+                    .await;
+                    return;
+                }
+            },
+            None => Default::default(),
+        },
         crafting_queue: None,
         last_mana_regen: Instant::now(),
         active_food: None,
@@ -474,6 +492,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
         rune_recipes,
         spells,
         learned_spell_ids,
+        learned_recipe_ids,
         inventory,
         depot,
         inventory_weight,
@@ -494,6 +513,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
             world.rune_recipes(),
             world.spells(),
             world.learned_spells(id).expect("player inserted"),
+            world.learned_recipes(id).expect("player inserted"),
             inventory,
             depot,
             weight,
@@ -516,6 +536,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
             rune_recipes,
             spells,
             learned_spell_ids,
+            learned_recipe_ids,
             inventory,
             depot,
             inventory_weight,
@@ -775,6 +796,12 @@ async fn session(mut socket: WebSocket, state: AppState) {
             }) => move_depot_item(&state, id, &npc_id, instance_id, false).await,
             Ok(ClientMessage::LearnSpell { npc_id, spell_id }) => {
                 learn_spell(&state, id, &npc_id, &spell_id).await
+            }
+            Ok(ClientMessage::LearnRecipeFromNpc { npc_id, recipe_id }) => {
+                learn_recipe(&state, id, Some(&npc_id), Some(&recipe_id), None).await
+            }
+            Ok(ClientMessage::LearnRecipeFromItem { instance_id }) => {
+                learn_recipe(&state, id, None, None, Some(instance_id)).await
             }
             Ok(ClientMessage::CastSpell {
                 spell_id,
@@ -1329,6 +1356,84 @@ async fn learn_spell(state: &AppState, player_id: Uuid, npc_id: &str, spell_id: 
             learned_spell_ids,
         },
     );
+}
+
+async fn learn_recipe(
+    state: &AppState,
+    player_id: Uuid,
+    npc_id: Option<&str>,
+    recipe_id: Option<&str>,
+    instance_id: Option<Uuid>,
+) {
+    let mut world = state.world.write().await;
+    let backup = world.clone();
+    let learned_recipe_id = match (npc_id, recipe_id, instance_id) {
+        (Some(npc_id), Some(recipe_id), None) => world
+            .learn_recipe_from_npc(player_id, npc_id, recipe_id)
+            .map(|()| recipe_id.to_owned()),
+        (None, None, Some(instance_id)) => world.learn_recipe_from_item(player_id, instance_id),
+        _ => Err("invalid_recipe_source"),
+    };
+    let learned_recipe_id = match learned_recipe_id {
+        Ok(recipe_id) => recipe_id,
+        Err(reason) => {
+            state.private(
+                player_id,
+                ServerMessage::Error {
+                    code: reason.into(),
+                    message: recipe_learning_error_message(reason).into(),
+                },
+            );
+            return;
+        }
+    };
+    let (inventory, inventory_weight, max_capacity) =
+        world.inventory_state(player_id).expect("active player");
+    let learned_recipe_ids = world.learned_recipes(player_id).expect("active player");
+    if let Some(database) = &state.database
+        && let Err(error) = database
+            .persist_recipe_learning(player_id, &inventory, &learned_recipe_id)
+            .await
+    {
+        *world = backup;
+        warn!(%player_id, %error, "recipe learning transaction rolled back");
+        state.private(
+            player_id,
+            ServerMessage::Error {
+                code: "recipe_learning_transaction_failed".into(),
+                message: "The recipe could not be saved; nothing was consumed".into(),
+            },
+        );
+        return;
+    }
+    drop(world);
+    state.private(
+        player_id,
+        ServerMessage::InventoryChanged {
+            player_id,
+            inventory,
+            inventory_weight,
+            max_capacity,
+        },
+    );
+    state.private(
+        player_id,
+        ServerMessage::RecipesChanged {
+            player_id,
+            learned_recipe_ids,
+        },
+    );
+}
+
+fn recipe_learning_error_message(code: &str) -> &'static str {
+    match code {
+        "npc_out_of_reach" => "Move next to the crafting trainer first",
+        "not_enough_gold" => "You do not have enough Gold Coins for this lesson",
+        "recipe_already_learned" => "You have already learned that recipe",
+        "cannot_learn_while_trading" => "Finish or cancel your trade before learning a recipe",
+        "item_does_not_teach_recipe" => "That item does not contain a recipe",
+        _ => "That recipe cannot be learned here",
+    }
 }
 
 fn spell_learning_error_message(code: &str) -> &'static str {

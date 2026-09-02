@@ -11,7 +11,8 @@
       { "id": "rough_arrows", "itemDefinitionId": "rough_arrow", "quantity": 10, "price": 3 },
       { "id": "field_bread", "itemDefinitionId": "field_bread", "quantity": 2, "price": 3 }
     ],
-    "spellIds": []
+    "spellIds": [],
+    "recipeIds": []
   },
   {
     "id": "aldren_vaultkeeper",
@@ -21,7 +22,8 @@
     "dialogue": "What you entrust to Greyhaven's vault will be waiting when you return.",
     "position": { "x": 7, "y": 8, "z": 7 },
     "offers": [],
-    "spellIds": []
+    "spellIds": [],
+    "recipeIds": []
   },
   {
     "id": "seraphine_arcanist",
@@ -31,6 +33,18 @@
     "dialogue": "Power without discipline burns its bearer. Bring coin, and I will teach you to shape your first ember.",
     "position": { "x": 10, "y": 5, "z": 7 },
     "offers": [],
-    "spellIds": ["ember_bolt"]
+    "spellIds": ["ember_bolt"],
+    "recipeIds": []
+  },
+  {
+    "id": "orin_artificer",
+    "name": "Orin",
+    "title": "Greyhaven Artificer",
+    "service": "craft_trainer",
+    "dialogue": "Good work begins with sound technique. Bring coin, and I will teach you the craft of dependable ammunition.",
+    "position": { "x": 9, "y": 5, "z": 7 },
+    "offers": [],
+    "spellIds": [],
+    "recipeIds": ["fletch_rough_arrows"]
   }
 ]

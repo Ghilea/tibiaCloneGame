@@ -421,6 +421,8 @@ function Game({ onLeave }: { onLeave: () => void }) {
           <DepotModal npcId={world.activeNpcId} />
         ) : world.npcs.get(world.activeNpcId)?.service === "spell_trainer" ? (
           <SpellTrainerModal npcId={world.activeNpcId} />
+        ) : world.npcs.get(world.activeNpcId)?.service === "craft_trainer" ? (
+          <CraftTrainerModal npcId={world.activeNpcId} />
         ) : (
           <NpcShop npcId={world.activeNpcId} />
         ))}
@@ -704,6 +706,7 @@ const itemSpriteOrder = [
   "fen_brute_remains",
 ];
 function ItemIcon({ definitionId }: { definitionId: string }) {
+  if (definitionId === "ember_sigil_formula") return <i className="item-icon food-icon">📜</i>;
   if (definitionId === "field_bread") return <i className="item-icon food-icon">🥖</i>;
   if (definitionId === "smoked_mire_meat") return <i className="item-icon food-icon">🍖</i>;
   const index = itemSpriteOrder.indexOf(definitionId);
@@ -843,6 +846,35 @@ function SpellTrainerModal({ npcId }: { npcId: string }) {
                 </div>
               </article>
             );
+          })}
+        </div>
+      </div>
+    </GameModal>
+  );
+}
+
+function CraftTrainerModal({ npcId }: { npcId: string }) {
+  const npc = world.npcs.get(npcId);
+  if (!npc) return null;
+  const gold = world.inventory.filter((item) => item.definitionId === "gold_coin").reduce((sum, item) => sum + item.quantity, 0);
+  return (
+    <GameModal title={npc.name} onClose={() => world.closeNpc()}>
+      <div className="npc-shop spell-trainer">
+        <section className="npc-dialogue">
+          <div className="npc-portrait">{npc.name.slice(0, 1)}</div>
+          <span><h3>{npc.title}</h3><p>“{npc.dialogue}”</p></span>
+          <b>{gold} Gold Coins</b>
+        </section>
+        <div className="spell-lessons">
+          {npc.recipeIds.map((recipeId) => {
+            const recipe = world.runeRecipes.get(recipeId);
+            if (!recipe) return null;
+            const learned = world.learnedRecipeIds.has(recipe.id);
+            return <article className={learned ? "learned" : ""} key={recipe.id}>
+              <ItemIcon definitionId={recipe.outputDefinitionId} />
+              <span><strong>{recipe.name}</strong><p>Unlock this recipe permanently for this character.</p><small>{recipe.inputQuantity} material → {recipe.outputQuantity} output · {(recipe.craftTimeMs / 1000).toFixed(1)} sec</small></span>
+              <div><b>{recipe.learnPrice} gold</b><button disabled={learned || gold < recipe.learnPrice} onClick={() => network.learnRecipeFromNpc(npc.id, recipe.id)}>{learned ? "Learned" : "Learn recipe"}</button></div>
+            </article>;
           })}
         </div>
       </div>
@@ -1550,107 +1582,73 @@ function HelpPanel() {
 
 function RuneCraftingPanel() {
   const [quantity, setQuantity] = useState(1);
-  const active = world.craftingRecipeId
-    ? world.runeRecipes.get(world.craftingRecipeId)
-    : null;
-  const player = world.localPlayerId
-    ? world.players.get(world.localPlayerId)
-    : null;
+  const [category, setCategory] = useState<string>("all");
+  const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null);
+  const active = world.craftingRecipeId ? world.runeRecipes.get(world.craftingRecipeId) : null;
+  const player = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
+  const recipes = [...world.runeRecipes.values()].filter((recipe) => world.learnedRecipeIds.has(recipe.id));
+  const visibleRecipes = category === "all" ? recipes : recipes.filter((recipe) => recipe.craftKind === category);
+  const selectedRecipe = visibleRecipes.find((recipe) => recipe.id === selectedRecipeId) ?? visibleRecipes[0] ?? null;
   const status: Record<string, string> = {
-    queued: "Preparing",
-    crafted: "One batch completed",
-    waiting_mana: "Waiting for mana",
-    mana_regenerated: "Mana is recovering",
-    food_regenerated: "Food is restoring health and mana",
-    paused_combat: "Paused during combat",
-    complete: "Queue completed",
-    missing_material: "Materials ran out",
-    cancelled: "Cancelled",
-    idle: "No active production queue",
+    queued: "Preparing", crafted: "One batch completed", waiting_mana: "Waiting for mana",
+    mana_regenerated: "Mana is recovering", food_regenerated: "Food is restoring health and mana",
+    paused_combat: "Paused during combat", complete: "Queue completed",
+    missing_material: "Materials ran out", cancelled: "Cancelled", idle: "No active production queue",
   };
+  const chooseCategory = (next: string) => { setCategory(next); setSelectedRecipeId(null); };
+  const material = selectedRecipe ? world.inventory.filter((item) => item.definitionId === selectedRecipe.inputDefinitionId).reduce((sum, item) => sum + item.quantity, 0) : 0;
+  const inputName = selectedRecipe ? world.itemDefinitions.get(selectedRecipe.inputDefinitionId)?.name ?? selectedRecipe.inputDefinitionId : "";
+  const outputName = selectedRecipe ? world.itemDefinitions.get(selectedRecipe.outputDefinitionId)?.name ?? selectedRecipe.outputDefinitionId : "";
+  const locked = selectedRecipe?.craftKind === "sigils" && !canCraftSigils(player?.vocation);
+  const possibleBatches = selectedRecipe ? Math.floor(material / Math.max(1, selectedRecipe.inputQuantity)) : 0;
+  const categoryName = category === "all" ? "All disciplines" : secondarySkillOptions.find((entry) => entry.id === category)?.name ?? (category === "sigils" ? "Sigilcraft" : "Fletching");
   return (
-    <div className="rune-panel">
-      {active && (
-        <div className="craft-active">
-          <span>
-            <strong>{active.name}</strong>
-            <small>
-              {status[world.craftingStatus] ?? world.craftingStatus} ·{" "}
-              {world.craftingRemaining} batches remaining
-            </small>
-          </span>
-          <button onClick={() => network.cancelRuneCrafting()}>
-            Cancel queue
-          </button>
-        </div>
-      )}
-      {!active && (
-        <p className="empty-state">
-          {status[world.craftingStatus] ?? status.idle}
-        </p>
-      )}
-      {[...world.runeRecipes.values()].map((recipe) => {
-        const material = world.inventory
-          .filter((item) => item.definitionId === recipe.inputDefinitionId)
-          .reduce((sum, item) => sum + item.quantity, 0);
-        const locked =
-          recipe.craftKind === "sigils" && !canCraftSigils(player?.vocation);
-        const input =
-          world.itemDefinitions.get(recipe.inputDefinitionId)?.name ??
-          recipe.inputDefinitionId;
-        const output =
-          world.itemDefinitions.get(recipe.outputDefinitionId)?.name ??
-          recipe.outputDefinitionId;
-        return (
-          <div
-            className={`recipe-row ${locked ? "locked" : ""}`}
-            key={recipe.id}
-          >
-            <span>
-              <b className="recipe-kind">
-                {recipe.craftKind === "sigils"
-                  ? "Magical production"
-                  : "Fletching"}
-              </b>
-              <strong>{recipe.name}</strong>
-              <small>
-                {recipe.inputQuantity} {input} → {recipe.outputQuantity}{" "}
-                {output} ·{" "}
-                {recipe.manaCost > 0 ? `${recipe.manaCost} mana · ` : ""}
-                {material} available · {(recipe.craftTimeMs / 1000).toFixed(1)}{" "}
-                sec
-              </small>
-              {locked && <em>Requires Mage or Druid</em>}
-            </span>
-            <div>
-              <input
-                aria-label="Production batches"
-                type="number"
-                min={1}
-                max={20}
-                value={quantity}
-                onChange={(event) =>
-                  setQuantity(
-                    Math.max(1, Math.min(20, Number(event.target.value) || 1)),
-                  )
-                }
-              />
-              <button
-                disabled={
-                  locked ||
-                  material < quantity * recipe.inputQuantity ||
-                  Boolean(active)
-                }
-                onClick={() => network.startRuneCrafting(recipe.id, quantity)}
-              >
-                Start queue
-              </button>
-            </div>
+    <div className="crafting-workbench">
+      <header className={`crafting-queue ${active ? "active" : "idle"}`}>
+        <i aria-hidden="true">{active ? "◆" : "◇"}</i>
+        <span><small>Production queue</small><strong>{active?.name ?? "Workshop ready"}</strong><p>{active ? `${status[world.craftingStatus] ?? world.craftingStatus} · ${world.craftingRemaining} batches remaining` : status[world.craftingStatus] ?? status.idle}</p></span>
+        {active && <button onClick={() => network.cancelRuneCrafting()}>Cancel</button>}
+      </header>
+      <div className="crafting-layout">
+        <aside className="crafting-disciplines">
+          <header><small>Disciplines</small><strong>Recipe book</strong></header>
+          <CraftingCategoryButton label="All recipes" count={recipes.length} selected={category === "all"} onClick={() => chooseCategory("all")} />
+          <CraftingCategoryButton label="Sigilcraft" count={recipes.filter((recipe) => recipe.craftKind === "sigils").length} selected={category === "sigils"} onClick={() => chooseCategory("sigils")} />
+          <CraftingCategoryButton label="Fletching" count={recipes.filter((recipe) => recipe.craftKind === "fletching").length} selected={category === "fletching"} onClick={() => chooseCategory("fletching")} />
+          {player?.secondarySkills.length ? <small className="crafting-secondary-label">Secondary skills</small> : null}
+          {player?.secondarySkills.map((skill) => <CraftingCategoryButton key={skill} label={secondarySkillOptions.find((entry) => entry.id === skill)?.name ?? skill} count={0} selected={category === skill} onClick={() => chooseCategory(skill)} />)}
+        </aside>
+        <section className="crafting-browser">
+          <header><span><small>{categoryName}</small><strong>Available recipes</strong></span><b>{visibleRecipes.length}</b></header>
+          <div className="crafting-recipe-list">
+            {visibleRecipes.map((recipe) => {
+              const available = world.inventory.filter((item) => item.definitionId === recipe.inputDefinitionId).reduce((sum, item) => sum + item.quantity, 0);
+              const recipeLocked = recipe.craftKind === "sigils" && !canCraftSigils(player?.vocation);
+              return <button key={recipe.id} className={`${recipe.id === selectedRecipe?.id ? "selected" : ""} ${recipeLocked ? "locked" : ""}`} onClick={() => setSelectedRecipeId(recipe.id)}><ItemIcon definitionId={recipe.outputDefinitionId} /><span><strong>{recipe.name}</strong><small>{recipe.outputQuantity} output · {available} materials</small></span><i aria-hidden="true">›</i></button>;
+            })}
+            {visibleRecipes.length === 0 && <CraftingEmpty message="Learn recipes from artisans or recipe scrolls found as loot." />}
           </div>
-        );
-      })}
+        </section>
+        <section className="crafting-recipe-detail">
+          {selectedRecipe ? <>
+            <header><span><small>{selectedRecipe.craftKind === "sigils" ? "Sigilcraft" : "Fletching"}</small><h3>{selectedRecipe.name}</h3></span><ItemIcon definitionId={selectedRecipe.outputDefinitionId} /></header>
+            <div className="crafting-conversion"><span><ItemIcon definitionId={selectedRecipe.inputDefinitionId} /><small>{selectedRecipe.inputQuantity} ×</small><strong>{inputName}</strong></span><b>→</b><span><ItemIcon definitionId={selectedRecipe.outputDefinitionId} /><small>{selectedRecipe.outputQuantity} ×</small><strong>{outputName}</strong></span></div>
+            <dl className="crafting-costs"><div><dt>Available material</dt><dd className={possibleBatches < quantity ? "missing" : ""}>{material}</dd></div><div><dt>Possible batches</dt><dd>{possibleBatches}</dd></div><div><dt>Mana per batch</dt><dd>{selectedRecipe.manaCost}</dd></div><div><dt>Crafting time</dt><dd>{(selectedRecipe.craftTimeMs / 1000).toFixed(1)} sec</dd></div></dl>
+            {locked && <p className="crafting-requirement">Requires sigilcraft training.</p>}
+            <footer><label><small>Batches</small><span><button onClick={() => setQuantity((current) => Math.max(1, current - 1))}>−</button><input aria-label="Production batches" type="number" min={1} max={20} value={quantity} onChange={(event) => setQuantity(Math.max(1, Math.min(20, Number(event.target.value) || 1)))} /><button onClick={() => setQuantity((current) => Math.min(20, current + 1))}>+</button></span></label><button className="crafting-start" disabled={locked || possibleBatches < quantity || Boolean(active)} onClick={() => network.startRuneCrafting(selectedRecipe.id, quantity)}>{active ? "Queue busy" : possibleBatches < quantity ? "Missing materials" : `Craft ${quantity}`}</button></footer>
+          </> : <CraftingEmpty message="Choose a learned recipe from the recipe book." />}
+        </section>
+      </div>
     </div>
   );
+}
+
+function CraftingCategoryButton({ label, count, selected, onClick }: { label: string; count: number; selected: boolean; onClick: () => void }) {
+  return <button className={selected ? "selected" : ""} onClick={onClick}><span>{label}</span><b>{count}</b></button>;
+}
+
+function CraftingEmpty({ message }: { message: string }) {
+  return <div className="crafting-empty"><span>◇</span><strong>No recipes learned</strong><small>{message}</small></div>;
 }
 
 function Chat() {
@@ -1903,6 +1901,7 @@ function InventoryDetails({ item, position, onClose, onSplit }: { item: ItemInst
     <span><small>{item.equippedSlot ? "Equipped" : item.containerId ? "Inside backpack" : "Inventory item"}</small><strong>{definition?.name ?? item.definitionId}</strong><p>{((definition?.weight ?? 0) * item.quantity).toFixed(1)} oz{definition?.containerSlots ? ` · ${children.length}/${definition.containerSlots} slots` : ""}{definition?.distanceWeapon ? ` · range ${definition.distanceWeapon.range}` : ""}</p></span>
     <div className="item-actions">
       {definition?.foodEffect && <button onClick={() => network.eat(item.instanceId)}>Eat</button>}
+      {definition?.teachesRecipeId && <button disabled={world.learnedRecipeIds.has(definition.teachesRecipeId)} onClick={() => network.learnRecipeFromItem(item.instanceId)}>{world.learnedRecipeIds.has(definition.teachesRecipeId) ? "Recipe learned" : "Learn recipe"}</button>}
       {definition?.equipmentSlot && !item.equippedSlot && <button onClick={() => network.equip(item.instanceId, definition.equipmentSlot!)}>Equip</button>}
       {item.equippedSlot && <button onClick={() => network.moveToRoot(item.instanceId)}>Unequip</button>}
       {item.containerId && <button onClick={() => network.moveToRoot(item.instanceId)}>Unpack</button>}

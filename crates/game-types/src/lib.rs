@@ -137,6 +137,8 @@ pub struct ItemDefinition {
     pub distance_weapon: Option<DistanceWeapon>,
     #[serde(default)]
     pub food_effect: Option<FoodEffect>,
+    #[serde(default)]
+    pub teaches_recipe_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -198,6 +200,8 @@ pub struct NpcView {
     pub offers: Vec<ShopOffer>,
     #[serde(default)]
     pub spell_ids: Vec<String>,
+    #[serde(default)]
+    pub recipe_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -280,6 +284,8 @@ pub struct RuneRecipe {
     pub output_quantity: u16,
     pub mana_cost: u16,
     pub craft_time_ms: u64,
+    #[serde(default = "default_recipe_learn_price")]
+    pub learn_price: u16,
 }
 
 fn default_sigils_kind() -> String {
@@ -288,6 +294,10 @@ fn default_sigils_kind() -> String {
 
 fn default_quantity() -> u16 {
     1
+}
+
+fn default_recipe_learn_price() -> u16 {
+    10
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

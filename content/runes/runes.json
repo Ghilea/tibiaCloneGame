@@ -8,7 +8,8 @@
     "outputDefinitionId": "ember_rune",
     "outputQuantity": 1,
     "manaCost": 35,
-    "craftTimeMs": 1500
+    "craftTimeMs": 1500,
+    "learnPrice": 30
   },
   {
     "id": "fletch_rough_arrows",
@@ -19,6 +20,7 @@
     "outputDefinitionId": "rough_arrow",
     "outputQuantity": 10,
     "manaCost": 0,
-    "craftTimeMs": 1200
+    "craftTimeMs": 1200,
+    "learnPrice": 8
   }
 ]

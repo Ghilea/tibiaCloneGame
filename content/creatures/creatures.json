@@ -91,7 +91,8 @@
     "loot": [
       { "definitionId": "gold_coin", "chance": 0.86, "minQuantity": 4, "maxQuantity": 11 },
       { "definitionId": "blank_rune", "chance": 0.25, "minQuantity": 1, "maxQuantity": 2 },
-      { "definitionId": "ember_rune", "chance": 0.04, "minQuantity": 1, "maxQuantity": 1 }
+      { "definitionId": "ember_rune", "chance": 0.04, "minQuantity": 1, "maxQuantity": 1 },
+      { "definitionId": "ember_sigil_formula", "chance": 0.06, "minQuantity": 1, "maxQuantity": 1 }
     ]
   },
   {

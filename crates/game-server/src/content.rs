@@ -146,6 +146,13 @@ impl ContentCatalog {
     ) -> anyhow::Result<Self> {
         let mut catalog = Self::from_all(items, creatures)?;
         catalog.validate_rune_recipes(recipes)?;
+        for definition in catalog.items.values() {
+            if let Some(recipe_id) = &definition.teaches_recipe_id
+                && !catalog.rune_recipes.contains_key(recipe_id)
+            {
+                bail!("unknown recipe on learning item: {}", definition.id);
+            }
+        }
         Ok(catalog)
     }
 
@@ -305,6 +312,7 @@ mod tests {
             combat_effect: None,
             distance_weapon: None,
             food_effect: None,
+            teaches_recipe_id: None,
         }
     }
 

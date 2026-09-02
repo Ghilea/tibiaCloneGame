@@ -57,6 +57,7 @@ pub struct Player {
     pub last_item_use: Instant,
     pub last_spell_cast: Instant,
     pub learned_spells: HashSet<String>,
+    pub learned_recipes: HashSet<String>,
     pub crafting_queue: Option<CraftingQueue>,
     pub last_mana_regen: Instant,
     pub active_food: Option<ActiveFood>,
@@ -586,7 +587,10 @@ impl WorldMap {
                 || npc.name.len() > 40
                 || npc.title.len() > 80
                 || npc.dialogue.len() > 500
-                || !matches!(npc.service.as_str(), "shop" | "depot" | "spell_trainer")
+                || !matches!(
+                    npc.service.as_str(),
+                    "shop" | "depot" | "spell_trainer" | "craft_trainer"
+                )
             {
                 bail!("invalid NPC profile: {}", npc.id);
             }
@@ -614,6 +618,11 @@ impl WorldMap {
                 .any(|spell_id| npc.service != "spell_trainer" || content.spell(spell_id).is_none())
             {
                 bail!("invalid spell list on NPC: {}", npc.id);
+            }
+            if npc.recipe_ids.iter().any(|recipe_id| {
+                npc.service != "craft_trainer" || content.rune_recipe(recipe_id).is_none()
+            }) {
+                bail!("invalid recipe list on NPC: {}", npc.id);
             }
         }
         info!(
@@ -1407,6 +1416,17 @@ impl World {
         spells.sort();
         Some(spells)
     }
+    pub fn learned_recipes(&self, id: EntityId) -> Option<Vec<String>> {
+        let mut recipes: Vec<_> = self
+            .players
+            .get(&id)?
+            .learned_recipes
+            .iter()
+            .cloned()
+            .collect();
+        recipes.sort();
+        Some(recipes)
+    }
     #[cfg(test)]
     pub fn creature_views(&self) -> Vec<CreatureView> {
         self.creatures
@@ -1575,6 +1595,97 @@ impl World {
         player.inventory = inventory;
         player.learned_spells.insert(spell.id);
         Ok(())
+    }
+
+    pub fn learn_recipe_from_npc(
+        &mut self,
+        player_id: EntityId,
+        npc_id: &str,
+        recipe_id: &str,
+    ) -> Result<(), &'static str> {
+        if self
+            .trades
+            .values()
+            .any(|trade| trade.player_a == player_id || trade.player_b == player_id)
+        {
+            return Err("cannot_learn_while_trading");
+        }
+        let npc = self
+            .npcs
+            .iter()
+            .find(|npc| npc.id == npc_id && npc.service == "craft_trainer")
+            .ok_or("craft_trainer_not_found")?;
+        if !npc.recipe_ids.iter().any(|id| id == recipe_id) {
+            return Err("recipe_not_taught_here");
+        }
+        let recipe = self
+            .content
+            .rune_recipe(recipe_id)
+            .cloned()
+            .ok_or("unknown_rune_recipe")?;
+        let player = self.players.get(&player_id).ok_or("unknown_player")?;
+        if !within_reach(player.view.position, npc.position) {
+            return Err("npc_out_of_reach");
+        }
+        if player.learned_recipes.contains(recipe_id) {
+            return Err("recipe_already_learned");
+        }
+        let gold: u32 = player
+            .inventory
+            .iter()
+            .filter(|item| item.definition_id == "gold_coin")
+            .map(|item| u32::from(item.quantity))
+            .sum();
+        if gold < u32::from(recipe.learn_price) {
+            return Err("not_enough_gold");
+        }
+        let mut inventory = player.inventory.clone();
+        consume_crafting_material(&mut inventory, "gold_coin", recipe.learn_price)
+            .expect("gold amount was checked");
+        let player = self
+            .players
+            .get_mut(&player_id)
+            .expect("player was checked");
+        player.inventory = inventory;
+        player.learned_recipes.insert(recipe.id);
+        Ok(())
+    }
+
+    pub fn learn_recipe_from_item(
+        &mut self,
+        player_id: EntityId,
+        instance_id: EntityId,
+    ) -> Result<String, &'static str> {
+        if self
+            .trades
+            .values()
+            .any(|trade| trade.player_a == player_id || trade.player_b == player_id)
+        {
+            return Err("cannot_learn_while_trading");
+        }
+        let player = self.players.get(&player_id).ok_or("unknown_player")?;
+        let item = player
+            .inventory
+            .iter()
+            .find(|item| item.instance_id == instance_id)
+            .ok_or("item_not_owned")?;
+        let recipe_id = self
+            .content
+            .item(&item.definition_id)
+            .and_then(|definition| definition.teaches_recipe_id.clone())
+            .ok_or("item_does_not_teach_recipe")?;
+        if player.learned_recipes.contains(&recipe_id) {
+            return Err("recipe_already_learned");
+        }
+        let player = self
+            .players
+            .get_mut(&player_id)
+            .expect("player was checked");
+        player
+            .inventory
+            .retain(|item| item.instance_id != instance_id);
+        player.learned_recipes.insert(recipe_id.clone());
+        Ok(recipe_id)
     }
 
     pub fn depot_state(&self, id: EntityId) -> Option<Vec<ItemInstance>> {
@@ -2003,6 +2114,9 @@ impl World {
             .rune_recipe(recipe_id)
             .ok_or("unknown_rune_recipe")?;
         let player = self.players.get_mut(&player_id).ok_or("unknown_player")?;
+        if !player.learned_recipes.contains(recipe_id) {
+            return Err("recipe_not_learned");
+        }
         let profile = vocation_profile(&player.view.vocation).ok_or("unknown_vocation")?;
         if recipe.craft_kind == "sigils" && !profile.can_craft_sigils {
             return Err("vocation_cannot_craft_sigils");
@@ -4322,6 +4436,7 @@ mod tests {
                 combat_effect: None,
                 distance_weapon: None,
                 food_effect: None,
+                teaches_recipe_id: None,
             },
             test_backpack_definition(),
         ])
@@ -4359,6 +4474,9 @@ mod tests {
             last_item_use: Instant::now() - Duration::from_secs(1),
             last_spell_cast: Instant::now() - Duration::from_secs(1),
             learned_spells: HashSet::new(),
+            learned_recipes: ["mark_ember_sigil".into(), "fletch_rough_arrows".into()]
+                .into_iter()
+                .collect(),
             crafting_queue: None,
             last_mana_regen: Instant::now(),
             active_food: None,
@@ -4416,6 +4534,72 @@ mod tests {
             Err("spell_cooldown")
         ));
     }
+
+    #[test]
+    fn recipes_are_learned_from_trainers_or_consumed_formula_items() {
+        let player_id = Uuid::new_v4();
+        let mut player = test_player(player_id, 100.0);
+        player.learned_recipes.clear();
+        player.view.position = Position { x: 9, y: 6, z: 7 };
+        player.inventory.push(ItemInstance {
+            instance_id: Uuid::new_v4(),
+            definition_id: "gold_coin".into(),
+            quantity: 10,
+            charges: None,
+            container_id: None,
+            equipped_slot: None,
+        });
+        let formula_id = Uuid::new_v4();
+        player.inventory.push(ItemInstance {
+            instance_id: formula_id,
+            definition_id: "ember_sigil_formula".into(),
+            quantity: 1,
+            charges: None,
+            container_id: None,
+            equipped_slot: None,
+        });
+        let mut world = World::new(ContentCatalog::load().unwrap(), vec![]);
+        world.insert_player(player);
+
+        assert!(matches!(
+            world.start_crafting(player_id, "mark_ember_sigil", 1),
+            Err("recipe_not_learned")
+        ));
+        world
+            .learn_recipe_from_npc(player_id, "orin_artificer", "fletch_rough_arrows")
+            .unwrap();
+        assert!(
+            world
+                .player(player_id)
+                .unwrap()
+                .learned_recipes
+                .contains("fletch_rough_arrows")
+        );
+        assert_eq!(
+            world
+                .player(player_id)
+                .unwrap()
+                .inventory
+                .iter()
+                .find(|item| item.definition_id == "gold_coin")
+                .unwrap()
+                .quantity,
+            2
+        );
+
+        assert_eq!(
+            world.learn_recipe_from_item(player_id, formula_id).unwrap(),
+            "mark_ember_sigil"
+        );
+        let player = world.player(player_id).unwrap();
+        assert!(player.learned_recipes.contains("mark_ember_sigil"));
+        assert!(
+            !player
+                .inventory
+                .iter()
+                .any(|item| item.instance_id == formula_id)
+        );
+    }
     fn item(quantity: u16) -> ItemInstance {
         ItemInstance {
             instance_id: Uuid::new_v4(),
@@ -4443,6 +4627,7 @@ mod tests {
                 combat_effect: None,
                 distance_weapon: None,
                 food_effect: None,
+                teaches_recipe_id: None,
             },
             ItemDefinition {
                 id: "bag".into(),
@@ -4458,6 +4643,7 @@ mod tests {
                 combat_effect: None,
                 distance_weapon: None,
                 food_effect: None,
+                teaches_recipe_id: None,
             },
             ItemDefinition {
                 id: "blade".into(),
@@ -4473,6 +4659,7 @@ mod tests {
                 combat_effect: None,
                 distance_weapon: None,
                 food_effect: None,
+                teaches_recipe_id: None,
             },
             test_backpack_definition(),
         ])
@@ -4497,6 +4684,7 @@ mod tests {
                     combat_effect: None,
                     distance_weapon: None,
                     food_effect: None,
+                    teaches_recipe_id: None,
                 },
                 ItemDefinition {
                     id: "gold_coin".into(),
@@ -4512,6 +4700,7 @@ mod tests {
                     combat_effect: None,
                     distance_weapon: None,
                     food_effect: None,
+                    teaches_recipe_id: None,
                 },
                 ItemDefinition {
                     id: "mireling_remains".into(),
@@ -4527,6 +4716,7 @@ mod tests {
                     combat_effect: None,
                     distance_weapon: None,
                     food_effect: None,
+                    teaches_recipe_id: None,
                 },
                 ItemDefinition {
                     id: "blank_rune".into(),
@@ -4542,6 +4732,7 @@ mod tests {
                     combat_effect: None,
                     distance_weapon: None,
                     food_effect: None,
+                    teaches_recipe_id: None,
                 },
                 ItemDefinition {
                     id: "ember_rune".into(),
@@ -4561,6 +4752,7 @@ mod tests {
                     }),
                     distance_weapon: None,
                     food_effect: None,
+                    teaches_recipe_id: None,
                 },
                 ItemDefinition {
                     id: "rough_arrow".into(),
@@ -4576,6 +4768,7 @@ mod tests {
                     combat_effect: None,
                     distance_weapon: None,
                     food_effect: None,
+                    teaches_recipe_id: None,
                 },
                 ItemDefinition {
                     id: "ashwood_bow".into(),
@@ -4596,6 +4789,7 @@ mod tests {
                         ammunition_id: "rough_arrow".into(),
                     }),
                     food_effect: None,
+                    teaches_recipe_id: None,
                 },
             ],
             vec![CreatureDefinition {
@@ -4633,6 +4827,7 @@ mod tests {
                     output_quantity: 1,
                     mana_cost: 35,
                     craft_time_ms: 1500,
+                    learn_price: 30,
                 },
                 RuneRecipe {
                     id: "fletch_rough_arrows".into(),
@@ -4644,6 +4839,7 @@ mod tests {
                     output_quantity: 10,
                     mana_cost: 0,
                     craft_time_ms: 500,
+                    learn_price: 8,
                 },
             ],
         )
@@ -4676,6 +4872,7 @@ mod tests {
             combat_effect: None,
             distance_weapon: None,
             food_effect: None,
+            teaches_recipe_id: None,
         }
     }
 
