@@ -44,7 +44,7 @@ const CREATURE_AGGRO_RANGE: i32 = 6;
 const CREATURE_LEASH_RANGE: i32 = 8;
 const CREATURE_SIMULATION_RANGE: i32 = 18;
 const CREATURE_UNREACHABLE_TIMEOUT: Duration = Duration::from_millis(1_500);
-const MAX_WORLD_DIMENSION: i32 = 16_384;
+const MAX_WORLD_DIMENSION: i32 = 35_000;
 static BLOCKED_TILE_SET: OnceLock<HashSet<Position>> = OnceLock::new();
 
 #[derive(Debug, Clone)]
