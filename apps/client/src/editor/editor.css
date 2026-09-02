@@ -811,3 +811,42 @@ select {
   .editor-onboarding { display: none; }
   .pan-controls label { display: none; }
 }
+
+/* Category rail: keeps the palette focused while the main tools remain vertical. */
+.tool-tabs {
+  position: fixed;
+  top: 152px;
+  left: 292px;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 74px;
+  padding: 5px;
+  background: #111814;
+  border: 1px solid #3f4a43;
+  border-left: 0;
+  border-radius: 0 9px 9px 0;
+  box-shadow: 8px 10px 20px #0005;
+}
+.palette .tool-tabs button {
+  width: 100%;
+  min-height: 32px;
+  margin: 0;
+  padding: 6px 4px;
+  justify-content: center;
+  color: #9ba89f;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.palette .tool-tabs button.active {
+  color: #211b0e;
+  border-color: #d6b66f;
+  background: #d1ad67;
+}
+@media (max-width: 1050px) {
+  .tool-tabs { left: 250px; }
+}
