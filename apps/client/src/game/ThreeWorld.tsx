@@ -363,14 +363,41 @@ function BridgeTiles({ positions, texture }: { positions: readonly Position[]; t
   const bridgeSet = useMemo(() => new Set(positions.map(tileKey)), [positions]);
   const railSegments = useMemo(() => {
     const segments: { key: string; position: [number, number, number]; size: [number, number, number] }[] = [];
-    for (const tile of positions) {
-      const x = tile.x + 0.5;
-      const z = tile.y + 0.5;
-      const edge = (dx: number, dz: number) => !bridgeSet.has(`${tile.x + dx}:${tile.y + dz}:${tile.z}`);
-      if (edge(0, -1)) segments.push({ key: `${tileKey(tile)}-n`, position: [x, 0.55, tile.y + 0.06], size: [0.9, 0.09, 0.09] });
-      if (edge(0, 1)) segments.push({ key: `${tileKey(tile)}-s`, position: [x, 0.55, tile.y + 0.94], size: [0.9, 0.09, 0.09] });
-      if (edge(-1, 0)) segments.push({ key: `${tileKey(tile)}-w`, position: [tile.x + 0.06, 0.55, z], size: [0.09, 0.09, 0.9] });
-      if (edge(1, 0)) segments.push({ key: `${tileKey(tile)}-e`, position: [tile.x + 0.94, 0.55, z], size: [0.09, 0.09, 0.9] });
+    const bridgeByKey = new Map(positions.map((tile) => [tileKey(tile), tile]));
+    const visited = new Set<string>();
+    for (const start of positions) {
+      if (visited.has(tileKey(start))) continue;
+      const component: Position[] = [];
+      const pending = [start];
+      visited.add(tileKey(start));
+      while (pending.length > 0) {
+        const tile = pending.pop()!;
+        component.push(tile);
+        for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]] as const) {
+          const neighborKey = `${tile.x + dx}:${tile.y + dy}:${tile.z}`;
+          const neighbor = bridgeByKey.get(neighborKey);
+          if (neighbor && !visited.has(neighborKey)) {
+            visited.add(neighborKey);
+            pending.push(neighbor);
+          }
+        }
+      }
+
+      const xSpan = Math.max(...component.map((tile) => tile.x)) - Math.min(...component.map((tile) => tile.x));
+      const ySpan = Math.max(...component.map((tile) => tile.y)) - Math.min(...component.map((tile) => tile.y));
+      const runsAlongX = xSpan > ySpan;
+      for (const tile of component) {
+        const x = tile.x + 0.5;
+        const z = tile.y + 0.5;
+        const edge = (dx: number, dz: number) => !bridgeSet.has(`${tile.x + dx}:${tile.y + dz}:${tile.z}`);
+        if (runsAlongX) {
+          if (edge(0, -1)) segments.push({ key: `${tileKey(tile)}-n`, position: [x, 0.55, tile.y + 0.06], size: [0.9, 0.09, 0.09] });
+          if (edge(0, 1)) segments.push({ key: `${tileKey(tile)}-s`, position: [x, 0.55, tile.y + 0.94], size: [0.9, 0.09, 0.09] });
+        } else {
+          if (edge(-1, 0)) segments.push({ key: `${tileKey(tile)}-w`, position: [tile.x + 0.06, 0.55, z], size: [0.09, 0.09, 0.9] });
+          if (edge(1, 0)) segments.push({ key: `${tileKey(tile)}-e`, position: [tile.x + 0.94, 0.55, z], size: [0.09, 0.09, 0.9] });
+        }
+      }
     }
     return segments;
   }, [bridgeSet, positions]);

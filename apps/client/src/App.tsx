@@ -614,11 +614,22 @@ function EscapeMenu({ onResume, onOpen, onLeave }: { onResume: () => void; onOpe
 function OptionsPanel({ showPerformance, reducedMotion, onShowPerformance, onReducedMotion }: { showPerformance: boolean; reducedMotion: boolean; onShowPerformance: (value: boolean) => void; onReducedMotion: (value: boolean) => void }) {
   const [worldTime, setWorldTimeInput] = useState(() => worldTimeLabel(worldEnvironment()));
   const [worldTimePaused, setWorldTimePausedInput] = useState(() => isWorldTimePaused());
+  const parsedWorldTime = () => {
+    const [hour, minute] = worldTime.split(":").map(Number);
+    return Number.isFinite(hour) && Number.isFinite(minute) ? { hour, minute } : null;
+  };
   const changeWorldTime = (value: string) => {
     const [hour, minute] = value.split(":").map(Number);
     if (!Number.isFinite(hour) || !Number.isFinite(minute)) return;
     setWorldTime(hour, minute);
     setWorldTimeInput(value);
+  };
+  const changeWorldTimePaused = (paused: boolean) => {
+    const selectedTime = parsedWorldTime();
+    const now = Date.now();
+    if (paused && selectedTime) setWorldTime(selectedTime.hour, selectedTime.minute, now);
+    setWorldTimePaused(paused, now);
+    setWorldTimePausedInput(paused);
   };
   return (
     <div className="options-panel">
@@ -633,7 +644,7 @@ function OptionsPanel({ showPerformance, reducedMotion, onShowPerformance, onRed
       <section>
         <header><span className="option-icon">TIME</span><div><h3>World time</h3><p>Set the local preview time for lighting and weather.</p></div></header>
         <label><span><strong>Time of day</strong><small>Change the current world clock.</small></span><input type="time" value={worldTime} onChange={(event) => changeWorldTime(event.target.value)} /></label>
-        <label><span><strong>Pause world clock</strong><small>Keep the current time from advancing.</small></span><input type="checkbox" checked={worldTimePaused} onChange={(event) => { setWorldTimePaused(event.target.checked); setWorldTimePausedInput(event.target.checked); }} /></label>
+        <label><span><strong>Pause world clock</strong><small>Keep the selected time from advancing.</small></span><input type="checkbox" checked={worldTimePaused} onChange={(event) => changeWorldTimePaused(event.target.checked)} /></label>
       </section>
       <p className="options-note">Gameplay shortcuts remain active: C for Character, I for Inventory, K for Crafting and H for Help.</p>
     </div>
