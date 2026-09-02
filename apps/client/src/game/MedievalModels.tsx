@@ -1,9 +1,9 @@
 import { useFrame, useLoader } from "@react-three/fiber";
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { BuildingView, WindowView } from "../protocol";
 import { HOUSE_DOOR_PLACEMENT, type DoorwayLayout, type FacadeOpeningLayout } from "./DoorwayLayout";
-import { MedievalHouseWallAsset, useHouseFacadePlasterMaterial } from "./MedievalAssetModels";
+import { InstancedMedievalHouseWalls, MedievalHouseWallAsset, useHouseFacadePlasterMaterial } from "./MedievalAssetModels";
 
 export function MedievalWall({
   position,
@@ -28,6 +28,10 @@ export function MedievalWindowWall({
   return <MedievalHouseWallAsset kind="window" position={position} size={size} />;
 }
 
+export function InstancedHouseWalls({ segments }: { segments: readonly { position: [number, number, number]; size: [number, number, number]; rotation: number }[] }) {
+  return <InstancedMedievalHouseWalls segments={segments} />;
+}
+
 export function HousePlinth({ position, size }: { position: [number, number, number]; size: [number, number, number] }) {
   const texture = useLoader(THREE.TextureLoader, "/assets/world/aldoria-castle-stone-v2.png");
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
@@ -39,6 +43,34 @@ export function HousePlinth({ position, size }: { position: [number, number, num
       <meshStandardMaterial map={texture} color="#9fa29a" roughness={0.98} />
     </mesh>
   );
+}
+
+export function InstancedHousePlinths({ segments }: { segments: readonly { position: [number, number, number]; size: [number, number, number] }[] }) {
+  const texture = useLoader(THREE.TextureLoader, "/assets/world/aldoria-castle-stone-v2.png");
+  const horizontal = useMemo(() => segments.filter((segment) => segment.size[0] > segment.size[2]), [segments]);
+  const vertical = useMemo(() => segments.filter((segment) => segment.size[0] <= segment.size[2]), [segments]);
+  const horizontalMesh = useRef<THREE.InstancedMesh>(null);
+  const verticalMesh = useRef<THREE.InstancedMesh>(null);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  useLayoutEffect(() => {
+    const matrix = new THREE.Matrix4();
+    horizontal.forEach((segment, index) => {
+      if (!horizontalMesh.current) return;
+      matrix.makeTranslation(segment.position[0], 0.27, segment.position[2]);
+      horizontalMesh.current.setMatrixAt(index, matrix); horizontalMesh.current.instanceMatrix.needsUpdate = true;
+    });
+    vertical.forEach((segment, index) => {
+      if (!verticalMesh.current) return;
+      matrix.makeTranslation(segment.position[0], 0.27, segment.position[2]);
+      verticalMesh.current.setMatrixAt(index, matrix); verticalMesh.current.instanceMatrix.needsUpdate = true;
+    });
+    [horizontalMesh.current, verticalMesh.current].forEach((mesh) => mesh?.computeBoundingSphere());
+  }, [horizontal, vertical]);
+  return <>
+    {horizontal.length > 0 && <instancedMesh ref={horizontalMesh} args={[undefined, undefined, horizontal.length]} castShadow receiveShadow><boxGeometry args={[1.04, 0.54, 0.24]} /><meshStandardMaterial map={texture} color="#9fa29a" roughness={0.98} /></instancedMesh>}
+    {vertical.length > 0 && <instancedMesh ref={verticalMesh} args={[undefined, undefined, vertical.length]} castShadow receiveShadow><boxGeometry args={[0.24, 0.54, 1.04]} /><meshStandardMaterial map={texture} color="#9fa29a" roughness={0.98} /></instancedMesh>}
+  </>;
 }
 
 export function HouseDoorway({

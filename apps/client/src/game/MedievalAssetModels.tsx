@@ -1,5 +1,5 @@
 import { useLoader } from "@react-three/fiber";
-import { useEffect, useMemo } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { BuildingView, WindowView } from "../protocol";
@@ -43,6 +43,58 @@ export function MedievalHouseWallAsset({
       <primitive object={object} />
     </group>
   );
+}
+
+type HouseWallInstance = { position: [number, number, number]; size: [number, number, number]; rotation: number };
+
+/** Batches ordinary wall tiles for one building while keeping that building's
+ * materials independent for occlusion fading. Door and window tiles remain
+ * outside this batch because they have their own opening geometry. */
+export function InstancedMedievalHouseWalls({ segments }: { segments: readonly HouseWallInstance[] }) {
+  const gltf = useLoader(GLTFLoader, MEDIEVAL_VILLAGE_ASSET);
+  const parts = useMemo(() => {
+    const source = gltf.scenes
+      .map((scene) => scene.getObjectByName(nodeNames.solid))
+      .find((candidate): candidate is THREE.Object3D => candidate !== undefined);
+    if (!source) throw new Error("Missing straight medieval house wall asset");
+    source.updateWorldMatrix(true, true);
+    const sourceInverse = source.matrixWorld.clone().invert();
+    const next: { geometry: THREE.BufferGeometry; material: THREE.Material | THREE.Material[]; matrix: THREE.Matrix4 }[] = [];
+    source.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      next.push({
+        geometry: child.geometry,
+        material: Array.isArray(child.material) ? child.material.map((material) => material.clone()) : child.material.clone(),
+        matrix: sourceInverse.clone().multiply(child.matrixWorld),
+      });
+    });
+    if (!next.length) throw new Error("Straight medieval house wall asset has no mesh parts");
+    return next;
+  }, [gltf.scenes]);
+  const meshes = useRef<(THREE.InstancedMesh | null)[]>([]);
+  useLayoutEffect(() => {
+    const buildingMatrix = new THREE.Matrix4(); const rotation = new THREE.Quaternion(); const translation = new THREE.Vector3(); const scale = new THREE.Vector3(); const matrix = new THREE.Matrix4();
+    segments.forEach((segment, instanceIndex) => {
+      const horizontal = segment.size[0] > segment.size[2];
+      translation.set(segment.position[0], 0, segment.position[2]);
+      rotation.setFromAxisAngle(new THREE.Vector3(0, 1, 0), segment.rotation);
+      scale.set(horizontal ? segment.size[0] / SOURCE_WIDTH : segment.size[2] / SOURCE_WIDTH, segment.size[1] / SOURCE_HEIGHT, Math.max(0.28, (horizontal ? segment.size[2] : segment.size[0]) / SOURCE_DEPTH));
+      buildingMatrix.compose(translation, rotation, scale);
+      parts.forEach((part, partIndex) => {
+        const mesh = meshes.current[partIndex];
+        if (!mesh) return;
+        matrix.copy(buildingMatrix).multiply(part.matrix);
+        mesh.setMatrixAt(instanceIndex, matrix);
+        mesh.instanceMatrix.needsUpdate = true;
+      });
+    });
+    meshes.current.forEach((mesh) => mesh?.computeBoundingSphere());
+  }, [parts, segments]);
+  useEffect(() => () => parts.forEach((part) => {
+    (Array.isArray(part.material) ? part.material : [part.material]).forEach((material) => material.dispose());
+  }), [parts]);
+  if (!segments.length) return null;
+  return <>{parts.map((part, index) => <instancedMesh key={index} ref={(mesh: THREE.InstancedMesh | null) => { meshes.current[index] = mesh; }} args={[part.geometry, part.material, segments.length]} castShadow receiveShadow />)}</>;
 }
 
 /** Uses the exact plaster material from the straight house-wall asset. */

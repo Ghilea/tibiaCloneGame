@@ -18,7 +18,7 @@ import { createActorMotionState, sampleActorMotion, type ActorMotionState } from
 import { AnimatedCharacter, type CharacterKind } from "./AnimatedCharacter";
 import { CreatureModel } from "./CreatureModels";
 import { CLIENT_STEP_MS, InputController } from "./InputController";
-import { GabledRoof, HangingSign, HouseDoorway, HousePlinth, HouseWindowOpening, MedievalDoorWall, MedievalWall, ShutterWindow } from "./MedievalModels";
+import { GabledRoof, HangingSign, HouseDoorway, HouseWindowOpening, InstancedHousePlinths, InstancedHouseWalls, MedievalDoorWall, MedievalWall, ShutterWindow } from "./MedievalModels";
 import { createHouseDoorwayLayout, createHouseWindowLayout } from "./DoorwayLayout";
 import { WorldState, type CombatEffectView } from "./WorldState";
 import { tileCenter, worldToTile, WORLD_TILE_SIZE } from "./WorldCoordinates";
@@ -378,31 +378,49 @@ function BridgeTiles({ positions, texture }: { positions: readonly Position[]; t
   return (
     <group>
       <InstancedTiles positions={positions} color="#80603c" texture={texture} height={0.14} y={0.09} />
-      {railSegments.map((segment) => (
-        <group key={segment.key}>
-          <mesh position={segment.position} castShadow receiveShadow>
-            <boxGeometry args={segment.size} />
-            <meshStandardMaterial map={texture} color="#725334" roughness={0.9} />
-          </mesh>
-          <mesh position={[segment.position[0], segment.position[1] + 0.3, segment.position[2]]} castShadow receiveShadow>
-            <boxGeometry args={segment.size} />
-            <meshStandardMaterial map={texture} color="#725334" roughness={0.9} />
-          </mesh>
-          {segment.size[0] > segment.size[2] ? (
-            <>
-              <mesh position={[segment.position[0] - 0.38, 0.48, segment.position[2]]} castShadow><cylinderGeometry args={[0.07, 0.08, 0.78, 8]} /><meshStandardMaterial map={texture} color="#684a2f" roughness={0.92} /></mesh>
-              <mesh position={[segment.position[0] + 0.38, 0.48, segment.position[2]]} castShadow><cylinderGeometry args={[0.07, 0.08, 0.78, 8]} /><meshStandardMaterial map={texture} color="#684a2f" roughness={0.92} /></mesh>
-            </>
-          ) : (
-            <>
-              <mesh position={[segment.position[0], 0.48, segment.position[2] - 0.38]} castShadow><cylinderGeometry args={[0.07, 0.08, 0.78, 8]} /><meshStandardMaterial map={texture} color="#684a2f" roughness={0.92} /></mesh>
-              <mesh position={[segment.position[0], 0.48, segment.position[2] + 0.38]} castShadow><cylinderGeometry args={[0.07, 0.08, 0.78, 8]} /><meshStandardMaterial map={texture} color="#684a2f" roughness={0.92} /></mesh>
-            </>
-          )}
-        </group>
-      ))}
+      <InstancedBridgeRails segments={railSegments} texture={texture} />
     </group>
   );
+}
+
+function InstancedBridgeRails({ segments, texture }: { segments: readonly { key: string; position: [number, number, number]; size: [number, number, number] }[]; texture: THREE.Texture }) {
+  const horizontal = useMemo(() => segments.filter((segment) => segment.size[0] > segment.size[2]), [segments]);
+  const vertical = useMemo(() => segments.filter((segment) => segment.size[0] <= segment.size[2]), [segments]);
+  const posts = useMemo(() => segments.flatMap((segment) => segment.size[0] > segment.size[2]
+    ? [[segment.position[0] - 0.38, 0.48, segment.position[2]], [segment.position[0] + 0.38, 0.48, segment.position[2]]]
+    : [[segment.position[0], 0.48, segment.position[2] - 0.38], [segment.position[0], 0.48, segment.position[2] + 0.38]]) as [number, number, number][], [segments]);
+  const horizontalMesh = useRef<THREE.InstancedMesh>(null);
+  const verticalMesh = useRef<THREE.InstancedMesh>(null);
+  const postMesh = useRef<THREE.InstancedMesh>(null);
+  useLayoutEffect(() => {
+    const matrix = new THREE.Matrix4();
+    horizontal.forEach((segment, index) => {
+      if (!horizontalMesh.current) return;
+      for (const y of [segment.position[1], segment.position[1] + 0.3]) {
+        matrix.makeTranslation(segment.position[0], y, segment.position[2]);
+        horizontalMesh.current.setMatrixAt(index * 2 + (y === segment.position[1] ? 0 : 1), matrix);
+      }
+      horizontalMesh.current.instanceMatrix.needsUpdate = true;
+    });
+    vertical.forEach((segment, index) => {
+      if (!verticalMesh.current) return;
+      for (const y of [segment.position[1], segment.position[1] + 0.3]) {
+        matrix.makeTranslation(segment.position[0], y, segment.position[2]);
+        verticalMesh.current.setMatrixAt(index * 2 + (y === segment.position[1] ? 0 : 1), matrix);
+      }
+      verticalMesh.current.instanceMatrix.needsUpdate = true;
+    });
+    posts.forEach((position, index) => {
+      if (!postMesh.current) return;
+      matrix.makeTranslation(...position); postMesh.current.setMatrixAt(index, matrix); postMesh.current.instanceMatrix.needsUpdate = true;
+    });
+    [horizontalMesh.current, verticalMesh.current, postMesh.current].forEach((mesh) => mesh?.computeBoundingSphere());
+  }, [horizontal, posts, vertical]);
+  return <>
+    {horizontal.length > 0 && <instancedMesh ref={horizontalMesh} args={[undefined, undefined, horizontal.length * 2]} castShadow receiveShadow><boxGeometry args={[0.9, 0.09, 0.09]} /><meshStandardMaterial map={texture} color="#725334" roughness={0.9} /></instancedMesh>}
+    {vertical.length > 0 && <instancedMesh ref={verticalMesh} args={[undefined, undefined, vertical.length * 2]} castShadow receiveShadow><boxGeometry args={[0.09, 0.09, 0.9]} /><meshStandardMaterial map={texture} color="#725334" roughness={0.9} /></instancedMesh>}
+    {posts.length > 0 && <instancedMesh ref={postMesh} args={[undefined, undefined, posts.length]} castShadow><cylinderGeometry args={[0.07, 0.08, 0.78, 8]} /><meshStandardMaterial map={texture} color="#684a2f" roughness={0.92} /></instancedMesh>}
+  </>;
 }
 
 function WaterTiles({ positions }: { positions: readonly Position[] }) {
@@ -480,8 +498,8 @@ const Structures = memo(function Structures({ map, input, floor, indoorBuildingI
 const StaticStructures = memo(function StaticStructures({ map, input, floor, buildings }: { map: NonNullable<WorldState["map"]>; input: InputController; floor: number; buildings: readonly BuildingView[] }) {
   return <>
       <ConnectedWalls positions={map.castleWalls.filter((tile) => tile.z === floor)} castle />
-      {map.trees.filter((tile) => tile.z === floor).map((tile) => <Tree key={tileKey(tile)} position={tile} />)}
-      {map.torches.filter((tile) => tile.z === floor).map((tile) => <Torch key={tileKey(tile)} position={tile} />)}
+      <InstancedTrees positions={map.trees.filter((tile) => tile.z === floor)} />
+      <InstancedTorches positions={map.torches.filter((tile) => tile.z === floor)} />
       {map.doors.filter((door) => door.position.z === floor && !insideAnyBuilding(door.position, buildings)).map((door) => <Door key={door.id} door={door} input={input} />)}
     </>;
 });
@@ -510,7 +528,8 @@ const Building = memo(function Building({ building, doors, windows, input }: { b
         <meshStandardMaterial color={building.kind === "keep" ? "#666763" : "#765b42"} roughness={0.96} />
       </mesh>
       <group userData={{ occluder: true }}>
-        {building.kind === "house" && wallSegments.filter((wall) => !wall.door).map((wall) => <HousePlinth key={`plinth-${wall.key}`} position={wall.position} size={wall.size} />)}
+        {building.kind === "house" && <InstancedHousePlinths segments={wallSegments.filter((wall) => !wall.door)} />}
+        {building.kind === "house" && <InstancedHouseWalls segments={wallSegments.filter((wall) => !wall.door && !wall.window)} />}
         {wallSegments.map((wall) => (
           wall.door
             ? building.kind === "house"
@@ -518,7 +537,7 @@ const Building = memo(function Building({ building, doors, windows, input }: { b
               : <MedievalDoorWall key={wall.key} position={wall.position} size={wall.size} keep openingHeight={Math.min(height - 0.15, DOOR_HEIGHT) + 0.1} />
             : wall.window && building.kind === "house"
             ? <HouseWindowOpening key={wall.key} position={wall.position} size={wall.size} wallRotation={wall.rotation} layout={createHouseWindowLayout(height, Math.max(wall.size[0], wall.size[2]))} open={wall.window.open} onClick={() => input.toggleWindow(wall.window!.id, wall.window!.position)} />
-            : <MedievalWall key={wall.key} position={wall.position} size={wall.size} keep={building.kind === "keep"} />
+            : building.kind === "house" ? null : <MedievalWall key={wall.key} position={wall.position} size={wall.size} keep />
         ))}
         <HangingSign building={building} wallHeight={height} />
         {building.kind !== "house" && matchingDoors.map((door) => <Door key={door.id} door={door} building={building} input={input} tall={height} />)}
@@ -534,42 +553,13 @@ function buildingWallHeight(building: BuildingView) {
 }
 
 function ConnectedWalls({ positions, castle }: { positions: readonly Position[]; castle: boolean }) {
-  const set = new Set(positions.map(tileKey));
   const height = castle ? CASTLE_HEIGHT : WALL_HEIGHT;
-  return (
-    <group>
-      {positions.map((tile) => {
-        return (
-          <ConnectedWallTile
-            key={tileKey(tile)}
-            position={[tile.x + 0.5, 0, tile.y + 0.5]}
-            height={height}
-            castle={castle}
-            west={set.has(`${tile.x - 1}:${tile.y}:${tile.z}`)}
-            east={set.has(`${tile.x + 1}:${tile.y}:${tile.z}`)}
-            north={set.has(`${tile.x}:${tile.y - 1}:${tile.z}`)}
-            south={set.has(`${tile.x}:${tile.y + 1}:${tile.z}`)}
-          />
-        );
-      })}
-    </group>
-  );
-}
-
-function ConnectedWallTile({ position, height, castle, west, east, north, south }: {
-  position: [number, number, number];
-  height: number;
-  castle: boolean;
-  west: boolean;
-  east: boolean;
-  north: boolean;
-  south: boolean;
-}) {
   const castleTexture = useLoader(THREE.TextureLoader, "/assets/world/aldoria-castle-stone-v2.png");
   castleTexture.wrapS = castleTexture.wrapT = THREE.RepeatWrapping;
   castleTexture.repeat.set(1.35, 1.35);
   castleTexture.colorSpace = THREE.SRGBColorSpace;
   const geometry = useMemo(() => {
+    const set = new Set(positions.map(tileKey));
     const thickness = castle ? 0.28 : 0.18;
     const centerSize = castle ? 0.3 : 0.24;
     const pieces: THREE.BufferGeometry[] = [];
@@ -578,21 +568,24 @@ function ConnectedWallTile({ position, height, castle, west, east, north, south 
       box.translate(...offset);
       pieces.push(box);
     };
-    addBox([centerSize, height, centerSize], [0, height / 2, 0]);
-    if (west) addBox([0.42, height, thickness], [-0.32, height / 2, 0]);
-    if (east) addBox([0.42, height, thickness], [0.32, height / 2, 0]);
-    if (north) addBox([thickness, height, 0.42], [0, height / 2, -0.32]);
-    if (south) addBox([thickness, height, 0.42], [0, height / 2, 0.32]);
-    if (castle) addBox([0.25, 0.36, 0.25], [0, height + 0.18, 0]);
+    positions.forEach((tile) => {
+      const x = tile.x + 0.5; const z = tile.y + 0.5;
+      addBox([centerSize, height, centerSize], [x, height / 2, z]);
+      if (set.has(`${tile.x - 1}:${tile.y}:${tile.z}`)) addBox([0.42, height, thickness], [x - 0.32, height / 2, z]);
+      if (set.has(`${tile.x + 1}:${tile.y}:${tile.z}`)) addBox([0.42, height, thickness], [x + 0.32, height / 2, z]);
+      if (set.has(`${tile.x}:${tile.y - 1}:${tile.z}`)) addBox([thickness, height, 0.42], [x, height / 2, z - 0.32]);
+      if (set.has(`${tile.x}:${tile.y + 1}:${tile.z}`)) addBox([thickness, height, 0.42], [x, height / 2, z + 0.32]);
+      if (castle) addBox([0.25, 0.36, 0.25], [x, height + 0.18, z]);
+    });
     const merged = mergeGeometries(pieces, false);
     pieces.forEach((piece) => piece.dispose());
     if (!merged) throw new Error("Unable to merge connected wall geometry");
     merged.computeBoundingBox();
     merged.computeBoundingSphere();
     return merged;
-  }, [castle, east, height, north, south, west]);
+  }, [castle, height, positions]);
   useEffect(() => () => geometry.dispose(), [geometry]);
-  return <mesh geometry={geometry} position={position} castShadow receiveShadow userData={{ occluder: true }}>
+  return <mesh geometry={geometry} castShadow receiveShadow userData={{ occluder: true }}>
     <meshStandardMaterial map={castle ? castleTexture : undefined} color={castle ? "#d0d0c5" : "#aa987c"} roughness={0.98} />
   </mesh>;
 }
@@ -637,31 +630,58 @@ function Door({ door, input, building, tall = WALL_HEIGHT }: { door: DoorView; i
   );
 }
 
-function Tree({ position }: { position: Position }) {
-  const phase = stablePhase(tileKey(position));
-  return (
-    <group position={[position.x + 0.5, 0, position.y + 0.5]} rotation={[0, phase, 0]} scale={[1.18, 1.22, 1.18]} userData={{ occluder: true }}>
-      <mesh position={[0, 0.72, 0]} castShadow receiveShadow><cylinderGeometry args={[0.14, 0.2, 1.45, 8]} /><meshStandardMaterial color="#604128" roughness={1} /></mesh>
-      <mesh position={[0, 1.75, 0]} castShadow><coneGeometry args={[0.82, 1.75, 9]} /><meshStandardMaterial color="#315c38" roughness={0.95} /></mesh>
-      <mesh position={[0, 2.35, 0]} castShadow><coneGeometry args={[0.61, 1.35, 9]} /><meshStandardMaterial color="#3b7043" roughness={0.95} /></mesh>
-    </group>
-  );
+function InstancedTrees({ positions }: { positions: readonly Position[] }) {
+  const trunks = useRef<THREE.InstancedMesh>(null);
+  const lowerCanopies = useRef<THREE.InstancedMesh>(null);
+  const upperCanopies = useRef<THREE.InstancedMesh>(null);
+  useLayoutEffect(() => {
+    const matrix = new THREE.Matrix4(); const quaternion = new THREE.Quaternion(); const location = new THREE.Vector3(); const scale = new THREE.Vector3(1.18, 1.22, 1.18);
+    positions.forEach((position, index) => {
+      location.set(position.x + 0.5, 0, position.y + 0.5);
+      quaternion.setFromEuler(new THREE.Euler(0, stablePhase(tileKey(position)), 0));
+      for (const [mesh, y] of [[trunks.current, 0.72], [lowerCanopies.current, 1.75], [upperCanopies.current, 2.35]] as const) {
+        if (!mesh) continue;
+        location.y = y;
+        matrix.compose(location, quaternion, scale);
+        mesh.setMatrixAt(index, matrix);
+        mesh.instanceMatrix.needsUpdate = true;
+      }
+    });
+    [trunks.current, lowerCanopies.current, upperCanopies.current].forEach((mesh) => mesh?.computeBoundingSphere());
+  }, [positions]);
+  if (!positions.length) return null;
+  return <group userData={{ occluder: true }}>
+    <instancedMesh ref={trunks} args={[undefined, undefined, positions.length]} castShadow receiveShadow><cylinderGeometry args={[0.14, 0.2, 1.45, 8]} /><meshStandardMaterial color="#604128" roughness={1} /></instancedMesh>
+    <instancedMesh ref={lowerCanopies} args={[undefined, undefined, positions.length]} castShadow><coneGeometry args={[0.82, 1.75, 9]} /><meshStandardMaterial color="#315c38" roughness={0.95} /></instancedMesh>
+    <instancedMesh ref={upperCanopies} args={[undefined, undefined, positions.length]} castShadow><coneGeometry args={[0.61, 1.35, 9]} /><meshStandardMaterial color="#3b7043" roughness={0.95} /></instancedMesh>
+  </group>;
 }
 
-function Torch({ position }: { position: Position }) {
-  const flame = useRef<THREE.Mesh>(null);
-  const phase = stablePhase(tileKey(position));
+function InstancedTorches({ positions }: { positions: readonly Position[] }) {
+  const posts = useRef<THREE.InstancedMesh>(null);
+  const flames = useRef<THREE.InstancedMesh>(null);
+  const flameMaterial = useRef<THREE.MeshStandardMaterial>(null);
+  useLayoutEffect(() => {
+    const matrix = new THREE.Matrix4(); const location = new THREE.Vector3(); const scale = new THREE.Vector3(1.15, 1.15, 1.15);
+    positions.forEach((position, index) => {
+      for (const [mesh, y] of [[posts.current, 0.62], [flames.current, 1.31]] as const) {
+        if (!mesh) continue;
+        location.set(position.x + 0.5, y, position.y + 0.5);
+        matrix.compose(location, new THREE.Quaternion(), scale);
+        mesh.setMatrixAt(index, matrix);
+        mesh.instanceMatrix.needsUpdate = true;
+      }
+    });
+    [posts.current, flames.current].forEach((mesh) => mesh?.computeBoundingSphere());
+  }, [positions]);
   useFrame(({ clock }) => {
-    if (!flame.current) return;
-    const flicker = 1 + Math.sin(clock.elapsedTime * 10 + phase) * 0.12;
-    flame.current.scale.set(flicker, 1 / flicker, flicker);
+    if (flameMaterial.current) flameMaterial.current.emissiveIntensity = 2.8 + Math.sin(clock.elapsedTime * 9) * 0.25;
   });
-  return (
-    <group position={[position.x + 0.5, 0, position.y + 0.5]} scale={1.15}>
-      <mesh position={[0, 0.62, 0]} castShadow><cylinderGeometry args={[0.035, 0.055, 1.24, 7]} /><meshStandardMaterial color="#49301f" /></mesh>
-      <mesh ref={flame} position={[0, 1.31, 0]}><coneGeometry args={[0.13, 0.38, 9]} /><meshStandardMaterial color="#ff8b32" emissive="#ff4d10" emissiveIntensity={3} toneMapped={false} /></mesh>
-    </group>
-  );
+  if (!positions.length) return null;
+  return <>
+    <instancedMesh ref={posts} args={[undefined, undefined, positions.length]} castShadow><cylinderGeometry args={[0.035, 0.055, 1.24, 7]} /><meshStandardMaterial color="#49301f" /></instancedMesh>
+    <instancedMesh ref={flames} args={[undefined, undefined, positions.length]}><coneGeometry args={[0.13, 0.38, 9]} /><meshStandardMaterial ref={flameMaterial} color="#ff8b32" emissive="#ff4d10" emissiveIntensity={3} toneMapped={false} /></instancedMesh>
+  </>;
 }
 
 type ActorClick = (event: ThreeEvent<MouseEvent>) => void;
