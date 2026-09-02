@@ -1,10 +1,10 @@
 use game_types::{
     CreatureView, GroundItem, ItemDefinition, ItemInstance, NpcView, PlayerView, Position,
-    RuneRecipe, SpellDefinition,
+    ProfessionSkillView, ResourceNodeView, RuneRecipe, SpellDefinition,
 };
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u16 = 24;
+pub const PROTOCOL_VERSION: u16 = 25;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -108,6 +108,9 @@ pub enum ClientMessage {
     LearnRecipeFromItem {
         instance_id: game_types::EntityId,
     },
+    MineResource {
+        node_id: String,
+    },
     CastSpell {
         spell_id: String,
         target_id: game_types::EntityId,
@@ -142,12 +145,15 @@ pub enum ServerMessage {
         ground_items: Vec<GroundItem>,
         creatures: Vec<CreatureView>,
         npcs: Vec<NpcView>,
+        resource_nodes: Vec<ResourceNodeView>,
+        profession_skills: Vec<ProfessionSkillView>,
     },
     WorldRegion {
         map: MapView,
         ground_items: Vec<GroundItem>,
         creatures: Vec<CreatureView>,
         npcs: Vec<NpcView>,
+        resource_nodes: Vec<ResourceNodeView>,
     },
     PlayerJoined {
         player: PlayerView,
@@ -206,6 +212,13 @@ pub enum ServerMessage {
     RecipesChanged {
         player_id: game_types::EntityId,
         learned_recipe_ids: Vec<String>,
+    },
+    ResourceNodesChanged {
+        resource_nodes: Vec<ResourceNodeView>,
+    },
+    ProfessionSkillsChanged {
+        player_id: game_types::EntityId,
+        skills: Vec<ProfessionSkillView>,
     },
     GroundItemsChanged {
         ground_items: Vec<GroundItem>,

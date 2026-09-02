@@ -12,8 +12,8 @@ use game_protocol::{
 };
 use game_types::{
     CreatureAttack, CreatureView, EntityId, GroundItem, ItemDefinition, ItemInstance,
-    MASTERY_BUDGET, MAX_SKILL_LEVEL, NpcView, PlayerView, Position, RuneRecipe, SpellDefinition,
-    mastery_spent, skill_mastery_cost,
+    MASTERY_BUDGET, MAX_SKILL_LEVEL, NpcView, PlayerView, Position, ProfessionSkillView,
+    ResourceNodeView, RuneRecipe, SpellDefinition, mastery_spent, skill_mastery_cost,
 };
 use serde::Deserialize;
 use tracing::info;
@@ -59,6 +59,7 @@ pub struct Player {
     pub last_spell_cast: Instant,
     pub learned_spells: HashSet<String>,
     pub learned_recipes: HashSet<String>,
+    pub profession_skills: HashMap<String, (u16, u32)>,
     pub crafting_queue: Option<CraftingQueue>,
     pub last_mana_regen: Instant,
     pub active_food: Option<ActiveFood>,
@@ -87,6 +88,12 @@ pub struct CraftingUpdate {
     pub remaining: u16,
     pub status: &'static str,
     pub inventory_changed: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct MiningUpdate {
+    pub node: ResourceNodeView,
+    pub skill: ProfessionSkillView,
 }
 
 #[derive(Debug, Clone)]
@@ -181,6 +188,43 @@ struct WorldSpawnDocument {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct ResourceNodeDocument {
+    id: String,
+    kind: String,
+    position: Position,
+    #[serde(default = "default_resource_respawn_ms")]
+    respawn_ms: u64,
+    #[serde(default)]
+    required_skill_level: u16,
+}
+
+fn default_resource_respawn_ms() -> u64 {
+    30_000
+}
+
+#[derive(Debug, Clone)]
+struct ResourceNode {
+    document: ResourceNodeDocument,
+    ready_at: Option<Instant>,
+}
+
+impl ResourceNode {
+    fn view(&self) -> ResourceNodeView {
+        ResourceNodeView {
+            id: self.document.id.clone(),
+            kind: self.document.kind.clone(),
+            position: self.document.position,
+            available: self
+                .ready_at
+                .is_none_or(|ready_at| ready_at <= Instant::now()),
+            respawn_ms: self.document.respawn_ms,
+            required_skill_level: self.document.required_skill_level,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct WorldDocument {
     version: u16,
     name: String,
@@ -207,6 +251,8 @@ struct WorldDocument {
     doors: Vec<DoorView>,
     stairs: Vec<StairView>,
     spawns: Vec<WorldSpawnDocument>,
+    #[serde(default)]
+    resource_nodes: Vec<ResourceNodeDocument>,
     #[serde(default)]
     npcs: Vec<NpcView>,
     #[serde(default)]
@@ -481,7 +527,7 @@ impl WorldMap {
     fn load(
         path: &Path,
         content: &ContentCatalog,
-    ) -> anyhow::Result<(Self, Vec<Spawn>, Vec<NpcView>, String)> {
+    ) -> anyhow::Result<(Self, Vec<Spawn>, Vec<NpcView>, Vec<ResourceNode>, String)> {
         let load_started = Instant::now();
         let file_size_mb = fs::metadata(path)
             .map(|metadata| metadata.len() as f64 / 1_048_576.0)
@@ -509,6 +555,7 @@ impl WorldMap {
         }
         let mut spawn_ids = HashSet::new();
         let spawn_documents = document.spawns;
+        let resource_documents = document.resource_nodes;
         let requested_player_spawn = document.player_spawn;
         let mut map = Self::from_view(MapView {
             width: document.width,
@@ -626,6 +673,45 @@ impl WorldMap {
                 bail!("invalid recipe list on NPC: {}", npc.id);
             }
         }
+        let mut resource_ids = HashSet::new();
+        let mut resource_positions = HashSet::new();
+        let resource_nodes: Vec<_> = resource_documents
+            .into_iter()
+            .map(|node| {
+                let stable_id = !node.id.is_empty()
+                    && node.id.chars().all(|character| {
+                        character.is_ascii_lowercase()
+                            || character.is_ascii_digit()
+                            || character == '_'
+                    });
+                if !stable_id || !resource_ids.insert(node.id.clone()) {
+                    bail!("resource node ids must be stable and unique: {}", node.id);
+                }
+                if node.kind != "copper_vein"
+                    || node.respawn_ms < 1_000
+                    || node.required_skill_level > 100
+                {
+                    bail!("invalid resource node: {}", node.id);
+                }
+                if !map.is_walkable(node.position)
+                    || !resource_positions.insert(node.position)
+                    || spawns.iter().any(|spawn| spawn.position == node.position)
+                    || document
+                        .npcs
+                        .iter()
+                        .any(|npc| npc.position == node.position)
+                {
+                    bail!(
+                        "resource node is not on a unique walkable tile: {}",
+                        node.id
+                    );
+                }
+                Ok(ResourceNode {
+                    document: node,
+                    ready_at: None,
+                })
+            })
+            .collect::<anyhow::Result<_>>()?;
         info!(
             progress = 92,
             elapsed_ms = load_started.elapsed().as_millis(),
@@ -633,7 +719,7 @@ impl WorldMap {
             npcs = document.npcs.len(),
             "server startup: world entities validated"
         );
-        Ok((map, spawns, document.npcs, document.name))
+        Ok((map, spawns, document.npcs, resource_nodes, document.name))
     }
 
     fn is_walkable(&self, position: Position) -> bool {
@@ -1065,6 +1151,7 @@ pub enum WorldEvent {
         killer_id: EntityId,
     },
     GroundItemsChanged(Vec<GroundItem>),
+    ResourceNodesChanged(Vec<ResourceNodeView>),
 }
 
 #[derive(Debug, Clone)]
@@ -1078,6 +1165,7 @@ pub struct World {
     spawn_chunks: HashMap<MapChunkKey, Vec<usize>>,
     trades: HashMap<EntityId, TradeSession>,
     npcs: Vec<NpcView>,
+    resource_nodes: Vec<ResourceNode>,
     doors: HashMap<String, DoorView>,
     windows: HashMap<String, WindowView>,
     map: Arc<WorldMap>,
@@ -1112,6 +1200,7 @@ impl World {
             WorldMap::default_greyhaven(),
             None,
             None,
+            None,
         )
     }
 
@@ -1123,10 +1212,17 @@ impl World {
             return Ok((Self::new(content, ground_items), None));
         };
         let path = std::path::PathBuf::from(path);
-        let (map, spawns, npcs, name) = WorldMap::load(&path, &content)?;
+        let (map, spawns, npcs, resource_nodes, name) = WorldMap::load(&path, &content)?;
         let display_path = path.display().to_string();
         Ok((
-            Self::with_map(content, ground_items, map, Some(spawns), Some(npcs)),
+            Self::with_map(
+                content,
+                ground_items,
+                map,
+                Some(spawns),
+                Some(npcs),
+                Some(resource_nodes),
+            ),
             Some((name, display_path)),
         ))
     }
@@ -1137,6 +1233,7 @@ impl World {
         map: WorldMap,
         requested_spawns: Option<Vec<Spawn>>,
         requested_npcs: Option<Vec<NpcView>>,
+        requested_resource_nodes: Option<Vec<ResourceNode>>,
     ) -> Self {
         let ground_decay = ground_items
             .iter()
@@ -1293,6 +1390,30 @@ impl World {
             windows,
             map: Arc::new(map),
             npcs: requested_npcs.unwrap_or_else(default_npcs),
+            resource_nodes: requested_resource_nodes.unwrap_or_else(|| {
+                vec![
+                    ResourceNode {
+                        document: ResourceNodeDocument {
+                            id: "copper_vein_greyhaven_1".into(),
+                            kind: "copper_vein".into(),
+                            position: Position { x: 20, y: 12, z: 7 },
+                            respawn_ms: 30_000,
+                            required_skill_level: 0,
+                        },
+                        ready_at: None,
+                    },
+                    ResourceNode {
+                        document: ResourceNodeDocument {
+                            id: "copper_vein_greyhaven_2".into(),
+                            kind: "copper_vein".into(),
+                            position: Position { x: 21, y: 14, z: 7 },
+                            respawn_ms: 30_000,
+                            required_skill_level: 5,
+                        },
+                        ready_at: None,
+                    },
+                ]
+            }),
         };
         world.npcs.retain(|npc| {
             world.map.is_walkable(npc.position) && npc.position != world.map.player_spawn
@@ -1427,6 +1548,115 @@ impl World {
             .collect();
         recipes.sort();
         Some(recipes)
+    }
+    pub fn profession_skills(&self, id: EntityId) -> Option<Vec<ProfessionSkillView>> {
+        let mut skills: Vec<_> = self
+            .players
+            .get(&id)?
+            .profession_skills
+            .iter()
+            .map(|(id, (level, tries))| ProfessionSkillView {
+                id: id.clone(),
+                level: *level,
+                tries: *tries,
+            })
+            .collect();
+        skills.sort_by(|left, right| left.id.cmp(&right.id));
+        Some(skills)
+    }
+    pub fn resource_nodes_near(&self, center: Position, radius: i32) -> Vec<ResourceNodeView> {
+        self.resource_nodes
+            .iter()
+            .filter(|node| position_in_region(node.document.position, center, radius))
+            .map(ResourceNode::view)
+            .collect()
+    }
+
+    pub fn mine_resource(
+        &mut self,
+        player_id: EntityId,
+        node_id: &str,
+    ) -> Result<MiningUpdate, &'static str> {
+        if self
+            .trades
+            .values()
+            .any(|trade| trade.player_a == player_id || trade.player_b == player_id)
+        {
+            return Err("cannot_gather_while_trading");
+        }
+        let node_index = self
+            .resource_nodes
+            .iter()
+            .position(|node| node.document.id == node_id)
+            .ok_or("resource_not_found")?;
+        let node = self.resource_nodes[node_index].clone();
+        if !node.view().available {
+            return Err("resource_depleted");
+        }
+        let player = self.players.get(&player_id).ok_or("unknown_player")?;
+        if !player
+            .view
+            .secondary_skills
+            .iter()
+            .any(|skill| skill == "mining")
+        {
+            return Err("mining_not_selected");
+        }
+        if player.view.position.z != node.document.position.z
+            || (player.view.position.x - node.document.position.x).abs() > 1
+            || (player.view.position.y - node.document.position.y).abs() > 1
+        {
+            return Err("resource_out_of_reach");
+        }
+        let has_pickaxe = player.inventory.iter().any(|item| {
+            item.definition_id == "iron_pickaxe" && item.equipped_slot.as_deref() == Some("weapon")
+        });
+        if !has_pickaxe {
+            return Err("pickaxe_required");
+        }
+        let (level, _) = player
+            .profession_skills
+            .get("mining")
+            .copied()
+            .unwrap_or((0, 0));
+        if level < node.document.required_skill_level {
+            return Err("mining_skill_too_low");
+        }
+        let quantity = 1 + level / 25;
+        let definition = self
+            .content
+            .item("copper_ore")
+            .cloned()
+            .ok_or("unknown_item_definition")?;
+        let mut inventory = player.inventory.clone();
+        add_crafted_output(&mut inventory, &definition, quantity, (None, None));
+        if self.inventory_weight(&inventory) > player.max_capacity + f32::EPSILON {
+            return Err("too_heavy");
+        }
+        if !self.inventory_slots_valid(&inventory) {
+            return Err("inventory_full");
+        }
+        let player = self
+            .players
+            .get_mut(&player_id)
+            .expect("player was checked");
+        player.inventory = inventory;
+        let skill = player
+            .profession_skills
+            .entry("mining".into())
+            .or_insert((0, 0));
+        advance_skill(&mut skill.0, &mut skill.1, 1);
+        skill.0 = skill.0.min(MAX_SKILL_LEVEL);
+        self.resource_nodes[node_index].ready_at =
+            Some(Instant::now() + Duration::from_millis(node.document.respawn_ms));
+        Ok(MiningUpdate {
+            node: self.resource_nodes[node_index].view(),
+            skill: ProfessionSkillView {
+                id: "mining".into(),
+                level: skill.0,
+                tries: skill.1,
+            },
+        })
     }
     #[cfg(test)]
     pub fn creature_views(&self) -> Vec<CreatureView> {
@@ -2114,10 +2344,14 @@ impl World {
         if !player.learned_recipes.contains(recipe_id) {
             return Err("recipe_not_learned");
         }
-        let crafting_skill = if recipe.craft_kind == "fletching" {
-            player.view.fletching_skill
-        } else {
-            player.view.magic_level
+        let crafting_skill = match recipe.craft_kind.as_str() {
+            "fletching" => player.view.fletching_skill,
+            "sigils" => player.view.magic_level,
+            profession => player
+                .profession_skills
+                .get(profession)
+                .map(|skill| skill.0)
+                .unwrap_or(0),
         };
         if crafting_skill < recipe.required_skill_level {
             return Err("crafting_skill_too_low");
@@ -2256,7 +2490,7 @@ impl World {
                     player.view.mana -= recipe.mana_cost;
                     if recipe.craft_kind == "fletching" {
                         advance_player_skill(&mut player.view, TrainedSkill::Fletching, 1);
-                    } else {
+                    } else if recipe.craft_kind == "sigils" {
                         advance_player_skill(&mut player.view, TrainedSkill::Magic, 1);
                     }
                     queue.remaining -= 1;
@@ -3285,6 +3519,18 @@ impl World {
     pub fn tick(&mut self) -> Vec<WorldEvent> {
         let mut events = Vec::new();
         let now = Instant::now();
+        let mut resources_respawned = false;
+        for node in &mut self.resource_nodes {
+            if node.ready_at.is_some_and(|ready_at| ready_at <= now) {
+                node.ready_at = None;
+                resources_respawned = true;
+            }
+        }
+        if resources_respawned {
+            events.push(WorldEvent::ResourceNodesChanged(
+                self.resource_nodes.iter().map(ResourceNode::view).collect(),
+            ));
+        }
         let expired: HashSet<_> = self
             .ground_decay
             .iter()
@@ -3878,7 +4124,6 @@ pub fn skill_tries_required(level: u16) -> u32 {
     5 + u32::from(level) * 2
 }
 
-#[cfg(test)]
 fn advance_skill(level: &mut u16, tries: &mut u32, amount: u32) -> bool {
     *tries = tries.saturating_add(amount);
     let mut advanced = false;
@@ -4511,6 +4756,7 @@ mod tests {
             learned_recipes: ["mark_ember_sigil".into(), "fletch_rough_arrows".into()]
                 .into_iter()
                 .collect(),
+            profession_skills: HashMap::new(),
             crafting_queue: None,
             last_mana_regen: Instant::now(),
             active_food: None,
@@ -6196,11 +6442,12 @@ mod tests {
 
         let loaded = WorldMap::load(&path, &ContentCatalog::load().unwrap());
         fs::remove_file(&path).unwrap();
-        let (map, spawns, npcs, name) = loaded.unwrap();
+        let (map, spawns, npcs, resource_nodes, name) = loaded.unwrap();
 
         assert_eq!(name, "Test Region");
         assert_eq!(spawns.len(), 1);
         assert_eq!(npcs.len(), 1);
+        assert!(resource_nodes.is_empty());
         assert_eq!(npcs[0].name, "Tess");
         assert_eq!(spawns[0].definition_id, "castle_rat");
         assert_eq!(map.player_spawn, Position { x: 3, y: 3, z: 7 });
@@ -6220,6 +6467,7 @@ mod tests {
             map,
             Some(spawns),
             Some(npcs),
+            Some(resource_nodes),
         );
         world.insert_player(player);
         assert!(world.toggle_window(player_id, "window_7_1_0").unwrap().open);
@@ -6365,6 +6613,75 @@ mod tests {
         assert_eq!(level, 1);
         assert_eq!(tries, 0);
         assert_eq!(skill_tries_required(level), 7);
+    }
+
+    #[test]
+    fn mining_requires_the_profession_and_an_equipped_pickaxe() {
+        let player_id = Uuid::new_v4();
+        let mut player = test_player(player_id, 200.0);
+        player.view.position = Position { x: 19, y: 12, z: 7 };
+        let mut world = World::new(ContentCatalog::load().unwrap(), vec![]);
+        world.insert_player(player);
+
+        assert!(matches!(
+            world.mine_resource(player_id, "copper_vein_greyhaven_1"),
+            Err("mining_not_selected")
+        ));
+        world
+            .players
+            .get_mut(&player_id)
+            .unwrap()
+            .view
+            .secondary_skills = vec!["mining".into()];
+        assert!(matches!(
+            world.mine_resource(player_id, "copper_vein_greyhaven_1"),
+            Err("pickaxe_required")
+        ));
+    }
+
+    #[test]
+    fn mining_adds_ore_advances_skill_and_depletes_the_vein() {
+        let player_id = Uuid::new_v4();
+        let mut player = test_player(player_id, 200.0);
+        player.view.position = Position { x: 19, y: 12, z: 7 };
+        player.view.secondary_skills = vec!["mining".into()];
+        player.inventory.push(ItemInstance {
+            instance_id: Uuid::new_v4(),
+            definition_id: "field_backpack".into(),
+            quantity: 1,
+            charges: None,
+            container_id: None,
+            equipped_slot: Some("backpack".into()),
+        });
+        player.inventory.push(ItemInstance {
+            instance_id: Uuid::new_v4(),
+            definition_id: "iron_pickaxe".into(),
+            quantity: 1,
+            charges: None,
+            container_id: None,
+            equipped_slot: Some("weapon".into()),
+        });
+        let mut world = World::new(ContentCatalog::load().unwrap(), vec![]);
+        world.insert_player(player);
+
+        let update = world
+            .mine_resource(player_id, "copper_vein_greyhaven_1")
+            .unwrap();
+
+        assert_eq!(update.skill.tries, 1);
+        assert!(!update.node.available);
+        assert!(
+            world
+                .player(player_id)
+                .unwrap()
+                .inventory
+                .iter()
+                .any(|item| item.definition_id == "copper_ore" && item.quantity == 1)
+        );
+        assert!(matches!(
+            world.mine_resource(player_id, "copper_vein_greyhaven_1"),
+            Err("resource_depleted")
+        ));
     }
 
     #[test]

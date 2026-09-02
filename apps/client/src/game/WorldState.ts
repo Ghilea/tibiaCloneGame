@@ -1,4 +1,4 @@
-import type { BuildingView, CreatureView, DoorView, GroundItem, ItemDefinition, ItemInstance, MapView, NpcView, PlayerView, Position, RuneRecipe, ServerMessage, SpellDefinition, WindowView } from "../protocol";
+import type { BuildingView, CreatureView, DoorView, GroundItem, ItemDefinition, ItemInstance, MapView, NpcView, PlayerView, Position, ProfessionSkillView, ResourceNodeView, RuneRecipe, ServerMessage, SpellDefinition, WindowView } from "../protocol";
 
 export type WorldListener = () => void;
 export type ChatLine = { id: string; speaker: string; text: string };
@@ -19,6 +19,8 @@ export class WorldState {
   readonly spells = new Map<string, SpellDefinition>();
   readonly learnedSpellIds = new Set<string>();
   readonly learnedRecipeIds = new Set<string>();
+  readonly resourceNodes = new Map<string, ResourceNodeView>();
+  readonly professionSkills = new Map<string, ProfessionSkillView>();
   readonly combatEffects: CombatEffectView[] = [];
   readonly areaWarnings: AreaWarningView[] = [];
   inventory: ItemInstance[] = [];
@@ -139,6 +141,10 @@ export class WorldState {
         for (const spellId of message.learned_spell_ids) this.learnedSpellIds.add(spellId);
         this.learnedRecipeIds.clear();
         for (const recipeId of message.learned_recipe_ids) this.learnedRecipeIds.add(recipeId);
+        this.resourceNodes.clear();
+        for (const node of message.resource_nodes) this.resourceNodes.set(node.id, node);
+        this.professionSkills.clear();
+        for (const skill of message.profession_skills) this.professionSkills.set(skill.id, skill);
         this.npcs.clear();
         this.npcsByTile.clear();
         for (const npc of message.npcs) {
@@ -166,6 +172,8 @@ export class WorldState {
           this.npcs.set(npc.id, npc);
           this.npcsByTile.set(positionKey(npc.position), npc);
         }
+        this.resourceNodes.clear();
+        for (const node of message.resource_nodes) this.resourceNodes.set(node.id, node);
         break;
       case "player_joined":
         this.players.set(message.player.id, message.player);
@@ -258,6 +266,15 @@ export class WorldState {
         if (this.localPlayerId === message.player_id) {
           this.learnedRecipeIds.clear();
           for (const recipeId of message.learned_recipe_ids) this.learnedRecipeIds.add(recipeId);
+        }
+        break;
+      case "resource_nodes_changed":
+        for (const node of message.resource_nodes) this.resourceNodes.set(node.id, node);
+        break;
+      case "profession_skills_changed":
+        if (this.localPlayerId === message.player_id) {
+          this.professionSkills.clear();
+          for (const skill of message.skills) this.professionSkills.set(skill.id, skill);
         }
         break;
       case "ground_items_changed":

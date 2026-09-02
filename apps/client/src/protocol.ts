@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = 24;
+export const PROTOCOL_VERSION = 25;
 export const CLIENT_VERSION = "0.1.0";
 
 export type Position = { x: number; y: number; z: number };
@@ -54,9 +54,11 @@ export type StairView = { id: string; from: Position; to: Position };
 export type ItemDefinition = { id: string; name: string; weight: number; stackable: boolean; maxStack: number; charges?: number; attack?: number; containerSlots?: number; equipmentSlot?: string; pickupable: boolean; combatEffect?: { damage: number; range: number; cooldownMs: number }; distanceWeapon?: { damage: number; range: number; cooldownMs: number; ammunitionId: string }; foodEffect?: { healthPerTick: number; manaPerTick: number; durationSeconds: number }; teachesRecipeId?: string };
 export type ItemInstance = { instanceId: string; definitionId: string; quantity: number; charges?: number; containerId?: string; equippedSlot?: string };
 export type GroundItem = { item: ItemInstance; position: Position; contents: ItemInstance[] };
+export type ResourceNodeView = { id: string; kind: "copper_vein" | string; position: Position; available: boolean; respawnMs: number; requiredSkillLevel: number };
+export type ProfessionSkillView = { id: string; level: number; tries: number };
 export type ShopOffer = { id: string; itemDefinitionId: string; quantity: number; price: number };
 export type NpcView = { id: string; name: string; title: string; service: "shop" | "depot" | "spell_trainer" | "craft_trainer"; dialogue: string; position: Position; offers: ShopOffer[]; spellIds: string[]; recipeIds: string[] };
-export type RuneRecipe = { id: string; name: string; craftKind: "sigils" | "fletching"; inputDefinitionId: string; inputQuantity: number; outputDefinitionId: string; outputQuantity: number; manaCost: number; craftTimeMs: number; learnPrice: number; requiredSkillLevel: number };
+export type RuneRecipe = { id: string; name: string; craftKind: "sigils" | "fletching" | SecondarySkill; inputDefinitionId: string; inputQuantity: number; outputDefinitionId: string; outputQuantity: number; manaCost: number; craftTimeMs: number; learnPrice: number; requiredSkillLevel: number };
 export type SpellDefinition = { id: string; name: string; description: string; requiredMagicLevel: number; price: number; manaCost: number; damage: number; range: number; cooldownMs: number };
 
 export type ClientMessage =
@@ -88,11 +90,12 @@ export type ClientMessage =
   | { type: "learn_spell"; npc_id: string; spell_id: string }
   | { type: "learn_recipe_from_npc"; npc_id: string; recipe_id: string }
   | { type: "learn_recipe_from_item"; instance_id: string }
+  | { type: "mine_resource"; node_id: string }
   | { type: "cast_spell"; spell_id: string; target_id: string };
 
 export type ServerMessage =
-  | { type: "welcome"; protocol_version: number; player: PlayerView; players: PlayerView[]; map: MapView; item_definitions: ItemDefinition[]; rune_recipes: RuneRecipe[]; spells: SpellDefinition[]; learned_spell_ids: string[]; learned_recipe_ids: string[]; inventory: ItemInstance[]; depot: ItemInstance[]; inventory_weight: number; max_capacity: number; ground_items: GroundItem[]; creatures: CreatureView[]; npcs: NpcView[] }
-  | { type: "world_region"; map: MapView; ground_items: GroundItem[]; creatures: CreatureView[]; npcs: NpcView[] }
+  | { type: "welcome"; protocol_version: number; player: PlayerView; players: PlayerView[]; map: MapView; item_definitions: ItemDefinition[]; rune_recipes: RuneRecipe[]; spells: SpellDefinition[]; learned_spell_ids: string[]; learned_recipe_ids: string[]; inventory: ItemInstance[]; depot: ItemInstance[]; inventory_weight: number; max_capacity: number; ground_items: GroundItem[]; creatures: CreatureView[]; npcs: NpcView[]; resource_nodes: ResourceNodeView[]; profession_skills: ProfessionSkillView[] }
+  | { type: "world_region"; map: MapView; ground_items: GroundItem[]; creatures: CreatureView[]; npcs: NpcView[]; resource_nodes: ResourceNodeView[] }
   | { type: "player_joined"; player: PlayerView }
   | { type: "player_left"; player_id: string }
   | { type: "player_moved"; player_id: string; position: Position; sequence: number }
@@ -107,6 +110,8 @@ export type ServerMessage =
   | { type: "depot_changed"; player_id: string; depot: ItemInstance[] }
   | { type: "spells_changed"; player_id: string; learned_spell_ids: string[] }
   | { type: "recipes_changed"; player_id: string; learned_recipe_ids: string[] }
+  | { type: "resource_nodes_changed"; resource_nodes: ResourceNodeView[] }
+  | { type: "profession_skills_changed"; player_id: string; skills: ProfessionSkillView[] }
   | { type: "ground_items_changed"; ground_items: GroundItem[] }
   | { type: "food_status"; player_id: string; remaining_ms: number }
   | { type: "combat_effect"; source_id: string; target_id: string; effect_id: string; damage: number; cooldown_ms: number }

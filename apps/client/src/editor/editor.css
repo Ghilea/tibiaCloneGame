@@ -279,7 +279,7 @@ select {
 .map-scroll.pan-mode:active .editor-tile {
   cursor: grabbing;
 }
-.editor-grid.isometric {
+.editor-grid.top-down {
   position: relative;
   width: max-content;
   filter: drop-shadow(0 20px 26px #000c);
@@ -292,7 +292,7 @@ select {
   background: #334536;
   border: 1px solid #17241c;
   border-radius: 0;
-  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  clip-path: none;
   font-weight: 900;
   text-shadow: 0 1px 2px #000;
 }

@@ -144,6 +144,25 @@ pub struct GroundItem {
     pub contents: Vec<ItemInstance>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceNodeView {
+    pub id: String,
+    pub kind: String,
+    pub position: Position,
+    pub available: bool,
+    pub respawn_ms: u64,
+    pub required_skill_level: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfessionSkillView {
+    pub id: String,
+    pub level: u16,
+    pub tries: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NpcView {

@@ -10,6 +10,7 @@ import type {
   NpcView,
   PlayerView,
   Position,
+  ResourceNodeView,
   WindowView,
 } from "../protocol";
 import { CastleRatSprite } from "../actors/CastleRatSprite";
@@ -83,7 +84,7 @@ export function ThreeWorld({ world, input, onReady, showDebug = true }: ThreeWor
           <SceneReady onReady={onReady} />
         </Suspense>
       </Canvas>
-      {lootHover && <div className="ground-loot-tooltip" style={{ left: lootHover.x + 14, top: lootHover.y + 14 }}><strong>{lootHover.label}</strong><small>Click to loot</small></div>}
+      {lootHover && <div className="ground-loot-tooltip" style={{ left: lootHover.x + 14, top: lootHover.y + 14 }}><strong>{lootHover.label}</strong><small>Click or press E to interact</small></div>}
       {showDebug && (
         <div className="debug-meter" aria-label="Position and rendering performance">
           <div ref={positionLabel} className="position-meter">x -- · y -- · z --</div>
@@ -140,6 +141,7 @@ function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHov
   const players = [...world.players.values()].filter((entry) => insideRenderBounds(entry.position, region.bounds));
   const creatures = [...world.creatures.values()].filter((entry) => insideRenderBounds(entry.position, region.bounds));
   const npcs = [...world.npcs.values()].filter((entry) => insideRenderBounds(entry.position, region.bounds));
+  const resourceNodes = [...world.resourceNodes.values()].filter((entry) => insideRenderBounds(entry.position, region.bounds));
   const onGround = useCallback((event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
     if (event.button === 2) event.nativeEvent.preventDefault();
@@ -208,6 +210,21 @@ function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHov
           onContextMenu={(event) => {
             event.stopPropagation(); event.nativeEvent.preventDefault();
             input.interactNpc(npc.id);
+          }}
+        />
+      ))}
+      {resourceNodes.map((node) => (
+        <ResourceNodeActor
+          key={node.id}
+          node={node}
+          onHover={onLootHover}
+          onClick={(event) => {
+            event.stopPropagation();
+            input.interactAt(node.position);
+          }}
+          onContextMenu={(event) => {
+            event.stopPropagation(); event.nativeEvent.preventDefault();
+            input.interactAt(node.position);
           }}
         />
       ))}
@@ -860,6 +877,39 @@ function GroundItemActor({ position, corpse, lootable, label, onHover, onClick, 
           </mesh>
         </group>
       </>}
+    </group>
+  );
+}
+
+function ResourceNodeActor({ node, onHover, onClick, onContextMenu }: { node: ResourceNodeView; onHover: (hover: { label: string; x: number; y: number } | null) => void; onClick: ActorClick; onContextMenu: ActorClick }) {
+  const [hovered, setHovered] = useState(false);
+  useEffect(() => () => {
+    document.body.style.cursor = "";
+    onHover(null);
+  }, [onHover]);
+  const label = node.available ? `Copper vein · Mining ${node.requiredSkillLevel}` : "Depleted copper vein";
+  return (
+    <group
+      position={[node.position.x + 0.5, node.available ? 0.25 : 0.1, node.position.y + 0.5]}
+      scale={hovered ? 1.08 : 1}
+      onPointerDown={(event) => event.stopPropagation()}
+      onPointerOver={(event) => { event.stopPropagation(); setHovered(true); document.body.style.cursor = "pointer"; onHover({ label, x: event.nativeEvent.clientX, y: event.nativeEvent.clientY }); }}
+      onPointerOut={() => { setHovered(false); document.body.style.cursor = ""; onHover(null); }}
+      onClick={(event) => { document.body.style.cursor = ""; onHover(null); onClick(event); }}
+      onContextMenu={onContextMenu}
+    >
+      <mesh castShadow rotation={[0.08, 0.35, -0.12]} scale={node.available ? [0.72, 0.62, 0.68] : [0.68, 0.16, 0.62]}>
+        <dodecahedronGeometry args={[0.45, 0]} />
+        <meshStandardMaterial color={node.available ? (hovered ? "#d98d55" : "#956342") : "#51473e"} roughness={0.88} emissive={hovered && node.available ? "#5d2413" : "#000000"} emissiveIntensity={0.65} />
+      </mesh>
+      {node.available && <mesh position={[0.12, 0.18, 0.24]} rotation={[-0.4, 0.2, 0.4]}>
+        <octahedronGeometry args={[0.14]} />
+        <meshStandardMaterial color="#e09554" metalness={0.42} roughness={0.48} />
+      </mesh>}
+      {hovered && <mesh position={[0, -0.19, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={17}>
+        <ringGeometry args={[0.44, 0.51, 28]} />
+        <meshBasicMaterial color={node.available ? "#f0a15e" : "#918276"} transparent opacity={0.82} depthWrite={false} />
+      </mesh>}
     </group>
   );
 }

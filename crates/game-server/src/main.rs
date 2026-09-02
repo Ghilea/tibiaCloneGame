@@ -480,6 +480,24 @@ async fn session(mut socket: WebSocket, state: AppState) {
             },
             None => Default::default(),
         },
+        profession_skills: match &state.database {
+            Some(database) => match database.load_profession_skills(id).await {
+                Ok(skills) => skills,
+                Err(error) => {
+                    warn!(%id, %error, "failed to load profession skills");
+                    send(
+                        &mut socket,
+                        &ServerMessage::Error {
+                            code: "profession_skills_load_failed".into(),
+                            message: "Your profession skills could not be loaded".into(),
+                        },
+                    )
+                    .await;
+                    return;
+                }
+            },
+            None => Default::default(),
+        },
         crafting_queue: None,
         last_mana_regen: Instant::now(),
         active_food: None,
@@ -492,6 +510,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
         spells,
         learned_spell_ids,
         learned_recipe_ids,
+        profession_skills,
         inventory,
         depot,
         inventory_weight,
@@ -499,6 +518,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
         ground_items,
         creatures,
         npcs,
+        resource_nodes,
         map,
     ) = {
         let mut world = state.world.write().await;
@@ -513,6 +533,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
             world.spells(),
             world.learned_spells(id).expect("player inserted"),
             world.learned_recipes(id).expect("player inserted"),
+            world.profession_skills(id).expect("player inserted"),
             inventory,
             depot,
             weight,
@@ -520,6 +541,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
             world.ground_items_near(position, WORLD_REGION_RADIUS),
             world.creature_views_near(position, WORLD_REGION_RADIUS),
             world.npc_views_near(position, WORLD_REGION_RADIUS),
+            world.resource_nodes_near(position, WORLD_REGION_RADIUS),
             world.map_view_near(position, WORLD_REGION_RADIUS),
         )
     };
@@ -543,6 +565,8 @@ async fn session(mut socket: WebSocket, state: AppState) {
             ground_items,
             creatures,
             npcs,
+            resource_nodes,
+            profession_skills,
         },
     )
     .await;
@@ -591,6 +615,8 @@ async fn session(mut socket: WebSocket, state: AppState) {
                                     creatures: world
                                         .creature_views_near(position, WORLD_REGION_RADIUS),
                                     npcs: world.npc_views_near(position, WORLD_REGION_RADIUS),
+                                    resource_nodes: world
+                                        .resource_nodes_near(position, WORLD_REGION_RADIUS),
                                 });
                             drop(world);
                             if let Some(message) = message {
@@ -801,6 +827,9 @@ async fn session(mut socket: WebSocket, state: AppState) {
             }
             Ok(ClientMessage::LearnRecipeFromItem { instance_id }) => {
                 learn_recipe(&state, id, None, None, Some(instance_id)).await
+            }
+            Ok(ClientMessage::MineResource { node_id }) => {
+                mine_resource(&state, id, &node_id).await
             }
             Ok(ClientMessage::CastSpell {
                 spell_id,
@@ -1435,6 +1464,80 @@ fn recipe_learning_error_message(code: &str) -> &'static str {
     }
 }
 
+async fn mine_resource(state: &AppState, player_id: Uuid, node_id: &str) {
+    let mut world = state.world.write().await;
+    let backup = world.clone();
+    let update = match world.mine_resource(player_id, node_id) {
+        Ok(update) => update,
+        Err(reason) => {
+            state.private(
+                player_id,
+                ServerMessage::Error {
+                    code: reason.into(),
+                    message: mining_error_message(reason).into(),
+                },
+            );
+            return;
+        }
+    };
+    let (inventory, inventory_weight, max_capacity) =
+        world.inventory_state(player_id).expect("active player");
+    let skills = world.profession_skills(player_id).expect("active player");
+    if let Some(database) = &state.database
+        && let Err(error) = database
+            .persist_profession_gathering(
+                player_id,
+                &inventory,
+                &update.skill.id,
+                update.skill.level,
+                update.skill.tries,
+            )
+            .await
+    {
+        *world = backup;
+        warn!(%player_id, %error, "mining transaction rolled back");
+        state.private(
+            player_id,
+            ServerMessage::Error {
+                code: "mining_transaction_failed".into(),
+                message: "Mining could not be saved; the vein was restored".into(),
+            },
+        );
+        return;
+    }
+    let nodes = world.resource_nodes_near(update.node.position, WORLD_REGION_RADIUS);
+    drop(world);
+    state.private(
+        player_id,
+        ServerMessage::InventoryChanged {
+            player_id,
+            inventory,
+            inventory_weight,
+            max_capacity,
+        },
+    );
+    state.private(
+        player_id,
+        ServerMessage::ProfessionSkillsChanged { player_id, skills },
+    );
+    state.broadcast(ServerMessage::ResourceNodesChanged {
+        resource_nodes: nodes,
+    });
+}
+
+fn mining_error_message(code: &str) -> &'static str {
+    match code {
+        "mining_not_selected" => "Choose Mining as one of your two professions first",
+        "pickaxe_required" => "Equip a pickaxe before mining",
+        "resource_out_of_reach" => "Move next to the resource first",
+        "resource_depleted" => "That vein is depleted and must recover",
+        "mining_skill_too_low" => "Your Mining skill is too low for that vein",
+        "too_heavy" => "You cannot carry more ore",
+        "inventory_full" => "Your backpack is full",
+        _ => "That resource cannot be gathered",
+    }
+}
+
 fn spell_learning_error_message(code: &str) -> &'static str {
     match code {
         "npc_out_of_reach" => "Move next to the spell trainer first",
@@ -1862,6 +1965,9 @@ async fn dispatch_world_events(state: &AppState, events: Vec<WorldEvent>) {
             }
             WorldEvent::GroundItemsChanged(ground_items) => {
                 state.broadcast(ServerMessage::GroundItemsChanged { ground_items })
+            }
+            WorldEvent::ResourceNodesChanged(resource_nodes) => {
+                state.broadcast(ServerMessage::ResourceNodesChanged { resource_nodes })
             }
         }
     }

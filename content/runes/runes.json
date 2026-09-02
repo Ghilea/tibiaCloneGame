@@ -24,5 +24,18 @@
     "craftTimeMs": 1200,
     "learnPrice": 8,
     "requiredSkillLevel": 0
+  },
+  {
+    "id": "forge_copper_blade",
+    "name": "Forge Copper Blade",
+    "craftKind": "mining",
+    "inputDefinitionId": "copper_ore",
+    "inputQuantity": 5,
+    "outputDefinitionId": "traveler_blade",
+    "outputQuantity": 1,
+    "manaCost": 0,
+    "craftTimeMs": 2200,
+    "learnPrice": 18,
+    "requiredSkillLevel": 5
   }
 ]

@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent,
 import type { BuildingView, DoorView, NpcView, Position, StairView, TerrainMaterialId, TerrainMaterialView } from "../protocol";
 import { waterEdgesAt } from "../game/WaterEdges";
 
-type PaintLayer = "erase" | "blocked" | "water" | "bridges" | "trees" | "roads" | "floors" | "packed_earth" | "moss_stone" | "sandstone" | "houseWalls" | "castleWalls" | "house" | "keep" | "removeBuilding" | "door" | "window" | "torch" | "stairs" | "spawn" | "npc" | "playerSpawn";
+type PaintLayer = "erase" | "blocked" | "water" | "bridges" | "trees" | "roads" | "floors" | "packed_earth" | "moss_stone" | "sandstone" | "houseWalls" | "castleWalls" | "house" | "keep" | "removeBuilding" | "door" | "window" | "torch" | "stairs" | "spawn" | "npc" | "resourceNode" | "playerSpawn";
 type ToolGroup = "navigate" | "terrain" | "structures" | "entities";
 type SpawnView = { id: string; definitionId: string; position: Position };
+type ResourceNodeDocument = { id: string; kind: "copper_vein"; position: Position; respawnMs: number; requiredSkillLevel: number };
 type WorldFileHandle = { name: string; createWritable: () => Promise<{ write: (data: Blob) => Promise<void>; close: () => Promise<void> }> };
 type SavePickerWindow = Window & { showSaveFilePicker?: (options: { suggestedName: string; types: { description: string; accept: Record<string, string[]> }[] }) => Promise<WorldFileHandle> };
-type EditorDrag = { kind: "playerSpawn" } | { kind: "door"; id: string } | { kind: "window"; position: Position } | { kind: "torch"; position: Position } | { kind: "stairs"; id: string } | { kind: "spawn"; id: string } | { kind: "npc"; id: string } | { kind: "building"; id: string; offsetX: number; offsetY: number };
+type EditorDrag = { kind: "playerSpawn" } | { kind: "door"; id: string } | { kind: "window"; position: Position } | { kind: "torch"; position: Position } | { kind: "stairs"; id: string } | { kind: "spawn"; id: string } | { kind: "npc"; id: string } | { kind: "resourceNode"; id: string } | { kind: "building"; id: string; offsetX: number; offsetY: number };
 type EditorDocument = {
   version: 1; name: string; width: number; height: number; floor: number;
   blocked: Position[]; water: Position[]; bridges: Position[]; trees: Position[]; roads: Position[]; floors: Position[];
@@ -16,6 +17,7 @@ type EditorDocument = {
   doors: DoorView[]; stairs: StairView[]; spawns: SpawnView[];
   playerSpawn: Position;
   npcs: NpcView[];
+  resourceNodes: ResourceNodeDocument[];
 };
 
 const tileLayers = ["blocked", "water", "bridges", "trees", "roads", "floors", "houseWalls", "castleWalls"] as const;
@@ -45,21 +47,21 @@ const tools: { id: PaintLayer; label: string; swatch: string; group: ToolGroup; 
   { id: "playerSpawn", label: "Player start", swatch: "#f1d16f", group: "entities", description: "Choose the authoritative starting position for players." },
   { id: "npc", label: "NPC", swatch: "#5fc4ad", group: "entities", description: "Place an editable NPC or select an existing one." },
   { id: "spawn", label: "Creature", swatch: "#9b5fd0", group: "entities", description: "Place a server-authoritative creature spawn." },
+  { id: "resourceNode", label: "Copper vein", swatch: "#bd7548", group: "entities", description: "Place a mineable copper vein with configurable respawn and skill requirement." },
 ];
 const creatureIds = ["castle_rat", "crypt_guard", "bone_acolyte", "cellar_warden", "mireling", "mire_skulker", "reed_stalker", "fen_brute"];
-const itemIds = ["blank_rune", "ember_rune", "traveler_blade", "ashwood_bow", "rough_arrow", "field_backpack", "mire_fiber", "gold_coin", "field_bread", "smoked_mire_meat", "bog_ichor", "reed_hide", "fen_tusk"];
+const itemIds = ["blank_rune", "ember_rune", "traveler_blade", "ashwood_bow", "rough_arrow", "field_backpack", "mire_fiber", "gold_coin", "field_bread", "smoked_mire_meat", "bog_ichor", "reed_hide", "fen_tusk", "iron_pickaxe", "copper_ore"];
 const spellIds = ["ember_bolt"];
-const recipeIds = ["mark_ember_sigil", "fletch_rough_arrows"];
+const recipeIds = ["mark_ember_sigil", "fletch_rough_arrows", "forge_copper_blade"];
 const VIEW_COLUMNS = 40;
 const VIEW_ROWS = 28;
 const PAN_STEP = 20;
 const MAX_WORLD_SIZE = 16_384;
 const MAX_LOCAL_AUTOSAVE_ENTRIES = 60_000;
-const ISO_TILE_WIDTH = 48;
-const ISO_TILE_HEIGHT = 28;
+const EDITOR_TILE_SIZE = 32;
 
 function blankDocument(): EditorDocument {
-  return { version: 1, name: "New Aldoria Region", width: 32, height: 24, floor: 7, blocked: [], water: [], bridges: [], trees: [], roads: [], floors: [], houseWalls: [], castleWalls: [], windows: [], torches: [], terrainMaterials: [], buildings: [], doors: [], stairs: [], spawns: [], playerSpawn: { x: 1, y: 1, z: 7 }, npcs: [] };
+  return { version: 1, name: "New Aldoria Region", width: 32, height: 24, floor: 7, blocked: [], water: [], bridges: [], trees: [], roads: [], floors: [], houseWalls: [], castleWalls: [], windows: [], torches: [], terrainMaterials: [], buildings: [], doors: [], stairs: [], spawns: [], playerSpawn: { x: 1, y: 1, z: 7 }, npcs: [], resourceNodes: [] };
 }
 const key = (position: Position) => `${position.x}:${position.y}:${position.z}`;
 const same = (left: Position, right: Position) => left.x === right.x && left.y === right.y && left.z === right.z;
@@ -67,7 +69,7 @@ const saveLocal = (document: EditorDocument) => {
   const authoredEntries = tileLayers.reduce((total, layer) => total + document[layer].length, 0)
     + document.windows.length + document.torches.length + document.terrainMaterials.length
     + document.buildings.length + document.doors.length + document.stairs.length
-    + document.spawns.length + document.npcs.length;
+    + document.spawns.length + document.npcs.length + document.resourceNodes.length;
   if (authoredEntries > MAX_LOCAL_AUTOSAVE_ENTRIES) return;
   try { localStorage.setItem("aldoria-world-editor", JSON.stringify(document)); } catch { /* JSON file saving remains available. */ }
 };
@@ -81,6 +83,8 @@ export function WorldEditor() {
   const [destinationFloor, setDestinationFloor] = useState(8);
   const [creatureId, setCreatureId] = useState("castle_rat");
   const [npcService, setNpcService] = useState<NpcView["service"]>("shop");
+  const [resourceRespawnSeconds, setResourceRespawnSeconds] = useState(30);
+  const [resourceSkillLevel, setResourceSkillLevel] = useState(0);
   const [selectedNpcId, setSelectedNpcId] = useState<string | null>(null);
   const [buildingWidth, setBuildingWidth] = useState(6);
   const [buildingHeight, setBuildingHeight] = useState(5);
@@ -103,6 +107,7 @@ export function WorldEditor() {
   const doorByTile = useMemo(() => new Map(document.doors.filter((entry) => entry.position.z === activeFloor).map((entry) => [key(entry.position), entry])), [document.doors, activeFloor]);
   const stairsByTile = useMemo(() => new Map(document.stairs.filter((entry) => entry.from.z === activeFloor).map((entry) => [key(entry.from), entry])), [document.stairs, activeFloor]);
   const npcByTile = useMemo(() => new Map(document.npcs.filter((entry) => entry.position.z === activeFloor).map((entry) => [key(entry.position), entry])), [document.npcs, activeFloor]);
+  const resourceNodeByTile = useMemo(() => new Map(document.resourceNodes.filter((entry) => entry.position.z === activeFloor).map((entry) => [key(entry.position), entry])), [document.resourceNodes, activeFloor]);
   const windows = useMemo(() => new Set(document.windows.filter((entry) => entry.z === activeFloor).map(key)), [document.windows, activeFloor]);
   const torches = useMemo(() => new Set(document.torches.filter((entry) => entry.z === activeFloor).map(key)), [document.torches, activeFloor]);
   const terrainByTile = useMemo(() => new Map(document.terrainMaterials.filter((entry) => entry.position.z === activeFloor).map((entry) => [key(entry.position), entry.material])), [document.terrainMaterials, activeFloor]);
@@ -135,6 +140,7 @@ export function WorldEditor() {
       for (const layer of tileLayers) next[layer] = next[layer].filter((tile) => !same(tile, position));
       next.doors = next.doors.filter((entry) => !same(entry.position, position)); next.spawns = next.spawns.filter((entry) => !same(entry.position, position)); next.stairs = next.stairs.filter((entry) => !same(entry.from, position));
       next.windows = next.windows.filter((entry) => !same(entry, position)); next.torches = next.torches.filter((entry) => !same(entry, position)); next.terrainMaterials = next.terrainMaterials.filter((entry) => !same(entry.position, position));
+      next.resourceNodes = next.resourceNodes.filter((entry) => !same(entry.position, position));
     } else if (tool === "removeBuilding") {
       const building = next.buildings.find((entry) => entry.floor === activeFloor && x >= entry.x && y >= entry.y && x < entry.x + entry.width && y < entry.y + entry.height);
       if (!building) return;
@@ -187,8 +193,12 @@ export function WorldEditor() {
       const id = `npc_${activeFloor}_${x}_${y}`;
       next.npcs.push({ id, name: "New NPC", title: "Greyhaven Citizen", service: npcService, dialogue: "Greetings, traveler.", position, offers: [], spellIds: [], recipeIds: [] });
       setSelectedNpcId(id);
+    } else if (tool === "resourceNode") {
+      if (same(next.playerSpawn, position) || next.resourceNodes.some((entry) => same(entry.position, position)) || next.water.some((tile) => same(tile, position)) || next.spawns.some((entry) => same(entry.position, position)) || next.npcs.some((entry) => same(entry.position, position))) return;
+      next.resourceNodes.push({ id: `copper_vein_${activeFloor}_${x}_${y}`, kind: "copper_vein", position, respawnMs: Math.max(1, resourceRespawnSeconds) * 1_000, requiredSkillLevel: Math.max(0, Math.min(100, resourceSkillLevel)) });
     } else if (tool === "playerSpawn") {
       next.playerSpawn = position;
+      next.resourceNodes = next.resourceNodes.filter((entry) => !same(entry.position, position));
       next.blocked = next.blocked.filter((tile) => !same(tile, position)); next.water = next.water.filter((tile) => !same(tile, position)); next.bridges = next.bridges.filter((tile) => !same(tile, position)); next.trees = next.trees.filter((tile) => !same(tile, position)); next.houseWalls = next.houseWalls.filter((tile) => !same(tile, position)); next.castleWalls = next.castleWalls.filter((tile) => !same(tile, position)); next.doors = next.doors.filter((door) => !same(door.position, position)); next.spawns = next.spawns.filter((spawn) => !same(spawn.position, position)); next.npcs = next.npcs.filter((npc) => !same(npc.position, position));
       if (activeFloor !== next.floor && !next.floors.some((tile) => same(tile, position))) next.floors.push(position);
     } else if ((tool === "house" || tool === "keep") && !next.buildings.some((entry) => entry.x === x && entry.y === y && entry.floor === activeFloor)) {
@@ -268,6 +278,7 @@ export function WorldEditor() {
       + document.doors.filter((entry) => !inBounds(entry.position)).length + document.stairs.filter((entry) => !inBounds(entry.from) || !inBounds(entry.to)).length
       + document.spawns.filter((entry) => !inBounds(entry.position)).length + document.buildings.filter((entry) => entry.x < 0 || entry.y < 0 || entry.x + entry.width > width || entry.y + entry.height > height).length
       + document.npcs.filter((entry) => !inBounds(entry.position)).length + document.windows.filter((entry) => !inBounds(entry)).length
+      + document.resourceNodes.filter((entry) => !inBounds(entry.position)).length
       + document.torches.filter((entry) => !inBounds(entry)).length + document.terrainMaterials.filter((entry) => !inBounds(entry.position)).length
       + (inBounds(document.playerSpawn) ? 0 : 1);
     if (removed > 0 && !window.confirm(`Shrinking the world removes ${removed} out-of-bounds entries. Continue?`)) return;
@@ -275,24 +286,26 @@ export function WorldEditor() {
     for (const layer of tileLayers) next[layer] = next[layer].filter(inBounds);
     next.doors = next.doors.filter((entry) => inBounds(entry.position)); next.stairs = next.stairs.filter((entry) => inBounds(entry.from) && inBounds(entry.to)); next.spawns = next.spawns.filter((entry) => inBounds(entry.position)); next.npcs = next.npcs.filter((entry) => inBounds(entry.position)); next.buildings = next.buildings.filter((entry) => entry.x >= 0 && entry.y >= 0 && entry.x + entry.width <= width && entry.y + entry.height <= height);
     next.windows = next.windows.filter(inBounds); next.torches = next.torches.filter(inBounds); next.terrainMaterials = next.terrainMaterials.filter((entry) => inBounds(entry.position));
+    next.resourceNodes = next.resourceNodes.filter((entry) => inBounds(entry.position));
     if (!inBounds(next.playerSpawn)) next.playerSpawn = firstSafeBaseTile(next);
     setWorldWidth(width); setWorldHeight(height); commit(next);
   };
   const panTo = (x: number, y: number) => { const nextX = Number.isFinite(x) ? Math.trunc(x) : viewportX; const nextY = Number.isFinite(y) ? Math.trunc(y) : viewportY; setViewX(Math.max(0, Math.min(nextX, Math.max(0, document.width - VIEW_COLUMNS)))); setViewY(Math.max(0, Math.min(nextY, Math.max(0, document.height - VIEW_ROWS)))); };
   const newWorld = () => { const next = blankDocument(); worldFileHandle.current = null; setSaveStatus("New map — choose where to save"); setWorldWidth(next.width); setWorldHeight(next.height); setActiveFloor(next.floor); setViewX(0); setViewY(0); commit(next); };
   const beginPan = (event: ReactPointerEvent<HTMLDivElement>) => { const spacePan = window.document.body.classList.contains("editor-space-pan"); if (event.button !== 1 && event.button !== 2 && !(event.button === 0 && spacePan)) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); panGesture.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: viewportX, originY: viewportY }; };
-  const movePan = (event: ReactPointerEvent<HTMLDivElement>) => { const gesture = panGesture.current; if (!gesture || gesture.pointerId !== event.pointerId) return; const screenX = event.clientX - gesture.startX; const screenY = event.clientY - gesture.startY; const halfWidth = ISO_TILE_WIDTH * zoom / 2; const halfHeight = ISO_TILE_HEIGHT * zoom / 2; const tileX = (screenX / halfWidth + screenY / halfHeight) / 2; const tileY = (-screenX / halfWidth + screenY / halfHeight) / 2; panTo(gesture.originX - Math.round(tileX), gesture.originY - Math.round(tileY)); };
+  const movePan = (event: ReactPointerEvent<HTMLDivElement>) => { const gesture = panGesture.current; if (!gesture || gesture.pointerId !== event.pointerId) return; const tileX = (event.clientX - gesture.startX) / (EDITOR_TILE_SIZE * zoom); const tileY = (event.clientY - gesture.startY) / (EDITOR_TILE_SIZE * zoom); panTo(gesture.originX - Math.round(tileX), gesture.originY - Math.round(tileY)); };
   const endPan = (event: ReactPointerEvent<HTMLDivElement>) => { if (panGesture.current?.pointerId !== event.pointerId) return; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); panGesture.current = null; };
-  const objectAt = (position: Position): EditorDrag | null => { if (same(document.playerSpawn, position)) return { kind: "playerSpawn" }; const npc = npcByTile.get(key(position)); if (npc) return { kind: "npc", id: npc.id }; const door = doorByTile.get(key(position)); if (door) return { kind: "door", id: door.id }; if (windows.has(key(position))) return { kind: "window", position }; if (torches.has(key(position))) return { kind: "torch", position }; const stairs = stairsByTile.get(key(position)); if (stairs) return { kind: "stairs", id: stairs.id }; const spawn = spawnByTile.get(key(position)); if (spawn) return { kind: "spawn", id: spawn.id }; const building = document.buildings.find((entry) => entry.floor === position.z && position.x >= entry.x && position.y >= entry.y && position.x < entry.x + entry.width && position.y < entry.y + entry.height && (position.x === entry.x || position.y === entry.y || position.x === entry.x + entry.width - 1 || position.y === entry.y + entry.height - 1)); return building ? { kind: "building", id: building.id, offsetX: position.x - building.x, offsetY: position.y - building.y } : null; };
+  const objectAt = (position: Position): EditorDrag | null => { if (same(document.playerSpawn, position)) return { kind: "playerSpawn" }; const npc = npcByTile.get(key(position)); if (npc) return { kind: "npc", id: npc.id }; const resourceNode = resourceNodeByTile.get(key(position)); if (resourceNode) return { kind: "resourceNode", id: resourceNode.id }; const door = doorByTile.get(key(position)); if (door) return { kind: "door", id: door.id }; if (windows.has(key(position))) return { kind: "window", position }; if (torches.has(key(position))) return { kind: "torch", position }; const stairs = stairsByTile.get(key(position)); if (stairs) return { kind: "stairs", id: stairs.id }; const spawn = spawnByTile.get(key(position)); if (spawn) return { kind: "spawn", id: spawn.id }; const building = document.buildings.find((entry) => entry.floor === position.z && position.x >= entry.x && position.y >= entry.y && position.x < entry.x + entry.width && position.y < entry.y + entry.height && (position.x === entry.x || position.y === entry.y || position.x === entry.x + entry.width - 1 || position.y === entry.y + entry.height - 1)); return building ? { kind: "building", id: building.id, offsetX: position.x - building.x, offsetY: position.y - building.y } : null; };
   const startObjectDrag = (event: ReactDragEvent, object: EditorDrag | null) => { if (!object) { event.preventDefault(); return; } editorDrag.current = object; setDragTarget(null); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", `${object.kind}:${"id" in object ? object.id : "object"}`); };
   const moveObject = (target: Position) => {
     const dragged = editorDrag.current; if (!dragged) return; const next = structuredClone(documentRef.current);
-    if (dragged.kind === "playerSpawn") { next.playerSpawn = target; next.blocked = next.blocked.filter((tile) => !same(tile, target)); next.water = next.water.filter((tile) => !same(tile, target)); next.bridges = next.bridges.filter((tile) => !same(tile, target)); next.trees = next.trees.filter((tile) => !same(tile, target)); next.houseWalls = next.houseWalls.filter((tile) => !same(tile, target)); next.castleWalls = next.castleWalls.filter((tile) => !same(tile, target)); next.doors = next.doors.filter((door) => !same(door.position, target)); next.spawns = next.spawns.filter((spawn) => !same(spawn.position, target)); next.npcs = next.npcs.filter((npc) => !same(npc.position, target)); if (target.z !== next.floor && !next.floors.some((tile) => same(tile, target))) next.floors.push(target); }
+    if (dragged.kind === "playerSpawn") { next.playerSpawn = target; next.resourceNodes = next.resourceNodes.filter((entry) => !same(entry.position, target)); next.blocked = next.blocked.filter((tile) => !same(tile, target)); next.water = next.water.filter((tile) => !same(tile, target)); next.bridges = next.bridges.filter((tile) => !same(tile, target)); next.trees = next.trees.filter((tile) => !same(tile, target)); next.houseWalls = next.houseWalls.filter((tile) => !same(tile, target)); next.castleWalls = next.castleWalls.filter((tile) => !same(tile, target)); next.doors = next.doors.filter((door) => !same(door.position, target)); next.spawns = next.spawns.filter((spawn) => !same(spawn.position, target)); next.npcs = next.npcs.filter((npc) => !same(npc.position, target)); if (target.z !== next.floor && !next.floors.some((tile) => same(tile, target))) next.floors.push(target); }
     else if (dragged.kind === "door") { const door = next.doors.find((entry) => entry.id === dragged.id); if (!door || next.doors.some((entry) => entry.id !== door.id && same(entry.position, target))) return; door.position = target; next.houseWalls = next.houseWalls.filter((tile) => !same(tile, target)); next.castleWalls = next.castleWalls.filter((tile) => !same(tile, target)); next.trees = next.trees.filter((tile) => !same(tile, target)); next.blocked = next.blocked.filter((tile) => !same(tile, target)); }
     else if (dragged.kind === "window") { const onHouseWall = next.houseWalls.some((tile) => same(tile, target)) || next.buildings.some((building) => building.kind === "house" && building.floor === target.z && target.x >= building.x && target.y >= building.y && target.x < building.x + building.width && target.y < building.y + building.height && (target.x === building.x || target.y === building.y || target.x === building.x + building.width - 1 || target.y === building.y + building.height - 1)); if (!onHouseWall || next.doors.some((entry) => same(entry.position, target))) return; next.windows = next.windows.filter((entry) => !same(entry, dragged.position) && !same(entry, target)); next.windows.push(target); }
     else if (dragged.kind === "torch") { if (next.water.some((tile) => same(tile, target))) return; next.torches = next.torches.filter((entry) => !same(entry, dragged.position) && !same(entry, target)); next.torches.push(target); }
     else if (dragged.kind === "spawn") { const spawn = next.spawns.find((entry) => entry.id === dragged.id); if (!spawn || next.blocked.some((tile) => same(tile, target)) || next.spawns.some((entry) => entry.id !== spawn.id && same(entry.position, target))) return; spawn.position = target; }
     else if (dragged.kind === "npc") { const npc = next.npcs.find((entry) => entry.id === dragged.id); if (!npc || next.blocked.some((tile) => same(tile, target)) || same(next.playerSpawn, target) || next.spawns.some((entry) => same(entry.position, target)) || next.npcs.some((entry) => entry.id !== npc.id && same(entry.position, target))) return; npc.position = target; setSelectedNpcId(npc.id); }
+    else if (dragged.kind === "resourceNode") { const node = next.resourceNodes.find((entry) => entry.id === dragged.id); if (!node || same(next.playerSpawn, target) || next.blocked.some((tile) => same(tile, target)) || next.water.some((tile) => same(tile, target)) || next.spawns.some((entry) => same(entry.position, target)) || next.npcs.some((entry) => same(entry.position, target)) || next.resourceNodes.some((entry) => entry.id !== node.id && same(entry.position, target))) return; node.position = target; }
     else if (dragged.kind === "stairs") { const stairs = next.stairs.find((entry) => entry.id === dragged.id); if (!stairs || next.stairs.some((entry) => entry.id !== stairs.id && same(entry.from, target))) return; const dx = target.x - stairs.from.x; const dy = target.y - stairs.from.y; stairs.from = target; stairs.to = { x: stairs.to.x + dx, y: stairs.to.y + dy, z: stairs.to.z }; if (stairs.to.x < 0 || stairs.to.y < 0 || stairs.to.x >= next.width || stairs.to.y >= next.height) return; }
     else { const building = next.buildings.find((entry) => entry.id === dragged.id); if (!building) return; const targetX = target.x - dragged.offsetX; const targetY = target.y - dragged.offsetY; const dx = targetX - building.x; const dy = targetY - building.y; if (targetX < 0 || targetY < 0 || targetX + building.width > next.width || targetY + building.height > next.height) return; const inside = (tile: Position) => tile.z === building.floor && tile.x >= building.x && tile.y >= building.y && tile.x < building.x + building.width && tile.y < building.y + building.height; const structural = new Set([...next.houseWalls, ...next.castleWalls].filter(inside).map(key)); const shifted = (tile: Position) => inside(tile) ? { x: tile.x + dx, y: tile.y + dy, z: tile.z } : tile; next.houseWalls = next.houseWalls.map(shifted); next.castleWalls = next.castleWalls.map(shifted); next.floors = next.floors.map(shifted); next.blocked = next.blocked.map((tile) => structural.has(key(tile)) ? { x: tile.x + dx, y: tile.y + dy, z: tile.z } : tile); next.doors = next.doors.map((door) => inside(door.position) ? { ...door, position: shifted(door.position) } : door); next.windows = next.windows.map(shifted); next.torches = next.torches.map(shifted); building.x = targetX; building.y = targetY; }
     editorDrag.current = null; setDragTarget(null); commit(next);
@@ -323,8 +336,9 @@ export function WorldEditor() {
       <div className="tool-grid">{tools.filter((entry) => entry.group === toolGroup).map((entry) => <button title={entry.description} className={tool === entry.id ? "active" : ""} key={entry.id} onClick={() => setTool(entry.id)}><i style={{ background: entry.swatch }} /><span>{entry.label}</span></button>)}</div>
       <section className="tool-context"><div className="tool-context-title"><i style={{ background: activeTool.swatch }} /><div><strong>{activeTool.label}</strong><span>{activeTool.description}</span></div></div>
         {(tool === "house" || tool === "keep") && <label>Building size<span className="number-pair"><input type="number" min="3" max="20" value={buildingWidth} onChange={(event) => setBuildingWidth(Number(event.target.value))} /><b>x</b><input type="number" min="3" max="20" value={buildingHeight} onChange={(event) => setBuildingHeight(Number(event.target.value))} /></span></label>}
-        {tool === "npc" && <label>New NPC service<select value={npcService} onChange={(event) => setNpcService(event.target.value as NpcView["service"])}><option value="shop">Shop</option><option value="depot">Depot</option><option value="spell_trainer">Spell trainer</option></select></label>}
+        {tool === "npc" && <label>New NPC service<select value={npcService} onChange={(event) => setNpcService(event.target.value as NpcView["service"])}><option value="shop">Shop</option><option value="depot">Depot</option><option value="spell_trainer">Spell trainer</option><option value="craft_trainer">Craft trainer</option></select></label>}
         {tool === "spawn" && <label>Creature<select value={creatureId} onChange={(event) => setCreatureId(event.target.value)}>{creatureIds.map((id) => <option key={id}>{id}</option>)}</select></label>}
+        {tool === "resourceNode" && <><label>Respawn (seconds)<input type="number" min="1" max="3600" value={resourceRespawnSeconds} onChange={(event) => setResourceRespawnSeconds(Math.max(1, Math.min(3600, Number(event.target.value) || 1)))} /></label><label>Required Mining level<input type="number" min="0" max="100" value={resourceSkillLevel} onChange={(event) => setResourceSkillLevel(Math.max(0, Math.min(100, Number(event.target.value) || 0)))} /></label></>}
         {tool === "stairs" && <label>Stairs lead to<select value={destinationFloor} onChange={(event) => setDestinationFloor(Number(event.target.value))}>{[6, 7, 8, 9].map((floor) => <option key={floor}>{floor}</option>)}</select></label>}
       </section>
       {selectedNpc && <NpcInspector npc={selectedNpc} onChange={updateNpc} onRemove={removeNpc} />}
@@ -332,11 +346,12 @@ export function WorldEditor() {
     </aside>
     <section className="editor-workspace"><nav><span className="history-controls"><button title="Undo (Ctrl+Z)" disabled={!history.length} onClick={undo}>↶ Undo</button><button title="Redo (Ctrl+Y)" disabled={!future.length} onClick={redo}>↷ Redo</button></span><label>Floor<select value={activeFloor} onChange={(event) => setActiveFloor(Number(event.target.value))}>{[6, 7, 8, 9].map((floor) => <option key={floor}>{floor}</option>)}</select></label><span className="pan-controls"><button title="Move view west" onClick={() => panTo(viewportX - PAN_STEP, viewportY)}>←</button><button title="Move view north" onClick={() => panTo(viewportX, viewportY - PAN_STEP)}>↑</button><label>X<input type="number" min="0" max={document.width - 1} value={viewportX} onChange={(event) => panTo(Number(event.target.value), viewportY)} /></label><label>Y<input type="number" min="0" max={document.height - 1} value={viewportY} onChange={(event) => panTo(viewportX, Number(event.target.value))} /></label><button title="Move view south" onClick={() => panTo(viewportX, viewportY + PAN_STEP)}>↓</button><button title="Move view east" onClick={() => panTo(viewportX + PAN_STEP, viewportY)}>→</button></span><label>Zoom<input type="range" min="0.6" max="1.6" step="0.1" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label><span className="save-status" title={saveStatus}>{saveStatus}</span><span className="document-controls"><button onClick={newWorld}>New</button><label className="file-button">Import<input type="file" accept=".json" onChange={(event) => void importWorld(event.target.files?.[0]).catch((error) => alert(error))} /></label><button title="Choose a new file (Ctrl+Shift+S)" onClick={() => void saveWorld(true)}>Save As</button><button className="primary" title="Save to the current file (Ctrl+S)" onClick={() => void saveWorld()}>Save</button></span></nav>
       <div className="map-scroll" onContextMenu={(event) => event.preventDefault()} onPointerDown={beginPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan}>
-        <div className="editor-grid isometric" style={{ width: (visibleWidth + visibleHeight) * ISO_TILE_WIDTH * zoom / 2, height: (visibleWidth + visibleHeight) * ISO_TILE_HEIGHT * zoom / 2 }}>
+        <div className="editor-grid top-down" style={{ width: visibleWidth * EDITOR_TILE_SIZE * zoom, height: visibleHeight * EDITOR_TILE_SIZE * zoom }}>
           {Array.from({ length: visibleWidth * visibleHeight }, (_, index) => {
             const column = index % visibleWidth; const row = Math.floor(index / visibleWidth);
             const x = viewportX + column; const y = viewportY + row; const position = { x, y, z: activeFloor }; const tileKey = key(position);
             const spawn = spawnByTile.get(tileKey); const npc = npcByTile.get(tileKey); const door = doorByTile.get(tileKey); const stairs = stairsByTile.get(tileKey);
+            const resourceNode = resourceNodeByTile.get(tileKey);
             const playerSpawn = same(document.playerSpawn, position); const editorObject = objectAt(position); const material = terrainByTile.get(tileKey);
             const classes = tileLayers.filter((layer) => layerSets[layer].has(tileKey)).join(" ");
             return <button
@@ -344,7 +359,7 @@ export function WorldEditor() {
               aria-label={`Tile ${x}, ${y}`}
               draggable={Boolean(editorObject)}
               className={`editor-tile ${classes} ${material ? `material-${material}` : ""} ${waterEdgeClasses(position)} ${playerSpawn ? "player-spawn" : ""} ${npc?.id === selectedNpcId ? "npc-selected" : ""} ${editorObject ? "movable" : ""} ${dragPreviewIncludes(position) ? "drag-preview" : ""}`}
-              style={{ width: ISO_TILE_WIDTH * zoom, height: ISO_TILE_HEIGHT * zoom, left: (column - row + visibleHeight - 1) * ISO_TILE_WIDTH * zoom / 2, top: (column + row) * ISO_TILE_HEIGHT * zoom / 2, zIndex: column + row }}
+              style={{ width: EDITOR_TILE_SIZE * zoom, height: EDITOR_TILE_SIZE * zoom, left: column * EDITOR_TILE_SIZE * zoom, top: row * EDITOR_TILE_SIZE * zoom, zIndex: 1 }}
               key={tileKey}
               onDragStart={(event) => startObjectDrag(event, editorObject)}
               onDragOver={(event) => { if (editorDrag.current) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDragTarget(position); } }}
@@ -354,12 +369,12 @@ export function WorldEditor() {
               onClick={() => { if (npc) { setSelectedNpcId(npc.id); return; } if (!continuousTool(tool)) paint(x, y); }}
               onPointerEnter={(event) => { if (event.buttons === 1 && !window.document.body.classList.contains("editor-space-pan") && continuousTool(tool)) paint(x, y, true); }}
               onPointerUp={() => { lastPainted.current = ""; saveLocal(documentRef.current); }}
-            >{playerSpawn ? "P" : npc ? "N" : door ? "D" : windows.has(tileKey) ? "W" : torches.has(tileKey) ? "T" : stairs ? (stairs.to.z < activeFloor ? "U" : "D") : spawn ? "C" : ""}</button>;
+            >{playerSpawn ? "P" : npc ? "N" : resourceNode ? "⛏" : door ? "D" : windows.has(tileKey) ? "W" : torches.has(tileKey) ? "T" : stairs ? (stairs.to.z < activeFloor ? "U" : "D") : spawn ? "C" : ""}</button>;
           })}
         </div>
       </div>
     </section>
-    <footer><span>{document.width.toLocaleString()} x {document.height.toLocaleString()} / view {viewportX}-{viewportX + visibleWidth - 1}, {viewportY}-{viewportY + visibleHeight - 1}</span><strong>{tool}</strong><span>{document.blocked.length} blocked / {document.doors.length} doors / {document.windows.length} windows / {document.torches.length} lights / {document.spawns.length} spawns / {document.npcs.length} NPCs</span><small>Only the visible editor window is rendered.</small></footer>
+    <footer><span>{document.width.toLocaleString()} x {document.height.toLocaleString()} / view {viewportX}-{viewportX + visibleWidth - 1}, {viewportY}-{viewportY + visibleHeight - 1}</span><strong>{tool}</strong><span>{document.blocked.length} blocked / {document.doors.length} doors / {document.spawns.length} spawns / {document.resourceNodes.length} resources / {document.npcs.length} NPCs</span><small>Top-down editor · only the visible window is rendered.</small></footer>
   </main>;
 }
 
@@ -429,6 +444,7 @@ function WorldMinimap({ document, floor, viewportX, viewportY, viewportWidth, vi
     drawMinimapPositions(context, document.torches, floor, projection, "#ff832f", 2.2);
     drawMinimapPositions(context, document.doors.map((entry) => entry.position), floor, projection, "#ffe09a", 2.2);
     drawMinimapPositions(context, document.spawns.map((entry) => entry.position), floor, projection, "#b76cff", 2.8);
+    drawMinimapPositions(context, document.resourceNodes.map((entry) => entry.position), floor, projection, "#d8854c", 3);
     drawMinimapPositions(context, document.npcs.map((entry) => entry.position), floor, projection, "#55e4be", 3);
     drawMinimapPositions(context, [document.playerSpawn], floor, projection, "#fff176", 3.5);
   }, [document, floor, projection.left, projection.scale, projection.top]);
@@ -526,10 +542,10 @@ function NpcInspector({ npc, onChange, onRemove }: { npc: NpcView; onChange: (np
   </section>;
 }
 
-function firstSafeBaseTile(document: EditorDocument): Position { const blocked = new Set(document.blocked.filter((tile) => tile.z === document.floor).map(key)); const occupied = new Set([...(document.spawns ?? []).map((entry) => key(entry.position)), ...(document.npcs ?? []).map((entry) => key(entry.position))]); for (let y = 0; y < document.height; y += 1) for (let x = 0; x < document.width; x += 1) { const position = { x, y, z: document.floor }; if (!blocked.has(key(position)) && !occupied.has(key(position))) return position; } return { x: 0, y: 0, z: document.floor }; }
+function firstSafeBaseTile(document: EditorDocument): Position { const blocked = new Set(document.blocked.filter((tile) => tile.z === document.floor).map(key)); const occupied = new Set([...(document.spawns ?? []).map((entry) => key(entry.position)), ...(document.npcs ?? []).map((entry) => key(entry.position)), ...(document.resourceNodes ?? []).map((entry) => key(entry.position))]); for (let y = 0; y < document.height; y += 1) for (let x = 0; x < document.width; x += 1) { const position = { x, y, z: document.floor }; if (!blocked.has(key(position)) && !occupied.has(key(position))) return position; } return { x: 0, y: 0, z: document.floor }; }
 function nextBrowserPaint() { return new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))); }
 function normalizeDocument(document: EditorDocument): EditorDocument {
-  const normalized = { ...document, bridges: document.bridges ?? [], trees: document.trees ?? [], windows: document.windows ?? [], torches: document.torches ?? [], terrainMaterials: document.terrainMaterials ?? [], npcs: document.npcs ?? [], playerSpawn: document.playerSpawn ?? { x: 0, y: 0, z: document.floor } };
+  const normalized = { ...document, bridges: document.bridges ?? [], trees: document.trees ?? [], windows: document.windows ?? [], torches: document.torches ?? [], terrainMaterials: document.terrainMaterials ?? [], npcs: document.npcs ?? [], resourceNodes: document.resourceNodes ?? [], playerSpawn: document.playerSpawn ?? { x: 0, y: 0, z: document.floor } };
   normalized.buildings = alignHouseBuildingsToWalls(normalized);
   if (!document.playerSpawn) normalized.playerSpawn = firstSafeBaseTile(normalized);
   return normalized;

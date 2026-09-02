@@ -82,6 +82,11 @@ export class InputController {
   interactAt(target: Position) {
     const player = this.world.localPlayerId ? this.world.players.get(this.world.localPlayerId) : null;
     if (!player) return;
+    const resource = [...this.world.resourceNodes.values()].find((entry) => samePosition(entry.position, target));
+    if (resource) {
+      this.network.mineResource(resource.id);
+      return;
+    }
     const door = this.world.doorAt(target);
     if (door) {
       this.toggleDoor(door.id, door.position);

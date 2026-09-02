@@ -345,6 +345,20 @@ impl Database {
         .await
     }
 
+    pub async fn load_profession_skills(
+        &self,
+        character_id: EntityId,
+    ) -> Result<HashMap<String, (u16, u32)>, sqlx::Error> {
+        let rows: Vec<(String, i32, i32)> = sqlx::query_as("SELECT skill_id, level, tries FROM character_profession_skills WHERE character_id = $1")
+            .bind(character_id).fetch_all(&self.pool).await?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(id, level, tries)| {
+                Some((id, (u16::try_from(level).ok()?, u32::try_from(tries).ok()?)))
+            })
+            .collect())
+    }
+
     pub async fn load_depot(
         &self,
         character_id: EntityId,
@@ -467,6 +481,24 @@ impl Database {
             .bind(recipe_id)
             .execute(&mut *transaction)
             .await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    pub async fn persist_profession_gathering(
+        &self,
+        character_id: EntityId,
+        inventory: &[ItemInstance],
+        skill_id: &str,
+        level: u16,
+        tries: u32,
+    ) -> Result<(), sqlx::Error> {
+        let mut transaction = self.pool.begin().await?;
+        clear_inventory(&mut transaction, character_id).await?;
+        insert_inventory(&mut transaction, character_id, inventory).await?;
+        sqlx::query("INSERT INTO character_profession_skills (character_id, skill_id, level, tries) VALUES ($1, $2, $3, $4) ON CONFLICT (character_id, skill_id) DO UPDATE SET level = EXCLUDED.level, tries = EXCLUDED.tries")
+            .bind(character_id).bind(skill_id).bind(i32::from(level)).bind(i32::try_from(tries).unwrap_or(i32::MAX))
+            .execute(&mut *transaction).await?;
         transaction.commit().await?;
         Ok(())
     }

@@ -20,5 +20,7 @@
   { "id": "crypt_guard_remains", "name": "Crypt Guard Remains", "weight": 58.0, "stackable": false, "maxStack": 1, "containerSlots": 10, "pickupable": false },
   { "id": "bone_acolyte_remains", "name": "Bone Acolyte Remains", "weight": 45.0, "stackable": false, "maxStack": 1, "containerSlots": 10, "pickupable": false },
   { "id": "cellar_warden_remains", "name": "Cellar Warden Remains", "weight": 110.0, "stackable": false, "maxStack": 1, "containerSlots": 14, "pickupable": false },
-  { "id": "ember_sigil_formula", "name": "Ember Sigil Formula", "weight": 0.2, "stackable": false, "maxStack": 1, "teachesRecipeId": "mark_ember_sigil" }
+  { "id": "ember_sigil_formula", "name": "Ember Sigil Formula", "weight": 0.2, "stackable": false, "maxStack": 1, "teachesRecipeId": "mark_ember_sigil" },
+  { "id": "iron_pickaxe", "name": "Iron Pickaxe", "weight": 22.0, "stackable": false, "maxStack": 1, "equipmentSlot": "weapon" },
+  { "id": "copper_ore", "name": "Copper Ore", "weight": 2.5, "stackable": true, "maxStack": 100 }
 ]

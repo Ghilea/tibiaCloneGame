@@ -227,7 +227,10 @@ impl ContentCatalog {
                 || recipe.craft_time_ms < 250
                 || recipe.input_quantity == 0
                 || recipe.output_quantity == 0
-                || !matches!(recipe.craft_kind.as_str(), "sigils" | "fletching")
+                || !matches!(
+                    recipe.craft_kind.as_str(),
+                    "sigils" | "fletching" | "mining"
+                )
                 || recipe.required_skill_level > MAX_SKILL_LEVEL
                 || (recipe.craft_kind == "sigils" && recipe.mana_cost == 0)
                 || !self.items.contains_key(&recipe.input_definition_id)

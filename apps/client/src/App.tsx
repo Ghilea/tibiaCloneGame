@@ -222,6 +222,16 @@ function Game({ onLeave }: { onLeave: () => void }) {
           if (!event.repeat) loot.forEach((item) => network.pickup(item.instanceId));
           return;
         }
+        const localPlayer = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
+        const resource = localPlayer ? [...world.resourceNodes.values()].find((node) => node.available
+          && node.position.z === localPlayer.position.z
+          && Math.abs(node.position.x - localPlayer.position.x) <= 1
+          && Math.abs(node.position.y - localPlayer.position.y) <= 1) : null;
+        if (resource) {
+          event.preventDefault();
+          if (!event.repeat) network.mineResource(resource.id);
+          return;
+        }
       }
       if (event.code === "Digit1") {
         event.preventDefault();
@@ -705,6 +715,8 @@ const itemSpriteOrder = [
   "fen_brute_remains",
 ];
 function ItemIcon({ definitionId }: { definitionId: string }) {
+  if (definitionId === "iron_pickaxe") return <i className="item-icon food-icon">⛏</i>;
+  if (definitionId === "copper_ore") return <i className="item-icon food-icon">◆</i>;
   if (definitionId === "ember_sigil_formula") return <i className="item-icon food-icon">📜</i>;
   if (definitionId === "field_bread") return <i className="item-icon food-icon">🥖</i>;
   if (definitionId === "smoked_mire_meat") return <i className="item-icon food-icon">🍖</i>;
@@ -1096,7 +1108,8 @@ function SecondarySkillsPicker({ selected }: { selected: SecondarySkill[] }) {
       <div>{secondarySkillOptions.map((skill) => {
         const active = pending.includes(skill.id);
         const unavailable = !active && pending.length >= 2;
-        return <button key={skill.id} className={active ? "selected" : ""} aria-pressed={active} disabled={unavailable} title={skill.description} onClick={() => toggle(skill.id)}><span>{skill.name}</span><small>{active ? "Selected" : unavailable ? "Two selected" : skill.description}</small></button>;
+        const progress = world.professionSkills.get(skill.id);
+        return <button key={skill.id} className={active ? "selected" : ""} aria-pressed={active} disabled={unavailable} title={skill.description} onClick={() => toggle(skill.id)}><span>{skill.name}</span><small>{active ? `Level ${progress?.level ?? 0} · ${progress?.tries ?? 0} tries` : unavailable ? "Two selected" : skill.description}</small></button>;
       })}</div>
     </section>
   );
@@ -1606,7 +1619,15 @@ function RuneCraftingPanel() {
   const material = selectedRecipe ? world.inventory.filter((item) => item.definitionId === selectedRecipe.inputDefinitionId).reduce((sum, item) => sum + item.quantity, 0) : 0;
   const inputName = selectedRecipe ? world.itemDefinitions.get(selectedRecipe.inputDefinitionId)?.name ?? selectedRecipe.inputDefinitionId : "";
   const outputName = selectedRecipe ? world.itemDefinitions.get(selectedRecipe.outputDefinitionId)?.name ?? selectedRecipe.outputDefinitionId : "";
-  const selectedSkill = selectedRecipe?.craftKind === "fletching" ? player?.fletchingSkill ?? 0 : player?.magicLevel ?? 0;
+  const skillLevel = (craftKind: string) => craftKind === "fletching"
+    ? player?.fletchingSkill ?? 0
+    : craftKind === "sigils"
+      ? player?.magicLevel ?? 0
+      : world.professionSkills.get(craftKind)?.level ?? 0;
+  const skillName = (craftKind: string) => craftKind === "sigils"
+    ? "Magic"
+    : secondarySkillOptions.find((entry) => entry.id === craftKind)?.name ?? (craftKind === "fletching" ? "Fletching" : craftKind);
+  const selectedSkill = selectedRecipe ? skillLevel(selectedRecipe.craftKind) : 0;
   const locked = Boolean(selectedRecipe && selectedSkill < selectedRecipe.requiredSkillLevel);
   const possibleBatches = selectedRecipe ? Math.floor(material / Math.max(1, selectedRecipe.inputQuantity)) : 0;
   const categoryName = category === "all" ? "All disciplines" : secondarySkillOptions.find((entry) => entry.id === category)?.name ?? (category === "sigils" ? "Sigilcraft" : "Fletching");
@@ -1624,14 +1645,14 @@ function RuneCraftingPanel() {
           <CraftingCategoryButton label="Sigilcraft" count={recipes.filter((recipe) => recipe.craftKind === "sigils").length} selected={category === "sigils"} onClick={() => chooseCategory("sigils")} />
           <CraftingCategoryButton label="Fletching" count={recipes.filter((recipe) => recipe.craftKind === "fletching").length} selected={category === "fletching"} onClick={() => chooseCategory("fletching")} />
           {player?.secondarySkills.length ? <small className="crafting-secondary-label">Secondary skills</small> : null}
-          {player?.secondarySkills.map((skill) => <CraftingCategoryButton key={skill} label={secondarySkillOptions.find((entry) => entry.id === skill)?.name ?? skill} count={0} selected={category === skill} onClick={() => chooseCategory(skill)} />)}
+          {player?.secondarySkills.map((skill) => <CraftingCategoryButton key={skill} label={secondarySkillOptions.find((entry) => entry.id === skill)?.name ?? skill} count={recipes.filter((recipe) => recipe.craftKind === skill).length} selected={category === skill} onClick={() => chooseCategory(skill)} />)}
         </aside>
         <section className="crafting-browser">
           <header><span><small>{categoryName}</small><strong>Available recipes</strong></span><b>{visibleRecipes.length}</b></header>
           <div className="crafting-recipe-list">
             {visibleRecipes.map((recipe) => {
               const available = world.inventory.filter((item) => item.definitionId === recipe.inputDefinitionId).reduce((sum, item) => sum + item.quantity, 0);
-              const recipeSkill = recipe.craftKind === "fletching" ? player?.fletchingSkill ?? 0 : player?.magicLevel ?? 0;
+              const recipeSkill = skillLevel(recipe.craftKind);
               const recipeLocked = recipeSkill < recipe.requiredSkillLevel;
               return <button key={recipe.id} className={`${recipe.id === selectedRecipe?.id ? "selected" : ""} ${recipeLocked ? "locked" : ""}`} onClick={() => setSelectedRecipeId(recipe.id)}><ItemIcon definitionId={recipe.outputDefinitionId} /><span><strong>{recipe.name}</strong><small>{recipe.outputQuantity} output · {available} materials</small></span><i aria-hidden="true">›</i></button>;
             })}
@@ -1640,10 +1661,10 @@ function RuneCraftingPanel() {
         </section>
         <section className="crafting-recipe-detail">
           {selectedRecipe ? <>
-            <header><span><small>{selectedRecipe.craftKind === "sigils" ? "Sigilcraft" : "Fletching"}</small><h3>{selectedRecipe.name}</h3></span><ItemIcon definitionId={selectedRecipe.outputDefinitionId} /></header>
+            <header><span><small>{selectedRecipe.craftKind === "sigils" ? "Sigilcraft" : skillName(selectedRecipe.craftKind)}</small><h3>{selectedRecipe.name}</h3></span><ItemIcon definitionId={selectedRecipe.outputDefinitionId} /></header>
             <div className="crafting-conversion"><span><ItemIcon definitionId={selectedRecipe.inputDefinitionId} /><small>{selectedRecipe.inputQuantity} ×</small><strong>{inputName}</strong></span><b>→</b><span><ItemIcon definitionId={selectedRecipe.outputDefinitionId} /><small>{selectedRecipe.outputQuantity} ×</small><strong>{outputName}</strong></span></div>
             <dl className="crafting-costs"><div><dt>Available material</dt><dd className={possibleBatches < quantity ? "missing" : ""}>{material}</dd></div><div><dt>Possible batches</dt><dd>{possibleBatches}</dd></div><div><dt>Mana per batch</dt><dd>{selectedRecipe.manaCost}</dd></div><div><dt>Crafting time</dt><dd>{(selectedRecipe.craftTimeMs / 1000).toFixed(1)} sec</dd></div></dl>
-            {locked && <p className="crafting-requirement">Requires {selectedRecipe.craftKind === "fletching" ? "Fletching" : "Magic"} {selectedRecipe.requiredSkillLevel}.</p>}
+            {locked && <p className="crafting-requirement">Requires {skillName(selectedRecipe.craftKind)} {selectedRecipe.requiredSkillLevel}.</p>}
             <footer><label><small>Batches</small><span><button onClick={() => setQuantity((current) => Math.max(1, current - 1))}>−</button><input aria-label="Production batches" type="number" min={1} max={20} value={quantity} onChange={(event) => setQuantity(Math.max(1, Math.min(20, Number(event.target.value) || 1)))} /><button onClick={() => setQuantity((current) => Math.min(20, current + 1))}>+</button></span></label><button className="crafting-start" disabled={locked || possibleBatches < quantity || Boolean(active)} onClick={() => network.startRuneCrafting(selectedRecipe.id, quantity)}>{active ? "Queue busy" : possibleBatches < quantity ? "Missing materials" : `Craft ${quantity}`}</button></footer>
           </> : <CraftingEmpty message="Choose a learned recipe from the recipe book." />}
         </section>

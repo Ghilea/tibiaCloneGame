@@ -10,6 +10,7 @@
       { "id": "blank_sigil", "itemDefinitionId": "blank_rune", "quantity": 1, "price": 2 },
       { "id": "rough_arrows", "itemDefinitionId": "rough_arrow", "quantity": 10, "price": 3 },
       { "id": "field_bread", "itemDefinitionId": "field_bread", "quantity": 2, "price": 3 }
+      ,{ "id": "iron_pickaxe", "itemDefinitionId": "iron_pickaxe", "quantity": 1, "price": 12 }
     ],
     "spellIds": [],
     "recipeIds": []
@@ -45,6 +46,6 @@
     "position": { "x": 9, "y": 5, "z": 7 },
     "offers": [],
     "spellIds": [],
-    "recipeIds": ["fletch_rough_arrows"]
+    "recipeIds": ["fletch_rough_arrows", "forge_copper_blade"]
   }
 ]
