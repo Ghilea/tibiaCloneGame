@@ -79,7 +79,7 @@ describe("world pointer interactions", () => {
     const world = new WorldState(); const network = new NetworkClient(world); const input = new InputController(world, network);
     const tile = { x: 4, y: 5, z: 7 };
     world.localPlayerId = "player";
-    world.players.set("player", { id: "player", name: "Hero", vocation: "warrior", outfit: "knight", secondarySkills: [], position: { x: 4, y: 4, z: 7 }, health: 100, maxHealth: 100, level: 1, experience: 0, mana: 0, maxMana: 0, swordSkill: 1, swordTries: 0, distanceSkill: 1, distanceTries: 0, fletchingSkill: 1, fletchingTries: 0, magicLevel: 0, magicTries: 0 });
+    world.players.set("player", { id: "player", name: "Hero", outfit: "knight", secondarySkills: [], position: { x: 4, y: 4, z: 7 }, health: 100, maxHealth: 100, level: 1, experience: 0, mana: 0, maxMana: 0, swordSkill: 1, swordTries: 0, distanceSkill: 1, distanceTries: 0, fletchingSkill: 1, fletchingTries: 0, magicLevel: 0, magicTries: 0 });
     world.groundItems = [
       { item: { instanceId: "empty-corpse", definitionId: "corpse", quantity: 1 }, position: tile, contents: [] },
       { item: { instanceId: "full-corpse", definitionId: "corpse", quantity: 1 }, position: tile, contents: [{ instanceId: "loot", definitionId: "gold_coin", quantity: 3, containerId: "full-corpse" }] },

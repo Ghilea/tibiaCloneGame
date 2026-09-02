@@ -9,7 +9,8 @@
     "outputQuantity": 1,
     "manaCost": 35,
     "craftTimeMs": 1500,
-    "learnPrice": 30
+    "learnPrice": 30,
+    "requiredSkillLevel": 1
   },
   {
     "id": "fletch_rough_arrows",
@@ -21,6 +22,7 @@
     "outputQuantity": 10,
     "manaCost": 0,
     "craftTimeMs": 1200,
-    "learnPrice": 8
+    "learnPrice": 8,
+    "requiredSkillLevel": 0
   }
 ]

@@ -1,7 +1,6 @@
 export type CharacterSummary = {
   id: string;
   name: string;
-  vocation: string;
   outfit: import("./protocol").CharacterOutfit;
   level: number;
   position: { x: number; y: number; z: number };
@@ -23,8 +22,8 @@ export async function listCharacters(token: string) {
   return request<{ characters: CharacterSummary[] }>("/characters", {}, token);
 }
 
-export async function createCharacter(token: string, name: string, vocation: string) {
-  return request<CharacterSummary>("/characters", { method: "POST", body: JSON.stringify({ name, vocation }) }, token);
+export async function createCharacter(token: string, name: string) {
+  return request<CharacterSummary>("/characters", { method: "POST", body: JSON.stringify({ name }) }, token);
 }
 
 export async function deleteCharacter(token: string, characterId: string) {

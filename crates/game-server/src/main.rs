@@ -184,7 +184,7 @@ async fn create_character(
     let spawn = state.world.read().await.player_spawn();
     let character = state
         .auth
-        .create_character(token, request.name, request.vocation, spawn)
+        .create_character(token, request.name, spawn)
         .await?;
     Ok((StatusCode::CREATED, Json(character)))
 }
@@ -254,7 +254,6 @@ async fn session(mut socket: WebSocket, state: AppState) {
     let (
         id,
         name,
-        vocation,
         outfit,
         secondary_skills,
         position,
@@ -263,13 +262,13 @@ async fn session(mut socket: WebSocket, state: AppState) {
         health,
         mana,
         max_mana,
-        sword_skill,
+        mut sword_skill,
         sword_tries,
-        distance_skill,
+        mut distance_skill,
         distance_tries,
-        fletching_skill,
+        mut fletching_skill,
         fletching_tries,
-        magic_level,
+        mut magic_level,
         magic_tries,
     ) = if state.auth.database_enabled() {
         let (Some(token), Some(character_id)) = (session_token, character_id) else {
@@ -313,7 +312,6 @@ async fn session(mut socket: WebSocket, state: AppState) {
         (
             character.id,
             character.name,
-            character.vocation,
             character.outfit,
             character.secondary_skills,
             position,
@@ -347,7 +345,6 @@ async fn session(mut socket: WebSocket, state: AppState) {
         (
             Uuid::new_v4(),
             name,
-            "adventurer".to_owned(),
             "knight".to_owned(),
             Vec::new(),
             world_spawn,
@@ -367,8 +364,11 @@ async fn session(mut socket: WebSocket, state: AppState) {
         )
     };
 
-    let vocation_profile = game_types::vocation_profile(&vocation)
-        .expect("persisted and ephemeral vocations are validated");
+    let mut skill_levels = [sword_skill, distance_skill, fletching_skill, magic_level];
+    game_types::normalize_mastery(&mut skill_levels);
+    [sword_skill, distance_skill, fletching_skill, magic_level] = skill_levels;
+
+    let adventurer_profile = game_types::adventurer_profile();
 
     if state.world.read().await.contains_player(id) {
         send(
@@ -385,16 +385,15 @@ async fn session(mut socket: WebSocket, state: AppState) {
         view: PlayerView {
             id,
             name: name.clone(),
-            vocation,
             outfit,
             secondary_skills,
             position,
-            health: health.min(vocation_profile.max_health),
-            max_health: vocation_profile.max_health,
+            health: health.min(adventurer_profile.max_health),
+            max_health: adventurer_profile.max_health,
             level,
             experience,
-            mana: mana.min(vocation_profile.max_mana),
-            max_mana: max_mana.min(vocation_profile.max_mana),
+            mana: mana.min(adventurer_profile.max_mana),
+            max_mana: max_mana.min(adventurer_profile.max_mana),
             sword_skill,
             sword_tries,
             distance_skill,
@@ -440,7 +439,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
             },
             None => Vec::new(),
         },
-        max_capacity: f32::from(vocation_profile.capacity),
+        max_capacity: f32::from(adventurer_profile.capacity),
         last_move: Instant::now() - Duration::from_millis(165),
         last_attack: Instant::now() - Duration::from_millis(700),
         last_item_use: Instant::now() - Duration::from_millis(900),
@@ -1441,7 +1440,7 @@ fn spell_learning_error_message(code: &str) -> &'static str {
         "npc_out_of_reach" => "Move next to the spell trainer first",
         "not_enough_gold" => "You do not have enough Gold Coins for this lesson",
         "spell_already_learned" => "You have already learned that spell",
-        "vocation_cannot_learn_spell" => "Your vocation cannot learn that spell",
+        "magic_level_too_low" => "Your Magic skill is too low for that spell",
         "cannot_learn_while_trading" => "Finish or cancel your trade before learning a spell",
         _ => "That spell cannot be learned here",
     }
@@ -1494,6 +1493,7 @@ fn spell_cast_error_message(code: &str) -> &'static str {
         "target_out_of_range" => "The target is out of spell range",
         "line_of_sight_blocked" => "A wall blocks your spell",
         "creature_evading" => "The creature is evading and cannot be harmed",
+        "magic_level_too_low" => "Your Magic skill is too low for that spell",
         _ => "The spell could not be cast",
     }
 }
@@ -1680,7 +1680,7 @@ async fn send_crafting_update(state: &AppState, update: world::CraftingUpdate) {
 fn crafting_error_message(code: &str) -> &'static str {
     match code {
         "cannot_craft_while_trading" => "Finish or cancel your trade before crafting",
-        "vocation_cannot_craft_sigils" => "Only Mages and Druids can craft sigils",
+        "crafting_skill_too_low" => "Your matching crafting skill is too low",
         "missing_craft_material" => "You do not have enough crafting materials",
         "invalid_craft_quantity" => "Choose between 1 and 20 sigils",
         "unknown_rune_recipe" => "That recipe does not exist",

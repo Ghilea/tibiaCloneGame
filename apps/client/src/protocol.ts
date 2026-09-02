@@ -1,11 +1,10 @@
-export const PROTOCOL_VERSION = 23;
+export const PROTOCOL_VERSION = 24;
 export const CLIENT_VERSION = "0.1.0";
 
 export type Position = { x: number; y: number; z: number };
 export type PlayerView = {
   id: string;
   name: string;
-  vocation: string;
   outfit: CharacterOutfit;
   secondarySkills: SecondarySkill[];
   position: Position;
@@ -57,8 +56,8 @@ export type ItemInstance = { instanceId: string; definitionId: string; quantity:
 export type GroundItem = { item: ItemInstance; position: Position; contents: ItemInstance[] };
 export type ShopOffer = { id: string; itemDefinitionId: string; quantity: number; price: number };
 export type NpcView = { id: string; name: string; title: string; service: "shop" | "depot" | "spell_trainer" | "craft_trainer"; dialogue: string; position: Position; offers: ShopOffer[]; spellIds: string[]; recipeIds: string[] };
-export type RuneRecipe = { id: string; name: string; craftKind: "sigils" | "fletching"; inputDefinitionId: string; inputQuantity: number; outputDefinitionId: string; outputQuantity: number; manaCost: number; craftTimeMs: number; learnPrice: number };
-export type SpellDefinition = { id: string; name: string; description: string; vocations: string[]; price: number; manaCost: number; damage: number; range: number; cooldownMs: number };
+export type RuneRecipe = { id: string; name: string; craftKind: "sigils" | "fletching"; inputDefinitionId: string; inputQuantity: number; outputDefinitionId: string; outputQuantity: number; manaCost: number; craftTimeMs: number; learnPrice: number; requiredSkillLevel: number };
+export type SpellDefinition = { id: string; name: string; description: string; requiredMagicLevel: number; price: number; manaCost: number; damage: number; range: number; cooldownMs: number };
 
 export type ClientMessage =
   | { type: "hello"; protocol_version: number; client_version: string; session_token?: string; character_id?: string; character_name?: string }

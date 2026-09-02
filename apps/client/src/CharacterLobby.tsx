@@ -9,7 +9,6 @@ import {
   type CharacterSummary,
 } from "./api";
 import { AnimatedCharacter, type CharacterKind } from "./game/AnimatedCharacter";
-import { vocationName, vocations, type VocationId } from "./vocations";
 
 type CharacterLobbyProps = {
   token: string;
@@ -91,8 +90,8 @@ export function CharacterLobby({ token, connecting, onPlay, onLogout }: Characte
               className={character.id === selectedId ? "lobby-character selected" : "lobby-character"}
               onClick={() => setSelectedId(character.id)}
             >
-              <i>{vocations.find((entry) => entry.id === character.vocation)?.icon ?? "◆"}</i>
-              <span><strong>{character.name}</strong><small>Level {character.level} {vocationName(character.vocation)}</small></span>
+              <i>◆</i>
+              <span><strong>{character.name}</strong><small>Level {character.level} · Classless</small></span>
               <b>›</b>
             </button>
           ))}
@@ -107,7 +106,7 @@ export function CharacterLobby({ token, connecting, onPlay, onLogout }: Characte
 
       <aside className="lobby-details">
         {selected ? <>
-          <p className="eyebrow">{vocationName(selected.vocation)}</p>
+          <p className="eyebrow">Classless adventurer</p>
           <h2>{selected.name}</h2>
           <div className="lobby-level"><span>LEVEL</span><b>{selected.level}</b></div>
           <dl>
@@ -131,8 +130,8 @@ export function CharacterLobby({ token, connecting, onPlay, onLogout }: Characte
   );
 }
 
-export function CharacterPreview({ vocation, outfit }: { vocation?: string; outfit?: CharacterKind }) {
-  const kind: CharacterKind = outfit ?? (vocation === "ranger" ? "ranger" : vocation === "mage" || vocation === "druid" ? "mage" : "knight");
+export function CharacterPreview({ outfit }: { outfit?: CharacterKind }) {
+  const kind: CharacterKind = outfit ?? "knight";
   return (
     <Canvas dpr={[1, 1.5]} camera={{ position: [0, 1.35, 4.8], fov: 34 }} gl={{ antialias: true, powerPreference: "high-performance" }}>
       <ambientLight intensity={1.15} color="#b7c9bd" />
@@ -161,13 +160,12 @@ function PreviewFigure({ kind }: { kind: CharacterKind }) {
 
 function CreateCharacterDialog({ token, onCreated, onClose, onError }: { token: string; onCreated: (character: CharacterSummary) => void; onClose: () => void; onError: (message: string) => void }) {
   const [name, setName] = useState("");
-  const [vocation, setVocation] = useState<VocationId>("warrior");
   const [busy, setBusy] = useState(false);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
     onError("");
-    try { onCreated(await createCharacter(token, name, vocation)); }
+    try { onCreated(await createCharacter(token, name)); }
     catch (failure) { onError(failure instanceof Error ? failure.message : "Could not create the character"); }
     finally { setBusy(false); }
   };
@@ -177,8 +175,8 @@ function CreateCharacterDialog({ token, onCreated, onClose, onError }: { token: 
         <header><div><p>NEW ADVENTURE</p><h2>Create Character</h2></div><button type="button" onClick={onClose}>×</button></header>
         <label htmlFor="new-character-name">Character name</label>
         <input id="new-character-name" autoFocus minLength={2} maxLength={20} value={name} onChange={(event) => setName(event.target.value)} placeholder="Enter a name" />
-        <fieldset><legend>Choose a vocation</legend><div className="lobby-vocations">{vocations.map((entry) => <button type="button" key={entry.id} className={entry.id === vocation ? "selected" : ""} onClick={() => setVocation(entry.id)}><i>{entry.icon}</i><span><strong>{entry.name}</strong><small>{entry.role}</small></span><em>{entry.detail}</em></button>)}</div></fieldset>
-        <footer><button type="button" className="secondary" onClick={onClose}>Cancel</button><button disabled={busy || name.trim().length < 2}>{busy ? "Creating…" : `Create ${vocationName(vocation)}`}</button></footer>
+        <p className="lobby-flavour">Every character starts with the same foundation. Your combat skills, magic and professions determine what you become.</p>
+        <footer><button type="button" className="secondary" onClick={onClose}>Cancel</button><button disabled={busy || name.trim().length < 2}>{busy ? "Creating…" : "Create adventurer"}</button></footer>
       </form>
     </div>
   );

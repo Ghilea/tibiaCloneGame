@@ -44,7 +44,6 @@ pub struct Credentials {
 #[derive(Debug, Deserialize)]
 pub struct CreateCharacterRequest {
     pub name: String,
-    pub vocation: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -64,7 +63,6 @@ pub struct CharacterListResponse {
 pub struct CharacterSummary {
     pub id: EntityId,
     pub name: String,
-    pub vocation: String,
     pub outfit: String,
     pub level: i32,
     pub position: Position,
@@ -196,20 +194,10 @@ impl AuthService {
         &self,
         token: &str,
         name: String,
-        vocation: String,
         spawn: Position,
     ) -> Result<CharacterSummary, ApiError> {
         let account_id = self.account_for_token(token).await?;
         let name = validate_character_name(&name)?;
-        let vocation = game_types::playable_vocation(&vocation)
-            .map(|profile| profile.id)
-            .ok_or_else(|| {
-                ApiError::new(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_vocation",
-                    "Choose Warrior, Ranger, Mage, or Druid",
-                )
-            })?;
         if self
             .database()?
             .characters_for_account(account_id)
@@ -226,7 +214,7 @@ impl AuthService {
         }
         let character = self
             .database()?
-            .create_character(account_id, &name, vocation, spawn)
+            .create_character(account_id, &name, spawn)
             .await
             .map_err(|error| {
                 if error
@@ -329,7 +317,6 @@ impl From<CharacterRecord> for CharacterSummary {
         Self {
             id: value.id,
             name: value.name,
-            vocation: value.vocation,
             outfit: value.outfit,
             level: value.level,
             position: value.position,

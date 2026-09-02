@@ -18,7 +18,6 @@ import { NetworkClient } from "./game/NetworkClient";
 import { WorldState } from "./game/WorldState";
 import { worldEnvironment, worldTimeLabel } from "./game/worldEnvironment";
 import { PROTOCOL_VERSION, type CharacterOutfit, type GroundItem, type ItemInstance, type SecondarySkill } from "./protocol";
-import { canCraftSigils } from "./vocations";
 
 const world = new WorldState();
 const network = new NetworkClient(world);
@@ -815,7 +814,7 @@ function SpellTrainerModal({ npcId }: { npcId: string }) {
             const spell = world.spells.get(spellId);
             if (!spell) return null;
             const learned = world.learnedSpellIds.has(spell.id);
-            const eligible = spell.vocations.includes(player.vocation);
+            const eligible = player.magicLevel >= spell.requiredMagicLevel;
             return (
               <article
                 className={learned ? "learned" : !eligible ? "locked" : ""}
@@ -826,7 +825,7 @@ function SpellTrainerModal({ npcId }: { npcId: string }) {
                   <strong>{spell.name}</strong>
                   <p>{spell.description}</p>
                   <small>
-                    {spell.manaCost} mana · {spell.damage} base damage · range{" "}
+                    Magic {spell.requiredMagicLevel} · {spell.manaCost} mana · {spell.damage} base damage · range{" "}
                     {spell.range} · {(spell.cooldownMs / 1000).toFixed(1)} sec
                     cooldown
                   </small>
@@ -840,7 +839,7 @@ function SpellTrainerModal({ npcId }: { npcId: string }) {
                     {learned
                       ? "Learned"
                       : !eligible
-                        ? "Wrong vocation"
+                        ? `Requires Magic ${spell.requiredMagicLevel}`
                         : "Learn spell"}
                   </button>
                 </div>
@@ -1104,10 +1103,10 @@ function SecondarySkillsPicker({ selected }: { selected: SecondarySkill[] }) {
 }
 
 const outfitOptions: { id: CharacterOutfit; label: string }[] = [
-  { id: "knight", label: "Knight" },
-  { id: "ranger", label: "Ranger" },
-  { id: "mage", label: "Mage" },
-  { id: "rogue", label: "Rogue" },
+  { id: "knight", label: "Armored" },
+  { id: "ranger", label: "Wayfarer" },
+  { id: "mage", label: "Mystic" },
+  { id: "rogue", label: "Shadow" },
 ];
 
 function OutfitPicker({ outfit }: { outfit: CharacterOutfit }) {
@@ -1182,6 +1181,7 @@ function CharacterPanel() {
     ["Magic", player.magicLevel],
   ];
   const strongestSkill = skillRanks.reduce((best, current) => current[1] > best[1] ? current : best);
+  const masteryUsed = skillRanks.reduce((sum, [, level]) => sum + skillMasteryCost(level), 0);
   return (
     <div className="character-panel">
       <section className="character-sheet">
@@ -1192,7 +1192,7 @@ function CharacterPanel() {
         <EquipmentPaperdoll interactive={false} />
       </section>
       <section className="skills-sheet">
-        <header><span><small>Progression</small><h3>Skills & Mastery</h3></span><b>{player.level}</b></header>
+        <header><span><small>Progression</small><h3>Skills & Mastery</h3></span><b>{masteryUsed} / 100</b></header>
         <SkillRow
           name="Melee Skill"
           level={player.swordSkill}
@@ -1220,8 +1220,8 @@ function CharacterPanel() {
         <UntrainedSkillRow name="Defense" description="Blocking, shields and armor control." />
         <SecondarySkillsPicker selected={player.secondarySkills} />
         <p className="skill-note">
-          Each level takes more legitimate uses than the last. Skills improve
-          their matching damage type or production discipline.
+          Levels 1–50 are free specialization. Levels above 50 consume the shared
+          mastery budget; higher tiers cost increasingly more. Every skill caps at 100.
         </p>
       </section>
       <section className="stats-sheet">
@@ -1296,6 +1296,13 @@ function SkillRow({
       </small>
     </div>
   );
+}
+
+function skillMasteryCost(level: number) {
+  const capped = Math.min(100, Math.max(0, level));
+  return Math.min(25, Math.max(0, capped - 50))
+    + Math.min(15, Math.max(0, capped - 75)) * 2
+    + Math.max(0, capped - 90) * 4;
 }
 
 function TradeRequestModal() {
@@ -1599,7 +1606,8 @@ function RuneCraftingPanel() {
   const material = selectedRecipe ? world.inventory.filter((item) => item.definitionId === selectedRecipe.inputDefinitionId).reduce((sum, item) => sum + item.quantity, 0) : 0;
   const inputName = selectedRecipe ? world.itemDefinitions.get(selectedRecipe.inputDefinitionId)?.name ?? selectedRecipe.inputDefinitionId : "";
   const outputName = selectedRecipe ? world.itemDefinitions.get(selectedRecipe.outputDefinitionId)?.name ?? selectedRecipe.outputDefinitionId : "";
-  const locked = selectedRecipe?.craftKind === "sigils" && !canCraftSigils(player?.vocation);
+  const selectedSkill = selectedRecipe?.craftKind === "fletching" ? player?.fletchingSkill ?? 0 : player?.magicLevel ?? 0;
+  const locked = Boolean(selectedRecipe && selectedSkill < selectedRecipe.requiredSkillLevel);
   const possibleBatches = selectedRecipe ? Math.floor(material / Math.max(1, selectedRecipe.inputQuantity)) : 0;
   const categoryName = category === "all" ? "All disciplines" : secondarySkillOptions.find((entry) => entry.id === category)?.name ?? (category === "sigils" ? "Sigilcraft" : "Fletching");
   return (
@@ -1623,7 +1631,8 @@ function RuneCraftingPanel() {
           <div className="crafting-recipe-list">
             {visibleRecipes.map((recipe) => {
               const available = world.inventory.filter((item) => item.definitionId === recipe.inputDefinitionId).reduce((sum, item) => sum + item.quantity, 0);
-              const recipeLocked = recipe.craftKind === "sigils" && !canCraftSigils(player?.vocation);
+              const recipeSkill = recipe.craftKind === "fletching" ? player?.fletchingSkill ?? 0 : player?.magicLevel ?? 0;
+              const recipeLocked = recipeSkill < recipe.requiredSkillLevel;
               return <button key={recipe.id} className={`${recipe.id === selectedRecipe?.id ? "selected" : ""} ${recipeLocked ? "locked" : ""}`} onClick={() => setSelectedRecipeId(recipe.id)}><ItemIcon definitionId={recipe.outputDefinitionId} /><span><strong>{recipe.name}</strong><small>{recipe.outputQuantity} output · {available} materials</small></span><i aria-hidden="true">›</i></button>;
             })}
             {visibleRecipes.length === 0 && <CraftingEmpty message="Learn recipes from artisans or recipe scrolls found as loot." />}
@@ -1634,7 +1643,7 @@ function RuneCraftingPanel() {
             <header><span><small>{selectedRecipe.craftKind === "sigils" ? "Sigilcraft" : "Fletching"}</small><h3>{selectedRecipe.name}</h3></span><ItemIcon definitionId={selectedRecipe.outputDefinitionId} /></header>
             <div className="crafting-conversion"><span><ItemIcon definitionId={selectedRecipe.inputDefinitionId} /><small>{selectedRecipe.inputQuantity} ×</small><strong>{inputName}</strong></span><b>→</b><span><ItemIcon definitionId={selectedRecipe.outputDefinitionId} /><small>{selectedRecipe.outputQuantity} ×</small><strong>{outputName}</strong></span></div>
             <dl className="crafting-costs"><div><dt>Available material</dt><dd className={possibleBatches < quantity ? "missing" : ""}>{material}</dd></div><div><dt>Possible batches</dt><dd>{possibleBatches}</dd></div><div><dt>Mana per batch</dt><dd>{selectedRecipe.manaCost}</dd></div><div><dt>Crafting time</dt><dd>{(selectedRecipe.craftTimeMs / 1000).toFixed(1)} sec</dd></div></dl>
-            {locked && <p className="crafting-requirement">Requires sigilcraft training.</p>}
+            {locked && <p className="crafting-requirement">Requires {selectedRecipe.craftKind === "fletching" ? "Fletching" : "Magic"} {selectedRecipe.requiredSkillLevel}.</p>}
             <footer><label><small>Batches</small><span><button onClick={() => setQuantity((current) => Math.max(1, current - 1))}>−</button><input aria-label="Production batches" type="number" min={1} max={20} value={quantity} onChange={(event) => setQuantity(Math.max(1, Math.min(20, Number(event.target.value) || 1)))} /><button onClick={() => setQuantity((current) => Math.min(20, current + 1))}>+</button></span></label><button className="crafting-start" disabled={locked || possibleBatches < quantity || Boolean(active)} onClick={() => network.startRuneCrafting(selectedRecipe.id, quantity)}>{active ? "Queue busy" : possibleBatches < quantity ? "Missing materials" : `Craft ${quantity}`}</button></footer>
           </> : <CraftingEmpty message="Choose a learned recipe from the recipe book." />}
         </section>

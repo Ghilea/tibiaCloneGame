@@ -11,8 +11,9 @@ use game_protocol::{
     BuildingView, DoorView, ItemDestination, MapView, StairView, TerrainMaterialView, WindowView,
 };
 use game_types::{
-    CreatureAttack, CreatureView, EntityId, GroundItem, ItemDefinition, ItemInstance, NpcView,
-    PlayerView, Position, RuneRecipe, SpellDefinition, vocation_profile,
+    CreatureAttack, CreatureView, EntityId, GroundItem, ItemDefinition, ItemInstance,
+    MASTERY_BUDGET, MAX_SKILL_LEVEL, NpcView, PlayerView, Position, RuneRecipe, SpellDefinition,
+    mastery_spent, skill_mastery_cost,
 };
 use serde::Deserialize;
 use tracing::info;
@@ -1569,12 +1570,8 @@ impl World {
         if player.learned_spells.contains(spell_id) {
             return Err("spell_already_learned");
         }
-        if !spell
-            .vocations
-            .iter()
-            .any(|vocation| vocation == &player.view.vocation)
-        {
-            return Err("vocation_cannot_learn_spell");
+        if player.view.magic_level < spell.required_magic_level {
+            return Err("magic_level_too_low");
         }
         let gold: u32 = player
             .inventory
@@ -2117,9 +2114,13 @@ impl World {
         if !player.learned_recipes.contains(recipe_id) {
             return Err("recipe_not_learned");
         }
-        let profile = vocation_profile(&player.view.vocation).ok_or("unknown_vocation")?;
-        if recipe.craft_kind == "sigils" && !profile.can_craft_sigils {
-            return Err("vocation_cannot_craft_sigils");
+        let crafting_skill = if recipe.craft_kind == "fletching" {
+            player.view.fletching_skill
+        } else {
+            player.view.magic_level
+        };
+        if crafting_skill < recipe.required_skill_level {
+            return Err("crafting_skill_too_low");
         }
         let material_count: u32 = player
             .inventory
@@ -2254,20 +2255,9 @@ impl World {
                     );
                     player.view.mana -= recipe.mana_cost;
                     if recipe.craft_kind == "fletching" {
-                        advance_skill(
-                            &mut player.view.fletching_skill,
-                            &mut player.view.fletching_tries,
-                            1,
-                        );
+                        advance_player_skill(&mut player.view, TrainedSkill::Fletching, 1);
                     } else {
-                        let training = vocation_profile(&player.view.vocation)
-                            .expect("player vocation was validated")
-                            .magic_training;
-                        advance_skill(
-                            &mut player.view.magic_level,
-                            &mut player.view.magic_tries,
-                            training,
-                        );
+                        advance_player_skill(&mut player.view, TrainedSkill::Magic, 1);
                     }
                     queue.remaining -= 1;
                     queue.ready_at = now + Duration::from_millis(recipe.craft_time_ms);
@@ -2971,8 +2961,6 @@ impl World {
         let (damage, stats, projectile) = {
             let player = self.players.get_mut(&player_id).expect("checked above");
             player.last_attack = Instant::now();
-            let profile =
-                vocation_profile(&player.view.vocation).expect("player vocation was validated");
             if let (Some(weapon), Some(ammunition_index)) = (&distance_weapon, ammunition_index) {
                 let ammunition_id = player.inventory[ammunition_index].definition_id.clone();
                 if player.inventory[ammunition_index].quantity == 1 {
@@ -2980,11 +2968,7 @@ impl World {
                 } else {
                     player.inventory[ammunition_index].quantity -= 1;
                 }
-                advance_skill(
-                    &mut player.view.distance_skill,
-                    &mut player.view.distance_tries,
-                    profile.distance_training,
-                );
+                advance_player_skill(&mut player.view, TrainedSkill::Distance, 1);
                 (
                     weapon
                         .damage
@@ -2994,11 +2978,7 @@ impl World {
                     Some((ammunition_id, weapon.cooldown_ms)),
                 )
             } else {
-                advance_skill(
-                    &mut player.view.sword_skill,
-                    &mut player.view.sword_tries,
-                    profile.sword_training,
-                );
+                advance_player_skill(&mut player.view, TrainedSkill::Melee, 1);
                 (
                     5_u16
                         .saturating_add(player.view.sword_skill / 2)
@@ -3130,14 +3110,7 @@ impl World {
                 player.inventory[item_index].charges = Some(charges - 1);
             }
             player.last_item_use = Instant::now();
-            let training = vocation_profile(&player.view.vocation)
-                .expect("player vocation was validated")
-                .magic_training;
-            advance_skill(
-                &mut player.view.magic_level,
-                &mut player.view.magic_tries,
-                training,
-            );
+            advance_player_skill(&mut player.view, TrainedSkill::Magic, 1);
             (
                 effect.damage.saturating_add(player.view.magic_level / 2),
                 player.view.clone(),
@@ -3178,12 +3151,8 @@ impl World {
         if !player.learned_spells.contains(spell_id) {
             return Err("spell_not_learned");
         }
-        if !spell
-            .vocations
-            .iter()
-            .any(|vocation| vocation == &player.view.vocation)
-        {
-            return Err("vocation_cannot_cast_spell");
+        if player.view.magic_level < spell.required_magic_level {
+            return Err("magic_level_too_low");
         }
         let creature = self.creatures.get(&target_id).ok_or("target_not_found")?;
         if creature.state == CreatureState::Returning {
@@ -3208,14 +3177,7 @@ impl World {
                 .expect("player was checked");
             player.view.mana -= spell.mana_cost;
             player.last_spell_cast = Instant::now();
-            let training = vocation_profile(&player.view.vocation)
-                .expect("validated vocation")
-                .magic_training;
-            advance_skill(
-                &mut player.view.magic_level,
-                &mut player.view.magic_tries,
-                training,
-            );
+            advance_player_skill(&mut player.view, TrainedSkill::Magic, 1);
             (
                 spell.damage.saturating_add(player.view.magic_level / 2),
                 player.view.clone(),
@@ -3916,6 +3878,7 @@ pub fn skill_tries_required(level: u16) -> u32 {
     5 + u32::from(level) * 2
 }
 
+#[cfg(test)]
 fn advance_skill(level: &mut u16, tries: &mut u32, amount: u32) -> bool {
     *tries = tries.saturating_add(amount);
     let mut advanced = false;
@@ -3923,6 +3886,78 @@ fn advance_skill(level: &mut u16, tries: &mut u32, amount: u32) -> bool {
         *tries -= skill_tries_required(*level);
         *level = level.saturating_add(1);
         advanced = true;
+    }
+    advanced
+}
+
+#[derive(Clone, Copy)]
+enum TrainedSkill {
+    Melee,
+    Distance,
+    Fletching,
+    Magic,
+}
+
+fn advance_player_skill(player: &mut PlayerView, skill: TrainedSkill, amount: u32) -> bool {
+    let (level, tries) = match skill {
+        TrainedSkill::Melee => (
+            player.sword_skill,
+            player.sword_tries.saturating_add(amount),
+        ),
+        TrainedSkill::Distance => (
+            player.distance_skill,
+            player.distance_tries.saturating_add(amount),
+        ),
+        TrainedSkill::Fletching => (
+            player.fletching_skill,
+            player.fletching_tries.saturating_add(amount),
+        ),
+        TrainedSkill::Magic => (
+            player.magic_level,
+            player.magic_tries.saturating_add(amount),
+        ),
+    };
+    let mut next_level = level;
+    let mut next_tries = tries;
+    let mut advanced = false;
+    while next_level < MAX_SKILL_LEVEL && next_tries >= skill_tries_required(next_level) {
+        let next_cost =
+            skill_mastery_cost(next_level + 1).saturating_sub(skill_mastery_cost(next_level));
+        let spent = mastery_spent([
+            player.sword_skill,
+            player.distance_skill,
+            player.fletching_skill,
+            player.magic_level,
+        ]);
+        let pending_cost = skill_mastery_cost(next_level).saturating_sub(skill_mastery_cost(level));
+        if spent.saturating_add(pending_cost).saturating_add(next_cost) > MASTERY_BUDGET {
+            next_tries = skill_tries_required(next_level).saturating_sub(1);
+            break;
+        }
+        next_tries -= skill_tries_required(next_level);
+        next_level += 1;
+        advanced = true;
+    }
+    if next_level >= MAX_SKILL_LEVEL {
+        next_tries = next_tries.min(skill_tries_required(MAX_SKILL_LEVEL).saturating_sub(1));
+    }
+    match skill {
+        TrainedSkill::Melee => {
+            player.sword_skill = next_level;
+            player.sword_tries = next_tries;
+        }
+        TrainedSkill::Distance => {
+            player.distance_skill = next_level;
+            player.distance_tries = next_tries;
+        }
+        TrainedSkill::Fletching => {
+            player.fletching_skill = next_level;
+            player.fletching_tries = next_tries;
+        }
+        TrainedSkill::Magic => {
+            player.magic_level = next_level;
+            player.magic_tries = next_tries;
+        }
     }
     advanced
 }
@@ -4447,7 +4482,6 @@ mod tests {
             view: PlayerView {
                 id,
                 name: "Test".into(),
-                vocation: "adventurer".into(),
                 outfit: "knight".into(),
                 secondary_skills: Vec::new(),
                 position: SPAWN,
@@ -4488,7 +4522,6 @@ mod tests {
     fn spell_trainer_charges_gold_and_casting_spends_mana() {
         let player_id = Uuid::new_v4();
         let mut player = test_player(player_id, 100.0);
-        player.view.vocation = "mage".into();
         player.view.position = Position { x: 10, y: 6, z: 7 };
         player.view.mana = 50;
         player.inventory.push(ItemInstance {
@@ -4828,6 +4861,7 @@ mod tests {
                     mana_cost: 35,
                     craft_time_ms: 1500,
                     learn_price: 30,
+                    required_skill_level: 1,
                 },
                 RuneRecipe {
                     id: "fletch_rough_arrows".into(),
@@ -4840,6 +4874,7 @@ mod tests {
                     mana_cost: 0,
                     craft_time_ms: 500,
                     learn_price: 8,
+                    required_skill_level: 0,
                 },
             ],
         )
@@ -5625,7 +5660,6 @@ mod tests {
         let player_id = Uuid::new_v4();
         let sigil_id = Uuid::new_v4();
         let mut player = test_player(player_id, 100.0);
-        player.view.vocation = "warrior".into();
         player.view.position = Position { x: 18, y: 8, z: 7 };
         player.inventory.push(ItemInstance {
             instance_id: sigil_id,
@@ -5722,7 +5756,6 @@ mod tests {
         let bow_id = Uuid::new_v4();
         let arrow_id = Uuid::new_v4();
         let mut player = test_player(player_id, 110.0);
-        player.view.vocation = "ranger".into();
         player.view.distance_skill = 12;
         player.view.position = Position { x: 18, y: 8, z: 7 };
         player.last_attack = Instant::now() - Duration::from_secs(1);
@@ -5761,7 +5794,7 @@ mod tests {
                 if effect_id == "rough_arrow"
         )));
         let player = world.player(player_id).unwrap();
-        assert_eq!(player.view.distance_tries, 2);
+        assert_eq!(player.view.distance_tries, 1);
         assert_eq!(player.view.sword_tries, 0);
         assert_eq!(
             player
@@ -5782,7 +5815,6 @@ mod tests {
         ));
         let player_id = Uuid::new_v4();
         let mut player = test_player(player_id, 110.0);
-        player.view.vocation = "ranger".into();
         player.view.position = Position { x: 18, y: 8, z: 7 };
         player.last_attack = Instant::now() - Duration::from_secs(1);
         player.inventory.push(ItemInstance {
@@ -5937,6 +5969,7 @@ mod tests {
     fn rune_queue_consumes_mana_and_material_into_charged_sigil() {
         let id = Uuid::new_v4();
         let mut player = test_player(id, 100.0);
+        player.view.magic_level = 1;
         player.inventory.push(ItemInstance {
             instance_id: Uuid::new_v4(),
             definition_id: "blank_rune".into(),
@@ -5979,10 +6012,9 @@ mod tests {
     }
 
     #[test]
-    fn physical_vocations_must_trade_for_sigils() {
+    fn sigil_crafting_uses_magic_skill_instead_of_vocation() {
         let id = Uuid::new_v4();
         let mut player = test_player(id, 130.0);
-        player.view.vocation = "warrior".into();
         player.inventory.push(ItemInstance {
             instance_id: Uuid::new_v4(),
             definition_id: "blank_rune".into(),
@@ -5996,15 +6028,17 @@ mod tests {
 
         assert!(matches!(
             world.start_crafting(id, "mark_ember_sigil", 1),
-            Err("vocation_cannot_craft_sigils")
+            Err("crafting_skill_too_low")
         ));
+        world.players.get_mut(&id).unwrap().view.magic_level = 1;
+        assert!(world.start_crafting(id, "mark_ember_sigil", 1).is_ok());
     }
 
     #[test]
-    fn magical_vocations_train_magic_faster_while_crafting() {
+    fn every_character_trains_magic_at_the_same_rate() {
         let id = Uuid::new_v4();
         let mut player = test_player(id, 80.0);
-        player.view.vocation = "mage".into();
+        player.view.magic_level = 1;
         player.inventory.push(ItemInstance {
             instance_id: Uuid::new_v4(),
             definition_id: "blank_rune".into(),
@@ -6027,14 +6061,13 @@ mod tests {
 
         world.tick_crafting();
 
-        assert_eq!(world.player(id).unwrap().view.magic_tries, 2);
+        assert_eq!(world.player(id).unwrap().view.magic_tries, 1);
     }
 
     #[test]
     fn fletching_turns_creature_material_into_stackable_ammunition() {
         let id = Uuid::new_v4();
         let mut player = test_player(id, 130.0);
-        player.view.vocation = "warrior".into();
         player.inventory.push(ItemInstance {
             instance_id: Uuid::new_v4(),
             definition_id: "mire_fiber".into(),
@@ -6332,6 +6365,28 @@ mod tests {
         assert_eq!(level, 1);
         assert_eq!(tries, 0);
         assert_eq!(skill_tries_required(level), 7);
+    }
+
+    #[test]
+    fn shared_mastery_budget_prevents_every_skill_from_reaching_100() {
+        let mut player = test_player(Uuid::new_v4(), 100.0).view;
+        player.sword_skill = 100;
+        player.distance_skill = 50;
+        player.fletching_skill = 50;
+        player.magic_level = 50;
+
+        advance_player_skill(&mut player, TrainedSkill::Distance, 100_000);
+
+        assert_eq!(player.distance_skill, 55);
+        assert_eq!(
+            mastery_spent([
+                player.sword_skill,
+                player.distance_skill,
+                player.fletching_skill,
+                player.magic_level,
+            ]),
+            MASTERY_BUDGET
+        );
     }
 
     #[test]

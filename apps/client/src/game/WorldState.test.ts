@@ -6,7 +6,7 @@ const position = (x: number, y: number): Position => ({ x, y, z: 7 });
 
 function player(at: Position): PlayerView {
   return {
-    id: "local", name: "Traveler", vocation: "adventurer", outfit: "knight", secondarySkills: [], position: at,
+    id: "local", name: "Traveler", outfit: "knight", secondarySkills: [], position: at,
     health: 100, maxHealth: 100, level: 1, experience: 0,
     mana: 20, maxMana: 20, swordSkill: 0, swordTries: 0,
     distanceSkill: 0, distanceTries: 0, fletchingSkill: 0,

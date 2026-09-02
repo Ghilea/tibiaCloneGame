@@ -21,7 +21,6 @@ struct CharacterRow {
     id: EntityId,
     account_id: EntityId,
     name: String,
-    vocation: String,
     outfit: String,
     secondary_skills: Vec<String>,
     level: i32,
@@ -72,7 +71,6 @@ pub struct CharacterRecord {
     pub id: EntityId,
     pub account_id: EntityId,
     pub name: String,
-    pub vocation: String,
     pub outfit: String,
     pub secondary_skills: Vec<String>,
     pub level: i32,
@@ -169,11 +167,9 @@ impl Database {
         &self,
         account_id: EntityId,
         name: &str,
-        vocation: &str,
         position: Position,
     ) -> Result<CharacterRecord, sqlx::Error> {
-        let profile = game_types::playable_vocation(vocation)
-            .ok_or_else(|| sqlx::Error::Protocol("invalid vocation".into()))?;
+        let profile = game_types::adventurer_profile();
         let id = uuid::Uuid::new_v4();
         let mut transaction = self.pool.begin().await?;
         let row: CharacterRow = sqlx::query_as(
@@ -183,8 +179,8 @@ impl Database {
         .bind(id)
         .bind(account_id)
         .bind(name)
-        .bind(vocation)
-        .bind(default_outfit(vocation))
+        .bind("adventurer")
+        .bind("knight")
         .bind(i32::from(profile.max_health))
         .bind(i32::from(profile.max_mana))
         .bind(i32::from(profile.sword_skill))
@@ -197,12 +193,8 @@ impl Database {
         .await?;
         sqlx::query("INSERT INTO item_instances (id, definition_id, quantity, owner_character_id, equipped_slot) VALUES ($1, 'field_backpack', 1, $2, 'backpack')")
             .bind(uuid::Uuid::new_v4()).bind(id).execute(&mut *transaction).await?;
-        if vocation == "ranger" {
-            sqlx::query("INSERT INTO item_instances (id, definition_id, quantity, owner_character_id, equipped_slot) VALUES ($1, 'ashwood_bow', 1, $2, 'weapon')")
-                .bind(uuid::Uuid::new_v4()).bind(id).execute(&mut *transaction).await?;
-            sqlx::query("INSERT INTO item_instances (id, definition_id, quantity, owner_character_id) VALUES ($1, 'rough_arrow', 100, $2)")
-                .bind(uuid::Uuid::new_v4()).bind(id).execute(&mut *transaction).await?;
-        }
+        sqlx::query("INSERT INTO item_instances (id, definition_id, quantity, owner_character_id, equipped_slot) VALUES ($1, 'traveler_blade', 1, $2, 'weapon')")
+            .bind(uuid::Uuid::new_v4()).bind(id).execute(&mut *transaction).await?;
         transaction.commit().await?;
         Ok(character_from_row(row))
     }
@@ -702,7 +694,6 @@ fn character_from_row(row: CharacterRow) -> CharacterRecord {
         id: row.id,
         account_id: row.account_id,
         name: row.name,
-        vocation: row.vocation,
         outfit: row.outfit,
         secondary_skills: row.secondary_skills,
         level: row.level,
@@ -724,13 +715,5 @@ fn character_from_row(row: CharacterRow) -> CharacterRecord {
             z: row.position_z,
         },
         spawn_initialized: row.spawn_initialized,
-    }
-}
-
-fn default_outfit(vocation: &str) -> &'static str {
-    match vocation {
-        "ranger" => "ranger",
-        "mage" | "druid" => "mage",
-        _ => "knight",
     }
 }

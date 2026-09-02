@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{Context, bail};
 use game_types::{
-    CreatureDefinition, ItemDefinition, RuneRecipe, SpellDefinition, vocation_profile,
+    CreatureDefinition, ItemDefinition, MAX_SKILL_LEVEL, RuneRecipe, SpellDefinition,
 };
 use tracing::info;
 
@@ -203,11 +203,7 @@ impl ContentCatalog {
                 || self.spells.contains_key(&spell.id)
                 || spell.name.trim().is_empty()
                 || spell.description.trim().is_empty()
-                || spell.vocations.is_empty()
-                || spell
-                    .vocations
-                    .iter()
-                    .any(|vocation| vocation_profile(vocation).is_none())
+                || spell.required_magic_level > MAX_SKILL_LEVEL
                 || spell.price == 0
                 || spell.mana_cost == 0
                 || spell.damage == 0
@@ -232,6 +228,7 @@ impl ContentCatalog {
                 || recipe.input_quantity == 0
                 || recipe.output_quantity == 0
                 || !matches!(recipe.craft_kind.as_str(), "sigils" | "fletching")
+                || recipe.required_skill_level > MAX_SKILL_LEVEL
                 || (recipe.craft_kind == "sigils" && recipe.mana_cost == 0)
                 || !self.items.contains_key(&recipe.input_definition_id)
                 || !self.items.contains_key(&recipe.output_definition_id)

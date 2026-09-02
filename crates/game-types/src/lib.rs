@@ -4,6 +4,38 @@ use uuid::Uuid;
 pub type EntityId = Uuid;
 
 pub const SECONDARY_SKILLS: [&str; 5] = ["alchemy", "mining", "woodcutting", "fishing", "cooking"];
+pub const FREE_SKILL_LEVEL: u16 = 50;
+pub const MAX_SKILL_LEVEL: u16 = 100;
+pub const MASTERY_BUDGET: u16 = 100;
+
+pub fn skill_mastery_cost(level: u16) -> u16 {
+    let level = level.min(MAX_SKILL_LEVEL);
+    let first = level.saturating_sub(FREE_SKILL_LEVEL).min(25);
+    let second = level.saturating_sub(75).min(15).saturating_mul(2);
+    let final_tier = level.saturating_sub(90).saturating_mul(4);
+    first.saturating_add(second).saturating_add(final_tier)
+}
+
+pub fn mastery_spent(skill_levels: [u16; 4]) -> u16 {
+    skill_levels.into_iter().map(skill_mastery_cost).sum()
+}
+
+pub fn normalize_mastery(skill_levels: &mut [u16; 4]) {
+    for level in skill_levels.iter_mut() {
+        *level = (*level).min(MAX_SKILL_LEVEL);
+    }
+    while mastery_spent(*skill_levels) > MASTERY_BUDGET {
+        let Some((index, _)) = skill_levels
+            .iter()
+            .enumerate()
+            .filter(|(_, level)| **level > FREE_SKILL_LEVEL)
+            .min_by_key(|(_, level)| **level)
+        else {
+            break;
+        };
+        skill_levels[index] -= 1;
+    }
+}
 
 pub fn valid_secondary_skills(skills: &[String]) -> bool {
     skills.len() <= 2
@@ -17,100 +49,24 @@ pub fn valid_secondary_skills(skills: &[String]) -> bool {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VocationProfile {
-    pub id: &'static str,
-    pub name: &'static str,
+pub struct AdventurerProfile {
     pub max_health: u16,
     pub max_mana: u16,
     pub capacity: u16,
     pub sword_skill: u16,
     pub distance_skill: u16,
     pub magic_level: u16,
-    pub sword_training: u32,
-    pub distance_training: u32,
-    pub magic_training: u32,
-    pub can_craft_sigils: bool,
 }
 
-pub fn vocation_profile(id: &str) -> Option<VocationProfile> {
-    Some(match id {
-        "warrior" => VocationProfile {
-            id: "warrior",
-            name: "Warrior",
-            max_health: 180,
-            max_mana: 30,
-            capacity: 130,
-            sword_skill: 12,
-            distance_skill: 8,
-            magic_level: 0,
-            sword_training: 2,
-            distance_training: 1,
-            magic_training: 1,
-            can_craft_sigils: false,
-        },
-        "ranger" => VocationProfile {
-            id: "ranger",
-            name: "Ranger",
-            max_health: 145,
-            max_mana: 45,
-            capacity: 110,
-            sword_skill: 10,
-            distance_skill: 12,
-            magic_level: 0,
-            sword_training: 1,
-            distance_training: 2,
-            magic_training: 1,
-            can_craft_sigils: false,
-        },
-        "mage" => VocationProfile {
-            id: "mage",
-            name: "Mage",
-            max_health: 105,
-            max_mana: 120,
-            capacity: 80,
-            sword_skill: 8,
-            distance_skill: 8,
-            magic_level: 2,
-            sword_training: 1,
-            distance_training: 1,
-            magic_training: 2,
-            can_craft_sigils: true,
-        },
-        "druid" => VocationProfile {
-            id: "druid",
-            name: "Druid",
-            max_health: 115,
-            max_mana: 110,
-            capacity: 85,
-            sword_skill: 8,
-            distance_skill: 8,
-            magic_level: 2,
-            sword_training: 1,
-            distance_training: 1,
-            magic_training: 2,
-            can_craft_sigils: true,
-        },
-        "adventurer" => VocationProfile {
-            id: "adventurer",
-            name: "Adventurer",
-            max_health: 150,
-            max_mana: 50,
-            capacity: 100,
-            sword_skill: 10,
-            distance_skill: 10,
-            magic_level: 0,
-            sword_training: 1,
-            distance_training: 1,
-            magic_training: 1,
-            can_craft_sigils: true,
-        },
-        _ => return None,
-    })
-}
-
-pub fn playable_vocation(id: &str) -> Option<VocationProfile> {
-    let profile = vocation_profile(id)?;
-    (profile.id != "adventurer").then_some(profile)
+pub fn adventurer_profile() -> AdventurerProfile {
+    AdventurerProfile {
+        max_health: 150,
+        max_mana: 50,
+        capacity: 100,
+        sword_skill: 10,
+        distance_skill: 10,
+        magic_level: 0,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -210,7 +166,8 @@ pub struct SpellDefinition {
     pub id: String,
     pub name: String,
     pub description: String,
-    pub vocations: Vec<String>,
+    #[serde(default)]
+    pub required_magic_level: u16,
     pub price: u16,
     pub mana_cost: u16,
     pub damage: u16,
@@ -249,7 +206,6 @@ impl Position {
 pub struct PlayerView {
     pub id: EntityId,
     pub name: String,
-    pub vocation: String,
     pub outfit: String,
     pub secondary_skills: Vec<String>,
     pub position: Position,
@@ -286,6 +242,8 @@ pub struct RuneRecipe {
     pub craft_time_ms: u64,
     #[serde(default = "default_recipe_learn_price")]
     pub learn_price: u16,
+    #[serde(default)]
+    pub required_skill_level: u16,
 }
 
 fn default_sigils_kind() -> String {
@@ -380,17 +338,28 @@ mod tests {
     }
 
     #[test]
-    fn playable_vocations_have_distinct_resource_profiles() {
-        let warrior = playable_vocation("warrior").unwrap();
-        let mage = playable_vocation("mage").unwrap();
-        assert!(warrior.max_health > mage.max_health);
-        assert!(warrior.capacity > mage.capacity);
-        assert!(mage.max_mana > warrior.max_mana);
-        assert_eq!(playable_vocation("ranger").unwrap().distance_training, 2);
-        assert!(playable_vocation("ranger").unwrap().distance_skill > warrior.distance_skill);
-        assert!(!warrior.can_craft_sigils);
-        assert!(mage.can_craft_sigils);
-        assert!(playable_vocation("adventurer").is_none());
+    fn every_character_uses_the_same_classless_foundation() {
+        let profile = adventurer_profile();
+        assert_eq!(profile.max_health, 150);
+        assert_eq!(profile.max_mana, 50);
+        assert_eq!(profile.capacity, 100);
+    }
+
+    #[test]
+    fn mastery_is_free_through_50_and_escalates_toward_100() {
+        assert_eq!(skill_mastery_cost(50), 0);
+        assert_eq!(skill_mastery_cost(75), 25);
+        assert_eq!(skill_mastery_cost(90), 55);
+        assert_eq!(skill_mastery_cost(100), 95);
+        assert_eq!(skill_mastery_cost(101), 95);
+    }
+
+    #[test]
+    fn imported_skill_levels_are_normalized_to_the_shared_budget() {
+        let mut levels = [140, 100, 100, 100];
+        normalize_mastery(&mut levels);
+        assert!(levels.into_iter().all(|level| level <= MAX_SKILL_LEVEL));
+        assert_eq!(mastery_spent(levels), MASTERY_BUDGET);
     }
 
     #[test]
