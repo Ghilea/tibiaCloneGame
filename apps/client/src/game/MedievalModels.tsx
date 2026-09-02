@@ -2,6 +2,7 @@ import { useFrame, useLoader } from "@react-three/fiber";
 import { memo, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { BuildingView, WindowView } from "../protocol";
+import type { DoorwayLayout } from "./DoorwayLayout";
 import { MedievalHouseWallAsset, MedievalWindowShuttersAsset } from "./MedievalAssetModels";
 
 export function MedievalWall({
@@ -27,6 +28,102 @@ export function MedievalWindowWall({
   return <MedievalHouseWallAsset kind="window" position={position} size={size} />;
 }
 
+export function HousePlinth({ position, size }: { position: [number, number, number]; size: [number, number, number] }) {
+  const texture = useLoader(THREE.TextureLoader, "/assets/world/aldoria-castle-stone-v2.png");
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const horizontal = size[0] > size[2];
+  return (
+    <mesh position={[position[0], 0.27, position[2]]} castShadow receiveShadow>
+      <boxGeometry args={horizontal ? [size[0], 0.54, 0.24] : [0.24, 0.54, size[2]]} />
+      <meshStandardMaterial map={texture} color="#9fa29a" roughness={0.98} />
+    </mesh>
+  );
+}
+
+export function HouseDoorway({
+  position,
+  size,
+  layout,
+  open,
+  onClick,
+}: {
+  position: [number, number, number];
+  size: [number, number, number];
+  layout: DoorwayLayout;
+  open: boolean;
+  onClick: () => void;
+}) {
+  const horizontal = size[0] > size[2];
+  const thickness = horizontal ? size[2] : size[0];
+  const plaster = useLoader(THREE.TextureLoader, "/assets/world/aldoria-timber-plaster-v1.png");
+  const stone = useLoader(THREE.TextureLoader, "/assets/world/aldoria-castle-stone-v2.png");
+  const hinge = useRef<THREE.Group>(null);
+  plaster.wrapS = plaster.wrapT = THREE.RepeatWrapping;
+  plaster.colorSpace = THREE.SRGBColorSpace;
+  stone.wrapS = stone.wrapT = THREE.RepeatWrapping;
+  stone.colorSpace = THREE.SRGBColorSpace;
+  useFrame((_, delta) => {
+    if (hinge.current) hinge.current.rotation.y = THREE.MathUtils.damp(hinge.current.rotation.y, open ? -Math.PI * 0.78 : 0, 14, delta);
+  });
+  const sideCenter = layout.openingWidth / 2 + layout.wallSideWidth / 2;
+  const wallHeightAboveBase = size[1] - layout.plinthHeight;
+  return (
+    <group position={[position[0], 0, position[2]]} rotation={[0, horizontal ? 0 : Math.PI / 2, 0]} onPointerDown={(event) => { event.stopPropagation(); onClick(); }}>
+      {/* These five facade pieces are the wall cutout. Nothing is rendered in
+          x=-openingWidth/2..openingWidth/2, y=openingBottom..openingTop. */}
+      {layout.wallSideWidth > 0 && <>
+        <mesh position={[-sideCenter, layout.plinthHeight + wallHeightAboveBase / 2, 0]} castShadow receiveShadow>
+          <boxGeometry args={[layout.wallSideWidth, wallHeightAboveBase, thickness]} />
+          <meshStandardMaterial map={plaster} color="#b79d79" roughness={0.96} />
+        </mesh>
+        <mesh position={[sideCenter, layout.plinthHeight + wallHeightAboveBase / 2, 0]} castShadow receiveShadow>
+          <boxGeometry args={[layout.wallSideWidth, wallHeightAboveBase, thickness]} />
+          <meshStandardMaterial map={plaster} color="#b79d79" roughness={0.96} />
+        </mesh>
+        <mesh position={[-sideCenter, layout.plinthHeight / 2, 0]} castShadow receiveShadow>
+          <boxGeometry args={[layout.wallSideWidth, layout.plinthHeight, thickness + 0.08]} />
+          <meshStandardMaterial map={stone} color="#9fa29a" roughness={0.98} />
+        </mesh>
+        <mesh position={[sideCenter, layout.plinthHeight / 2, 0]} castShadow receiveShadow>
+          <boxGeometry args={[layout.wallSideWidth, layout.plinthHeight, thickness + 0.08]} />
+          <meshStandardMaterial map={stone} color="#9fa29a" roughness={0.98} />
+        </mesh>
+      </>}
+      {layout.wallTopHeight > 0 && <mesh position={[0, layout.openingTop + layout.wallTopHeight / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[layout.openingWidth, layout.wallTopHeight, thickness]} />
+        <meshStandardMaterial map={plaster} color="#b79d79" roughness={0.96} />
+      </mesh>}
+      {/* Frame and threshold derive from the same inner rectangle, rather than
+          compensating for a different door-wall asset. */}
+      <mesh position={[-layout.openingWidth / 2 - layout.frameThickness / 2, layout.openingBottom + layout.openingHeight / 2, -layout.frameDepth / 2]} castShadow receiveShadow>
+        <boxGeometry args={[layout.frameThickness, layout.openingHeight, layout.frameDepth]} /><meshStandardMaterial color="#52361f" roughness={0.9} />
+      </mesh>
+      <mesh position={[layout.openingWidth / 2 + layout.frameThickness / 2, layout.openingBottom + layout.openingHeight / 2, -layout.frameDepth / 2]} castShadow receiveShadow>
+        <boxGeometry args={[layout.frameThickness, layout.openingHeight, layout.frameDepth]} /><meshStandardMaterial color="#52361f" roughness={0.9} />
+      </mesh>
+      <mesh position={[0, layout.openingTop + layout.frameThickness / 2, -layout.frameDepth / 2]} castShadow receiveShadow>
+        <boxGeometry args={[layout.openingWidth + layout.frameThickness * 2, layout.frameThickness, layout.frameDepth]} /><meshStandardMaterial color="#52361f" roughness={0.9} />
+      </mesh>
+      <mesh position={[0, layout.thresholdHeight / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[layout.openingWidth, layout.thresholdHeight, thickness + 0.13]} /><meshStandardMaterial color="#493321" roughness={0.9} />
+      </mesh>
+      <group ref={hinge} position={[-layout.leafWidth / 2, layout.openingBottom + 0.04, -layout.leafDepth / 2]}>
+        <mesh position={[layout.leafWidth / 2, layout.leafHeight / 2, 0]} castShadow receiveShadow>
+          <boxGeometry args={[layout.leafWidth, layout.leafHeight, layout.leafDepth]} /><meshStandardMaterial color="#654128" roughness={0.82} />
+        </mesh>
+        {[0.2, 0.5, 0.8].map((fraction) => <mesh key={fraction} position={[layout.leafWidth / 2, layout.leafHeight * fraction, -layout.leafDepth / 2 - 0.008]} castShadow>
+          <boxGeometry args={[layout.leafWidth * 0.9, 0.045, 0.025]} /><meshStandardMaterial color="#3e2719" roughness={0.9} />
+        </mesh>)}
+        <mesh position={[layout.leafWidth * 0.84, layout.leafHeight * 0.52, -layout.leafDepth / 2 - 0.035]}><sphereGeometry args={[0.04, 10, 8]} /><meshStandardMaterial color="#d6aa54" metalness={0.65} roughness={0.35} /></mesh>
+      </group>
+      <mesh position={[0, layout.openingBottom + layout.openingHeight / 2, -0.32]}>
+        <planeGeometry args={[layout.openingWidth, layout.openingHeight]} /><meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
+      </mesh>
+    </group>
+  );
+}
+
 export function MedievalDoorWall({
   position,
   size,
@@ -41,7 +138,9 @@ export function MedievalDoorWall({
   const castleTexture = useLoader(THREE.TextureLoader, "/assets/world/aldoria-castle-stone-v2.png");
   castleTexture.wrapS = castleTexture.wrapT = THREE.RepeatWrapping;
   castleTexture.colorSpace = THREE.SRGBColorSpace;
-  if (!keep) return <MedievalHouseWallAsset kind="door" position={position} size={size} />;
+  // House openings are generated by HouseDoorway. This component remains only
+  // for the keep's masonry portal.
+  if (!keep) return null;
   const horizontal = size[0] > size[2];
   const openingWidth = 0.98;
   const sideWidth = Math.max(0.08, (Math.max(size[0], size[2]) - openingWidth) / 2);

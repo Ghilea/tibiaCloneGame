@@ -1,21 +1,19 @@
-import { useFrame, useLoader } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { useLoader } from "@react-three/fiber";
+import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import type { BuildingView, DoorView, WindowView } from "../protocol";
+import type { BuildingView, WindowView } from "../protocol";
 
 const MEDIEVAL_VILLAGE_ASSET = "/assets/models/aldoria-medieval-village.glb";
 const SOURCE_HEIGHT = 3.1227;
 const SOURCE_WIDTH = 2;
 const SOURCE_DEPTH = 0.314;
-const DOOR_OPENING_HALF_WIDTH = 0.82;
 const WINDOW_OPENING_HALF_WIDTH = 0.8;
 
-export type MedievalHouseWallKind = "solid" | "door" | "window";
+export type MedievalHouseWallKind = "solid" | "window";
 
 const nodeNames: Record<MedievalHouseWallKind, string> = {
   solid: "Wall_Plaster_Straight",
-  door: "Wall_Plaster_Door_Flat",
   window: "Wall_Plaster_Window_Wide_Flat",
 };
 
@@ -34,7 +32,7 @@ export function MedievalHouseWallAsset({
   const thickness = horizontal ? size[2] : size[0];
   // The model already has the right medieval timber/plaster geometry. Keep
   // the material simple so the wall reads as construction, not noisy wallpaper.
-  const object = useAssetObject(gltf.scenes, nodeNames[kind], false, null);
+  const object = useAssetObject(gltf.scenes, nodeNames[kind]);
 
   return (
     <group
@@ -79,42 +77,6 @@ export function MedievalWindowShuttersAsset({
   );
 }
 
-export function MedievalDoorLeafAsset({
-  door,
-  building,
-  wallHeight,
-  onClick,
-}: {
-  door: DoorView;
-  building: BuildingView;
-  wallHeight: number;
-  onClick: () => void;
-}) {
-  const gltf = useLoader(GLTFLoader, MEDIEVAL_VILLAGE_ASSET);
-  const object = useAssetObject(gltf.scenes, "Door_1_Flat", true);
-  const hinge = useRef<THREE.Group>(null);
-  const transform = wallOpeningTransform(door.position, building);
-  useFrame((_, delta) => {
-    if (hinge.current) hinge.current.rotation.y = THREE.MathUtils.damp(hinge.current.rotation.y, door.open ? -Math.PI / 2 : 0, 12, delta);
-  });
-  return (
-    <group
-      position={[transform.x, 0, transform.z]}
-      rotation={[0, transform.rotation, 0]}
-      scale={[1.04 / SOURCE_WIDTH, wallHeight / SOURCE_HEIGHT, Math.max(0.28, 0.13 / SOURCE_DEPTH)]}
-      onPointerDown={(event) => { event.stopPropagation(); onClick(); }}
-    >
-      <mesh position={[0, 1.5, 0.18]}>
-        <planeGeometry args={[2.1, 3]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
-      </mesh>
-      <group ref={hinge} position={[-DOOR_OPENING_HALF_WIDTH, 0, 0]}>
-        <primitive object={object} scale={[1.42, 1, 1]} />
-      </group>
-    </group>
-  );
-}
-
 function useAssetObject(scenes: THREE.Group[], nodeName: string, hideWindowGlass = false, overrideTexture?: THREE.Texture | null) {
   const object = useMemo(() => {
     const source = scenes
@@ -130,10 +92,34 @@ function useAssetObject(scenes: THREE.Group[], nodeName: string, hideWindowGlass
         ? child.material.map((material) => material.clone())
         : child.material.clone();
       const clonedMaterials = Array.isArray(child.material) ? child.material : [child.material];
+      const plasterMaterial = clonedMaterials.find((material) => material.name.includes("Plaster")) as THREE.MeshStandardMaterial | undefined;
+      const woodMaterial = clonedMaterials.find((material) => material.name.includes("WoodTrim")) as THREE.MeshStandardMaterial | undefined;
       clonedMaterials.forEach((material) => {
         if (overrideTexture !== undefined && "map" in material) {
-          (material as THREE.MeshStandardMaterial).map = overrideTexture;
-          material.needsUpdate = true;
+          const standard = material as THREE.MeshStandardMaterial;
+          if (overrideTexture) {
+            standard.map = overrideTexture;
+          } else {
+            const shouldUsePlaster = material.name.includes("Plaster")
+              || material.name.includes("Brick")
+              || material.name.includes("RockTrim");
+            const sourceMaterial = shouldUsePlaster
+              ? plasterMaterial
+              : material.name.includes("WoodTrim") ? woodMaterial : undefined;
+            if (sourceMaterial && sourceMaterial !== standard) {
+              // Door/window variants have extra brick/rock and worn-wood
+              // material slots. Copy the straight wall's material channels so
+              // both sides of the opening shade and color identically.
+              standard.map = sourceMaterial.map;
+              standard.normalMap = sourceMaterial.normalMap;
+              standard.roughnessMap = sourceMaterial.roughnessMap;
+              standard.metalnessMap = sourceMaterial.metalnessMap;
+              standard.color.copy(sourceMaterial.color);
+              standard.roughness = sourceMaterial.roughness;
+              standard.metalness = sourceMaterial.metalness;
+            }
+          }
+          standard.needsUpdate = true;
         }
       });
       child.geometry = child.geometry.clone();
@@ -163,9 +149,7 @@ function useAssetObject(scenes: THREE.Group[], nodeName: string, hideWindowGlass
 function widenOpeningGeometry(geometry: THREE.BufferGeometry, nodeName: string) {
   const position = geometry.getAttribute("position");
   if (!(position instanceof THREE.BufferAttribute)) return;
-  if (nodeName === "Wall_Plaster_Door_Flat") {
-    remapOpeningEdges(position, 0.648, DOOR_OPENING_HALF_WIDTH);
-  } else if (nodeName === "Wall_Plaster_Window_Wide_Flat") {
+  if (nodeName === "Wall_Plaster_Window_Wide_Flat") {
     remapOpeningEdges(position, 0.6, WINDOW_OPENING_HALF_WIDTH);
   } else if (nodeName === "WindowShutters_Wide_Flat_Closed") {
     for (let index = 0; index < position.count; index += 1) position.setX(index, position.getX(index) * 1.2);

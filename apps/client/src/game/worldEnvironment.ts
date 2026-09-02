@@ -1,5 +1,34 @@
 export const WORLD_DAY_DURATION_MS = 180_000;
 
+let worldTimeOffsetMs = 0;
+let pausedWorldTimeMs: number | null = null;
+
+function controlledNow(realNow: number) {
+  return pausedWorldTimeMs ?? realNow + worldTimeOffsetMs;
+}
+
+export function setWorldTime(hour: number, minute: number, realNow = Date.now()) {
+  const current = controlledNow(realNow);
+  const dayStart = Math.floor(current / WORLD_DAY_DURATION_MS) * WORLD_DAY_DURATION_MS;
+  const minutes = Math.max(0, Math.min(23 * 60 + 59, Math.floor(hour) * 60 + Math.floor(minute)));
+  const next = dayStart + (minutes / (24 * 60)) * WORLD_DAY_DURATION_MS;
+  worldTimeOffsetMs += next - current;
+  if (pausedWorldTimeMs !== null) pausedWorldTimeMs = next;
+}
+
+export function setWorldTimePaused(paused: boolean, realNow = Date.now()) {
+  if (paused === (pausedWorldTimeMs !== null)) return;
+  if (paused) pausedWorldTimeMs = controlledNow(realNow);
+  else {
+    worldTimeOffsetMs = pausedWorldTimeMs! - realNow;
+    pausedWorldTimeMs = null;
+  }
+}
+
+export function isWorldTimePaused() {
+  return pausedWorldTimeMs !== null;
+}
+
 export type WorldWeather = "clear" | "rain";
 
 export type WorldEnvironment = {
@@ -11,8 +40,8 @@ export type WorldEnvironment = {
   weather: WorldWeather;
 };
 
-export function worldEnvironment(now = Date.now()): WorldEnvironment {
-  const elapsedDays = now / WORLD_DAY_DURATION_MS;
+export function worldEnvironment(now?: number): WorldEnvironment {
+  const elapsedDays = controlledNow(now ?? Date.now()) / WORLD_DAY_DURATION_MS;
   const dayProgress = elapsedDays % 1;
   const totalMinutes = Math.floor(dayProgress * 24 * 60);
   const hour = Math.floor(totalMinutes / 60);

@@ -18,8 +18,8 @@ import { createActorMotionState, sampleActorMotion, type ActorMotionState } from
 import { AnimatedCharacter, type CharacterKind } from "./AnimatedCharacter";
 import { CreatureModel } from "./CreatureModels";
 import { CLIENT_STEP_MS, InputController } from "./InputController";
-import { MedievalDoorLeafAsset } from "./MedievalAssetModels";
-import { GabledRoof, HangingSign, MedievalDoorWall, MedievalWall, MedievalWindowWall, ShutterWindow } from "./MedievalModels";
+import { GabledRoof, HangingSign, HouseDoorway, HousePlinth, MedievalDoorWall, MedievalWall, MedievalWindowWall, ShutterWindow } from "./MedievalModels";
+import { createHouseDoorwayLayout } from "./DoorwayLayout";
 import { WorldState, type CombatEffectView } from "./WorldState";
 import { tileCenter, worldToTile, WORLD_TILE_SIZE } from "./WorldCoordinates";
 import { worldEnvironment } from "./worldEnvironment";
@@ -491,17 +491,17 @@ const Building = memo(function Building({ building, doors, windows, input }: { b
   const maxX = building.x + building.width;
   const maxY = building.y + building.height;
   const matchingDoors = doors.filter((door) => door.position.z === building.floor && insideBuilding(door.position, building));
-  const doorKeys = new Set(matchingDoors.map((door) => `${door.position.x}:${door.position.y}`));
+  const doorsByKey = new Map(matchingDoors.map((door) => [`${door.position.x}:${door.position.y}`, door]));
   const matchingWindows = windows.filter((window) => window.position.z === building.floor && insideBuilding(window.position, building));
   const windowKeys = new Set(matchingWindows.map((window) => `${window.position.x}:${window.position.y}`));
-  const wallSegments: { key: string; position: [number, number, number]; size: [number, number, number]; window: boolean; door: boolean }[] = [];
+  const wallSegments: { key: string; position: [number, number, number]; size: [number, number, number]; window: boolean; door?: DoorView }[] = [];
   for (let x = building.x; x < maxX; x++) {
-    wallSegments.push({ key: `n${x}`, position: [x + 0.5, height / 2, building.y], size: [1.04, height, 0.13], window: windowKeys.has(`${x}:${building.y}`), door: doorKeys.has(`${x}:${building.y}`) });
-    wallSegments.push({ key: `s${x}`, position: [x + 0.5, height / 2, maxY], size: [1.04, height, 0.13], window: windowKeys.has(`${x}:${maxY - 1}`), door: doorKeys.has(`${x}:${maxY - 1}`) });
+    wallSegments.push({ key: `n${x}`, position: [x + 0.5, height / 2, building.y], size: [1.04, height, 0.13], window: windowKeys.has(`${x}:${building.y}`), door: doorsByKey.get(`${x}:${building.y}`) });
+    wallSegments.push({ key: `s${x}`, position: [x + 0.5, height / 2, maxY], size: [1.04, height, 0.13], window: windowKeys.has(`${x}:${maxY - 1}`), door: doorsByKey.get(`${x}:${maxY - 1}`) });
   }
   for (let y = building.y; y < maxY; y++) {
-    wallSegments.push({ key: `w${y}`, position: [building.x, height / 2, y + 0.5], size: [0.13, height, 1.04], window: windowKeys.has(`${building.x}:${y}`), door: doorKeys.has(`${building.x}:${y}`) });
-    wallSegments.push({ key: `e${y}`, position: [maxX, height / 2, y + 0.5], size: [0.13, height, 1.04], window: windowKeys.has(`${maxX - 1}:${y}`), door: doorKeys.has(`${maxX - 1}:${y}`) });
+    wallSegments.push({ key: `w${y}`, position: [building.x, height / 2, y + 0.5], size: [0.13, height, 1.04], window: windowKeys.has(`${building.x}:${y}`), door: doorsByKey.get(`${building.x}:${y}`) });
+    wallSegments.push({ key: `e${y}`, position: [maxX, height / 2, y + 0.5], size: [0.13, height, 1.04], window: windowKeys.has(`${maxX - 1}:${y}`), door: doorsByKey.get(`${maxX - 1}:${y}`) });
   }
   return (
     <group>
@@ -510,15 +510,18 @@ const Building = memo(function Building({ building, doors, windows, input }: { b
         <meshStandardMaterial color={building.kind === "keep" ? "#666763" : "#765b42"} roughness={0.96} />
       </mesh>
       <group userData={{ occluder: true }}>
+        {building.kind === "house" && wallSegments.filter((wall) => !wall.door).map((wall) => <HousePlinth key={`plinth-${wall.key}`} position={wall.position} size={wall.size} />)}
         {wallSegments.map((wall) => (
           wall.door
-            ? <MedievalDoorWall key={wall.key} position={wall.position} size={wall.size} keep={building.kind === "keep"} openingHeight={Math.min(height - 0.15, DOOR_HEIGHT) + 0.1} />
+            ? building.kind === "house"
+              ? <HouseDoorway key={wall.key} position={wall.position} size={wall.size} layout={createHouseDoorwayLayout(height, Math.max(wall.size[0], wall.size[2]))} open={wall.door.open} onClick={() => input.toggleDoor(wall.door!.id, wall.door!.position)} />
+              : <MedievalDoorWall key={wall.key} position={wall.position} size={wall.size} keep openingHeight={Math.min(height - 0.15, DOOR_HEIGHT) + 0.1} />
             : wall.window && building.kind === "house"
             ? <MedievalWindowWall key={wall.key} position={wall.position} size={wall.size} />
             : <MedievalWall key={wall.key} position={wall.position} size={wall.size} keep={building.kind === "keep"} />
         ))}
         <HangingSign building={building} wallHeight={height} />
-        {matchingDoors.map((door) => <Door key={door.id} door={door} building={building} input={input} tall={height} />)}
+        {building.kind !== "house" && matchingDoors.map((door) => <Door key={door.id} door={door} building={building} input={input} tall={height} />)}
         {matchingWindows.map((window) => <ShutterWindow key={window.id} window={window} building={building} wallHeight={height} onClick={() => input.toggleWindow(window.id, window.position)} />)}
         {building.kind === "keep" && <Battlements building={building} height={height} />}
       </group>
@@ -616,14 +619,6 @@ function Door({ door, input, building, tall = WALL_HEIGHT }: { door: DoorView; i
     const target = door.open ? transform.openAngle : 0;
     group.current.rotation.y = THREE.MathUtils.damp(group.current.rotation.y, target, 12, delta);
   });
-  if (building?.kind === "house") return (
-    <MedievalDoorLeafAsset
-      door={door}
-      building={building}
-      wallHeight={tall}
-      onClick={() => input.toggleDoor(door.id, door.position)}
-    />
-  );
   return (
     <group position={[transform.x, 0, transform.z]} rotation={[0, transform.rotation, 0]} onPointerDown={(event) => { event.stopPropagation(); input.toggleDoor(door.id, door.position); }}>
       <>

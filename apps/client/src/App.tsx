@@ -16,7 +16,7 @@ import { InputController } from "./game/InputController";
 import { ThreeWorld } from "./game/ThreeWorld";
 import { NetworkClient } from "./game/NetworkClient";
 import { WorldState } from "./game/WorldState";
-import { worldEnvironment, worldTimeLabel } from "./game/worldEnvironment";
+import { isWorldTimePaused, setWorldTime, setWorldTimePaused, worldEnvironment, worldTimeLabel } from "./game/worldEnvironment";
 import { PROTOCOL_VERSION, type CharacterOutfit, type GroundItem, type ItemInstance, type SecondarySkill } from "./protocol";
 
 const world = new WorldState();
@@ -612,6 +612,14 @@ function EscapeMenu({ onResume, onOpen, onLeave }: { onResume: () => void; onOpe
 }
 
 function OptionsPanel({ showPerformance, reducedMotion, onShowPerformance, onReducedMotion }: { showPerformance: boolean; reducedMotion: boolean; onShowPerformance: (value: boolean) => void; onReducedMotion: (value: boolean) => void }) {
+  const [worldTime, setWorldTimeInput] = useState(() => worldTimeLabel(worldEnvironment()));
+  const [worldTimePaused, setWorldTimePausedInput] = useState(() => isWorldTimePaused());
+  const changeWorldTime = (value: string) => {
+    const [hour, minute] = value.split(":").map(Number);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return;
+    setWorldTime(hour, minute);
+    setWorldTimeInput(value);
+  };
   return (
     <div className="options-panel">
       <section>
@@ -621,6 +629,11 @@ function OptionsPanel({ showPerformance, reducedMotion, onShowPerformance, onRed
       <section>
         <header><span className="option-icon">FX</span><div><h3>Accessibility</h3><p>Reduce non-essential interface movement.</p></div></header>
         <label><span><strong>Reduced interface motion</strong><small>Disable sweeping and pulsing UI animations.</small></span><input type="checkbox" checked={reducedMotion} onChange={(event) => onReducedMotion(event.target.checked)} /></label>
+      </section>
+      <section>
+        <header><span className="option-icon">TIME</span><div><h3>World time</h3><p>Set the local preview time for lighting and weather.</p></div></header>
+        <label><span><strong>Time of day</strong><small>Change the current world clock.</small></span><input type="time" value={worldTime} onChange={(event) => changeWorldTime(event.target.value)} /></label>
+        <label><span><strong>Pause world clock</strong><small>Keep the current time from advancing.</small></span><input type="checkbox" checked={worldTimePaused} onChange={(event) => { setWorldTimePaused(event.target.checked); setWorldTimePausedInput(event.target.checked); }} /></label>
       </section>
       <p className="options-note">Gameplay shortcuts remain active: C for Character, I for Inventory, K for Crafting and H for Help.</p>
     </div>
