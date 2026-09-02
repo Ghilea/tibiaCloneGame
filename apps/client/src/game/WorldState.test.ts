@@ -6,7 +6,7 @@ const position = (x: number, y: number): Position => ({ x, y, z: 7 });
 
 function player(at: Position): PlayerView {
   return {
-    id: "local", name: "Traveler", vocation: "adventurer", position: at,
+    id: "local", name: "Traveler", vocation: "adventurer", outfit: "knight", secondarySkills: [], position: at,
     health: 100, maxHealth: 100, level: 1, experience: 0,
     mana: 20, maxMana: 20, swordSkill: 0, swordTries: 0,
     distanceSkill: 0, distanceTries: 0, fletchingSkill: 0,
@@ -116,5 +116,16 @@ describe("food status", () => {
     world.apply({ type: "food_status", player_id: "local", remaining_ms: 60_000 });
     expect(world.nourishmentDurationMs).toBe(60_000);
     expect(world.nourishmentUntil).toBeGreaterThan(Date.now() + 59_000);
+  });
+});
+
+describe("secondary skills", () => {
+  it("applies the server-authoritative profession selection", () => {
+    const world = new WorldState();
+    world.players.set("local", player(position(10, 8)));
+
+    world.apply({ type: "player_secondary_skills_changed", player_id: "local", skills: ["alchemy", "cooking"] });
+
+    expect(world.players.get("local")?.secondarySkills).toEqual(["alchemy", "cooking"]);
   });
 });

@@ -21,6 +21,7 @@ import { MedievalDoorLeafAsset } from "./MedievalAssetModels";
 import { GabledRoof, HangingSign, MedievalDoorWall, MedievalWall, MedievalWindowWall, ShutterWindow } from "./MedievalModels";
 import { WorldState, type CombatEffectView } from "./WorldState";
 import { tileCenter, worldToTile, WORLD_TILE_SIZE } from "./WorldCoordinates";
+import { worldEnvironment } from "./worldEnvironment";
 
 const TILE_HEIGHT = 0.12;
 // The KayKit actors have broad, rounded silhouettes. The environment uses a
@@ -54,6 +55,7 @@ type ThreeWorldProps = {
 export function ThreeWorld({ world, input, onReady, showDebug = true }: ThreeWorldProps) {
   const performanceLabel = useRef<HTMLDivElement>(null);
   const positionLabel = useRef<HTMLDivElement>(null);
+  const [lootHover, setLootHover] = useState<{ label: string; x: number; y: number } | null>(null);
   return (
     <>
       <Canvas
@@ -76,11 +78,12 @@ export function ThreeWorld({ world, input, onReady, showDebug = true }: ThreeWor
         }}
       >
         <Suspense fallback={null}>
-          <WorldScene world={world} input={input} />
+          <WorldScene world={world} input={input} onLootHover={setLootHover} />
           {showDebug && <ClientPerformanceMonitor label={performanceLabel} positionLabel={positionLabel} world={world} />}
           <SceneReady onReady={onReady} />
         </Suspense>
       </Canvas>
+      {lootHover && <div className="ground-loot-tooltip" style={{ left: lootHover.x + 14, top: lootHover.y + 14 }}><strong>{lootHover.label}</strong><small>Click to loot</small></div>}
       {showDebug && (
         <div className="debug-meter" aria-label="Position and rendering performance">
           <div ref={positionLabel} className="position-meter">x -- · y -- · z --</div>
@@ -109,7 +112,7 @@ function StaticShadowMap({ revision }: { revision: MapView }) {
   return null;
 }
 
-function WorldScene({ world, input }: ThreeWorldProps) {
+function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHover: (hover: { label: string; x: number; y: number } | null) => void }) {
   const subscribeVisual = useCallback((listener: () => void) => world.subscribeVisual(listener), [world]);
   const visualSnapshot = useCallback(() => world.visualRevision, [world]);
   useSyncExternalStore(subscribeVisual, visualSnapshot);
@@ -215,6 +218,11 @@ function WorldScene({ world, input }: ThreeWorldProps) {
             key={entry.item.instanceId}
             position={entry.position}
             corpse={entry.contents.length > 0}
+            lootable={entry.contents.length > 0 || Boolean(world.itemDefinitions.get(entry.item.definitionId)?.pickupable)}
+            label={entry.contents.length > 0
+              ? `${entry.contents.length} loot ${entry.contents.length === 1 ? "item" : "items"}`
+              : world.itemDefinitions.get(entry.item.definitionId)?.name ?? entry.item.definitionId}
+            onHover={onLootHover}
             onClick={(event) => {
               event.stopPropagation();
               input.lootAt(entry.position);
@@ -597,7 +605,7 @@ type ActorClick = (event: ThreeEvent<MouseEvent>) => void;
 type PlayerActorProps = { player: PlayerView; local: boolean; visualPosition?: MutableRefObject<THREE.Vector3>; correctionRevision: number; groundY: number; selected: boolean; onClick: ActorClick; onContextMenu: ActorClick };
 
 const PlayerActor = memo(function PlayerActor({ player, local, visualPosition, correctionRevision, groundY, selected, onClick, onContextMenu }: PlayerActorProps) {
-  const kind: CharacterKind = player.vocation === "mage" ? "mage" : player.vocation === "ranger" ? "ranger" : "knight";
+  const kind: CharacterKind = player.outfit;
   const moving = useRef(false);
   return (
     <SmoothActor id={player.id} position={player.position} groundY={groundY} visualPosition={visualPosition} moving={moving} correctionRevision={correctionRevision}>
@@ -822,23 +830,28 @@ function damageTexture(damage: number, color: string) {
   return texture;
 }
 
-function GroundItemActor({ position, corpse, onClick, onContextMenu }: { position: Position; corpse: boolean; onClick: ActorClick; onContextMenu: ActorClick }) {
+function GroundItemActor({ position, corpse, lootable, label, onHover, onClick, onContextMenu }: { position: Position; corpse: boolean; lootable: boolean; label: string; onHover: (hover: { label: string; x: number; y: number } | null) => void; onClick: ActorClick; onContextMenu: ActorClick }) {
   const lootBeacon = useRef<THREE.Group>(null);
+  const [hovered, setHovered] = useState(false);
+  useEffect(() => () => {
+    document.body.style.cursor = "";
+    onHover(null);
+  }, [onHover]);
   useFrame(({ clock }) => {
-    if (!lootBeacon.current || !corpse) return;
+    if (!lootBeacon.current || !lootable) return;
     lootBeacon.current.position.y = 0.64 + Math.sin(clock.elapsedTime * 3.2 + position.x + position.y) * 0.08;
     lootBeacon.current.rotation.y = clock.elapsedTime * 1.4;
   });
   return (
-    <group position={[position.x + 0.5, 0.12, position.y + 0.5]} onPointerDown={(event) => event.stopPropagation()} onClick={onClick} onContextMenu={onContextMenu}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} castShadow>
+    <group position={[position.x + 0.5, 0.12, position.y + 0.5]} onPointerDown={(event) => event.stopPropagation()} onPointerOver={(event) => { event.stopPropagation(); if (!lootable) return; setHovered(true); document.body.style.cursor = "pointer"; onHover({ label, x: event.nativeEvent.clientX, y: event.nativeEvent.clientY }); }} onPointerOut={() => { setHovered(false); document.body.style.cursor = ""; onHover(null); }} onClick={(event) => { document.body.style.cursor = ""; onHover(null); onClick(event); }} onContextMenu={onContextMenu}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} castShadow scale={hovered ? 1.16 : 1}>
         {corpse ? <circleGeometry args={[0.34, 14]} /> : <octahedronGeometry args={[0.18]} />}
         <meshStandardMaterial color={corpse ? "#6d3029" : "#d3a84f"} roughness={0.8} />
       </mesh>
-      {corpse && <>
+      {lootable && <>
         <mesh position={[0, 0.025, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={17}>
           <ringGeometry args={[0.39, 0.47, 28]} />
-          <meshBasicMaterial color="#f0bc55" transparent opacity={0.72} depthWrite={false} />
+          <meshBasicMaterial color={hovered ? "#fff1a8" : "#f0bc55"} transparent opacity={hovered ? 0.95 : 0.72} depthWrite={false} />
         </mesh>
         <group ref={lootBeacon} position={[0, 0.64, 0]} renderOrder={18}>
           <mesh rotation={[0, 0, Math.PI / 4]}>
@@ -1004,9 +1017,8 @@ function Atmosphere({ torches, local }: { torches: readonly Position[]; local?: 
       scene.fog = null;
     };
   }, [scene]);
-  useFrame(({ clock }) => {
-    const cycle = (clock.elapsedTime % 180) / 180;
-    const daylight = (Math.cos(cycle * Math.PI * 2 - Math.PI) + 1) / 2;
+  useFrame(() => {
+    const daylight = worldEnvironment().daylight;
     if (sun.current) sun.current.intensity = 0.18 + daylight * 2.1;
     if (ambient.current) ambient.current.intensity = 0.22 + daylight * 0.85;
   });
@@ -1073,10 +1085,10 @@ function Weather({ local, floor }: { local?: Position; floor: number }) {
     }
     return values;
   }, []);
-  useFrame(({ clock }, delta) => {
+  useFrame((_, delta) => {
     if (!points.current || floor !== 0) return;
-    const rain = Math.max(0, 1 - Math.abs(((clock.elapsedTime % 180) / 45) - 2.55) / 0.75);
-    points.current.visible = rain > 0.02;
+    const rain = worldEnvironment().weather === "rain";
+    points.current.visible = rain;
     const attribute = points.current.geometry.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < attribute.count; i++) {
       const next = attribute.getY(i) - delta * 12;

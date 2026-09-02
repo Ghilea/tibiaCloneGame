@@ -4,7 +4,7 @@ export const vocations = [
     name: "Warrior",
     icon: "⚔",
     role: "Durable melee fighter",
-    detail: "180 health · 130 capacity · trains Sword twice as fast",
+    detail: "180 health · 130 capacity · trains Melee twice as fast",
   },
   {
     id: "ranger",

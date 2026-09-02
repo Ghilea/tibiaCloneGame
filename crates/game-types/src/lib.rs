@@ -3,6 +3,19 @@ use uuid::Uuid;
 
 pub type EntityId = Uuid;
 
+pub const SECONDARY_SKILLS: [&str; 5] = ["alchemy", "mining", "woodcutting", "fishing", "cooking"];
+
+pub fn valid_secondary_skills(skills: &[String]) -> bool {
+    skills.len() <= 2
+        && skills
+            .iter()
+            .all(|skill| SECONDARY_SKILLS.contains(&skill.as_str()))
+        && skills
+            .iter()
+            .enumerate()
+            .all(|(index, skill)| !skills[..index].contains(skill))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VocationProfile {
     pub id: &'static str,
@@ -233,6 +246,8 @@ pub struct PlayerView {
     pub id: EntityId,
     pub name: String,
     pub vocation: String,
+    pub outfit: String,
+    pub secondary_skills: Vec<String>,
     pub position: Position,
     pub health: u16,
     pub max_health: u16,
@@ -366,5 +381,21 @@ mod tests {
         assert!(!warrior.can_craft_sigils);
         assert!(mage.can_craft_sigils);
         assert!(playable_vocation("adventurer").is_none());
+    }
+
+    #[test]
+    fn secondary_skills_allow_two_unique_known_professions() {
+        assert!(valid_secondary_skills(&["alchemy".into(), "mining".into()]));
+        assert!(valid_secondary_skills(&[]));
+        assert!(!valid_secondary_skills(&[
+            "alchemy".into(),
+            "mining".into(),
+            "cooking".into()
+        ]));
+        assert!(!valid_secondary_skills(&[
+            "alchemy".into(),
+            "alchemy".into()
+        ]));
+        assert!(!valid_secondary_skills(&["necromancy".into()]));
     }
 }

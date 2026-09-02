@@ -4,7 +4,7 @@ use game_types::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u16 = 20;
+pub const PROTOCOL_VERSION: u16 = 22;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -31,6 +31,12 @@ pub enum ClientMessage {
     },
     Ping {
         sent_at: u64,
+    },
+    SetOutfit {
+        outfit: String,
+    },
+    SetSecondarySkills {
+        skills: Vec<String>,
     },
     PickupItem {
         instance_id: game_types::EntityId,
@@ -166,6 +172,14 @@ pub enum ServerMessage {
     Pong {
         player_id: game_types::EntityId,
         sent_at: u64,
+    },
+    PlayerOutfitChanged {
+        player_id: game_types::EntityId,
+        outfit: String,
+    },
+    PlayerSecondarySkillsChanged {
+        player_id: game_types::EntityId,
+        skills: Vec<String>,
     },
     InventoryChanged {
         player_id: game_types::EntityId,

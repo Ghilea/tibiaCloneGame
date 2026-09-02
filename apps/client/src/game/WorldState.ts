@@ -225,6 +225,16 @@ export class WorldState {
       case "pong":
         if (this.localPlayerId === message.player_id) this.ping = Date.now() - message.sent_at;
         break;
+      case "player_outfit_changed": {
+        const player = this.players.get(message.player_id);
+        if (player) this.players.set(player.id, { ...player, outfit: message.outfit });
+        break;
+      }
+      case "player_secondary_skills_changed": {
+        const player = this.players.get(message.player_id);
+        if (player) this.players.set(player.id, { ...player, secondarySkills: message.skills });
+        break;
+      }
       case "inventory_changed":
         if (this.localPlayerId === message.player_id) {
           this.inventory = message.inventory;

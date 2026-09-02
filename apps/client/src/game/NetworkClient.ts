@@ -1,4 +1,4 @@
-import { CLIENT_VERSION, PROTOCOL_VERSION, type ClientMessage, type Position, type ServerMessage } from "../protocol";
+import { CLIENT_VERSION, PROTOCOL_VERSION, type CharacterOutfit, type ClientMessage, type Position, type SecondarySkill, type ServerMessage } from "../protocol";
 import { WorldState } from "./WorldState";
 
 export class NetworkClient {
@@ -50,6 +50,8 @@ export class NetworkClient {
   toggleDoor(doorId: string) { this.send({ type: "toggle_door", door_id: doorId }); }
   toggleWindow(windowId: string) { this.send({ type: "toggle_window", window_id: windowId }); }
   say(text: string) { this.send({ type: "say", text }); }
+  setOutfit(outfit: CharacterOutfit) { this.send({ type: "set_outfit", outfit }); }
+  setSecondarySkills(skills: SecondarySkill[]) { this.send({ type: "set_secondary_skills", skills }); }
   pickup(instanceId: string) { this.send({ type: "pickup_item", instance_id: instanceId }); }
   eat(instanceId: string) { this.send({ type: "eat_item", instance_id: instanceId }); }
   drop(instanceId: string) { this.send({ type: "drop_item", instance_id: instanceId }); }

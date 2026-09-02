@@ -22,6 +22,8 @@ struct CharacterRow {
     account_id: EntityId,
     name: String,
     vocation: String,
+    outfit: String,
+    secondary_skills: Vec<String>,
     level: i32,
     experience: i64,
     health: i32,
@@ -71,6 +73,8 @@ pub struct CharacterRecord {
     pub account_id: EntityId,
     pub name: String,
     pub vocation: String,
+    pub outfit: String,
+    pub secondary_skills: Vec<String>,
     pub level: i32,
     pub experience: i64,
     pub health: i32,
@@ -152,7 +156,7 @@ impl Database {
         account_id: EntityId,
     ) -> Result<Vec<CharacterRecord>, sqlx::Error> {
         let rows: Vec<CharacterRow> = sqlx::query_as(
-            "SELECT id, account_id, name, vocation, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized \
+            "SELECT id, account_id, name, vocation, outfit, secondary_skills, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized \
              FROM characters WHERE account_id = $1 ORDER BY created_at, name",
         )
         .bind(account_id)
@@ -173,13 +177,14 @@ impl Database {
         let id = uuid::Uuid::new_v4();
         let mut transaction = self.pool.begin().await?;
         let row: CharacterRow = sqlx::query_as(
-            "INSERT INTO characters (id, account_id, name, vocation, health, mana, max_mana, sword_skill, distance_skill, magic_level, position_x, position_y, position_z, spawn_initialized) VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9, $10, $11, $12, TRUE) \
-             RETURNING id, account_id, name, vocation, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized",
+            "INSERT INTO characters (id, account_id, name, vocation, outfit, health, mana, max_mana, sword_skill, distance_skill, magic_level, position_x, position_y, position_z, spawn_initialized) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, TRUE) \
+             RETURNING id, account_id, name, vocation, outfit, secondary_skills, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized",
         )
         .bind(id)
         .bind(account_id)
         .bind(name)
         .bind(vocation)
+        .bind(default_outfit(vocation))
         .bind(i32::from(profile.max_health))
         .bind(i32::from(profile.max_mana))
         .bind(i32::from(profile.sword_skill))
@@ -242,7 +247,7 @@ impl Database {
         character_id: EntityId,
     ) -> Result<Option<CharacterRecord>, sqlx::Error> {
         let row: Option<CharacterRow> = sqlx::query_as(
-            "SELECT id, account_id, name, vocation, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized \
+            "SELECT id, account_id, name, vocation, outfit, secondary_skills, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized \
              FROM characters WHERE id = $1 AND account_id = $2",
         )
         .bind(character_id)
@@ -264,6 +269,34 @@ impl Database {
         .bind(position.x)
         .bind(position.y)
         .bind(position.z)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn save_outfit(
+        &self,
+        character_id: EntityId,
+        outfit: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE characters SET outfit = $2, updated_at = NOW() WHERE id = $1")
+            .bind(character_id)
+            .bind(outfit)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn save_secondary_skills(
+        &self,
+        character_id: EntityId,
+        skills: &[String],
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE characters SET secondary_skills = $2, updated_at = NOW() WHERE id = $1",
+        )
+        .bind(character_id)
+        .bind(skills)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -643,6 +676,8 @@ fn character_from_row(row: CharacterRow) -> CharacterRecord {
         account_id: row.account_id,
         name: row.name,
         vocation: row.vocation,
+        outfit: row.outfit,
+        secondary_skills: row.secondary_skills,
         level: row.level,
         experience: row.experience,
         health: row.health,
@@ -662,5 +697,13 @@ fn character_from_row(row: CharacterRow) -> CharacterRecord {
             z: row.position_z,
         },
         spawn_initialized: row.spawn_initialized,
+    }
+}
+
+fn default_outfit(vocation: &str) -> &'static str {
+    match vocation {
+        "ranger" => "ranger",
+        "mage" | "druid" => "mage",
+        _ => "knight",
     }
 }

@@ -102,7 +102,7 @@ export function CharacterLobby({ token, connecting, onPlay, onLogout }: Characte
       </aside>
 
       <section className="lobby-stage" aria-live="polite">
-        {selected ? <CharacterPreview vocation={selected.vocation} /> : <div className="lobby-stage-empty">Select or create a character</div>}
+        {selected ? <CharacterPreview outfit={selected.outfit} /> : <div className="lobby-stage-empty">Select or create a character</div>}
       </section>
 
       <aside className="lobby-details">
@@ -131,8 +131,8 @@ export function CharacterLobby({ token, connecting, onPlay, onLogout }: Characte
   );
 }
 
-export function CharacterPreview({ vocation }: { vocation: string }) {
-  const kind: CharacterKind = vocation === "ranger" ? "ranger" : vocation === "mage" || vocation === "druid" ? "mage" : "knight";
+export function CharacterPreview({ vocation, outfit }: { vocation?: string; outfit?: CharacterKind }) {
+  const kind: CharacterKind = outfit ?? (vocation === "ranger" ? "ranger" : vocation === "mage" || vocation === "druid" ? "mage" : "knight");
   return (
     <Canvas dpr={[1, 1.5]} camera={{ position: [0, 1.35, 4.8], fov: 34 }} gl={{ antialias: true, powerPreference: "high-performance" }}>
       <ambientLight intensity={1.15} color="#b7c9bd" />

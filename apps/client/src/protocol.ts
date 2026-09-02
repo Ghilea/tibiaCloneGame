@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = 20;
+export const PROTOCOL_VERSION = 22;
 export const CLIENT_VERSION = "0.1.0";
 
 export type Position = { x: number; y: number; z: number };
@@ -6,6 +6,8 @@ export type PlayerView = {
   id: string;
   name: string;
   vocation: string;
+  outfit: CharacterOutfit;
+  secondarySkills: SecondarySkill[];
   position: Position;
   health: number;
   maxHealth: number;
@@ -22,6 +24,8 @@ export type PlayerView = {
   magicLevel: number;
   magicTries: number;
 };
+export type CharacterOutfit = "knight" | "mage" | "ranger" | "rogue";
+export type SecondarySkill = "alchemy" | "mining" | "woodcutting" | "fishing" | "cooking";
 export type CreatureView = { id: string; definitionId: string; name: string; position: Position; health: number; maxHealth: number; state: string; immune: boolean };
 export type MapView = {
   width: number;
@@ -63,6 +67,8 @@ export type ClientMessage =
   | { type: "toggle_window"; window_id: string }
   | { type: "say"; text: string }
   | { type: "ping"; sent_at: number }
+  | { type: "set_outfit"; outfit: CharacterOutfit }
+  | { type: "set_secondary_skills"; skills: SecondarySkill[] }
   | { type: "pickup_item"; instance_id: string }
   | { type: "drop_item"; instance_id: string }
   | { type: "move_item"; instance_id: string; destination: { kind: "root" } | { kind: "container"; container_id: string } | { kind: "equipment"; slot: string } }
@@ -94,6 +100,8 @@ export type ServerMessage =
   | { type: "window_changed"; window: WindowView }
   | { type: "spoken"; player_id: string; player_name: string; text: string }
   | { type: "pong"; player_id: string; sent_at: number }
+  | { type: "player_outfit_changed"; player_id: string; outfit: CharacterOutfit }
+  | { type: "player_secondary_skills_changed"; player_id: string; skills: SecondarySkill[] }
   | { type: "inventory_changed"; player_id: string; inventory: ItemInstance[]; inventory_weight: number; max_capacity: number }
   | { type: "depot_changed"; player_id: string; depot: ItemInstance[] }
   | { type: "spells_changed"; player_id: string; learned_spell_ids: string[] }

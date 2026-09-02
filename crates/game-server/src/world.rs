@@ -1313,6 +1313,23 @@ impl World {
     pub fn player(&self, id: EntityId) -> Option<&Player> {
         self.players.get(&id)
     }
+    pub fn set_player_outfit(&mut self, id: EntityId, outfit: String) -> Result<(), &'static str> {
+        let player = self.players.get_mut(&id).ok_or("unknown_player")?;
+        player.view.outfit = outfit;
+        Ok(())
+    }
+    pub fn set_player_secondary_skills(
+        &mut self,
+        id: EntityId,
+        skills: Vec<String>,
+    ) -> Result<(), &'static str> {
+        if !game_types::valid_secondary_skills(&skills) {
+            return Err("invalid_secondary_skills");
+        }
+        let player = self.players.get_mut(&id).ok_or("unknown_player")?;
+        player.view.secondary_skills = skills;
+        Ok(())
+    }
     pub fn contains_player(&self, id: EntityId) -> bool {
         self.players.contains_key(&id)
     }
@@ -4316,6 +4333,8 @@ mod tests {
                 id,
                 name: "Test".into(),
                 vocation: "adventurer".into(),
+                outfit: "knight".into(),
+                secondary_skills: Vec::new(),
                 position: SPAWN,
                 health: 150,
                 max_health: 150,

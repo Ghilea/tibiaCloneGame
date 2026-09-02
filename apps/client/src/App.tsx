@@ -16,7 +16,8 @@ import { InputController } from "./game/InputController";
 import { ThreeWorld } from "./game/ThreeWorld";
 import { NetworkClient } from "./game/NetworkClient";
 import { WorldState } from "./game/WorldState";
-import { PROTOCOL_VERSION, type GroundItem, type ItemInstance } from "./protocol";
+import { worldEnvironment, worldTimeLabel } from "./game/worldEnvironment";
+import { PROTOCOL_VERSION, type CharacterOutfit, type GroundItem, type ItemInstance, type SecondarySkill } from "./protocol";
 import { canCraftSigils } from "./vocations";
 
 const world = new WorldState();
@@ -216,7 +217,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
       )
         return;
       if (event.code === "KeyE" && !panel && !escapeMenu && !world.trade && !world.incomingTrade && !world.activeNpcId) {
-        const loot = nearbyLootCorpses().flatMap((corpse) => corpse.contents);
+        const loot = nearbyLootGround().flatMap(lootableGroundItems);
         if (loot.length > 0) {
           event.preventDefault();
           if (!event.repeat) loot.forEach((item) => network.pickup(item.instanceId));
@@ -271,6 +272,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
           Greyhaven · {world.players.size} online · {world.ping} ms
         </span>
       </header>
+      <WorldClock />
       <section className="unit-frame">
         <div className="portrait">{local?.name.slice(0, 1)}</div>
         <div>
@@ -612,6 +614,20 @@ function GameWindow({ title, children, onClose, kind }: { title: string; childre
   const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null);
   const positionKey = `aldoria.window-position.${kind ?? title.toLowerCase().replace(/\s+/g, "-")}`;
   const [position, setPosition] = useState<{ x: number; y: number; width: number } | null>(() => loadWindowPosition(positionKey));
+  useEffect(() => {
+    const element = windowRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      const bounds = element.getBoundingClientRect();
+      setPosition((current) => current ? {
+        ...current,
+        x: Math.max(8, Math.min(current.x, window.innerWidth - bounds.width - 8)),
+        y: Math.max(8, Math.min(current.y, window.innerHeight - bounds.height - 8)),
+      } : null);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const beginWindowDrag = (event: PointerEvent<HTMLElement>) => {
     if (event.button !== 0 || (event.target as HTMLElement).closest("button")) return;
     const bounds = windowRef.current?.getBoundingClientRect();
@@ -977,26 +993,97 @@ function CompactCharacterPanel() {
   const player = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
   if (!player) return null;
   return (
-    <div className="compact-character-panel">
-      <header className="character-identity">
-        <div className="character-portrait">{player.name.slice(0, 1)}</div>
-        <span><small>Level {player.level}</small><h3>{player.name}</h3><b>Drag equipment between windows</b></span>
-      </header>
-      <EquipmentPaperdoll interactive />
+    <div className={`compact-character-panel ${showDetails ? "skills-open" : ""}`}>
+      <div className="compact-character-main">
+        <header className="character-identity">
+          <div className="character-portrait">{player.name.slice(0, 1)}</div>
+          <span><small>Level {player.level}</small><h3>{player.name}</h3><b>Drag equipment between windows</b></span>
+        </header>
+        <EquipmentPaperdoll interactive />
+        <OutfitPicker outfit={player.outfit} />
+      </div>
       <button className="character-details-toggle" aria-expanded={showDetails} onClick={() => setShowDetails((current) => !current)}>
-        <span>{showDetails ? "Hide details" : "Skills & stats"}</span><b>{showDetails ? "−" : "+"}</b>
+        <span>{showDetails ? "Hide" : "Skills"}</span><b>{showDetails ? "‹" : "›"}</b>
       </button>
       {showDetails && (
-        <div className="compact-character-details">
-          <span><small>Health</small><strong>{player.health} / {player.maxHealth}</strong></span>
-          <span><small>Mana</small><strong>{player.mana} / {player.maxMana}</strong></span>
-          <span><small>Sword</small><strong>{player.swordSkill}</strong></span>
-          <span><small>Distance</small><strong>{player.distanceSkill}</strong></span>
-          <span><small>Fletching</small><strong>{player.fletchingSkill}</strong></span>
-          <span><small>Magic</small><strong>{player.magicLevel}</strong></span>
-        </div>
+        <aside className="character-skills-drawer">
+          <header><span><small>Progression</small><h3>Skills</h3></span><button aria-label="Hide skills" onClick={() => setShowDetails(false)}>×</button></header>
+          <section className="character-skills-view">
+            <small className="skill-group-label">Primary skills</small>
+            <div className="compact-character-details" aria-label="Primary character skills">
+              <CompactSkill name="Melee" level={player.swordSkill} description="Swords, axes, clubs and other close-combat weapons" />
+              <CompactSkill name="Distance" level={player.distanceSkill} description="Bows and future ranged weapons" />
+              <CompactSkill name="Magic" level={player.magicLevel} description="Spells, sigils and magical disciplines" />
+              <CompactSkill name="Fletching" level={player.fletchingSkill} description="Crafting arrows and ranged supplies" />
+              <CompactSkill name="Defense" description="Blocking, shields and armor control" />
+            </div>
+            <SecondarySkillsPicker selected={player.secondarySkills} />
+          </section>
+        </aside>
       )}
     </div>
+  );
+}
+
+function CompactSkill({ name, level, description }: { name: string; level?: number; description: string }) {
+  const learned = level !== undefined;
+  return (
+    <span className={learned ? "learned" : "untrained"} title={description}>
+      <small>{name}</small>
+      <strong>{learned ? level : "Untrained"}</strong>
+    </span>
+  );
+}
+
+const secondarySkillOptions: { id: SecondarySkill; name: string; description: string }[] = [
+  { id: "alchemy", name: "Alchemy", description: "Potions, extracts and reagents" },
+  { id: "mining", name: "Mining", description: "Ore, stone and rare minerals" },
+  { id: "woodcutting", name: "Woodcutting", description: "Timber and uncommon woods" },
+  { id: "fishing", name: "Fishing", description: "Fish and aquatic resources" },
+  { id: "cooking", name: "Cooking", description: "Meals with restorative effects" },
+];
+
+function SecondarySkillsPicker({ selected }: { selected: SecondarySkill[] }) {
+  const [pending, setPending] = useState<SecondarySkill[]>(selected);
+  useEffect(() => setPending(selected), [selected.join("|")]);
+  const toggle = (skill: SecondarySkill) => {
+    const next = pending.includes(skill)
+      ? pending.filter((entry) => entry !== skill)
+      : pending.length < 2
+        ? [...pending, skill]
+        : pending;
+    if (next === pending) {
+      world.addSystemMessage("You can only have two secondary skills at the same time.");
+      return;
+    }
+    setPending(next);
+    network.setSecondarySkills(next);
+  };
+  return (
+    <section className="secondary-skills-picker" aria-label="Secondary skills">
+      <header><span><small>Secondary skills</small><strong>Choose two professions</strong></span><b>{pending.length} / 2</b></header>
+      <div>{secondarySkillOptions.map((skill) => {
+        const active = pending.includes(skill.id);
+        const unavailable = !active && pending.length >= 2;
+        return <button key={skill.id} className={active ? "selected" : ""} aria-pressed={active} disabled={unavailable} title={skill.description} onClick={() => toggle(skill.id)}><span>{skill.name}</span><small>{active ? "Selected" : unavailable ? "Two selected" : skill.description}</small></button>;
+      })}</div>
+    </section>
+  );
+}
+
+const outfitOptions: { id: CharacterOutfit; label: string }[] = [
+  { id: "knight", label: "Knight" },
+  { id: "ranger", label: "Ranger" },
+  { id: "mage", label: "Mage" },
+  { id: "rogue", label: "Rogue" },
+];
+
+function OutfitPicker({ outfit }: { outfit: CharacterOutfit }) {
+  return (
+    <section className="outfit-picker" aria-label="Character outfit">
+      <small>Outfit</small>
+      <div>{outfitOptions.map((option) => <button key={option.id} className={option.id === outfit ? "selected" : ""} onClick={() => network.setOutfit(option.id)}>{option.label}</button>)}</div>
+    </section>
   );
 }
 
@@ -1007,7 +1094,7 @@ function EquipmentPaperdoll({ interactive }: { interactive: boolean }) {
   return (
     <div className={`equipment-paperdoll ${interactive ? "interactive-paperdoll" : ""}`} data-inventory-drop="equipment">
       <div className="character-model-preview" aria-label={`${player.name} character preview`}>
-        <CharacterPreview vocation={player.vocation} />
+        <CharacterPreview outfit={player.outfit} />
         <span>{player.name}</span>
       </div>
       {equipmentLayout.map(({ id, label, aliases }) => {
@@ -1057,7 +1144,7 @@ function CharacterPanel() {
   if (!player) return null;
   const equipped = world.inventory.filter((item) => item.equippedSlot);
   const skillRanks: [string, number][] = [
-    ["Sword", player.swordSkill],
+    ["Melee", player.swordSkill],
     ["Distance", player.distanceSkill],
     ["Fletching", player.fletchingSkill],
     ["Magic", player.magicLevel],
@@ -1075,10 +1162,10 @@ function CharacterPanel() {
       <section className="skills-sheet">
         <header><span><small>Progression</small><h3>Skills & Mastery</h3></span><b>{player.level}</b></header>
         <SkillRow
-          name="Sword Skill"
+          name="Melee Skill"
           level={player.swordSkill}
           tries={player.swordTries}
-          description="Advances through successful melee hits."
+          description="Advances through successful hits with any melee weapon."
         />
         <SkillRow
           name="Distance Skill"
@@ -1098,6 +1185,8 @@ function CharacterPanel() {
           tries={player.magicTries}
           description="Advances through sigil crafting and magic use."
         />
+        <UntrainedSkillRow name="Defense" description="Blocking, shields and armor control." />
+        <SecondarySkillsPicker selected={player.secondarySkills} />
         <p className="skill-note">
           Each level takes more legitimate uses than the last. Skills improve
           their matching damage type or production discipline.
@@ -1118,6 +1207,16 @@ function CharacterPanel() {
           <div><dt>Equipped</dt><dd>{equipped.length} / {equipmentLayout.length}</dd></div>
         </dl>
       </section>
+    </div>
+  );
+}
+
+function UntrainedSkillRow({ name, description }: { name: string; description: string }) {
+  return (
+    <div className="skill-row untrained-skill-row">
+      <header><strong>{name}</strong><b>0</b></header>
+      <div className="skill-meter"><i style={{ width: "0%" }} /></div>
+      <small>Untrained · {description}</small>
     </div>
   );
 }
@@ -1317,36 +1416,42 @@ function TradeItem({ item }: { item: ItemInstance }) {
 }
 function NearbyLootWindow() {
   useSyncExternalStore(subscribeWorldVisual, worldVisualSnapshot);
-  const corpses = nearbyLootCorpses();
-  return corpses.length > 0 ? <LootWindow corpses={corpses} onLootAll={() => corpses.flatMap((corpse) => corpse.contents).forEach((item) => network.pickup(item.instanceId))} /> : null;
+  const groundItems = nearbyLootGround();
+  return groundItems.length > 0 ? <LootWindow groundItems={groundItems} onLootAll={() => groundItems.flatMap(lootableGroundItems).forEach((item) => network.pickup(item.instanceId))} /> : null;
 }
 
-function nearbyLootCorpses() {
+function nearbyLootGround() {
   const local = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
   if (!local) return [];
   return world.groundItems.filter(
-    (ground) => ground.contents.length > 0
+    (ground) => lootableGroundItems(ground).length > 0
       && ground.position.z === local.position.z
       && Math.abs(ground.position.x - local.position.x) <= 1
       && Math.abs(ground.position.y - local.position.y) <= 1,
   );
 }
 
-function LootWindow({ corpses, onLootAll }: { corpses: GroundItem[]; onLootAll: () => void }) {
-  const itemCount = corpses.reduce((count, corpse) => count + corpse.contents.length, 0);
+function lootableGroundItems(ground: GroundItem) {
+  if (ground.contents.length > 0) return ground.contents;
+  return world.itemDefinitions.get(ground.item.definitionId)?.pickupable ? [ground.item] : [];
+}
+
+function LootWindow({ groundItems, onLootAll }: { groundItems: GroundItem[]; onLootAll: () => void }) {
+  const itemCount = groundItems.reduce((count, ground) => count + lootableGroundItems(ground).length, 0);
   return (
     <section className="loot-window">
       <header>
         <span>Nearby loot</span>
-        <small>Remains for up to 5 minutes</small>
+        <small>Within reach</small>
       </header>
-      {corpses.map((corpse) => (
-        <div className="corpse" key={corpse.item.instanceId}>
+      {groundItems.map((ground) => (
+        <div className="corpse" key={ground.item.instanceId}>
           <strong>
-            {world.itemDefinitions.get(corpse.item.definitionId)?.name ??
-              "Corpse"}
+            {ground.contents.length > 0
+              ? world.itemDefinitions.get(ground.item.definitionId)?.name ?? "Corpse"
+              : "On the ground"}
           </strong>
-          {corpse.contents.map((item) => (
+          {lootableGroundItems(ground).map((item) => (
             <button
               key={item.instanceId}
               onClick={() => network.pickup(item.instanceId)}
@@ -1362,6 +1467,20 @@ function LootWindow({ corpses, onLootAll }: { corpses: GroundItem[]; onLootAll: 
         </div>
       ))}
       <footer><button className="loot-all-button" onClick={onLootAll}><kbd>E</kbd><span>Loot all</span><small>{itemCount} {itemCount === 1 ? "item" : "items"}</small></button></footer>
+    </section>
+  );
+}
+
+function WorldClock() {
+  const [environment, setEnvironment] = useState(() => worldEnvironment());
+  useEffect(() => {
+    const timer = window.setInterval(() => setEnvironment(worldEnvironment()), 500);
+    return () => window.clearInterval(timer);
+  }, []);
+  return (
+    <section className="world-clock" data-period={environment.period.toLowerCase()} data-weather={environment.weather}>
+      <span aria-hidden="true">{environment.period === "Night" ? "☾" : environment.weather === "rain" ? "☂" : "☀"}</span>
+      <div><strong>{worldTimeLabel(environment)}</strong><small>Day {environment.day} · {environment.period} · {environment.weather === "rain" ? "Rain" : "Clear"}</small></div>
     </section>
   );
 }
@@ -1930,6 +2049,7 @@ type PointerItemDrag = {
   moved: boolean;
   previewTarget: HTMLElement | null;
   previewIcon: HTMLElement | null;
+  groundGhost: HTMLElement | null;
 };
 let pointerItemDrag: PointerItemDrag | null = null;
 
@@ -1944,6 +2064,7 @@ function beginPointerItemDrag(event: PointerEvent<HTMLElement>, itemId: string) 
     moved: false,
     previewTarget: null,
     previewIcon: null,
+    groundGhost: null,
   };
   event.currentTarget.setPointerCapture(event.pointerId);
 }
@@ -1990,29 +2111,67 @@ function clearPointerItemDrag() {
 function updatePointerDropPreview(clientX: number, clientY: number) {
   const drag = pointerItemDrag;
   if (!drag) return;
-  const hovered = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-inventory-drop]") ?? null;
+  const hoveredElement = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+  const hovered = hoveredElement?.closest<HTMLElement>("[data-inventory-drop]") ?? null;
   const target = hovered?.closest<HTMLElement>(".inventory-grid-slot, .equipment-slot") ?? null;
-  if (target === drag.previewTarget) return;
-  clearPointerDropPreview();
-  if (!target || target === drag.source) return;
-  const sourceIcon = drag.source.querySelector<HTMLElement>(".item-icon");
-  if (!sourceIcon) return;
-  const previewIcon = sourceIcon.cloneNode(true) as HTMLElement;
-  previewIcon.classList.add("inventory-drop-ghost");
-  previewIcon.setAttribute("aria-hidden", "true");
-  target.classList.add("pointer-drop-preview");
-  target.appendChild(previewIcon);
-  drag.previewTarget = target;
-  drag.previewIcon = previewIcon;
+  if (target !== drag.previewTarget) {
+    clearPointerSlotPreview();
+    if (target && target !== drag.source) {
+      const sourceIcon = drag.source.querySelector<HTMLElement>(".item-icon");
+      if (sourceIcon) {
+        const previewIcon = sourceIcon.cloneNode(true) as HTMLElement;
+        previewIcon.classList.add("inventory-drop-ghost");
+        previewIcon.setAttribute("aria-hidden", "true");
+        target.classList.add("pointer-drop-preview");
+        target.appendChild(previewIcon);
+        drag.previewTarget = target;
+        drag.previewIcon = previewIcon;
+      }
+    }
+  }
+  updateGroundDropGhost(clientX, clientY, !hoveredElement?.closest(".game-modal"));
 }
 
 function clearPointerDropPreview() {
+  const drag = pointerItemDrag;
+  if (!drag) return;
+  clearPointerSlotPreview();
+  drag.groundGhost?.remove();
+  drag.groundGhost = null;
+}
+
+function clearPointerSlotPreview() {
   const drag = pointerItemDrag;
   if (!drag) return;
   drag.previewTarget?.classList.remove("pointer-drop-preview");
   drag.previewIcon?.remove();
   drag.previewTarget = null;
   drag.previewIcon = null;
+}
+
+function updateGroundDropGhost(clientX: number, clientY: number, visible: boolean) {
+  const drag = pointerItemDrag;
+  if (!drag) return;
+  if (!visible) {
+    drag.groundGhost?.remove();
+    drag.groundGhost = null;
+    return;
+  }
+  if (!drag.groundGhost) {
+    const sourceIcon = drag.source.querySelector<HTMLElement>(".item-icon");
+    if (!sourceIcon) return;
+    const ghost = document.createElement("div");
+    ghost.className = "inventory-ground-drop-ghost";
+    const icon = sourceIcon.cloneNode(true) as HTMLElement;
+    icon.setAttribute("aria-hidden", "true");
+    const label = document.createElement("small");
+    label.textContent = "Drop on ground";
+    ghost.append(icon, label);
+    document.body.appendChild(ghost);
+    drag.groundGhost = ghost;
+  }
+  drag.groundGhost.style.left = `${clientX}px`;
+  drag.groundGhost.style.top = `${clientY}px`;
 }
 
 function reconcileInventoryLayout(current: (string | null)[], itemIds: string[], slotCount: number) {

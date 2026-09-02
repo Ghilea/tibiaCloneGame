@@ -2,6 +2,7 @@ export type CharacterSummary = {
   id: string;
   name: string;
   vocation: string;
+  outfit: import("./protocol").CharacterOutfit;
   level: number;
   position: { x: number; y: number; z: number };
 };

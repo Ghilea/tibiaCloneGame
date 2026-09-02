@@ -64,6 +64,8 @@ h1, h2, h3 { font-family: Cinzel, Georgia, serif; }
 @keyframes world-loading-progress { from { transform: translateX(-110%); } to { transform: translateX(340%); } }
 .world-header { position: absolute; top: 14px; left: 50%; z-index: 5; display: grid; gap: 2px; min-width: 300px; padding: 9px 20px; transform: translateX(-50%); text-align: center; background: #101713d9; border: 1px solid #5b675f; border-radius: 9px; box-shadow: 0 8px 28px #0009; backdrop-filter: blur(12px); pointer-events: none; }
 .world-header strong { color: #e7d29d; font-family: Cinzel, serif; font-size: 13px; letter-spacing: .08em; }.world-header span { color: #8f9d94; font-size: 10px; }
+.world-clock { position: absolute; z-index: 6; top: 14px; right: 18px; display: flex; align-items: center; gap: 9px; min-width: 132px; padding: 8px 11px; color: #d9c794; background: #101713df; border: 1px solid #5a675f; border-radius: 8px; box-shadow: 0 8px 24px #0009; backdrop-filter: blur(10px); pointer-events: none; }.world-clock > span { display: grid; place-items: center; width: 27px; height: 27px; color: #f1cc6e; background: #d9a84513; border: 1px solid #a9813c66; border-radius: 50%; font-size: 15px; }.world-clock > div { display: grid; gap: 1px; }.world-clock strong { font: 700 12px Cinzel; letter-spacing: .08em; }.world-clock small { color: #87978d; font-size: 8px; text-transform: uppercase; }.world-clock[data-period="night"] > span { color: #b8cdf8; border-color: #7186b266; }.world-clock[data-weather="rain"] > span { color: #acd7e6; }
+.ground-loot-tooltip { position: fixed; z-index: 20; display: grid; gap: 2px; min-width: 92px; padding: 7px 9px; color: #ead9b5; background: #0b100dee; border: 1px solid #a47d3f; border-radius: 5px; box-shadow: 0 7px 20px #000b; pointer-events: none; }.ground-loot-tooltip strong { font: 600 9px Cinzel; }.ground-loot-tooltip small { color: #a7946c; font-size: 7px; text-transform: uppercase; }
 
 .unit-frame, .target-frame, .loot-window, .chat, .action-dock { position: absolute; z-index: 5; background: #101713e8; border: 1px solid #5a675f; box-shadow: 0 10px 30px #0009, inset 0 1px #ffffff0c; backdrop-filter: blur(12px); }
 .unit-frame { top: 18px; left: 18px; display: grid; grid-template-columns: 50px 210px; gap: 11px; padding: 10px; border-radius: 10px; }
@@ -236,6 +238,7 @@ h1, h2, h3 { font-family: Cinzel, Georgia, serif; }
 }
 .inventory-grid-slot.pointer-dragging { opacity: .58; cursor: grabbing; }
 body.inventory-pointer-dragging, body.inventory-pointer-dragging * { cursor: grabbing !important; }
+.inventory-ground-drop-ghost { position: fixed; z-index: 1000; display: grid; justify-items: center; gap: 3px; width: 58px; pointer-events: none; opacity: .58; filter: saturate(.88) brightness(1.12); transform: translate(-50%, -50%); }.inventory-ground-drop-ghost .item-icon { width: 46px; height: 46px; filter: drop-shadow(0 5px 7px #000c); }.inventory-ground-drop-ghost small { padding: 2px 5px; color: #efd49a; background: #10130fd9; border: 1px solid #aa8146; border-radius: 4px; font-size: 7px; line-height: 1.2; text-align: center; white-space: nowrap; }
 .inventory-grid-slot.pointer-drop-preview {
   border-color: #e2b568;
   background: radial-gradient(circle, #554625, #15160f 75%);
@@ -323,22 +326,31 @@ body.inventory-pointer-dragging, body.inventory-pointer-dragging * { cursor: gra
 .dual-gear-layer .panel-character-compact > .modal-content { overflow: hidden; }
 .game-modal.panel-character-compact { width: min(430px, 96vw); }
 .panel-character-compact > .modal-content { max-height: none; padding: 14px; overflow: hidden; }
-.compact-character-panel { min-width: 0; }
-.compact-character-panel > .character-identity { margin-bottom: 9px; }
+.compact-character-panel { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.compact-character-panel.skills-open { grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; }
+.compact-character-main { min-width: 0; }
+.compact-character-main > .character-identity { margin-bottom: 9px; }
 .compact-character-panel .character-portrait { width: 48px; height: 48px; margin: 0; font-size: 19px; }
 .compact-character-panel .equipment-paperdoll { width: 100%; height: 410px; margin: 0; }
 .character-details-toggle {
-  display: flex;
-  justify-content: space-between;
-  width: 100%;
-  margin-top: 9px;
-  padding: 9px 11px;
+  position: absolute;
+  z-index: 5;
+  top: 76px;
+  right: -14px;
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  width: 30px;
+  margin: 0;
+  padding: 9px 4px;
   color: #cbb990;
   background: #111813;
   border-color: #465248;
   font-size: 9px;
-  text-align: left;
+  text-align: center;
 }
+.character-details-toggle span { writing-mode: vertical-rl; transform: rotate(180deg); }
+.compact-character-panel.skills-open .character-details-toggle { right: 286px; }
 .character-details-toggle b { color: #d7ae61; font-size: 14px; }
 .compact-character-details {
   display: grid;
@@ -346,12 +358,41 @@ body.inventory-pointer-dragging, body.inventory-pointer-dragging * { cursor: gra
   gap: 5px;
   margin-top: 6px;
 }
+.character-skills-drawer { min-width: 0; overflow: hidden; background: linear-gradient(145deg, #121914, #080c0a); border: 1px solid #5b513b; border-radius: 7px; }
+.character-skills-drawer > header { display: flex; align-items: center; justify-content: space-between; padding: 11px 12px; background: #151c17; border-bottom: 1px solid #ffffff12; }
+.character-skills-drawer > header span { display: grid; gap: 2px; }
+.character-skills-drawer > header small { color: #a48a59; font-size: 7px; letter-spacing: .1em; text-transform: uppercase; }
+.character-skills-drawer > header h3 { margin: 0; color: #e4d4b2; font-size: 14px; }
+.character-skills-drawer > header button { width: 25px; height: 25px; padding: 0; }
+.character-skills-view { max-height: 480px; padding: 11px; overflow-y: auto; scrollbar-color: #806a43 #111713; scrollbar-width: thin; }
+.skill-group-label { display: block; margin: 0 2px 5px; color: #8f7b57; font: 700 7px Cinzel; letter-spacing: .1em; text-transform: uppercase; }
+.panel-character-compact > .modal-content, .dual-gear-layer .panel-character-compact > .modal-content { max-height: calc(100vh - 110px); overflow: visible; }
+.game-modal.panel-character-compact:has(.compact-character-panel.skills-open) { width: min(744px, calc(100vw - 16px)) !important; }
+.modal-layer.dual-gear-layer.has-character:has(.compact-character-panel.skills-open) { grid-template-columns: minmax(620px, 744px) minmax(460px, 1fr); }
 .compact-character-details > span { display: grid; gap: 3px; padding: 7px 8px; background: #0a0f0c; border: 1px solid #303b34; border-radius: 4px; }
 .compact-character-details small { color: #748179; font-size: 7px; text-transform: uppercase; }
 .compact-character-details strong { color: #d8ccb2; font-size: 9px; }
+.compact-character-details > span.untrained { background: #090c0a; border-style: dashed; border-color: #28312b; }.compact-character-details > span.untrained small { color: #647169; }.compact-character-details > span.untrained strong { color: #8d7955; font-size: 7px; font-weight: 500; text-transform: uppercase; }
+.secondary-skills-picker { display: grid; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #ffffff12; }.secondary-skills-picker > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }.secondary-skills-picker > header span { display: grid; gap: 2px; }.secondary-skills-picker > header small { color: #a18a5e; font: 700 7px Cinzel; letter-spacing: .1em; text-transform: uppercase; }.secondary-skills-picker > header strong { color: #747f78; font-size: 7px; font-weight: 500; }.secondary-skills-picker > header b { color: #d7b36b; font: 700 9px Cinzel; }.secondary-skills-picker > div { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; }.secondary-skills-picker button { display: grid; gap: 2px; min-width: 0; padding: 7px 8px; text-align: left; background: #0a0f0c; border-color: #303b34; }.secondary-skills-picker button span { color: #aeb8b1; font-size: 8px; }.secondary-skills-picker button small { overflow: hidden; color: #657169; font-size: 6px; text-overflow: ellipsis; white-space: nowrap; }.secondary-skills-picker button.selected { background: linear-gradient(135deg, #3b321f, #171811); border-color: #b38a49; box-shadow: inset 0 0 12px #c9943030; }.secondary-skills-picker button.selected span { color: #efd397; }.secondary-skills-picker button.selected small { color: #b59a67; }.secondary-skills-picker button:disabled { opacity: .4; cursor: not-allowed; }
+.untrained-skill-row { opacity: .72; }.untrained-skill-row .skill-meter > i { background: #6d5c3d; }.untrained-skill-row > small { color: #81745d; }
+.outfit-picker { display: grid; gap: 6px; margin-top: 9px; padding: 9px; background: #080c0a; border: 1px solid #303b34; border-radius: 5px; }.outfit-picker > small { color: #95805a; font: 700 8px Cinzel; letter-spacing: .1em; text-transform: uppercase; }.outfit-picker > div { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }.outfit-picker button { min-width: 0; padding: 6px 3px; color: #89958e; background: #111813; border-color: #354039; font-size: 7px; }.outfit-picker button.selected { color: #f1d79e; background: #49391f; border-color: #b58b48; }
 @media (max-width: 1000px) {
   .modal-layer.dual-gear-layer.has-character { grid-template-columns: minmax(310px, 360px) minmax(490px, 1fr); }
   .compact-character-panel .equipment-paperdoll { height: 380px; }
+}
+@media (max-width: 1200px) {
+  .modal-layer.dual-gear-layer.has-character:has(.compact-character-panel.skills-open) { grid-template-columns: minmax(310px, 430px) minmax(490px, 1fr); }
+  .dual-gear-layer .game-modal.panel-character-compact:has(.compact-character-panel.skills-open) { width: 100% !important; }
+  .dual-gear-layer .compact-character-panel.skills-open { grid-template-columns: minmax(0, 1fr); }
+  .dual-gear-layer .character-skills-drawer { position: absolute; z-index: 4; inset: 0; min-height: 100%; box-shadow: 0 12px 38px #000e; }
+  .dual-gear-layer .compact-character-panel.skills-open .character-details-toggle { display: none; }
+}
+@media (max-width: 720px) {
+  .game-modal.panel-character-compact:has(.compact-character-panel.skills-open) { width: min(430px, calc(100vw - 16px)) !important; }
+  .compact-character-panel.skills-open { grid-template-columns: minmax(0, 1fr); }
+  .character-skills-drawer { position: absolute; z-index: 4; inset: 0; min-height: 100%; box-shadow: 0 12px 38px #000e; }
+  .compact-character-panel.skills-open .character-details-toggle { display: none; }
+  .character-skills-view { max-height: calc(100vh - 190px); }
 }
 .movable-game-window > header { cursor: grab; user-select: none; touch-action: none; }
 .movable-game-window > header:active { cursor: grabbing; }

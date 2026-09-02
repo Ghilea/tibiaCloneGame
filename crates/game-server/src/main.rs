@@ -255,6 +255,8 @@ async fn session(mut socket: WebSocket, state: AppState) {
         id,
         name,
         vocation,
+        outfit,
+        secondary_skills,
         position,
         level,
         experience,
@@ -312,6 +314,8 @@ async fn session(mut socket: WebSocket, state: AppState) {
             character.id,
             character.name,
             character.vocation,
+            character.outfit,
+            character.secondary_skills,
             position,
             u32::try_from(character.level).unwrap_or(1),
             u64::try_from(character.experience).unwrap_or(0),
@@ -344,6 +348,8 @@ async fn session(mut socket: WebSocket, state: AppState) {
             Uuid::new_v4(),
             name,
             "adventurer".to_owned(),
+            "knight".to_owned(),
+            Vec::new(),
             world_spawn,
             1,
             0,
@@ -380,6 +386,8 @@ async fn session(mut socket: WebSocket, state: AppState) {
             id,
             name: name.clone(),
             vocation,
+            outfit,
+            secondary_skills,
             position,
             health: health.min(vocation_profile.max_health),
             max_health: vocation_profile.max_health,
@@ -642,6 +650,80 @@ async fn session(mut socket: WebSocket, state: AppState) {
                         sent_at,
                     },
                 );
+            }
+            Ok(ClientMessage::SetOutfit { outfit }) => {
+                if !matches!(outfit.as_str(), "knight" | "mage" | "ranger" | "rogue") {
+                    state.private(
+                        id,
+                        ServerMessage::Error {
+                            code: "invalid_outfit".into(),
+                            message: "That outfit is not available".into(),
+                        },
+                    );
+                    continue;
+                }
+                if let Some(database) = &state.database
+                    && let Err(error) = database.save_outfit(id, &outfit).await
+                {
+                    warn!(%id, %error, "could not save character outfit");
+                    state.private(
+                        id,
+                        ServerMessage::Error {
+                            code: "outfit_save_failed".into(),
+                            message: "The outfit could not be saved".into(),
+                        },
+                    );
+                    continue;
+                }
+                if state
+                    .world
+                    .write()
+                    .await
+                    .set_player_outfit(id, outfit.clone())
+                    .is_ok()
+                {
+                    state.broadcast(ServerMessage::PlayerOutfitChanged {
+                        player_id: id,
+                        outfit,
+                    });
+                }
+            }
+            Ok(ClientMessage::SetSecondarySkills { skills }) => {
+                if !game_types::valid_secondary_skills(&skills) {
+                    state.private(
+                        id,
+                        ServerMessage::Error {
+                            code: "invalid_secondary_skills".into(),
+                            message: "Choose no more than two different secondary skills".into(),
+                        },
+                    );
+                    continue;
+                }
+                if let Some(database) = &state.database
+                    && let Err(error) = database.save_secondary_skills(id, &skills).await
+                {
+                    warn!(%id, %error, "could not save secondary skills");
+                    state.private(
+                        id,
+                        ServerMessage::Error {
+                            code: "secondary_skills_save_failed".into(),
+                            message: "Your secondary skills could not be saved".into(),
+                        },
+                    );
+                    continue;
+                }
+                if state
+                    .world
+                    .write()
+                    .await
+                    .set_player_secondary_skills(id, skills.clone())
+                    .is_ok()
+                {
+                    state.broadcast(ServerMessage::PlayerSecondarySkillsChanged {
+                        player_id: id,
+                        skills,
+                    });
+                }
             }
             Ok(ClientMessage::PickupItem { instance_id }) => {
                 mutate_item_state(&state, id, ItemMutation::Pickup(instance_id)).await

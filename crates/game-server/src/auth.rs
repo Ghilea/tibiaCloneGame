@@ -65,6 +65,7 @@ pub struct CharacterSummary {
     pub id: EntityId,
     pub name: String,
     pub vocation: String,
+    pub outfit: String,
     pub level: i32,
     pub position: Position,
 }
@@ -329,6 +330,7 @@ impl From<CharacterRecord> for CharacterSummary {
             id: value.id,
             name: value.name,
             vocation: value.vocation,
+            outfit: value.outfit,
             level: value.level,
             position: value.position,
         }
