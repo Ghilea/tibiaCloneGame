@@ -35,14 +35,20 @@ To generate a compatible world draft with ChatGPT, use the copy-ready schema, co
 
 Walls, doors, house roofs, and keeps retain distinct elevated faces in the editor's top-down view.
 
-To run an exported world, stop the server and set `WORLD_FILE` to its full path before restarting:
+The server automatically loads `worlds/northwest-first-marches.world.json` when it exists, so the normal command is:
+
+```powershell
+cargo run -p game-server
+```
+
+To run another world file, stop the server and set `WORLD_FILE` to its full path before restarting:
 
 ```powershell
 $env:WORLD_FILE="D:\maps\my-region.world.json"
 cargo run -p game-server
 ```
 
-The server validates the document before opening its socket. Invalid dimensions, out-of-bounds tiles, duplicate spawn IDs, unknown creature IDs, and spawns placed on blocked tiles stop startup with a precise error. The loaded document authoritatively controls terrain, collision, line of sight, creature pathfinding, doors, stairs, and creature spawns. If `WORLD_FILE` is unset, the built-in Greyhaven world remains active. Existing character positions that do not fit the selected world are moved to its first safe starting tile.
+The server validates the document before opening its socket. Invalid dimensions, out-of-bounds tiles, duplicate spawn IDs, unknown creature IDs, and spawns placed on blocked tiles stop startup with a precise error. The loaded document authoritatively controls terrain, collision, line of sight, creature pathfinding, doors, stairs, and creature spawns. If neither `WORLD_FILE` nor the default world file exists, the built-in Greyhaven world remains active. Existing character positions that do not fit the selected world are moved to its first safe starting tile.
 
 NPCs in a world file are server-authoritative and replace the built-in set completely. Their positions, identities, profiles, services, offers, item references, and spell references are validated at startup. Greyhaven's fallback NPC content is data-driven in `content/npcs/npcs.json`; NPC profiles and dialogue are no longer compiled into Rust.
 

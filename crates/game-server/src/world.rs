@@ -16,11 +16,12 @@ use game_types::{
     ResourceNodeView, RuneRecipe, SpellDefinition, mastery_spent, skill_mastery_cost,
 };
 use serde::Deserialize;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::content::ContentCatalog;
 
 pub const SPAWN: Position = Position { x: 10, y: 8, z: 7 };
+const DEFAULT_WORLD_FILE: &str = "../../worlds/northwest-first-marches.world.json";
 // The client walks at 165 ms. A small acceptance margin prevents ordinary
 // packet jitter from compressing two valid steps into a false rejection.
 const MOVE_COOLDOWN: Duration = Duration::from_millis(145);
@@ -568,6 +569,46 @@ impl WorldMap {
         let spawn_documents = document.spawns;
         let resource_documents = document.resource_nodes;
         let requested_player_spawn = document.player_spawn;
+        for building in &document.buildings {
+            let max_x = building.x + building.width - 1;
+            let max_y = building.y + building.height - 1;
+            let inside = |position: Position| {
+                position.z == building.floor
+                    && position.x >= building.x
+                    && position.x <= max_x
+                    && position.y >= building.y
+                    && position.y <= max_y
+            };
+            let edge = |position: Position| {
+                position.x == building.x
+                    || position.x == max_x
+                    || position.y == building.y
+                    || position.y == max_y
+            };
+            let corner = |position: Position| {
+                (position.x == building.x || position.x == max_x)
+                    && (position.y == building.y || position.y == max_y)
+            };
+            if document.trees.iter().copied().any(inside) {
+                bail!("tree cannot be inside building: {}", building.id);
+            }
+            if document
+                .doors
+                .iter()
+                .map(|door| door.position)
+                .any(|position| inside(position) && (!edge(position) || corner(position)))
+            {
+                bail!("door must be on a non-corner building edge: {}", building.id);
+            }
+            if document
+                .windows
+                .iter()
+                .copied()
+                .any(|position| inside(position) && (!edge(position) || corner(position)))
+            {
+                bail!("window must be on a non-corner building edge: {}", building.id);
+            }
+        }
         let mut map = Self::from_view(MapView {
             width: document.width,
             height: document.height,
@@ -1221,10 +1262,24 @@ impl World {
         content: ContentCatalog,
         ground_items: Vec<GroundItem>,
     ) -> anyhow::Result<(Self, Option<(String, String)>)> {
-        let Some(path) = env::var_os("WORLD_FILE") else {
+        let configured_path = env::var_os("WORLD_FILE").map(std::path::PathBuf::from);
+        let default_path = Path::new(env!("CARGO_MANIFEST_DIR")).join(DEFAULT_WORLD_FILE);
+        let path = match configured_path {
+            Some(path) if path.is_file() => Some(path),
+            Some(path) if default_path.is_file() => {
+                warn!(
+                    configured_path = %path.display(),
+                    default_path = %default_path.display(),
+                    "WORLD_FILE does not exist; loading the default world instead"
+                );
+                Some(default_path)
+            }
+            Some(path) => Some(path),
+            None => default_path.is_file().then_some(default_path),
+        };
+        let Some(path) = path else {
             return Ok((Self::new(content, ground_items), None));
         };
-        let path = std::path::PathBuf::from(path);
         let (map, spawns, npcs, resource_nodes, name) = WorldMap::load(&path, &content)?;
         let display_path = path.display().to_string();
         Ok((
