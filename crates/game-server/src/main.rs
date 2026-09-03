@@ -13,14 +13,16 @@ use axum::{
     Json, Router,
     extract::{
         Path, State, WebSocketUpgrade,
-        ws::{Message, WebSocket},
+        ws::{Message, Utf8Bytes, WebSocket},
     },
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
 };
 use futures_util::{SinkExt, StreamExt};
-use game_protocol::{ClientMessage, ItemDestination, PROTOCOL_VERSION, ServerMessage};
+use game_protocol::{
+    ClientMessage, ItemDestination, PROTOCOL_VERSION, ServerMessage, WelcomePayload,
+};
 use game_types::PlayerView;
 use serde_json::json;
 use tokio::sync::{RwLock, broadcast};
@@ -48,22 +50,28 @@ struct AppState {
 #[derive(Debug, Clone)]
 struct ServerEvent {
     recipient: Option<Uuid>,
-    message: ServerMessage,
+    text: Utf8Bytes,
 }
 
 impl AppState {
     fn broadcast(&self, message: ServerMessage) {
-        let _ = self.events.send(ServerEvent {
-            recipient: None,
-            message,
-        });
+        self.publish(None, message);
     }
 
     fn private(&self, player_id: Uuid, message: ServerMessage) {
-        let _ = self.events.send(ServerEvent {
-            recipient: Some(player_id),
-            message,
-        });
+        self.publish(Some(player_id), message);
+    }
+
+    fn publish(&self, recipient: Option<Uuid>, message: ServerMessage) {
+        match serde_json::to_string(&message) {
+            Ok(text) => {
+                let _ = self.events.send(ServerEvent {
+                    recipient,
+                    text: text.into(),
+                });
+            }
+            Err(error) => warn!(%error, "failed to serialize server event"),
+        }
     }
 }
 
@@ -550,24 +558,26 @@ async fn session(mut socket: WebSocket, state: AppState) {
     send(
         &mut socket,
         &ServerMessage::Welcome {
-            protocol_version: PROTOCOL_VERSION,
-            player: player.view.clone(),
-            players,
-            map,
-            item_definitions,
-            rune_recipes,
-            spells,
-            learned_spell_ids,
-            learned_recipe_ids,
-            inventory,
-            depot,
-            inventory_weight,
-            max_capacity,
-            ground_items,
-            creatures,
-            npcs,
-            resource_nodes,
-            profession_skills,
+            payload: Box::new(WelcomePayload {
+                protocol_version: PROTOCOL_VERSION,
+                player: player.view.clone(),
+                players,
+                map: Box::new(map),
+                item_definitions,
+                rune_recipes,
+                spells,
+                learned_spell_ids,
+                learned_recipe_ids,
+                inventory,
+                depot,
+                inventory_weight,
+                max_capacity,
+                ground_items,
+                creatures,
+                npcs,
+                resource_nodes,
+                profession_skills,
+            }),
         },
     )
     .await;
@@ -583,9 +593,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
             if event.recipient.is_some_and(|recipient| recipient != id) {
                 continue;
             }
-            if let Ok(text) = serde_json::to_string(&event.message)
-                && outgoing.send(Message::Text(text.into())).await.is_err()
-            {
+            if outgoing.send(Message::Text(event.text)).await.is_err() {
                 break;
             }
         }
@@ -610,7 +618,9 @@ async fn session(mut socket: WebSocket, state: AppState) {
                             let message = world
                                 .requires_region_streaming(WORLD_REGION_RADIUS)
                                 .then(|| ServerMessage::WorldRegion {
-                                    map: world.map_view_near(position, WORLD_REGION_RADIUS),
+                                    map: Box::new(
+                                        world.map_view_near(position, WORLD_REGION_RADIUS),
+                                    ),
                                     ground_items: world
                                         .ground_items_near(position, WORLD_REGION_RADIUS),
                                     creatures: world
@@ -1795,37 +1805,69 @@ fn crafting_error_message(code: &str) -> &'static str {
 async fn world_loop(state: AppState) {
     let mut interval = tokio::time::interval(Duration::from_millis(250));
     let mut next_performance_sample = Instant::now();
+    let mut pending_ground_persistence = None;
     loop {
         interval.tick().await;
         let cycle_started = Instant::now();
+        let lock_requested = Instant::now();
+        let mut world = state.world.write().await;
+        let lock_wait_ms = lock_requested.elapsed().as_secs_f64() * 1_000.0;
+        let world_work_started = Instant::now();
         let events = {
-            let mut world = state.world.write().await;
-            // Only ground items participate in the persistence transaction.
-            // Cloning the complete world also cloned a multi-hundred-megabyte
-            // map every 250 ms and stalled movement while holding this lock.
-            let ground_backup = world.ground_state_backup();
-            let mut events = world.tick();
+            let events = world.tick();
             let ground_changed = events
                 .iter()
                 .any(|event| matches!(event, WorldEvent::GroundItemsChanged(_)));
-            if ground_changed
-                && let Some(database) = &state.database
-                && let Err(error) = database.persist_ground_items(world.ground_items()).await
-            {
-                world.restore_ground_state(ground_backup);
-                events.retain(|event| !matches!(event, WorldEvent::GroundItemsChanged(_)));
-                warn!(%error, "corpse decay transaction rolled back");
+            if ground_changed {
+                pending_ground_persistence = Some(world.ground_items().to_vec());
             }
             events
         };
+        drop(world);
+        let world_work_ms = world_work_started.elapsed().as_secs_f64() * 1_000.0;
+        let event_count = events.len();
+        // Database latency must never hold the world write lock. Keep the newest
+        // snapshot pending and retry it on the next cycle if persistence fails.
+        let persistence_started = Instant::now();
+        if let (Some(database), Some(ground_items)) =
+            (&state.database, pending_ground_persistence.as_deref())
+        {
+            match database.persist_ground_items(ground_items).await {
+                Ok(()) => pending_ground_persistence = None,
+                Err(error) => warn!(%error, "ground persistence delayed; retrying"),
+            }
+        }
+        let persistence_ms = persistence_started.elapsed().as_secs_f64() * 1_000.0;
+        let dispatch_started = Instant::now();
         dispatch_world_events(&state, events).await;
+        let dispatch_ms = dispatch_started.elapsed().as_secs_f64() * 1_000.0;
+        let crafting_started = Instant::now();
         process_crafting(&state).await;
-        let cycle_ms = cycle_started.elapsed().as_millis();
-        if cycle_ms >= 200 {
-            warn!(cycle_ms, "slow world cycle");
+        let crafting_ms = crafting_started.elapsed().as_secs_f64() * 1_000.0;
+        let cycle_ms = cycle_started.elapsed().as_secs_f64() * 1_000.0;
+        if cycle_ms >= 200.0 || lock_wait_ms >= 50.0 || world_work_ms >= 50.0 {
+            warn!(
+                cycle_ms,
+                lock_wait_ms,
+                world_work_ms,
+                persistence_ms,
+                dispatch_ms,
+                crafting_ms,
+                event_count,
+                "slow world cycle"
+            );
         }
         if Instant::now() >= next_performance_sample {
-            debug!(cycle_ms, "world performance sample");
+            debug!(
+                cycle_ms,
+                lock_wait_ms,
+                world_work_ms,
+                persistence_ms,
+                dispatch_ms,
+                crafting_ms,
+                event_count,
+                "world performance sample"
+            );
             next_performance_sample = Instant::now() + Duration::from_secs(5);
         }
     }

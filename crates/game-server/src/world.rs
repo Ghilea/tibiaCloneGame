@@ -8,7 +8,8 @@ use std::{
 
 use anyhow::{Context, bail};
 use game_protocol::{
-    BuildingView, DoorView, ItemDestination, MapView, StairView, TerrainMaterialView, WindowView, WorldObjectView,
+    BuildingView, DoorView, ItemDestination, MapView, StairView, TerrainMaterialView, WindowView,
+    WorldObjectView,
 };
 use game_types::{
     CreatureAttack, CreatureView, EntityId, GroundItem, ItemDefinition, ItemInstance,
@@ -267,6 +268,8 @@ struct WorldMap {
     view: MapView,
     blocked: HashSet<Position>,
     walkable_upper_tiles: HashSet<Position>,
+    house_wall_crossings: HashMap<(Position, Position), Position>,
+    house_wall_anchors: HashSet<Position>,
     player_spawn: Position,
     spatial: MapSpatialIndex,
 }
@@ -414,9 +417,29 @@ impl WorldMap {
         }) {
             bail!("terrain material must be packed_earth, moss_stone, or sandstone");
         }
-        let valid_object_kind = |kind: &str| matches!(kind, "chair" | "table" | "bench" | "well" | "barrel" | "mountain_wall" | "forest_tree" | "pine_tree" | "snowy_pine" | "dirt_path" | "snow_ground" | "snow_bank");
+        let valid_object_kind = |kind: &str| {
+            matches!(
+                kind,
+                "chair"
+                    | "table"
+                    | "bench"
+                    | "well"
+                    | "barrel"
+                    | "mountain_wall"
+                    | "forest_tree"
+                    | "pine_tree"
+                    | "snowy_pine"
+                    | "dirt_path"
+                    | "snow_ground"
+                    | "snow_bank"
+            )
+        };
         let mut object_ids = HashSet::new();
-        if view.objects.iter().any(|entry| entry.id.trim().is_empty() || !valid_object_kind(&entry.kind) || !object_ids.insert(entry.id.as_str())) {
+        if view.objects.iter().any(|entry| {
+            entry.id.trim().is_empty()
+                || !valid_object_kind(&entry.kind)
+                || !object_ids.insert(entry.id.as_str())
+        }) {
             bail!("world object ids must be unique and kinds must be supported");
         }
         let mut material_positions = HashSet::new();
@@ -444,7 +467,23 @@ impl WorldMap {
         view.blocked.extend(view.house_walls.iter().copied());
         view.blocked.extend(view.castle_walls.iter().copied());
         view.blocked.extend(view.trees.iter().copied());
-        view.blocked.extend(view.objects.iter().filter(|entry| matches!(entry.kind.as_str(), "mountain_wall" | "forest_tree" | "pine_tree" | "snowy_pine" | "snow_bank" | "well" | "table")).map(|entry| entry.position));
+        view.blocked.extend(
+            view.objects
+                .iter()
+                .filter(|entry| {
+                    matches!(
+                        entry.kind.as_str(),
+                        "mountain_wall"
+                            | "forest_tree"
+                            | "pine_tree"
+                            | "snowy_pine"
+                            | "snow_bank"
+                            | "well"
+                            | "table"
+                    )
+                })
+                .map(|entry| entry.position),
+        );
         let bridges: HashSet<_> = view.bridges.iter().copied().collect();
         view.blocked.retain(|position| !bridges.contains(position));
         let authored_house_walls: HashSet<_> = view.house_walls.iter().copied().collect();
@@ -521,10 +560,13 @@ impl WorldMap {
             .copied()
             .collect();
         let spatial = MapSpatialIndex::new(&view);
+        let (house_wall_crossings, house_wall_anchors) = build_house_wall_indexes(&view.buildings);
         let mut map = Self {
             view,
             blocked,
             walkable_upper_tiles,
+            house_wall_crossings,
+            house_wall_anchors,
             player_spawn: SPAWN,
             spatial,
         };
@@ -591,8 +633,10 @@ impl WorldMap {
             };
             let tree_inside_building = document.trees.iter().copied().any(inside)
                 || document.objects.iter().any(|entry| {
-                    matches!(entry.kind.as_str(), "forest_tree" | "pine_tree" | "snowy_pine")
-                        && inside(entry.position)
+                    matches!(
+                        entry.kind.as_str(),
+                        "forest_tree" | "pine_tree" | "snowy_pine"
+                    ) && inside(entry.position)
                 });
             if tree_inside_building {
                 bail!("tree cannot be inside building: {}", building.id);
@@ -603,7 +647,10 @@ impl WorldMap {
                 .map(|door| door.position)
                 .any(|position| inside(position) && (!edge(position) || corner(position)))
             {
-                bail!("door must be on a non-corner building edge: {}", building.id);
+                bail!(
+                    "door must be on a non-corner building edge: {}",
+                    building.id
+                );
             }
             if document
                 .windows
@@ -611,7 +658,10 @@ impl WorldMap {
                 .copied()
                 .any(|position| inside(position) && (!edge(position) || corner(position)))
             {
-                bail!("window must be on a non-corner building edge: {}", building.id);
+                bail!(
+                    "window must be on a non-corner building edge: {}",
+                    building.id
+                );
             }
         }
         let mut map = Self::from_view(MapView {
@@ -794,72 +844,11 @@ impl WorldMap {
         if from.z != to.z || (from.x - to.x).abs() + (from.y - to.y).abs() != 1 {
             return None;
         }
-        for building in self
-            .view
-            .buildings
-            .iter()
-            .filter(|building| building.kind == "house" && building.floor == from.z)
-        {
-            let max_x = building.x + building.width;
-            let max_y = building.y + building.height;
-            if from.x == to.x && from.x >= building.x && from.x < max_x {
-                if (from.y == building.y - 1 && to.y == building.y)
-                    || (to.y == building.y - 1 && from.y == building.y)
-                {
-                    return Some(Position {
-                        x: from.x,
-                        y: building.y,
-                        z: from.z,
-                    });
-                }
-                if (from.y == max_y - 1 && to.y == max_y) || (to.y == max_y - 1 && from.y == max_y)
-                {
-                    return Some(Position {
-                        x: from.x,
-                        y: max_y - 1,
-                        z: from.z,
-                    });
-                }
-            }
-            if from.y == to.y && from.y >= building.y && from.y < max_y {
-                if (from.x == building.x - 1 && to.x == building.x)
-                    || (to.x == building.x - 1 && from.x == building.x)
-                {
-                    return Some(Position {
-                        x: building.x,
-                        y: from.y,
-                        z: from.z,
-                    });
-                }
-                if (from.x == max_x - 1 && to.x == max_x) || (to.x == max_x - 1 && from.x == max_x)
-                {
-                    return Some(Position {
-                        x: max_x - 1,
-                        y: from.y,
-                        z: from.z,
-                    });
-                }
-            }
-        }
-        None
+        self.house_wall_crossings.get(&(from, to)).copied()
     }
 
     fn is_house_wall_anchor(&self, position: Position) -> bool {
-        self.view.buildings.iter().any(|building| {
-            if building.kind != "house" || building.floor != position.z {
-                return false;
-            }
-            let max_x = building.x + building.width - 1;
-            let max_y = building.y + building.height - 1;
-            position.x >= building.x
-                && position.x <= max_x
-                && position.y >= building.y
-                && position.y <= max_y
-                && (position.x == building.x
-                    || position.x == max_x
-                    || position.y == building.y
-                    || position.y == max_y)
-        })
+        self.house_wall_anchors.contains(&position)
     }
 
     fn stair_destination(&self, position: Position) -> Option<Position> {
@@ -885,6 +874,79 @@ impl WorldMap {
         }
         None
     }
+}
+
+fn build_house_wall_indexes(
+    buildings: &[BuildingView],
+) -> (HashMap<(Position, Position), Position>, HashSet<Position>) {
+    let mut crossings = HashMap::new();
+    let mut anchors = HashSet::new();
+    let mut add_crossing = |outside: Position, inside: Position, anchor: Position| {
+        crossings.insert((outside, inside), anchor);
+        crossings.insert((inside, outside), anchor);
+        anchors.insert(anchor);
+    };
+    for building in buildings.iter().filter(|building| building.kind == "house") {
+        let max_x = building.x + building.width - 1;
+        let max_y = building.y + building.height - 1;
+        for x in building.x..=max_x {
+            let north = Position {
+                x,
+                y: building.y,
+                z: building.floor,
+            };
+            let south = Position {
+                x,
+                y: max_y,
+                z: building.floor,
+            };
+            add_crossing(
+                Position {
+                    y: north.y - 1,
+                    ..north
+                },
+                north,
+                north,
+            );
+            add_crossing(
+                Position {
+                    y: south.y + 1,
+                    ..south
+                },
+                south,
+                south,
+            );
+        }
+        for y in building.y..=max_y {
+            let west = Position {
+                x: building.x,
+                y,
+                z: building.floor,
+            };
+            let east = Position {
+                x: max_x,
+                y,
+                z: building.floor,
+            };
+            add_crossing(
+                Position {
+                    x: west.x - 1,
+                    ..west
+                },
+                west,
+                west,
+            );
+            add_crossing(
+                Position {
+                    x: east.x + 1,
+                    ..east
+                },
+                east,
+                east,
+            );
+        }
+    }
+    (crossings, anchors)
 }
 
 fn map_positions(view: &MapView) -> impl Iterator<Item = Position> + '_ {
@@ -2816,7 +2878,11 @@ impl World {
                 radius,
                 |entry| entry.position,
             ),
-            objects: self.map.spatial.objects.near(&source.objects, center, radius, |entry| entry.position),
+            objects: self
+                .map
+                .spatial
+                .objects
+                .near(&source.objects, center, radius, |entry| entry.position),
             buildings: source
                 .buildings
                 .iter()
@@ -3646,6 +3712,15 @@ impl World {
                 })
                 .map(|creature| creature.view.id),
         );
+        // Occupancy and open doorway state are shared by every local path search
+        // in this tick. Rebuilding them for every creature scaled quadratically.
+        let mut occupied = self.occupied_positions();
+        let open_house_doors: HashSet<_> = self
+            .doors
+            .values()
+            .filter(|door| door.open && self.map.is_house_wall_anchor(door.position))
+            .map(|door| door.position)
+            .collect();
         for creature_id in creature_ids {
             let Some(snapshot) = self.creatures.get(&creature_id).cloned() else {
                 continue;
@@ -3695,12 +3770,12 @@ impl World {
                     creature.view.immune = false;
                     events.push(creature_state_event(creature));
                 } else {
-                    let occupied = self.occupied_positions(creature_id, None);
                     if let Some(step) = next_path_step_on(
                         &self.map,
                         snapshot.view.position,
                         spawn_position,
                         &occupied,
+                        &open_house_doors,
                     ) {
                         self.creatures
                             .get_mut(&creature_id)
@@ -3711,6 +3786,8 @@ impl World {
                             creature_id,
                             position: step,
                         });
+                        occupied.remove(&snapshot.view.position);
+                        occupied.insert(step);
                     }
                 }
                 continue;
@@ -3808,12 +3885,12 @@ impl World {
                     }
                 }
             } else {
-                let occupied = self.occupied_positions(creature_id, Some(target_id));
                 if let Some(step) = next_path_step_on(
                     &self.map,
                     snapshot.view.position,
                     target_position,
                     &occupied,
+                    &open_house_doors,
                 ) {
                     self.set_creature_state(creature_id, CreatureState::Chasing, &mut events);
                     let creature = self
@@ -3826,6 +3903,8 @@ impl World {
                         creature_id,
                         position: step,
                     });
+                    occupied.remove(&snapshot.view.position);
+                    occupied.insert(step);
                 } else {
                     let now = Instant::now();
                     let creature = self
@@ -3892,21 +3971,11 @@ impl World {
         events.push(WorldEvent::PlayerStats(player.view.clone()));
     }
 
-    fn occupied_positions(
-        &self,
-        creature_id: EntityId,
-        target_id: Option<EntityId>,
-    ) -> HashSet<Position> {
+    fn occupied_positions(&self) -> HashSet<Position> {
         self.creatures
             .values()
-            .filter(|creature| creature.view.id != creature_id)
             .map(|creature| creature.view.position)
-            .chain(
-                self.players
-                    .values()
-                    .filter(|player| Some(player.view.id) != target_id)
-                    .map(|player| player.view.position),
-            )
+            .chain(self.players.values().map(|player| player.view.position))
             .chain(
                 self.doors
                     .values()
@@ -4088,6 +4157,7 @@ fn next_path_step_on(
     start: Position,
     goal: Position,
     occupied: &HashSet<Position>,
+    open_house_doors: &HashSet<Position>,
 ) -> Option<Position> {
     if start.z != goal.z || start == goal {
         return None;
@@ -4125,12 +4195,7 @@ fn next_path_step_on(
                 || !map.is_walkable(next)
                 || map
                     .house_wall_crossing(current, next)
-                    .is_some_and(|anchor| {
-                        !map.view
-                            .doors
-                            .iter()
-                            .any(|door| door.position == anchor && door.open)
-                    })
+                    .is_some_and(|anchor| !open_house_doors.contains(&anchor))
                 || (next != goal && occupied.contains(&next))
             {
                 continue;
@@ -4152,36 +4217,16 @@ fn next_path_step_on(
                         || !map.is_walkable(vertical)
                         || map
                             .house_wall_crossing(current, horizontal)
-                            .is_some_and(|anchor| {
-                                !map.view
-                                    .doors
-                                    .iter()
-                                    .any(|door| door.position == anchor && door.open)
-                            })
+                            .is_some_and(|anchor| !open_house_doors.contains(&anchor))
                         || map
                             .house_wall_crossing(current, vertical)
-                            .is_some_and(|anchor| {
-                                !map.view
-                                    .doors
-                                    .iter()
-                                    .any(|door| door.position == anchor && door.open)
-                            })
+                            .is_some_and(|anchor| !open_house_doors.contains(&anchor))
                         || map
                             .house_wall_crossing(horizontal, next)
-                            .is_some_and(|anchor| {
-                                !map.view
-                                    .doors
-                                    .iter()
-                                    .any(|door| door.position == anchor && door.open)
-                            })
+                            .is_some_and(|anchor| !open_house_doors.contains(&anchor))
                         || map
                             .house_wall_crossing(vertical, next)
-                            .is_some_and(|anchor| {
-                                !map.view
-                                    .doors
-                                    .iter()
-                                    .any(|door| door.position == anchor && door.open)
-                            })
+                            .is_some_and(|anchor| !open_house_doors.contains(&anchor))
                         || occupied.contains(&horizontal)
                         || occupied.contains(&vertical)
                 })
@@ -4450,12 +4495,14 @@ fn deterministic_roll(id: EntityId, salt: u64) -> f32 {
 }
 
 fn within_reach(origin: Position, target: Position) -> bool {
-  origin.z == target.z && (origin.x - target.x).abs() <= 1 && (origin.y - target.y).abs() <= 1
+    origin.z == target.z && (origin.x - target.x).abs() <= 1 && (origin.y - target.y).abs() <= 1
 }
 
 fn within_interaction_reach(origin: Position, target: Position) -> bool {
     const RANGE: i32 = 2;
-    origin.z == target.z && (origin.x - target.x).abs() <= RANGE && (origin.y - target.y).abs() <= RANGE
+    origin.z == target.z
+        && (origin.x - target.x).abs() <= RANGE
+        && (origin.y - target.y).abs() <= RANGE
 }
 
 fn default_npcs() -> Vec<NpcView> {
@@ -6800,11 +6847,19 @@ mod tests {
         let goal = Position { x: 5, y: 12, z: 7 };
         let mut current = Position { x: 5, y: 10, z: 7 };
         let mut steps = Vec::new();
+        let open_house_doors = map
+            .view
+            .doors
+            .iter()
+            .filter(|door| door.open)
+            .map(|door| door.position)
+            .collect();
         for _ in 0..20 {
             if current == goal {
                 break;
             }
-            current = next_path_step_on(&map, current, goal, &HashSet::new()).expect("path exists");
+            current = next_path_step_on(&map, current, goal, &HashSet::new(), &open_house_doors)
+                .expect("path exists");
             assert!(map.is_walkable(current));
             steps.push(current);
         }

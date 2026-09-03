@@ -126,30 +126,36 @@ pub enum ItemDestination {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct WelcomePayload {
+    pub protocol_version: u16,
+    pub player: PlayerView,
+    pub players: Vec<PlayerView>,
+    pub map: Box<MapView>,
+    pub item_definitions: Vec<ItemDefinition>,
+    pub rune_recipes: Vec<RuneRecipe>,
+    pub spells: Vec<SpellDefinition>,
+    pub learned_spell_ids: Vec<String>,
+    pub learned_recipe_ids: Vec<String>,
+    pub inventory: Vec<ItemInstance>,
+    pub depot: Vec<ItemInstance>,
+    pub inventory_weight: f32,
+    pub max_capacity: f32,
+    pub ground_items: Vec<GroundItem>,
+    pub creatures: Vec<CreatureView>,
+    pub npcs: Vec<NpcView>,
+    pub resource_nodes: Vec<ResourceNodeView>,
+    pub profession_skills: Vec<ProfessionSkillView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMessage {
     Welcome {
-        protocol_version: u16,
-        player: PlayerView,
-        players: Vec<PlayerView>,
-        map: MapView,
-        item_definitions: Vec<ItemDefinition>,
-        rune_recipes: Vec<RuneRecipe>,
-        spells: Vec<SpellDefinition>,
-        learned_spell_ids: Vec<String>,
-        learned_recipe_ids: Vec<String>,
-        inventory: Vec<ItemInstance>,
-        depot: Vec<ItemInstance>,
-        inventory_weight: f32,
-        max_capacity: f32,
-        ground_items: Vec<GroundItem>,
-        creatures: Vec<CreatureView>,
-        npcs: Vec<NpcView>,
-        resource_nodes: Vec<ResourceNodeView>,
-        profession_skills: Vec<ProfessionSkillView>,
+        #[serde(flatten)]
+        payload: Box<WelcomePayload>,
     },
     WorldRegion {
-        map: MapView,
+        map: Box<MapView>,
         ground_items: Vec<GroundItem>,
         creatures: Vec<CreatureView>,
         npcs: Vec<NpcView>,

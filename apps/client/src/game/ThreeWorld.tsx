@@ -288,6 +288,17 @@ const Terrain = memo(function Terrain({
     ...map.trees,
     ...map.houseWalls,
     ...map.castleWalls,
+    ...(map.objects ?? [])
+      .filter((object) => object.position.z === floor && [
+        "mountain_wall",
+        "forest_tree",
+        "pine_tree",
+        "snowy_pine",
+        "snow_bank",
+        "well",
+        "table",
+      ].includes(object.kind))
+      .map((object) => object.position),
   ].map(tileKey));
   const visibleRocks = map.blocked.filter((tile) => tile.z === floor && !structuralTiles.has(tileKey(tile)));
 
@@ -526,19 +537,48 @@ const Structures = memo(function Structures({ map, input, floor, indoorBuildingI
 
 const StaticStructures = memo(function StaticStructures({ map, input, floor, buildings }: { map: NonNullable<WorldState["map"]>; input: InputController; floor: number; buildings: readonly BuildingView[] }) {
   const visibleObjects = useMemo(() => (map.objects ?? []).filter((entry) => entry.position.z === floor), [floor, map.objects]);
+  const groupedObjects = useMemo(() => {
+    const groups = {
+      forestTrees: [] as Position[],
+      pineTrees: [] as Position[],
+      snowyPines: [] as Position[],
+      dirtPaths: [] as Position[],
+      snowGround: [] as Position[],
+      mountainWalls: [] as Position[],
+      snowBanks: [] as Position[],
+      barrels: [] as Position[],
+      other: [] as WorldObjectView[],
+    };
+    for (const object of visibleObjects) {
+      switch (object.kind) {
+        case "forest_tree": groups.forestTrees.push(object.position); break;
+        case "pine_tree": groups.pineTrees.push(object.position); break;
+        case "snowy_pine": groups.snowyPines.push(object.position); break;
+        case "dirt_path": groups.dirtPaths.push(object.position); break;
+        case "snow_ground": groups.snowGround.push(object.position); break;
+        case "mountain_wall": groups.mountainWalls.push(object.position); break;
+        case "snow_bank": groups.snowBanks.push(object.position); break;
+        case "barrel": groups.barrels.push(object.position); break;
+        default: groups.other.push(object);
+      }
+    }
+    return groups;
+  }, [visibleObjects]);
   const forestTrees = useMemo(() => [
     ...map.trees.filter((tile) => tile.z === floor),
-    ...visibleObjects.filter((entry) => entry.kind === "forest_tree").map((entry) => entry.position),
-  ], [floor, map.trees, visibleObjects]);
-  const pineTrees = useMemo(() => visibleObjects.filter((entry) => entry.kind === "pine_tree").map((entry) => entry.position), [visibleObjects]);
-  const snowyPines = useMemo(() => visibleObjects.filter((entry) => entry.kind === "snowy_pine").map((entry) => entry.position), [visibleObjects]);
-  const otherObjects = useMemo(() => visibleObjects.filter((entry) => !["forest_tree", "pine_tree", "snowy_pine"].includes(entry.kind)), [visibleObjects]);
+    ...groupedObjects.forestTrees,
+  ], [floor, groupedObjects.forestTrees, map.trees]);
   return <>
       <ConnectedWalls positions={map.castleWalls.filter((tile) => tile.z === floor)} castle />
+      <InstancedTiles positions={groupedObjects.dirtPaths} color="#8d6c49" height={0.055} y={0.045} />
+      <InstancedTiles positions={groupedObjects.snowGround} color="#e6f0ee" height={0.055} y={0.045} />
       <InstancedTrees positions={forestTrees} variant="forest" />
-      <InstancedTrees positions={pineTrees} variant="pine" />
-      <InstancedTrees positions={snowyPines} variant="snowy" />
-      <WorldObjects objects={otherObjects} />
+      <InstancedTrees positions={groupedObjects.pineTrees} variant="pine" />
+      <InstancedTrees positions={groupedObjects.snowyPines} variant="snowy" />
+      <InstancedMountainWalls positions={groupedObjects.mountainWalls} />
+      <InstancedSimpleObjects positions={groupedObjects.snowBanks} kind="snow-bank" />
+      <InstancedSimpleObjects positions={groupedObjects.barrels} kind="barrel" />
+      <WorldObjects objects={groupedObjects.other} />
       <InstancedTorches positions={map.torches.filter((tile) => tile.z === floor)} />
       {map.doors.filter((door) => door.position.z === floor && !insideAnyBuilding(door.position, buildings)).map((door) => <Door key={door.id} door={door} input={input} />)}
     </>;
@@ -547,11 +587,7 @@ const StaticStructures = memo(function StaticStructures({ map, input, floor, bui
 function WorldObjects({ objects }: { objects: readonly WorldObjectView[] }) {
   return <group>{objects.map((object) => {
     const [x, z] = [object.position.x + 0.5, object.position.y + 0.5];
-    if (object.kind === "dirt_path" || object.kind === "snow_ground") return <mesh key={object.id} position={[x, 0.045, z]} receiveShadow><boxGeometry args={[0.98, 0.055, 0.98]} /><meshStandardMaterial color={object.kind === "snow_ground" ? "#e6f0ee" : "#8d6c49"} roughness={0.98} /></mesh>;
-    if (object.kind === "mountain_wall") return <group key={object.id} position={[x, 0, z]}><mesh castShadow receiveShadow position={[0, 0.78, 0]}><boxGeometry args={[1, 1.56, 0.9]} /><meshStandardMaterial color="#59615d" roughness={0.98} /></mesh><mesh castShadow position={[-0.18, 1.62, 0.05]}><dodecahedronGeometry args={[0.53, 0]} /><meshStandardMaterial color="#778078" roughness={0.98} /></mesh></group>;
     if (object.kind === "well") return <group key={object.id} position={[x, 0, z]}><mesh castShadow position={[0, 0.3, 0]}><cylinderGeometry args={[0.42, 0.48, 0.55, 10]} /><meshStandardMaterial color="#77807b" roughness={0.98} /></mesh><mesh position={[0, 0.59, 0]}><torusGeometry args={[0.34, 0.09, 6, 10]} /><meshStandardMaterial color="#58615d" roughness={0.95} /></mesh></group>;
-    if (object.kind === "snow_bank") return <mesh key={object.id} castShadow position={[x, 0.22, z]}><dodecahedronGeometry args={[0.55, 1]} /><meshStandardMaterial color="#c9dcdf" roughness={1} /></mesh>;
-    if (object.kind === "barrel") return <mesh key={object.id} castShadow position={[x, 0.28, z]}><cylinderGeometry args={[0.24, 0.28, 0.56, 10]} /><meshStandardMaterial color="#9b5d2c" roughness={0.85} /></mesh>;
     const isTable = object.kind === "table"; return <group key={object.id} position={[x, 0, z]}><mesh castShadow position={[0, isTable ? 0.58 : 0.35, 0]}><boxGeometry args={[isTable ? 0.78 : 0.9, 0.13, isTable ? 0.58 : 0.25]} /><meshStandardMaterial color="#80502d" roughness={0.9} /></mesh>{isTable && [-0.29, 0.29].flatMap((dx) => [-0.2, 0.2].map((dz) => <mesh key={`${dx}:${dz}`} castShadow position={[dx, 0.28, dz]}><boxGeometry args={[0.1, 0.56, 0.1]} /><meshStandardMaterial color="#61391f" roughness={1} /></mesh>))}</group>;
   })}</group>;
 }
@@ -710,7 +746,25 @@ function Door({ door, input, building, tall = WALL_HEIGHT, showBeacon = true }: 
   );
 }
 
+const TREE_OCCLUSION_BUCKET_SIZE = 6;
+
 function InstancedTrees({ positions, variant = "forest" }: { positions: readonly Position[]; variant?: "forest" | "pine" | "snowy" }) {
+  const batches = useMemo(() => {
+    const grouped = new Map<string, Position[]>();
+    for (const position of positions) {
+      const key = `${Math.floor(position.x / TREE_OCCLUSION_BUCKET_SIZE)}:${Math.floor(position.y / TREE_OCCLUSION_BUCKET_SIZE)}:${position.z}`;
+      const batch = grouped.get(key);
+      if (batch) batch.push(position);
+      else grouped.set(key, [position]);
+    }
+    return [...grouped.entries()];
+  }, [positions]);
+  return <group>{batches.map(([key, batch]) => (
+    <InstancedTreeBatch key={key} positions={batch} variant={variant} />
+  ))}</group>;
+}
+
+function InstancedTreeBatch({ positions, variant }: { positions: readonly Position[]; variant: "forest" | "pine" | "snowy" }) {
   const trunks = useRef<THREE.InstancedMesh>(null);
   const lowerCanopies = useRef<THREE.InstancedMesh>(null);
   const upperCanopies = useRef<THREE.InstancedMesh>(null);
@@ -732,11 +786,56 @@ function InstancedTrees({ positions, variant = "forest" }: { positions: readonly
     [trunks.current, lowerCanopies.current, upperCanopies.current].forEach((mesh) => mesh?.computeBoundingSphere());
   }, [pine, positions]);
   if (!positions.length) return null;
+  // Occlusion operates on a small spatial batch. This keeps tree rendering
+  // instanced without fading every tree in the streamed region at once.
   return <group userData={{ occluder: true }}>
-    <instancedMesh ref={trunks} args={[undefined, undefined, positions.length]} castShadow receiveShadow><cylinderGeometry args={[0.14, 0.2, 1.45, 8]} /><meshStandardMaterial color="#604128" roughness={1} /></instancedMesh>
-    <instancedMesh ref={lowerCanopies} args={[undefined, undefined, positions.length]} castShadow><coneGeometry args={[pine ? 0.72 : 0.82, pine ? 1.9 : 1.75, pine ? 7 : 9]} /><meshStandardMaterial color={snowy ? "#c5dadd" : pine ? "#285744" : "#315c38"} roughness={0.95} /></instancedMesh>
-    <instancedMesh ref={upperCanopies} args={[undefined, undefined, positions.length]} castShadow><coneGeometry args={[pine ? 0.52 : 0.61, pine ? 1.5 : 1.35, pine ? 7 : 9]} /><meshStandardMaterial color={snowy ? "#e0ebea" : pine ? "#346a50" : "#3b7043"} roughness={0.95} /></instancedMesh>
+    <instancedMesh ref={trunks} args={[undefined, undefined, positions.length]} castShadow receiveShadow><cylinderGeometry args={[0.14, 0.2, 1.45, 8]} /><meshStandardMaterial color="#604128" roughness={1} transparent={false} opacity={1} /></instancedMesh>
+    <instancedMesh ref={lowerCanopies} args={[undefined, undefined, positions.length]} castShadow><coneGeometry args={[pine ? 0.72 : 0.82, pine ? 1.9 : 1.75, pine ? 7 : 9]} /><meshStandardMaterial color={snowy ? "#c5dadd" : pine ? "#285744" : "#315c38"} roughness={0.95} transparent={false} opacity={1} /></instancedMesh>
+    <instancedMesh ref={upperCanopies} args={[undefined, undefined, positions.length]} castShadow><coneGeometry args={[pine ? 0.52 : 0.61, pine ? 1.5 : 1.35, pine ? 7 : 9]} /><meshStandardMaterial color={snowy ? "#e0ebea" : pine ? "#346a50" : "#3b7043"} roughness={0.95} transparent={false} opacity={1} /></instancedMesh>
   </group>;
+}
+
+function InstancedMountainWalls({ positions }: { positions: readonly Position[] }) {
+  const bases = useRef<THREE.InstancedMesh>(null);
+  const caps = useRef<THREE.InstancedMesh>(null);
+  useLayoutEffect(() => {
+    const matrix = new THREE.Matrix4();
+    positions.forEach((position, index) => {
+      matrix.makeTranslation(position.x + 0.5, 0.78, position.y + 0.5);
+      bases.current?.setMatrixAt(index, matrix);
+      matrix.makeTranslation(position.x + 0.32, 1.62, position.y + 0.55);
+      caps.current?.setMatrixAt(index, matrix);
+    });
+    for (const mesh of [bases.current, caps.current]) {
+      if (!mesh) continue;
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+    }
+  }, [positions]);
+  if (!positions.length) return null;
+  return <group>
+    <instancedMesh ref={bases} args={[undefined, undefined, positions.length]} castShadow receiveShadow><boxGeometry args={[1, 1.56, 0.9]} /><meshStandardMaterial color="#59615d" roughness={0.98} /></instancedMesh>
+    <instancedMesh ref={caps} args={[undefined, undefined, positions.length]} castShadow><dodecahedronGeometry args={[0.53, 0]} /><meshStandardMaterial color="#778078" roughness={0.98} /></instancedMesh>
+  </group>;
+}
+
+function InstancedSimpleObjects({ positions, kind }: { positions: readonly Position[]; kind: "snow-bank" | "barrel" }) {
+  const mesh = useRef<THREE.InstancedMesh>(null);
+  useLayoutEffect(() => {
+    if (!mesh.current) return;
+    const matrix = new THREE.Matrix4();
+    positions.forEach((position, index) => {
+      matrix.makeTranslation(position.x + 0.5, kind === "barrel" ? 0.28 : 0.22, position.y + 0.5);
+      mesh.current!.setMatrixAt(index, matrix);
+    });
+    mesh.current.instanceMatrix.needsUpdate = true;
+    mesh.current.computeBoundingSphere();
+  }, [kind, positions]);
+  if (!positions.length) return null;
+  return <instancedMesh ref={mesh} args={[undefined, undefined, positions.length]} castShadow receiveShadow>
+    {kind === "barrel" ? <cylinderGeometry args={[0.24, 0.28, 0.56, 10]} /> : <dodecahedronGeometry args={[0.55, 1]} />}
+    <meshStandardMaterial color={kind === "barrel" ? "#9b5d2c" : "#c9dcdf"} roughness={kind === "barrel" ? 0.85 : 1} />
+  </instancedMesh>;
 }
 
 function InstancedTorches({ positions }: { positions: readonly Position[] }) {
@@ -1080,7 +1179,7 @@ function FollowCamera({ target, visualTarget, mapWidth, mapHeight }: { target?: 
 function OcclusionController({ target, visualTarget, sceneRevision }: { target?: Position; visualTarget: MutableRefObject<THREE.Vector3>; sceneRevision: MapView }) {
   const { camera, scene } = useThree();
   const ray = useMemo(() => new THREE.Ray(), []);
-  const faded = useRef(new Map<THREE.Material, number>());
+  const faded = useRef(new Map<THREE.Material, { opacity: number; depthWrite: boolean }>());
   const lastCheckAt = useRef(0);
   const lastCheckedTarget = useMemo(() => new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN), []);
   const targetPoint = useMemo(() => new THREE.Vector3(), []);
@@ -1132,23 +1231,29 @@ function OcclusionController({ target, visualTarget, sceneRevision }: { target?:
       for (const material of materials) {
         next.add(material);
         if (!faded.current.has(material)) {
-          faded.current.set(material, material.opacity);
+          faded.current.set(material, {
+            opacity: material.opacity,
+            depthWrite: material.depthWrite,
+          });
         }
         material.userData.occlusionOpacity = 0.28;
         material.opacity = Math.min(material.opacity, 0.28);
+        material.depthWrite = false;
       }
     });
     for (const [material, original] of faded.current) {
       if (next.has(material)) continue;
       delete material.userData.occlusionOpacity;
-      material.opacity = original;
+      material.opacity = original.opacity;
+      material.depthWrite = original.depthWrite;
       faded.current.delete(material);
     }
   });
   useEffect(() => () => {
     for (const [material, original] of faded.current) {
       delete material.userData.occlusionOpacity;
-      material.opacity = original;
+      material.opacity = original.opacity;
+      material.depthWrite = original.depthWrite;
     }
   }, []);
   return null;
@@ -1236,10 +1341,10 @@ function ClientPerformanceMonitor({ label, positionLabel, world }: {
   world: WorldState;
 }) {
   const { gl } = useThree();
-  const sample = useRef({ elapsed: 0, frames: 0, totalMs: 0, maxMs: 0, logElapsed: 0 });
+  const sample = useRef({ elapsed: 0, frames: 0, totalMs: 0, maxMs: 0, logElapsed: 0, logMaxMs: 0 });
   useFrame((_, delta) => {
     if (document.hidden || delta > 0.5) {
-      sample.current = { elapsed: 0, frames: 0, totalMs: 0, maxMs: 0, logElapsed: 0 };
+      sample.current = { elapsed: 0, frames: 0, totalMs: 0, maxMs: 0, logElapsed: 0, logMaxMs: 0 };
       return;
     }
     const frameMs = delta * 1_000;
@@ -1248,6 +1353,7 @@ function ClientPerformanceMonitor({ label, positionLabel, world }: {
     current.frames += 1;
     current.totalMs += frameMs;
     current.maxMs = Math.max(current.maxMs, frameMs);
+    current.logMaxMs = Math.max(current.logMaxMs, frameMs);
     current.logElapsed += delta;
     if (current.elapsed < 0.5) return;
     const averageMs = current.totalMs / Math.max(1, current.frames);
@@ -1258,12 +1364,17 @@ function ClientPerformanceMonitor({ label, positionLabel, world }: {
       positionLabel.current.textContent = `x ${x} · y ${y} · z ${z}`;
     }
     if (label.current) {
-      label.current.textContent = `${fps} FPS · ${gl.info.render.calls} calls`;
-      label.current.dataset.level = fps >= 55 ? "good" : fps >= 30 ? "fair" : "poor";
+      label.current.textContent = `${fps} FPS · ${current.maxMs.toFixed(0)} ms max · ${gl.info.render.calls} calls`;
+      label.current.dataset.level = fps >= 55 && current.maxMs <= 22
+        ? "good"
+        : fps >= 30 && current.maxMs <= 40
+          ? "fair"
+          : "poor";
     }
     if (current.logElapsed >= 5) {
-      console.info(`client performance sample: avg=${averageMs.toFixed(1)}ms max=${current.maxMs.toFixed(1)}ms fps=${fps} calls=${gl.info.render.calls} triangles=${gl.info.render.triangles}`);
+      console.info(`client performance sample: avg=${averageMs.toFixed(1)}ms max=${current.logMaxMs.toFixed(1)}ms fps=${fps} calls=${gl.info.render.calls} triangles=${gl.info.render.triangles}`);
       current.logElapsed = 0;
+      current.logMaxMs = 0;
     }
     current.elapsed = 0;
     current.frames = 0;
