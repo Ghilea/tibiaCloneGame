@@ -172,5 +172,7 @@ function drawObject(
     dot(object.position, "#6f873f", 1.8);
   } else if (object.kind === "wrecked_planks") {
     dot(object.position, "#68462e", 1.8);
+  } else if (object.kind === "notice_post") {
+    dot(object.position, "#d1be8a", 1.6);
   }
 }

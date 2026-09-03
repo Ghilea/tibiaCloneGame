@@ -46,7 +46,7 @@ export type MapView = {
   doors: DoorView[];
   stairs: StairView[];
 };
-export type WorldObjectKind = "chair" | "table" | "bench" | "well" | "barrel" | "bent_reeds" | "bog_slick" | "wrecked_planks" | "mountain_wall" | "forest_tree" | "pine_tree" | "snowy_pine" | "dirt_path" | "snow_ground" | "snow_bank";
+export type WorldObjectKind = "chair" | "table" | "bench" | "well" | "barrel" | "notice_post" | "bent_reeds" | "bog_slick" | "wrecked_planks" | "mountain_wall" | "forest_tree" | "pine_tree" | "snowy_pine" | "dirt_path" | "snow_ground" | "snow_bank";
 export type WorldObjectView = { id: string; kind: WorldObjectKind; position: Position };
 export type TerrainMaterialId = "packed_earth" | "moss_stone" | "sandstone";
 export type TerrainMaterialView = { position: Position; material: TerrainMaterialId };

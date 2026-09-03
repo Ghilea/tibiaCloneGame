@@ -238,7 +238,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
           if (!event.repeat) network.mineResource(resource.id);
           return;
         }
-        const clue = localPlayer && world.map?.objects?.find((object) => ["mire_drowned_supply_note", "mire_eastward_reeds_cache"].includes(object.id)
+        const clue = localPlayer && world.map?.objects?.find((object) => ["rivercross_mire_notice", "mire_drowned_supply_note", "mire_eastward_reeds_cache"].includes(object.id)
           && object.position.z === localPlayer.position.z
           && Math.abs(object.position.x - localPlayer.position.x) <= 1
           && Math.abs(object.position.y - localPlayer.position.y) <= 1);

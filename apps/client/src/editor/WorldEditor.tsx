@@ -41,6 +41,7 @@ const tools: { id: PaintLayer; label: string; swatch: string; group: ToolGroup; 
   { id: "object_bench", label: "Bench", swatch: "#a66d3f", group: "objects", description: "Place a village bench." },
   { id: "object_well", label: "Well", swatch: "#75817e", group: "objects", description: "Place a stone water well." },
   { id: "object_barrel", label: "Barrel", swatch: "#9e6330", group: "objects", description: "Place a wooden barrel." },
+  { id: "object_notice_post", label: "Notice post", swatch: "#886744", group: "objects", description: "Place a weathered roadside notice." },
   { id: "object_bent_reeds", label: "Bent reeds", swatch: "#7c8e4b", group: "objects", description: "Place wind-bent marsh reeds." },
   { id: "object_bog_slick", label: "Bog slick", swatch: "#1a2520", group: "objects", description: "Paint a dark, oily patch of bog water." },
   { id: "object_wrecked_planks", label: "Wrecked planks", swatch: "#60402a", group: "objects", description: "Place waterlogged wooden wreckage." },
@@ -66,7 +67,7 @@ const tools: { id: PaintLayer; label: string; swatch: string; group: ToolGroup; 
   { id: "resourceNode", label: "Copper vein", swatch: "#bd7548", group: "entities", description: "Place a mineable copper vein with configurable respawn and skill requirement." },
 ];
 const creatureIds = ["castle_rat", "crypt_guard", "bone_acolyte", "cellar_warden", "mireling", "mire_skulker", "reed_stalker", "fen_brute"];
-const worldObjectKinds: WorldObjectKind[] = ["chair", "table", "bench", "well", "barrel", "bent_reeds", "bog_slick", "wrecked_planks", "mountain_wall", "forest_tree", "pine_tree", "snowy_pine", "dirt_path", "snow_ground", "snow_bank"];
+const worldObjectKinds: WorldObjectKind[] = ["chair", "table", "bench", "well", "barrel", "notice_post", "bent_reeds", "bog_slick", "wrecked_planks", "mountain_wall", "forest_tree", "pine_tree", "snowy_pine", "dirt_path", "snow_ground", "snow_bank"];
 const itemIds = ["blank_rune", "ember_rune", "traveler_blade", "ashwood_bow", "rough_arrow", "field_backpack", "mire_fiber", "gold_coin", "field_bread", "smoked_mire_meat", "bog_ichor", "reed_hide", "fen_tusk", "iron_pickaxe", "copper_ore"];
 const spellIds = ["ember_bolt"];
 const recipeIds = ["mark_ember_sigil", "fletch_rough_arrows", "forge_copper_blade"];

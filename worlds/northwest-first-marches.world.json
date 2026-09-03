@@ -858396,6 +858396,15 @@
       }
     },
     {
+      "id": "rivercross_mire_notice",
+      "kind": "notice_post",
+      "position": {
+        "x": 48,
+        "y": 88,
+        "z": 7
+      }
+    },
+    {
       "id": "mire_eastward_reeds_cache",
       "kind": "barrel",
       "position": {

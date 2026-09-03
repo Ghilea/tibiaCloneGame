@@ -426,6 +426,7 @@ impl WorldMap {
                     | "bench"
                     | "well"
                     | "barrel"
+                    | "notice_post"
                     | "bent_reeds"
                     | "bog_slick"
                     | "wrecked_planks"
@@ -1713,6 +1714,7 @@ impl World {
         let object = self.map.view.objects.iter().find(|object| object.id == object_id).ok_or("world_object_not_found")?;
         if !within_interaction_reach(player.view.position, object.position) { return Err("world_object_out_of_reach"); }
         let text = match object_id {
+            "rivercross_mire_notice" => "The damp notice reads: \"East road closed after dusk. Three reed-cutters failed to return. Do not follow lights across the water.\" The seal below is smudged into the shape of a river bird.",
             "mire_drowned_supply_note" => "A page is pinned beneath a rusted barrel hoop, swollen with black water. Most of the ink is gone, save for one line: \"The reeds bent east, though there was no wind.\"",
             "mire_eastward_reeds_cache" => "The reeds all lean east, as if a tide pulled beneath the mud. In their roots lies a stoppered vial of Bog Ichor — fresh, though nothing here should have survived the flood.",
             _ => return Err("world_object_not_inspectable"),
