@@ -359,6 +359,21 @@ impl Database {
             .collect())
     }
 
+    pub async fn load_discoveries(&self, character_id: EntityId) -> Result<Vec<String>, sqlx::Error> {
+        sqlx::query_scalar("SELECT discovery_id FROM character_discoveries WHERE character_id = $1 ORDER BY discovery_id")
+            .bind(character_id).fetch_all(&self.pool).await
+    }
+
+    pub async fn persist_discovery_and_inventory(&self, character_id: EntityId, discovery_id: &str, inventory: &[ItemInstance]) -> Result<(), sqlx::Error> {
+        let mut transaction = self.pool.begin().await?;
+        clear_inventory(&mut transaction, character_id).await?;
+        insert_inventory(&mut transaction, character_id, inventory).await?;
+        sqlx::query("INSERT INTO character_discoveries (character_id, discovery_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
+            .bind(character_id).bind(discovery_id).execute(&mut *transaction).await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
     pub async fn load_depot(
         &self,
         character_id: EntityId,

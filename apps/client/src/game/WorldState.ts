@@ -22,6 +22,7 @@ export class WorldState {
   readonly learnedRecipeIds = new Set<string>();
   readonly resourceNodes = new Map<string, ResourceNodeView>();
   readonly professionSkills = new Map<string, ProfessionSkillView>();
+  readonly discoveredKnowledgeIds = new Set<string>();
   readonly combatEffects: CombatEffectView[] = [];
   readonly areaWarnings: AreaWarningView[] = [];
   inventory: ItemInstance[] = [];
@@ -148,6 +149,8 @@ export class WorldState {
         for (const node of message.resource_nodes) this.resourceNodes.set(node.id, node);
         this.professionSkills.clear();
         for (const skill of message.profession_skills) this.professionSkills.set(skill.id, skill);
+        this.discoveredKnowledgeIds.clear();
+        for (const discoveryId of message.discovered_knowledge_ids) this.discoveredKnowledgeIds.add(discoveryId);
         this.npcs.clear();
         this.npcsByTile.clear();
         for (const npc of message.npcs) {
@@ -278,6 +281,12 @@ export class WorldState {
         if (this.localPlayerId === message.player_id) {
           this.professionSkills.clear();
           for (const skill of message.skills) this.professionSkills.set(skill.id, skill);
+        }
+        break;
+      case "discovery_changed":
+        if (this.localPlayerId === message.player_id) {
+          this.discoveredKnowledgeIds.add(message.discovery_id);
+          this.addSystemMessage(message.text);
         }
         break;
       case "ground_items_changed":

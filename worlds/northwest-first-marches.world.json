@@ -858385,6 +858385,78 @@
         "y": 83,
         "z": 7
       }
+    },
+    {
+      "id": "mire_drowned_supply_note",
+      "kind": "barrel",
+      "position": {
+        "x": 86,
+        "y": 84,
+        "z": 7
+      }
+    },
+    {
+      "id": "mire_eastward_reeds_cache",
+      "kind": "barrel",
+      "position": {
+        "x": 106,
+        "y": 85,
+        "z": 7
+      }
+    },
+    {
+      "id": "mire_eastward_slick",
+      "kind": "bog_slick",
+      "position": {
+        "x": 105,
+        "y": 84,
+        "z": 7
+      }
+    },
+    {
+      "id": "mire_eastward_reeds_01",
+      "kind": "bent_reeds",
+      "position": {
+        "x": 104,
+        "y": 83,
+        "z": 7
+      }
+    },
+    {
+      "id": "mire_eastward_reeds_02",
+      "kind": "bent_reeds",
+      "position": {
+        "x": 105,
+        "y": 83,
+        "z": 7
+      }
+    },
+    {
+      "id": "mire_eastward_reeds_03",
+      "kind": "bent_reeds",
+      "position": {
+        "x": 107,
+        "y": 84,
+        "z": 7
+      }
+    },
+    {
+      "id": "mire_eastward_reeds_04",
+      "kind": "bent_reeds",
+      "position": {
+        "x": 105,
+        "y": 86,
+        "z": 7
+      }
+    },
+    {
+      "id": "mire_eastward_wreckage",
+      "kind": "wrecked_planks",
+      "position": {
+        "x": 108,
+        "y": 85,
+        "z": 7
+      }
     }
   ],
   "buildings": [

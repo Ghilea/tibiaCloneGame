@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = 25;
+export const PROTOCOL_VERSION = 26;
 export const CLIENT_VERSION = "0.1.0";
 
 export type Position = { x: number; y: number; z: number };
@@ -46,7 +46,7 @@ export type MapView = {
   doors: DoorView[];
   stairs: StairView[];
 };
-export type WorldObjectKind = "chair" | "table" | "bench" | "well" | "barrel" | "mountain_wall" | "forest_tree" | "pine_tree" | "snowy_pine" | "dirt_path" | "snow_ground" | "snow_bank";
+export type WorldObjectKind = "chair" | "table" | "bench" | "well" | "barrel" | "bent_reeds" | "bog_slick" | "wrecked_planks" | "mountain_wall" | "forest_tree" | "pine_tree" | "snowy_pine" | "dirt_path" | "snow_ground" | "snow_bank";
 export type WorldObjectView = { id: string; kind: WorldObjectKind; position: Position };
 export type TerrainMaterialId = "packed_earth" | "moss_stone" | "sandstone";
 export type TerrainMaterialView = { position: Position; material: TerrainMaterialId };
@@ -94,10 +94,11 @@ export type ClientMessage =
   | { type: "learn_recipe_from_npc"; npc_id: string; recipe_id: string }
   | { type: "learn_recipe_from_item"; instance_id: string }
   | { type: "mine_resource"; node_id: string }
+  | { type: "inspect_world_object"; object_id: string }
   | { type: "cast_spell"; spell_id: string; target_id: string };
 
 export type ServerMessage =
-  | { type: "welcome"; protocol_version: number; player: PlayerView; players: PlayerView[]; map: MapView; item_definitions: ItemDefinition[]; rune_recipes: RuneRecipe[]; spells: SpellDefinition[]; learned_spell_ids: string[]; learned_recipe_ids: string[]; inventory: ItemInstance[]; depot: ItemInstance[]; inventory_weight: number; max_capacity: number; ground_items: GroundItem[]; creatures: CreatureView[]; npcs: NpcView[]; resource_nodes: ResourceNodeView[]; profession_skills: ProfessionSkillView[] }
+  | { type: "welcome"; protocol_version: number; player: PlayerView; players: PlayerView[]; map: MapView; item_definitions: ItemDefinition[]; rune_recipes: RuneRecipe[]; spells: SpellDefinition[]; learned_spell_ids: string[]; learned_recipe_ids: string[]; inventory: ItemInstance[]; depot: ItemInstance[]; inventory_weight: number; max_capacity: number; ground_items: GroundItem[]; creatures: CreatureView[]; npcs: NpcView[]; resource_nodes: ResourceNodeView[]; profession_skills: ProfessionSkillView[]; discovered_knowledge_ids: string[] }
   | { type: "world_region"; map: MapView; ground_items: GroundItem[]; creatures: CreatureView[]; npcs: NpcView[]; resource_nodes: ResourceNodeView[] }
   | { type: "player_joined"; player: PlayerView }
   | { type: "player_left"; player_id: string }
@@ -115,6 +116,7 @@ export type ServerMessage =
   | { type: "recipes_changed"; player_id: string; learned_recipe_ids: string[] }
   | { type: "resource_nodes_changed"; resource_nodes: ResourceNodeView[] }
   | { type: "profession_skills_changed"; player_id: string; skills: ProfessionSkillView[] }
+  | { type: "discovery_changed"; player_id: string; discovery_id: string; text: string }
   | { type: "ground_items_changed"; ground_items: GroundItem[] }
   | { type: "food_status"; player_id: string; remaining_ms: number }
   | { type: "combat_effect"; source_id: string; target_id: string; effect_id: string; damage: number; cooldown_ms: number }

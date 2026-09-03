@@ -71,6 +71,7 @@ export class NetworkClient {
   learnRecipeFromNpc(npcId: string, recipeId: string) { this.send({ type: "learn_recipe_from_npc", npc_id: npcId, recipe_id: recipeId }); }
   learnRecipeFromItem(instanceId: string) { this.send({ type: "learn_recipe_from_item", instance_id: instanceId }); }
   mineResource(nodeId: string) { this.send({ type: "mine_resource", node_id: nodeId }); }
+  inspectWorldObject(objectId: string) { this.send({ type: "inspect_world_object", object_id: objectId }); }
   castSpell(spellId: string) { if (this.world.attackTargetId) this.send({ type: "cast_spell", spell_id: spellId, target_id: this.world.attackTargetId }); }
   depositItem(npcId: string, instanceId: string) { this.send({ type: "deposit_item", npc_id: npcId, instance_id: instanceId }); }
   withdrawItem(npcId: string, instanceId: string) { this.send({ type: "withdraw_item", npc_id: npcId, instance_id: instanceId }); }

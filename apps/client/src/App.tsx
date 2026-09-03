@@ -238,6 +238,15 @@ function Game({ onLeave }: { onLeave: () => void }) {
           if (!event.repeat) network.mineResource(resource.id);
           return;
         }
+        const clue = localPlayer && world.map?.objects?.find((object) => ["mire_drowned_supply_note", "mire_eastward_reeds_cache"].includes(object.id)
+          && object.position.z === localPlayer.position.z
+          && Math.abs(object.position.x - localPlayer.position.x) <= 1
+          && Math.abs(object.position.y - localPlayer.position.y) <= 1);
+        if (clue) {
+          event.preventDefault();
+          if (!event.repeat) network.inspectWorldObject(clue.id);
+          return;
+        }
       }
       if (event.code === "Digit1") {
         event.preventDefault();
@@ -264,7 +273,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
     };
     window.addEventListener("keydown", listener, true);
     return () => window.removeEventListener("keydown", listener, true);
-  }, [emberSigil?.instanceId, escapeMenu, knowsEmberBolt, panel, world.attackTargetId]);
+  }, [emberSigil?.instanceId, escapeMenu, knowsEmberBolt, panel, world.attackTargetId, world.revision]);
   const local = world.localPlayerId
     ? world.players.get(world.localPlayerId)
     : null;

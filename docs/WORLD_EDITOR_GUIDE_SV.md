@@ -43,11 +43,11 @@ Right or middle mouse button, or Space plus left mouse button, pans. Select move
 
 Objects use the objects field. The allowed kinds are:
 
-    chair, table, bench, well, barrel,
+    chair, table, bench, well, barrel, bent_reeds, bog_slick, wrecked_planks,
     mountain_wall, forest_tree, pine_tree, snowy_pine,
     dirt_path, snow_ground, snow_bank
 
-Table, well, mountain_wall, all tree objects and snow_bank block movement. Chair, bench, barrel, dirt_path and snow_ground do not. All new trees are placed as objects; older `trees` entries are automatically converted to `forest_tree` objects when the world is opened and saved again in the editor.
+Table, well, mountain_wall, all tree objects and snow_bank block movement. Chair, bench, barrel, bent_reeds, bog_slick, wrecked_planks, dirt_path and snow_ground do not. All new trees are placed as objects; older `trees` entries are automatically converted to `forest_tree` objects when the world is opened and saved again in the editor.
 
 ### Life
 

@@ -166,5 +166,11 @@ function drawObject(
     dot(object.position, "#69736f", 2);
   } else if (object.kind === "well") {
     dot(object.position, "#79b8c5", 2.2);
+  } else if (object.kind === "bog_slick") {
+    dot(object.position, "#17231f", 2.4);
+  } else if (object.kind === "bent_reeds") {
+    dot(object.position, "#6f873f", 1.8);
+  } else if (object.kind === "wrecked_planks") {
+    dot(object.position, "#68462e", 1.8);
   }
 }

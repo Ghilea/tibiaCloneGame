@@ -4,7 +4,7 @@
     "name": "Mara",
     "title": "Greyhaven Quartermaster",
     "service": "shop",
-    "dialogue": "Fresh supplies for honest coin. I carry only the basics; the finest goods still come from Greyhaven's adventurers.",
+    "dialogue": "The eastern road was busy before the fog came. Now even the reed-cutters avoid the old causeway after dusk. If you travel that way, keep your eyes open — and do not trust the water to stay still.",
     "position": { "x": 9, "y": 8, "z": 7 },
     "offers": [
       { "id": "blank_sigil", "itemDefinitionId": "blank_rune", "quantity": 1, "price": 2 },

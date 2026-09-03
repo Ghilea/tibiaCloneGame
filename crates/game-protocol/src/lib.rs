@@ -4,7 +4,7 @@ use game_types::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u16 = 25;
+pub const PROTOCOL_VERSION: u16 = 26;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -111,6 +111,9 @@ pub enum ClientMessage {
     MineResource {
         node_id: String,
     },
+    InspectWorldObject {
+        object_id: String,
+    },
     CastSpell {
         spell_id: String,
         target_id: game_types::EntityId,
@@ -145,6 +148,7 @@ pub struct WelcomePayload {
     pub npcs: Vec<NpcView>,
     pub resource_nodes: Vec<ResourceNodeView>,
     pub profession_skills: Vec<ProfessionSkillView>,
+    pub discovered_knowledge_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -225,6 +229,11 @@ pub enum ServerMessage {
     ProfessionSkillsChanged {
         player_id: game_types::EntityId,
         skills: Vec<ProfessionSkillView>,
+    },
+    DiscoveryChanged {
+        player_id: game_types::EntityId,
+        discovery_id: String,
+        text: String,
     },
     GroundItemsChanged {
         ground_items: Vec<GroundItem>,

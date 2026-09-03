@@ -37,6 +37,11 @@ For a current Swedish guide to editor tools, world JSON, validation rules, and
 image-assisted ChatGPT prompts, see
 [WORLD_EDITOR_GUIDE_SV.md](docs/WORLD_EDITOR_GUIDE_SV.md).
 
+The next playable milestone and the classless direction are locked in
+[`docs/NEXT_SLICE.md`](docs/NEXT_SLICE.md). It defines the Greyhaven–Mire
+expedition loop that the existing systems should support before adding more
+world breadth.
+
 Walls, doors, house roofs, and keeps retain distinct elevated faces in the editor's top-down view.
 
 The server automatically loads `worlds/northwest-first-marches.world.json` when it exists, so the normal command is:

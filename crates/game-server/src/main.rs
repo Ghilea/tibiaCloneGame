@@ -507,6 +507,17 @@ async fn session(mut socket: WebSocket, state: AppState) {
             },
             None => Default::default(),
         },
+        discovered_knowledge: match &state.database {
+            Some(database) => match database.load_discoveries(id).await {
+                Ok(discoveries) => discoveries.into_iter().collect(),
+                Err(error) => {
+                    warn!(%id, %error, "failed to load discoveries");
+                    send(&mut socket, &ServerMessage::Error { code: "discoveries_load_failed".into(), message: "Your discoveries could not be loaded".into() }).await;
+                    return;
+                }
+            },
+            None => Default::default(),
+        },
         crafting_queue: None,
         last_mana_regen: Instant::now(),
         active_food: None,
@@ -520,6 +531,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
         learned_spell_ids,
         learned_recipe_ids,
         profession_skills,
+        discovered_knowledge_ids,
         inventory,
         depot,
         inventory_weight,
@@ -543,6 +555,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
             world.learned_spells(id).expect("player inserted"),
             world.learned_recipes(id).expect("player inserted"),
             world.profession_skills(id).expect("player inserted"),
+            world.discovered_knowledge(id).expect("player inserted"),
             inventory,
             depot,
             weight,
@@ -577,6 +590,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
                 npcs,
                 resource_nodes,
                 profession_skills,
+                discovered_knowledge_ids,
             }),
         },
     )
@@ -841,6 +855,9 @@ async fn session(mut socket: WebSocket, state: AppState) {
             }
             Ok(ClientMessage::MineResource { node_id }) => {
                 mine_resource(&state, id, &node_id).await
+            }
+            Ok(ClientMessage::InspectWorldObject { object_id }) => {
+                inspect_world_object(&state, id, &object_id).await
             }
             Ok(ClientMessage::CastSpell {
                 spell_id,
@@ -1533,6 +1550,56 @@ async fn mine_resource(state: &AppState, player_id: Uuid, node_id: &str) {
     );
     state.broadcast(ServerMessage::ResourceNodesChanged {
         resource_nodes: nodes,
+    });
+}
+
+async fn inspect_world_object(state: &AppState, player_id: Uuid, object_id: &str) {
+    let text = {
+        let world = state.world.read().await;
+        match world.can_inspect_world_object(player_id, object_id) {
+            Ok(Some(text)) => text,
+            Ok(None) => {
+                state.private(player_id, ServerMessage::Error {
+                    code: "already_discovered".into(),
+                    message: "You have already studied this clue.".into(),
+                });
+                return;
+            }
+            Err(reason) => {
+                state.private(player_id, ServerMessage::Error {
+                    code: reason.into(),
+                    message: "There is nothing more to learn from that here.".into(),
+                });
+                return;
+            }
+        }
+    };
+    let mut world = state.world.write().await;
+    let backup = world.clone();
+    let inventory_changed = match world.record_world_object_discovery(player_id, object_id) {
+        Ok(changed) => changed,
+        Err(reason) => {
+            state.private(player_id, ServerMessage::Error { code: reason.into(), message: "You cannot carry what you found.".into() });
+            return;
+        }
+    };
+    let (inventory, inventory_weight, max_capacity) = world.inventory_state(player_id).expect("active player");
+    if let Some(database) = &state.database
+        && let Err(error) = database.persist_discovery_and_inventory(player_id, object_id, &inventory).await
+    {
+        *world = backup;
+        warn!(%player_id, %object_id, %error, "could not save discovery");
+        state.private(player_id, ServerMessage::Error { code: "discovery_save_failed".into(), message: "What you noticed slips from memory; try again.".into() });
+        return;
+    }
+    drop(world);
+    if inventory_changed {
+        state.private(player_id, ServerMessage::InventoryChanged { player_id, inventory, inventory_weight, max_capacity });
+    }
+    state.private(player_id, ServerMessage::DiscoveryChanged {
+        player_id,
+        discovery_id: object_id.into(),
+        text: text.into(),
     });
 }
 

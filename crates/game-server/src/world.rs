@@ -62,6 +62,7 @@ pub struct Player {
     pub learned_spells: HashSet<String>,
     pub learned_recipes: HashSet<String>,
     pub profession_skills: HashMap<String, (u16, u32)>,
+    pub discovered_knowledge: HashSet<String>,
     pub crafting_queue: Option<CraftingQueue>,
     pub last_mana_regen: Instant,
     pub active_food: Option<ActiveFood>,
@@ -425,6 +426,9 @@ impl WorldMap {
                     | "bench"
                     | "well"
                     | "barrel"
+                    | "bent_reeds"
+                    | "bog_slick"
+                    | "wrecked_planks"
                     | "mountain_wall"
                     | "forest_tree"
                     | "pine_tree"
@@ -1698,6 +1702,38 @@ impl World {
             .collect();
         skills.sort_by(|left, right| left.id.cmp(&right.id));
         Some(skills)
+    }
+    pub fn discovered_knowledge(&self, id: EntityId) -> Option<Vec<String>> {
+        let mut discoveries: Vec<_> = self.players.get(&id)?.discovered_knowledge.iter().cloned().collect();
+        discoveries.sort();
+        Some(discoveries)
+    }
+    pub fn can_inspect_world_object(&self, player_id: EntityId, object_id: &str) -> Result<Option<&'static str>, &'static str> {
+        let player = self.players.get(&player_id).ok_or("unknown_player")?;
+        let object = self.map.view.objects.iter().find(|object| object.id == object_id).ok_or("world_object_not_found")?;
+        if !within_interaction_reach(player.view.position, object.position) { return Err("world_object_out_of_reach"); }
+        let text = match object_id {
+            "mire_drowned_supply_note" => "A page is pinned beneath a rusted barrel hoop, swollen with black water. Most of the ink is gone, save for one line: \"The reeds bent east, though there was no wind.\"",
+            "mire_eastward_reeds_cache" => "The reeds all lean east, as if a tide pulled beneath the mud. In their roots lies a stoppered vial of Bog Ichor — fresh, though nothing here should have survived the flood.",
+            _ => return Err("world_object_not_inspectable"),
+        };
+        Ok((!player.discovered_knowledge.contains(object_id)).then_some(text))
+    }
+    pub fn record_world_object_discovery(&mut self, player_id: EntityId, object_id: &str) -> Result<bool, &'static str> {
+        let reward = (object_id == "mire_eastward_reeds_cache").then_some("bog_ichor");
+        let definition = reward.and_then(|id| self.content.item(id)).cloned();
+        let player = self.players.get(&player_id).ok_or("unknown_player")?;
+        let mut inventory = player.inventory.clone();
+        if let Some(definition) = definition.as_ref() {
+            add_crafted_output(&mut inventory, definition, 1, (None, None));
+            if self.inventory_weight(&inventory) > player.max_capacity + f32::EPSILON { return Err("too_heavy"); }
+            if !self.inventory_slots_valid(&inventory) { return Err("inventory_full"); }
+        }
+        let player = self.players.get_mut(&player_id).expect("player was checked");
+        player.discovered_knowledge.insert(object_id.into());
+        let inventory_changed = player.inventory != inventory;
+        player.inventory = inventory;
+        Ok(inventory_changed)
     }
     pub fn resource_nodes_near(&self, center: Position, radius: i32) -> Vec<ResourceNodeView> {
         self.resource_nodes
@@ -4892,6 +4928,7 @@ mod tests {
                 .into_iter()
                 .collect(),
             profession_skills: HashMap::new(),
+            discovered_knowledge: HashSet::new(),
             crafting_queue: None,
             last_mana_regen: Instant::now(),
             active_food: None,
