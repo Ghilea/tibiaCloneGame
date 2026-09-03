@@ -116,7 +116,7 @@ export type ServerMessage =
   | { type: "recipes_changed"; player_id: string; learned_recipe_ids: string[] }
   | { type: "resource_nodes_changed"; resource_nodes: ResourceNodeView[] }
   | { type: "profession_skills_changed"; player_id: string; skills: ProfessionSkillView[] }
-  | { type: "discovery_changed"; player_id: string; discovery_id: string; text: string }
+  | { type: "discovery_changed"; player_id: string; discovery_id: string; text: string; reward_item_definition_id: string | null }
   | { type: "ground_items_changed"; ground_items: GroundItem[] }
   | { type: "food_status"; player_id: string; remaining_ms: number }
   | { type: "combat_effect"; source_id: string; target_id: string; effect_id: string; damage: number; cooldown_ms: number }

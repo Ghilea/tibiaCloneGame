@@ -1716,15 +1716,16 @@ impl World {
         let text = match object_id {
             "rivercross_mire_notice" => "The damp notice reads: \"East road closed after dusk. Three reed-cutters failed to return. Do not follow lights across the water.\" The seal below is smudged into the shape of a river bird.",
             "mire_drowned_supply_note" => "A page is pinned beneath a rusted barrel hoop, swollen with black water. Most of the ink is gone, save for one line: \"The reeds bent east, though there was no wind.\"",
-            "mire_eastward_reeds_cache" => "The reeds all lean east, as if a tide pulled beneath the mud. In their roots lies a stoppered vial of Bog Ichor — fresh, though nothing here should have survived the flood.",
+            "mire_eastward_slick" => "The black water moves against the wind. Beneath its oily skin, caught between the roots, lies a stoppered vial of Bog Ichor — fresh, though nothing here should have survived the flood.",
             _ => return Err("world_object_not_inspectable"),
         };
-        Ok((!player.discovered_knowledge.contains(object_id)).then_some(text))
+        Ok(Some(text))
     }
-    pub fn record_world_object_discovery(&mut self, player_id: EntityId, object_id: &str) -> Result<bool, &'static str> {
-        let reward = (object_id == "mire_eastward_reeds_cache").then_some("bog_ichor");
-        let definition = reward.and_then(|id| self.content.item(id)).cloned();
+    pub fn record_world_object_discovery(&mut self, player_id: EntityId, object_id: &str) -> Result<(bool, bool), &'static str> {
         let player = self.players.get(&player_id).ok_or("unknown_player")?;
+        let newly_discovered = !player.discovered_knowledge.contains(object_id);
+        let reward = (newly_discovered && object_id == "mire_eastward_slick").then_some("bog_ichor");
+        let definition = reward.and_then(|id| self.content.item(id)).cloned();
         let mut inventory = player.inventory.clone();
         if let Some(definition) = definition.as_ref() {
             add_crafted_output(&mut inventory, definition, 1, (None, None));
@@ -1735,7 +1736,7 @@ impl World {
         player.discovered_knowledge.insert(object_id.into());
         let inventory_changed = player.inventory != inventory;
         player.inventory = inventory;
-        Ok(inventory_changed)
+        Ok((newly_discovered, inventory_changed))
     }
     pub fn resource_nodes_near(&self, center: Position, radius: i32) -> Vec<ResourceNodeView> {
         self.resource_nodes

@@ -86,7 +86,7 @@ export function ThreeWorld({ world, input, onReady, showDebug = true }: ThreeWor
           <SceneReady onReady={onReady} />
         </Suspense>
       </Canvas>
-      {lootHover && <div className="ground-loot-tooltip" style={{ left: lootHover.x + 14, top: lootHover.y + 14 }}><strong>{lootHover.label}</strong><small>Click or press E to interact</small></div>}
+      {lootHover && <div className="ground-loot-tooltip" style={{ left: lootHover.x + 14, top: lootHover.y + 14 }}><strong>{lootHover.label}</strong><small>Click to interact</small></div>}
       {showDebug && (
         <div className="debug-meter" aria-label="Position and rendering performance">
           <div ref={positionLabel} className="position-meter">x -- · y -- · z --</div>
@@ -159,7 +159,7 @@ function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHov
       <Atmosphere torches={region.map.torches} local={local?.position} />
       <FollowCamera target={local?.position} visualTarget={localVisualPosition} mapWidth={map.width} mapHeight={map.height} />
       <Terrain map={region.map} floor={floor} bounds={region.bounds} onGround={onGround} />
-      <Structures map={region.map} input={input} floor={floor} indoorBuildingId={indoorBuildingId} />
+      <Structures map={region.map} input={input} world={world} discoveryRevision={world.worldObjectCallout?.key ?? 0} floor={floor} indoorBuildingId={indoorBuildingId} onHover={onLootHover} />
       <StaticShadowMap revision={region.map} />
       <OcclusionController target={local?.position} visualTarget={localVisualPosition} sceneRevision={region.map} />
       {players.map((player) => (
@@ -522,7 +522,7 @@ function useWorldTexture(path: string, repeatX = 1, repeatY = 1) {
   return texture;
 }
 
-const Structures = memo(function Structures({ map, input, floor, indoorBuildingId }: { map: NonNullable<WorldState["map"]>; input: InputController; floor: number; indoorBuildingId: string | null }) {
+const Structures = memo(function Structures({ map, input, world, discoveryRevision, floor, indoorBuildingId, onHover }: { map: NonNullable<WorldState["map"]>; input: InputController; world: WorldState; discoveryRevision: number; floor: number; indoorBuildingId: string | null; onHover: (hover: { label: string; x: number; y: number } | null) => void }) {
   const buildings = useMemo(() => map.buildings.filter((entry) => entry.floor === floor), [floor, map.buildings]);
   return (
     <group>
@@ -530,12 +530,12 @@ const Structures = memo(function Structures({ map, input, floor, indoorBuildingI
         <Building building={building} doors={map.doors} windows={map.windows} input={input} />
         <GabledRoof building={building} wallHeight={buildingWallHeight(building)} roofVisible={building.id !== indoorBuildingId} roofFade={building.id !== indoorBuildingId ? 1 : 0.08} />
       </group>)}
-      <StaticStructures map={map} input={input} floor={floor} buildings={buildings} />
+      <StaticStructures map={map} input={input} world={world} discoveryRevision={discoveryRevision} floor={floor} buildings={buildings} onHover={onHover} />
     </group>
   );
 });
 
-const StaticStructures = memo(function StaticStructures({ map, input, floor, buildings }: { map: NonNullable<WorldState["map"]>; input: InputController; floor: number; buildings: readonly BuildingView[] }) {
+const StaticStructures = memo(function StaticStructures({ map, input, world, discoveryRevision: _discoveryRevision, floor, buildings, onHover }: { map: NonNullable<WorldState["map"]>; input: InputController; world: WorldState; discoveryRevision: number; floor: number; buildings: readonly BuildingView[]; onHover: (hover: { label: string; x: number; y: number } | null) => void }) {
   const visibleObjects = useMemo(() => (map.objects ?? []).filter((entry) => entry.position.z === floor), [floor, map.objects]);
   const groupedObjects = useMemo(() => {
     const groups = {
@@ -579,10 +579,56 @@ const StaticStructures = memo(function StaticStructures({ map, input, floor, bui
       <InstancedSimpleObjects positions={groupedObjects.snowBanks} kind="snow-bank" />
       <InstancedSimpleObjects positions={groupedObjects.barrels} kind="barrel" />
       <WorldObjects objects={groupedObjects.other} />
+      <InspectableWorldObjects objects={visibleObjects.filter((object) => inspectableWorldObjectIds.has(object.id))} input={input} world={world} onHover={onHover} />
       <InstancedTorches positions={map.torches.filter((tile) => tile.z === floor)} />
       {map.doors.filter((door) => door.position.z === floor && !insideAnyBuilding(door.position, buildings)).map((door) => <Door key={door.id} door={door} input={input} />)}
     </>;
 });
+
+const inspectableWorldObjectIds = new Set(["rivercross_mire_notice", "mire_drowned_supply_note", "mire_eastward_slick"]);
+
+function InspectableWorldObjects({ objects, input, world, onHover }: { objects: readonly WorldObjectView[]; input: InputController; world: WorldState; onHover: (hover: { label: string; x: number; y: number } | null) => void }) {
+  return <group>{objects.map((object) => <InspectableWorldObject key={object.id} object={object} input={input} world={world} onHover={onHover} />)}</group>;
+}
+
+function InspectableWorldObject({ object, input, world, onHover }: { object: WorldObjectView; input: InputController; world: WorldState; onHover: (hover: { label: string; x: number; y: number } | null) => void }) {
+  const [hovered, setHovered] = useState(false);
+  const callout = world.worldObjectCallout?.objectId === object.id ? world.worldObjectCallout : null;
+  useEffect(() => {
+    if (!callout) return;
+    const timer = window.setTimeout(() => world.clearWorldObjectCallout(callout.key), 7_000);
+    return () => window.clearTimeout(timer);
+  }, [callout?.key, world]);
+  useEffect(() => () => {
+    document.body.style.cursor = "";
+    onHover(null);
+  }, [onHover]);
+  const label = object.id === "rivercross_mire_notice" ? "Read weathered notice"
+    : object.id === "mire_drowned_supply_note" ? "Inspect waterlogged barrel"
+    : "Inspect the black water";
+  const hitbox: [number, number, number] = object.kind === "notice_post" ? [0.72, 1.15, 0.5]
+    : object.kind === "bog_slick" ? [1.05, 0.22, 1.05]
+    : [0.86, 0.82, 0.86];
+  const hitboxY = object.kind === "notice_post" ? 0.55 : object.kind === "bog_slick" ? 0.1 : 0.4;
+  return <group
+    position={[object.position.x + 0.5, 0, object.position.y + 0.5]}
+    onPointerDown={(event) => event.stopPropagation()}
+    onPointerOver={(event) => { event.stopPropagation(); setHovered(true); document.body.style.cursor = "pointer"; onHover({ label, x: event.nativeEvent.clientX, y: event.nativeEvent.clientY }); }}
+    onPointerOut={() => { setHovered(false); document.body.style.cursor = ""; onHover(null); }}
+    onClick={(event) => { event.stopPropagation(); document.body.style.cursor = ""; onHover(null); input.interactWorldObject(object.id, object.position); }}
+    onContextMenu={(event) => { event.stopPropagation(); event.nativeEvent.preventDefault(); input.interactWorldObject(object.id, object.position); }}
+  >
+    <mesh position={[0, hitboxY, 0]}>
+      <boxGeometry args={hitbox} />
+      <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+    </mesh>
+    {hovered && <mesh position={[0, 0.035, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={18}>
+      <ringGeometry args={[0.45, 0.54, 32]} />
+      <meshBasicMaterial color="#f1c86d" transparent opacity={0.92} depthWrite={false} />
+    </mesh>}
+    {callout && <SpeechBubble text={callout.text} positionY={object.kind === "notice_post" ? 1.65 : 1.25} wrapped />}
+  </group>;
+}
 
 function WorldObjects({ objects }: { objects: readonly WorldObjectView[] }) {
   return <group>{objects.map((object) => {
@@ -951,20 +997,32 @@ const CreatureActor = memo(function CreatureActor({ creature, groundY, selected,
   );
 }, (previous, next) => previous.creature === next.creature && previous.groundY === next.groundY && previous.selected === next.selected);
 
-function SpeechBubble({ text }: { text: string }) {
+function SpeechBubble({ text, positionY = 3.08, wrapped = false }: { text: string; positionY?: number; wrapped?: boolean }) {
   const texture = useMemo(() => {
-    const canvas = document.createElement("canvas"); canvas.width = 512; canvas.height = 128;
+    const canvas = document.createElement("canvas"); canvas.width = wrapped ? 768 : 512; canvas.height = wrapped ? 256 : 128;
     const context = canvas.getContext("2d")!;
     context.fillStyle = "rgba(12, 17, 14, .92)";
     context.strokeStyle = "rgba(220, 183, 103, .9)"; context.lineWidth = 5;
-    context.beginPath(); context.roundRect(5, 5, 502, 98, 20); context.fill(); context.stroke();
-    context.beginPath(); context.moveTo(235, 102); context.lineTo(256, 124); context.lineTo(277, 102); context.closePath(); context.fill(); context.stroke();
-    context.fillStyle = "#f5e4bc"; context.font = "600 25px Inter, sans-serif"; context.textAlign = "center"; context.textBaseline = "middle";
-    context.fillText(text, 256, 55, 460);
+    const width = canvas.width;
+    const bodyBottom = wrapped ? 210 : 98;
+    context.beginPath(); context.roundRect(5, 5, width - 10, bodyBottom, 20); context.fill(); context.stroke();
+    context.beginPath(); context.moveTo(width / 2 - 21, bodyBottom + 4); context.lineTo(width / 2, canvas.height - 4); context.lineTo(width / 2 + 21, bodyBottom + 4); context.closePath(); context.fill(); context.stroke();
+    context.fillStyle = "#f5e4bc"; context.font = `600 ${wrapped ? 25 : 25}px Inter, sans-serif`; context.textAlign = "center"; context.textBaseline = "middle";
+    if (wrapped) {
+      const words = text.split(/\s+/); const lines: string[] = []; let line = "";
+      for (const word of words) {
+        const candidate = line ? `${line} ${word}` : word;
+        if (context.measureText(candidate).width <= width - 70) line = candidate;
+        else { if (line) lines.push(line); line = word; }
+      }
+      if (line) lines.push(line);
+      const shown = lines.slice(0, 4);
+      shown.forEach((entry, index) => context.fillText(entry, width / 2, 48 + index * 42, width - 70));
+    } else context.fillText(text, width / 2, 55, width - 52);
     const result = new THREE.CanvasTexture(canvas); result.colorSpace = THREE.SRGBColorSpace; result.needsUpdate = true; return result;
-  }, [text]);
+  }, [text, wrapped]);
   useEffect(() => () => texture.dispose(), [texture]);
-  return <sprite position={[0, 3.08, 0]} scale={[2.3, 0.58, 1]} renderOrder={20}><spriteMaterial map={texture} transparent depthTest={false} depthWrite={false} /></sprite>;
+  return <sprite position={[0, positionY, 0]} scale={wrapped ? [4.6, 1.55, 1] : [2.8, 0.7, 1]} renderOrder={20}><spriteMaterial map={texture} transparent depthTest={false} depthWrite={false} /></sprite>;
 }
 
 function npcCalls(npc: NpcView) {

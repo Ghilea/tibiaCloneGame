@@ -7,6 +7,8 @@ export type CombatEffectView = { id: string; sourceId: string; targetId: string;
 export type AreaWarningView = { id: string; sourceId: string; position: Position; effectId: string; radius: number; durationMs: number; createdAt: number };
 export type IncomingTrade = { tradeId: string; requester: PlayerView };
 export type TradeStateView = { tradeId: string; partner: PlayerView; yourOffer: ItemInstance[]; theirOffer: ItemInstance[]; youConfirmed: boolean; partnerConfirmed: boolean; status: "pending" | "active" };
+export type WorldObjectCallout = { objectId: string; text: string; key: number };
+export type ReceivedItemNotice = { definitionId: string; quantity: number; key: number };
 
 const MAP_INDEX_CHUNK_SIZE = 16;
 
@@ -25,6 +27,8 @@ export class WorldState {
   readonly discoveredKnowledgeIds = new Set<string>();
   readonly combatEffects: CombatEffectView[] = [];
   readonly areaWarnings: AreaWarningView[] = [];
+  worldObjectCallout: WorldObjectCallout | null = null;
+  receivedItemNotice: ReceivedItemNotice | null = null;
   inventory: ItemInstance[] = [];
   depot: ItemInstance[] = [];
   groundItems: GroundItem[] = [];
@@ -117,6 +121,8 @@ export class WorldState {
         this.players.clear();
         this.combatEffects.length = 0;
         this.areaWarnings.length = 0;
+        this.worldObjectCallout = null;
+        this.receivedItemNotice = null;
         this.combatItemCooldownUntil = 0;
         this.combatItemCooldownMs = 0;
         this.spellCooldownUntil = 0;
@@ -286,7 +292,11 @@ export class WorldState {
       case "discovery_changed":
         if (this.localPlayerId === message.player_id) {
           this.discoveredKnowledgeIds.add(message.discovery_id);
-          this.addSystemMessage(message.text);
+          const key = Date.now();
+          this.worldObjectCallout = { objectId: message.discovery_id, text: message.text, key };
+          this.receivedItemNotice = message.reward_item_definition_id
+            ? { definitionId: message.reward_item_definition_id, quantity: 1, key }
+            : null;
         }
         break;
       case "ground_items_changed":
@@ -488,6 +498,18 @@ export class WorldState {
   addSystemMessage(text: string) {
     this.chat.push({ id: crypto.randomUUID(), speaker: "Combat", text });
     if (this.chat.length > 100) this.chat.shift();
+    this.notify();
+  }
+
+  clearWorldObjectCallout(key: number) {
+    if (this.worldObjectCallout?.key !== key) return;
+    this.worldObjectCallout = null;
+    this.notify();
+  }
+
+  clearReceivedItemNotice(key: number) {
+    if (this.receivedItemNotice?.key !== key) return;
+    this.receivedItemNotice = null;
     this.notify();
   }
 

@@ -238,15 +238,6 @@ function Game({ onLeave }: { onLeave: () => void }) {
           if (!event.repeat) network.mineResource(resource.id);
           return;
         }
-        const clue = localPlayer && world.map?.objects?.find((object) => ["rivercross_mire_notice", "mire_drowned_supply_note", "mire_eastward_reeds_cache"].includes(object.id)
-          && object.position.z === localPlayer.position.z
-          && Math.abs(object.position.x - localPlayer.position.x) <= 1
-          && Math.abs(object.position.y - localPlayer.position.y) <= 1);
-        if (clue) {
-          event.preventDefault();
-          if (!event.repeat) network.inspectWorldObject(clue.id);
-          return;
-        }
       }
       if (event.code === "Digit1") {
         event.preventDefault();
@@ -321,6 +312,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
         {!sceneReady && <WorldLoadingScreen />}
       </section>
       <AreaTransition world={world} />
+      <ReceivedItemToast />
       <header className="world-header">
         <strong>Embers of Aldoria</strong>
         <span>
@@ -536,6 +528,16 @@ function AreaTransition({ world: gameWorld }: { world: WorldState }) {
     <small>{announcement.subtitle}</small>
     <strong>{announcement.title}</strong>
     <i />
+  </section>;
+}
+
+function ReceivedItemToast() {
+  const notice = world.receivedItemNotice;
+  if (!notice) return null;
+  const name = world.itemDefinitions.get(notice.definitionId)?.name ?? notice.definitionId.replaceAll("_", " ");
+  return <section className="item-received-toast" key={notice.key} aria-live="polite" onAnimationEnd={() => world.clearReceivedItemNotice(notice.key)}>
+    <span aria-hidden="true">◆</span>
+    <div><small>Found</small><strong>{name}</strong><p>Added to your backpack</p></div>
   </section>;
 }
 

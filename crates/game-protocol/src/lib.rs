@@ -234,6 +234,7 @@ pub enum ServerMessage {
         player_id: game_types::EntityId,
         discovery_id: String,
         text: String,
+        reward_item_definition_id: Option<String>,
     },
     GroundItemsChanged {
         ground_items: Vec<GroundItem>,

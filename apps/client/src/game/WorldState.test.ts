@@ -129,3 +129,22 @@ describe("secondary skills", () => {
     expect(world.players.get("local")?.secondarySkills).toEqual(["alchemy", "cooking"]);
   });
 });
+
+describe("diegetic discovery feedback", () => {
+  it("anchors the text to the object and exposes a separate item receipt", () => {
+    const world = new WorldState();
+    world.localPlayerId = "local";
+
+    world.apply({
+      type: "discovery_changed",
+      player_id: "local",
+      discovery_id: "mire_eastward_slick",
+      text: "The black water moves against the wind.",
+      reward_item_definition_id: "bog_ichor",
+    });
+
+    expect(world.worldObjectCallout).toMatchObject({ objectId: "mire_eastward_slick", text: "The black water moves against the wind." });
+    expect(world.receivedItemNotice).toMatchObject({ definitionId: "bog_ichor", quantity: 1 });
+    expect(world.chat).toHaveLength(0);
+  });
+});

@@ -1576,8 +1576,8 @@ async fn inspect_world_object(state: &AppState, player_id: Uuid, object_id: &str
     };
     let mut world = state.world.write().await;
     let backup = world.clone();
-    let inventory_changed = match world.record_world_object_discovery(player_id, object_id) {
-        Ok(changed) => changed,
+    let (newly_discovered, inventory_changed) = match world.record_world_object_discovery(player_id, object_id) {
+        Ok(result) => result,
         Err(reason) => {
             state.private(player_id, ServerMessage::Error { code: reason.into(), message: "You cannot carry what you found.".into() });
             return;
@@ -1600,6 +1600,7 @@ async fn inspect_world_object(state: &AppState, player_id: Uuid, object_id: &str
         player_id,
         discovery_id: object_id.into(),
         text: text.into(),
+        reward_item_definition_id: (newly_discovered && object_id == "mire_eastward_slick").then(|| "bog_ichor".into()),
     });
 }
 

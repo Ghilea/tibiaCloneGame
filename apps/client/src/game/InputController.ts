@@ -57,6 +57,19 @@ export class InputController {
     this.world.openNpc(npcId);
   }
 
+  interactWorldObject(objectId: string, position: Position) {
+    const player = this.world.localPlayerId ? this.world.players.get(this.world.localPlayerId) : null;
+    if (!player) return;
+    const nearby = player.position.z === position.z
+      && Math.abs(player.position.x - position.x) <= INTERACTION_RANGE_TILES
+      && Math.abs(player.position.y - position.y) <= INTERACTION_RANGE_TILES;
+    if (!nearby) {
+      this.world.addSystemMessage("Move closer to inspect that.");
+      return;
+    }
+    this.network.inspectWorldObject(objectId);
+  }
+
   toggleDoor(doorId: string, position: Position) {
     const player = this.world.localPlayerId ? this.world.players.get(this.world.localPlayerId) : null;
     if (!player) return;
