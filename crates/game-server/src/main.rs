@@ -41,10 +41,9 @@ use world::WorldEvent;
 
 const WORLD_REGION_RADIUS: i32 = 48;
 // Refresh from the last streamed center instead of toggling at global chunk
-// borders. A 32-tile threshold leaves 16 tiles of overlap, still enough for
-// the viewport while reducing how often clients rebuild static region data.
-// player walking back and forth across x/y=32 from rebuilding the client map.
-const WORLD_REGION_REFRESH_DISTANCE: i32 = 32;
+// borders. A 64-tile threshold keeps the 48-tile stream radius useful while
+// preventing short back-and-forth walks from rebuilding the client map.
+const WORLD_REGION_REFRESH_DISTANCE: i32 = 128;
 
 #[derive(Clone)]
 struct AppState {
@@ -2416,9 +2415,13 @@ mod region_streaming_tests {
             center,
             Position { x: 55, y: 10, z: 7 }
         ));
-        assert!(should_refresh_world_region(
+        assert!(!should_refresh_world_region(
             center,
             Position { x: 63, y: 10, z: 7 }
+        ));
+        assert!(should_refresh_world_region(
+            center,
+            Position { x: 95, y: 10, z: 7 }
         ));
         assert!(should_refresh_world_region(
             center,

@@ -43,10 +43,10 @@ const GROUND_ACTOR_Y = 0.05;
 const BRIDGE_ACTOR_Y = 0.23;
 // The server already streams a radius-48 region. Rebuilding the entire static
 // Three.js scene every 16 walked tiles caused a visible main-thread/GPU hitch.
-// Keep the static scene close to the camera. A 32 + 12 + 12 tile region is
-// comfortably larger than the viewport but contains far less geometry than
-// the previous 104x104 region when streamed map data changes.
-const RENDER_CHUNK_SIZE = 32;
+// Keep the static scene close to the camera. A 64 + 12 + 12 tile region is
+// comfortably larger than the viewport and avoids rebuilding the static
+// Three.js scene whenever the player crosses a small chunk boundary.
+const RENDER_CHUNK_SIZE = 128;
 const RENDER_PADDING = 12;
 
 type ThreeWorldProps = {
