@@ -10,7 +10,7 @@ const torchDefinition: ItemDefinition = {
   maxStack: 1,
   equipmentSlot: "offhand",
   pickupable: true,
-  lightSource: { radius: 32, intensity: 10 },
+  lightSource: { radius: 46, intensity: 10 },
 };
 
 describe("player light", () => {
@@ -18,6 +18,6 @@ describe("player light", () => {
     const definitions = new Map([[torchDefinition.id, torchDefinition]]);
     const carried: ItemInstance = { instanceId: "torch-1", definitionId: "torch", quantity: 1 };
     expect(playerLightProfile([carried], definitions)).toEqual(BASE_PLAYER_LIGHT);
-    expect(playerLightProfile([{ ...carried, equippedSlot: "offhand" }], definitions)).toEqual({ radius: 32, intensity: 10 });
+    expect(playerLightProfile([{ ...carried, equippedSlot: "offhand" }], definitions)).toEqual({ radius: 46, intensity: 10 });
   });
 });

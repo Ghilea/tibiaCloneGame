@@ -113,7 +113,7 @@ impl ContentCatalog {
             if definition.light_source.as_ref().is_some_and(|light| {
                 !light.radius.is_finite()
                     || !light.intensity.is_finite()
-                    || !(2.0..=40.0).contains(&light.radius)
+                    || !(2.0..=50.0).contains(&light.radius)
                     || !(0.1..=20.0).contains(&light.intensity)
                     || definition.equipment_slot.is_none()
             }) {
