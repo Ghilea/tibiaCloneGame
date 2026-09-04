@@ -49,7 +49,6 @@ fn movement_cooldown(dx: i32, dy: i32) -> Duration {
     }
 }
 const PLAYER_ATTACK_COOLDOWN: Duration = Duration::from_millis(650);
-const DUAL_WIELD_ATTACK_COOLDOWN: Duration = Duration::from_millis(500);
 // A defeated hunting spot should stay cleared long enough for the kill to feel
 // meaningful and for players to loot before the same creature returns.
 const CREATURE_RESPAWN: Duration = Duration::from_secs(30);
@@ -1958,10 +1957,10 @@ impl World {
         {
             return Err("resource_out_of_reach");
         }
-        let has_pickaxe = player
-            .inventory
-            .iter()
-            .any(|item| item.equipped_slot.as_deref() == Some("mining_tool"));
+        let has_pickaxe = player.inventory.iter().any(|item| {
+            item.definition_id == "iron_pickaxe"
+                && item.equipped_slot.as_deref() == Some("mining_tool")
+        });
         if !has_pickaxe {
             return Err("pickaxe_required");
         }
@@ -3467,30 +3466,8 @@ impl World {
                 (Some(*container_id), None)
             }
             ItemDestination::Equipment { slot } => {
-                let one_handed_weapon = definition.equipment_slot.as_deref() == Some("weapon")
-                    && definition.distance_weapon.is_none();
-                let slot_allowed = definition.equipment_slot.as_deref() == Some(slot.as_str())
-                    || (slot == "offhand" && one_handed_weapon);
-                if !slot_allowed {
+                if definition.equipment_slot.as_deref() != Some(slot.as_str()) {
                     return Err("wrong_equipment_slot");
-                }
-                let main_hand_is_two_handed = player.inventory.iter().any(|item| {
-                    item.instance_id != instance_id
-                        && item.equipped_slot.as_deref() == Some("weapon")
-                        && self.content.item(&item.definition_id).is_some_and(|definition| {
-                            definition.distance_weapon.is_some()
-                        })
-                });
-                if slot == "offhand" && main_hand_is_two_handed {
-                    return Err("two_handed_weapon_equipped");
-                }
-                if slot == "weapon" && definition.distance_weapon.is_some()
-                    && player.inventory.iter().any(|item| {
-                        item.instance_id != instance_id
-                            && item.equipped_slot.as_deref() == Some("offhand")
-                    })
-                {
-                    return Err("offhand_must_be_empty");
                 }
                 (None, Some(slot.clone()))
             }
@@ -3608,37 +3585,16 @@ impl World {
         if creature.state == CreatureState::Returning {
             return Err("creature_evading");
         }
-        let mainhand_definition = player
+        let distance_weapon = player
             .inventory
             .iter()
             .find(|item| item.equipped_slot.as_deref() == Some("weapon"))
             .and_then(|item| self.content.item(&item.definition_id))
-            .cloned();
-        let offhand_definition = player
-            .inventory
-            .iter()
-            .find(|item| item.equipped_slot.as_deref() == Some("offhand"))
-            .and_then(|item| self.content.item(&item.definition_id))
-            .filter(|definition| {
-                definition.equipment_slot.as_deref() == Some("weapon")
-                    && definition.distance_weapon.is_none()
-            })
-            .cloned();
-        let distance_weapon = mainhand_definition
-            .as_ref()
             .and_then(|definition| definition.distance_weapon.clone());
-        let dual_wielding = distance_weapon.is_none()
-            && mainhand_definition.as_ref().and_then(|definition| definition.attack).is_some()
-            && offhand_definition.as_ref().and_then(|definition| definition.attack).is_some();
-        let melee_cooldown = if dual_wielding {
-            DUAL_WIELD_ATTACK_COOLDOWN
-        } else {
-            PLAYER_ATTACK_COOLDOWN
-        };
         let cooldown = distance_weapon
             .as_ref()
             .map(|weapon| Duration::from_millis(weapon.cooldown_ms))
-            .unwrap_or(melee_cooldown);
+            .unwrap_or(PLAYER_ATTACK_COOLDOWN);
         if player.last_attack.elapsed() < cooldown {
             return Err("attack_cooldown");
         }
@@ -3688,20 +3644,9 @@ impl World {
                     Some((ammunition_id, weapon.cooldown_ms)),
                 )
             } else {
-                let weapon_attack = match (
-                    mainhand_definition.as_ref().and_then(|definition| definition.attack),
-                    offhand_definition.as_ref().and_then(|definition| definition.attack),
-                ) {
-                    (Some(main), Some(offhand)) => {
-                        if player.view.sword_tries % 2 == 0 { main } else { offhand }
-                    }
-                    (Some(main), None) => main,
-                    (None, Some(offhand)) => offhand,
-                    (None, None) => 5,
-                };
                 advance_player_skill(&mut player.view, TrainedSkill::Melee, 1);
                 (
-                    weapon_attack
+                    5_u16
                         .saturating_add(player.view.sword_skill / 2)
                         .saturating_add((player.view.level / 3) as u16),
                     player.view.clone(),
@@ -3713,7 +3658,7 @@ impl World {
         let (effect_id, cooldown_ms) = projectile.unwrap_or_else(|| {
             (
                 "melee_hit".to_owned(),
-                melee_cooldown.as_millis() as u64,
+                PLAYER_ATTACK_COOLDOWN.as_millis() as u64,
             )
         });
         events.insert(

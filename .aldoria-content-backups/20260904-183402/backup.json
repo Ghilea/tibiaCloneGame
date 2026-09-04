@@ -1,0 +1,38 @@
+{
+  "pack": "aldoria-content-update-v5-1-1",
+  "createdAt": "2026-09-04T16:34:02.252Z",
+  "created": [
+    "apps/client/public/assets/sprites/items/duelist_blade.png",
+    "apps/client/public/assets/sprites/items/parrying_dagger.png",
+    "apps/client/public/assets/sprites/items/corsair_cutlass.png",
+    "apps/client/public/assets/sprites/items/stiletto.png",
+    "apps/client/public/assets/sprites/items/raider_hatchet.png",
+    "apps/client/public/assets/sprites/items/hook_sabre.png",
+    "apps/client/public/assets/sprites/items/fishing_rod.png",
+    "apps/client/public/assets/sprites/items/tackle_box.png",
+    "apps/client/public/assets/sprites/items/bait_bucket.png",
+    "apps/client/public/assets/sprites/items/miner_pickhammer.png",
+    "apps/client/public/assets/sprites/items/smith_tongs.png",
+    "apps/client/public/assets/sprites/items/skinning_knife.png",
+    "apps/client/public/assets/sprites/items/flint_and_steel.png",
+    "apps/client/public/assets/sprites/items/grappling_hook.png",
+    "apps/client/public/assets/sprites/items/hand_torch.png",
+    "apps/client/public/assets/sprites/items/hooded_lantern.png",
+    "apps/client/public/assets/sprites/items/rope_coil.png",
+    "apps/client/public/assets/sprites/items/repair_kit.png",
+    "apps/client/public/assets/sprites/items/whetstone.png",
+    "apps/client/public/assets/sprites/items/bedroll.png",
+    "apps/client/public/assets/sprites/items/waterskin.png",
+    "apps/client/public/assets/sprites/items/candle_bundle.png",
+    "apps/client/public/assets/sprites/items/offhand_stiletto.png",
+    "apps/client/public/assets/sprites/items/twinfang_blades.png",
+    "apps/client/public/assets/sprites/items/paired_hatchets.png"
+  ],
+  "backedUp": [
+    "content/items/items.json",
+    "content/npcs/npcs.json",
+    "apps/client/src/App.tsx",
+    "apps/client/src/editor/WorldEditor.tsx",
+    "crates/game-server/src/world.rs"
+  ]
+}
