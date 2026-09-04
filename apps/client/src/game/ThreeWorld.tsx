@@ -11,6 +11,7 @@ import type {
   PlayerView,
   Position,
   ResourceNodeView,
+  StairView,
   WindowView,
   WorldObjectView,
 } from "../protocol";
@@ -581,9 +582,27 @@ const StaticStructures = memo(function StaticStructures({ map, input, world, dis
       <WorldObjects objects={groupedObjects.other} />
       <InspectableWorldObjects objects={visibleObjects.filter((object) => inspectableWorldObjectIds.has(object.id))} input={input} world={world} onHover={onHover} />
       <InstancedTorches positions={map.torches.filter((tile) => tile.z === floor)} />
+      <Stairs stairs={map.stairs} floor={floor} />
       {map.doors.filter((door) => door.position.z === floor && !insideAnyBuilding(door.position, buildings)).map((door) => <Door key={door.id} door={door} input={input} />)}
     </>;
 });
+
+function Stairs({ stairs, floor }: { stairs: readonly StairView[]; floor: number }) {
+  return <group>{stairs.map((stair) => {
+    const position = stair.from.z === floor ? stair.from : stair.to.z === floor ? stair.to : null;
+    if (!position) return null;
+    return <group key={`${stair.id}:${floor}`} position={[position.x + 0.5, 0.04, position.y + 0.5]}>
+      {[0, 1, 2, 3].map((step) => <mesh key={step} castShadow position={[(step - 1.5) * 0.18, step * 0.075, 0]}>
+        <boxGeometry args={[0.22, 0.12, 0.78]} />
+        <meshStandardMaterial color="#9a6338" roughness={0.9} />
+      </mesh>)}
+      <mesh position={[0, 0.02, 0]}>
+        <boxGeometry args={[0.95, 0.035, 0.95]} />
+        <meshStandardMaterial color="#5f432d" roughness={1} />
+      </mesh>
+    </group>;
+  })}</group>;
+}
 
 const inspectableWorldObjectIds = new Set(["rivercross_mire_notice", "mire_drowned_supply_note", "mire_eastward_slick"]);
 

@@ -34,7 +34,10 @@ export default function App() {
   const [sessionStatus, setSessionStatus] = useState<"ready" | "checking">(
     () => (localStorage.getItem("sessionToken") ? "checking" : "ready"),
   );
-  useSyncExternalStore(
+  const [loginNotice, setLoginNotice] = useState("");
+  const wasInGame = useRef(false);
+  const leavingGame = useRef(false);
+  const worldRevision = useSyncExternalStore(
     (callback) => world.subscribe(callback),
     () => world.revision,
   );
@@ -42,6 +45,7 @@ export default function App() {
   const authenticated = (token: string) => {
     localStorage.setItem("sessionToken", token);
     setSessionToken(token);
+    setLoginNotice("");
   };
   const logout = useCallback(() => {
     network.disconnect();
@@ -49,6 +53,19 @@ export default function App() {
     setSessionToken("");
     setSessionStatus("ready");
   }, []);
+  useEffect(() => {
+    if (world.connection === "online" && world.localPlayerId) {
+      wasInGame.current = true;
+      return;
+    }
+    if (!wasInGame.current || leavingGame.current || !["offline", "error"].includes(world.connection)) return;
+    wasInGame.current = false;
+    localStorage.removeItem("sessionToken");
+    setSessionToken("");
+    setSessionStatus("ready");
+    setLoginNotice("The connection to the game server was lost. Please log in again.");
+    network.disconnect();
+  }, [worldRevision]);
   useEffect(() => {
     if (!sessionToken) {
       setSessionStatus("ready");
@@ -73,10 +90,19 @@ export default function App() {
       active = false;
     };
   }, [sessionToken, logout]);
+  const leaveGame = useCallback(() => {
+    leavingGame.current = true;
+    wasInGame.current = false;
+    network.disconnect();
+  }, []);
+  const enterGame = useCallback((characterId: string) => {
+    leavingGame.current = false;
+    network.connect(sessionToken, characterId);
+  }, [sessionToken]);
   if (world.connection === "online" && world.localPlayerId)
-    return <Game onLeave={() => network.disconnect()} />;
-  if (!sessionToken) return <><MenuMusic /><AccountLogin onAuthenticated={authenticated} /></>;
-  if (sessionStatus === "checking") return <><MenuMusic /><AccountLogin onAuthenticated={authenticated} /></>;
+    return <Game onLeave={leaveGame} />;
+  if (!sessionToken) return <><MenuMusic /><AccountLogin onAuthenticated={authenticated} notice={loginNotice} /></>;
+  if (sessionStatus === "checking") return <><MenuMusic /><AccountLogin onAuthenticated={authenticated} notice={loginNotice} /></>;
   if (world.connection === "connecting") {
     return (
       <main className="game-shell loading-shell">
@@ -92,7 +118,7 @@ export default function App() {
       <CharacterLobby
         token={sessionToken}
         connecting={false}
-        onPlay={(characterId) => network.connect(sessionToken, characterId)}
+        onPlay={enterGame}
         onLogout={logout}
       />
     </>
@@ -101,8 +127,10 @@ export default function App() {
 
 function AccountLogin({
   onAuthenticated,
+  notice,
 }: {
   onAuthenticated: (token: string) => void;
+  notice?: string;
 }) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
@@ -183,7 +211,7 @@ function AccountLogin({
                 : "Create account"}
           </button>
         </form>
-        {error && <p className="error">{error}</p>}
+        {(notice || error) && <p className="error">{notice || error}</p>}
         <button
           className="text-button"
           onClick={() => {

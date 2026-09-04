@@ -504,6 +504,15 @@ impl WorldMap {
         );
         let bridges: HashSet<_> = view.bridges.iter().copied().collect();
         view.blocked.retain(|position| !bridges.contains(position));
+        let stair_positions: HashSet<_> = view
+            .stairs
+            .iter()
+            .flat_map(|stairs| [stairs.from, stairs.to])
+            .collect();
+        // A stair is a walkable transition tile even when the editor also
+        // marked that tile as blocked as part of a building or cellar shape.
+        view.blocked
+            .retain(|position| !stair_positions.contains(position));
         let authored_house_walls: HashSet<_> = view.house_walls.iter().copied().collect();
         let mut canonical_house_walls = HashSet::new();
         for building in view
@@ -873,8 +882,15 @@ impl WorldMap {
         self.view
             .stairs
             .iter()
-            .find(|stairs| stairs.from == position)
-            .map(|stairs| stairs.to)
+            .find_map(|stairs| {
+                if stairs.from == position {
+                    Some(stairs.to)
+                } else if stairs.to == position {
+                    Some(stairs.from)
+                } else {
+                    None
+                }
+            })
     }
 
     fn first_safe_base_tile(&self) -> Option<Position> {
@@ -6652,7 +6668,7 @@ mod tests {
           "width": 4,
           "height": 4,
           "floor": 7,
-          "blocked": [{"x":0,"y":0,"z":7}],
+          "blocked": [{"x":0,"y":0,"z":7},{"x":1,"y":1,"z":8}],
           "water": [],
           "roads": [],
           "floors": [{"x":1,"y":1,"z":8}],
@@ -6680,10 +6696,15 @@ mod tests {
         assert_eq!(spawns[0].definition_id, "castle_rat");
         assert_eq!(map.player_spawn, Position { x: 3, y: 3, z: 7 });
         assert!(!map.is_walkable(Position { x: 0, y: 0, z: 7 }));
+        assert!(map.is_walkable(Position { x: 1, y: 1, z: 7 }));
         assert!(map.is_walkable(Position { x: 1, y: 1, z: 8 }));
         assert_eq!(
             map.stair_destination(Position { x: 1, y: 1, z: 7 }),
             Some(Position { x: 1, y: 1, z: 8 })
+        );
+        assert_eq!(
+            map.stair_destination(Position { x: 1, y: 1, z: 8 }),
+            Some(Position { x: 1, y: 1, z: 7 })
         );
         assert_eq!(map.view.windows[0].id, "window_7_1_0");
         let player_id = Uuid::new_v4();
