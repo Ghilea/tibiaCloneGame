@@ -1018,9 +1018,14 @@ function NpcShop({ npcId }: { npcId: string }) {
   const npc = world.npcs.get(npcId);
   const [quantity, setQuantity] = useState(1);
   const [category, setCategory] = useState<ShopCategory>("all");
+  const [shopMode, setShopMode] = useState<"buy" | "sell">("buy");
   if (!npc) return null;
-  const categories = ["all", ...SHOP_CATEGORIES.filter((entry) => npc.offers.some((offer) => shopCategory(world.itemDefinitions.get(offer.itemDefinitionId)) === entry))] as ShopCategory[];
+  const sellableItems = world.inventory.filter((item) => !item.equippedSlot && !item.containerId && item.definitionId !== "gold_coin");
+  const categories = ["all", ...SHOP_CATEGORIES.filter((entry) => (shopMode === "buy"
+    ? npc.offers.some((offer) => shopCategory(world.itemDefinitions.get(offer.itemDefinitionId)) === entry)
+    : sellableItems.some((item) => shopCategory(world.itemDefinitions.get(item.definitionId)) === entry)))] as ShopCategory[];
   const visibleOffers = npc.offers.filter((offer) => category === "all" || shopCategory(world.itemDefinitions.get(offer.itemDefinitionId)) === category);
+  const visibleSellableItems = sellableItems.filter((item) => category === "all" || shopCategory(world.itemDefinitions.get(item.definitionId)) === category);
   const gold = world.inventory
     .filter((item) => item.definitionId === "gold_coin")
     .reduce((sum, item) => sum + item.quantity, 0);
@@ -1036,16 +1041,20 @@ function NpcShop({ npcId }: { npcId: string }) {
           <b>{gold} Gold Coins</b>
         </section>
         <div className="shop-browser">
+          <nav className="shop-mode" aria-label="Shop action">
+            <button className={shopMode === "buy" ? "selected" : ""} onClick={() => { setShopMode("buy"); setCategory("all"); setQuantity(1); }}>Buy</button>
+            <button className={shopMode === "sell" ? "selected" : ""} onClick={() => { setShopMode("sell"); setCategory("all"); setQuantity(1); }}>Sell</button>
+          </nav>
           <nav className="shop-categories" aria-label="Shop categories">
             {categories.map((entry) => (
               <button key={entry} className={category === entry ? "selected" : ""} onClick={() => setCategory(entry)}>
                 {SHOP_CATEGORY_LABELS[entry]}
-                <b>{entry === "all" ? npc.offers.length : npc.offers.filter((offer) => shopCategory(world.itemDefinitions.get(offer.itemDefinitionId)) === entry).length}</b>
+                <b>{entry === "all" ? (shopMode === "buy" ? npc.offers.length : sellableItems.length) : (shopMode === "buy" ? npc.offers.filter((offer) => shopCategory(world.itemDefinitions.get(offer.itemDefinitionId)) === entry).length : sellableItems.filter((item) => shopCategory(world.itemDefinitions.get(item.definitionId)) === entry).length)}</b>
               </button>
             ))}
           </nav>
           <div className="shop-offers">
-          {visibleOffers.map((offer) => {
+          {shopMode === "buy" && visibleOffers.map((offer) => {
             const item = world.itemDefinitions.get(offer.itemDefinitionId);
             const totalPrice = offer.price * quantity;
             return (
@@ -1087,7 +1096,19 @@ function NpcShop({ npcId }: { npcId: string }) {
               </article>
             );
           })}
-          {visibleOffers.length === 0 && <p className="shop-empty">No items in this category.</p>}
+          {shopMode === "sell" && visibleSellableItems.map((item) => {
+            const definition = world.itemDefinitions.get(item.definitionId);
+            const matchingOffer = npc.offers.find((offer) => offer.itemDefinitionId === item.definitionId);
+            const sellPrice = Math.max(1, Math.floor(matchingOffer ? matchingOffer.price / 2 : Math.ceil(definition?.weight ?? 0)));
+            const totalPrice = sellPrice * quantity;
+            return <article key={item.instanceId}>
+              <ItemIcon definitionId={item.definitionId} />
+              <span><strong>{definition?.name ?? item.definitionId}</strong><small>{item.quantity} available · {sellPrice} gold each</small></span>
+              <b>{totalPrice} gold</b>
+              <div><input aria-label="Items to sell" type="number" min={1} max={Math.min(20, item.quantity)} value={Math.min(quantity, item.quantity)} onChange={(event) => setQuantity(Math.max(1, Math.min(20, item.quantity, Number(event.target.value) || 1)))} /><button onClick={() => network.sellToNpc(npc.id, item.instanceId, Math.min(quantity, item.quantity))}>Sell for {totalPrice}</button></div>
+            </article>;
+          })}
+          {((shopMode === "buy" && visibleOffers.length === 0) || (shopMode === "sell" && visibleSellableItems.length === 0)) && <p className="shop-empty">No items in this category.</p>}
           </div>
         </div>
       </div>

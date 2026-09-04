@@ -1031,6 +1031,11 @@ async fn session(mut socket: WebSocket, state: AppState) {
                 offer_id,
                 quantity,
             }) => buy_from_npc(&state, id, &npc_id, &offer_id, quantity).await,
+            Ok(ClientMessage::SellToNpc {
+                npc_id,
+                instance_id,
+                quantity,
+            }) => sell_to_npc(&state, id, &npc_id, instance_id, quantity).await,
             Ok(ClientMessage::DepositItem {
                 npc_id,
                 instance_id,
@@ -1551,11 +1556,35 @@ async fn buy_from_npc(
     );
 }
 
+async fn sell_to_npc(state: &AppState, player_id: Uuid, npc_id: &str, instance_id: Uuid, quantity: u16) {
+    let mut world = state.world.write().await;
+    let backup = world.clone();
+    if let Err(reason) = world.sell_to_npc(player_id, npc_id, instance_id, quantity) {
+        state.private(player_id, ServerMessage::Error { code: reason.into(), message: shop_error_message(reason).into() });
+        return;
+    }
+    let (inventory, inventory_weight, max_capacity) = world.inventory_state(player_id).expect("active player");
+    if let Some(database) = &state.database
+        && let Err(error) = database.persist_item_state(player_id, &inventory, world.ground_items()).await
+    {
+        *world = backup;
+        warn!(%player_id, %error, "NPC sale transaction rolled back");
+        state.private(player_id, ServerMessage::Error { code: "shop_transaction_failed".into(), message: "The sale could not be saved".into() });
+        return;
+    }
+    drop(world);
+    state.private(player_id, ServerMessage::InventoryChanged { player_id, inventory, inventory_weight, max_capacity });
+}
+
 fn shop_error_message(code: &str) -> &'static str {
     match code {
         "npc_out_of_reach" => "Move next to the merchant before buying",
         "not_enough_gold" => "You do not have enough Gold Coins",
         "shop_capacity_exceeded" => "You cannot carry that purchase",
+        "item_not_sellable" => "That item cannot be sold here",
+        "invalid_sale_quantity" => "Choose a valid quantity to sell",
+        "sale_item_not_found" => "That item is no longer in your inventory",
+        "sale_price_unavailable" => "The merchant does not buy that item",
         "invalid_shop_quantity" => "Choose between 1 and 20 bundles",
         "cannot_shop_while_trading" => "Finish or cancel your trade before shopping",
         "npc_not_found" | "shop_offer_not_found" => "That offer is no longer available",

@@ -88,6 +88,7 @@ export type ClientMessage =
   | { type: "confirm_trade"; trade_id: string }
   | { type: "cancel_trade"; trade_id: string }
   | { type: "buy_from_npc"; npc_id: string; offer_id: string; quantity: number }
+  | { type: "sell_to_npc"; npc_id: string; instance_id: string; quantity: number }
   | { type: "deposit_item"; npc_id: string; instance_id: string }
   | { type: "withdraw_item"; npc_id: string; instance_id: string }
   | { type: "learn_spell"; npc_id: string; spell_id: string }

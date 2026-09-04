@@ -67,6 +67,7 @@ export class NetworkClient {
   confirmTrade(tradeId: string) { this.send({ type: "confirm_trade", trade_id: tradeId }); }
   cancelTrade(tradeId: string) { this.send({ type: "cancel_trade", trade_id: tradeId }); }
   buyFromNpc(npcId: string, offerId: string, quantity: number) { this.send({ type: "buy_from_npc", npc_id: npcId, offer_id: offerId, quantity }); }
+  sellToNpc(npcId: string, instanceId: string, quantity: number) { this.send({ type: "sell_to_npc", npc_id: npcId, instance_id: instanceId, quantity }); }
   learnSpell(npcId: string, spellId: string) { this.send({ type: "learn_spell", npc_id: npcId, spell_id: spellId }); }
   learnRecipeFromNpc(npcId: string, recipeId: string) { this.send({ type: "learn_recipe_from_npc", npc_id: npcId, recipe_id: recipeId }); }
   learnRecipeFromItem(instanceId: string) { this.send({ type: "learn_recipe_from_item", instance_id: instanceId }); }

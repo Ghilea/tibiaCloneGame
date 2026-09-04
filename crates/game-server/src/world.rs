@@ -2117,6 +2117,51 @@ impl World {
         Ok(())
     }
 
+    pub fn sell_to_npc(
+        &mut self,
+        player_id: EntityId,
+        npc_id: &str,
+        instance_id: EntityId,
+        quantity: u16,
+    ) -> Result<(), &'static str> {
+        if quantity == 0 {
+            return Err("invalid_sale_quantity");
+        }
+        if self.trades.values().any(|trade| trade.player_a == player_id || trade.player_b == player_id) {
+            return Err("cannot_shop_while_trading");
+        }
+        let npc = self.npcs.iter().find(|npc| npc.id == npc_id && npc.service == "shop").ok_or("npc_not_found")?;
+        let player = self.players.get(&player_id).ok_or("unknown_player")?;
+        if !within_interaction_reach(player.view.position, npc.position) {
+            return Err("npc_out_of_reach");
+        }
+        let item = player.inventory.iter().find(|item| item.instance_id == instance_id).ok_or("sale_item_not_found")?;
+        if item.definition_id == "gold_coin" || item.equipped_slot.is_some() || item.container_id.is_some()
+            || self.players.get(&player_id).is_some_and(|player| player.inventory.iter().any(|child| child.container_id == Some(instance_id)))
+        {
+            return Err("item_not_sellable");
+        }
+        if quantity > item.quantity {
+            return Err("invalid_sale_quantity");
+        }
+        let definition = self.content.item(&item.definition_id).cloned().ok_or("sale_item_not_found")?;
+        let unit_price = npc.offers.iter().find(|offer| offer.item_definition_id == item.definition_id)
+            .map(|offer| u32::from(offer.price) / 2)
+            .unwrap_or_else(|| (definition.weight.ceil() as u32).max(1));
+        let total = unit_price.saturating_mul(u32::from(quantity)).max(1);
+        let mut inventory = player.inventory.clone();
+        let item_index = inventory.iter().position(|entry| entry.instance_id == instance_id).expect("item was checked");
+        if inventory[item_index].quantity == quantity {
+            inventory.remove(item_index);
+        } else {
+            inventory[item_index].quantity -= quantity;
+        }
+        let gold_definition = self.content.item("gold_coin").cloned().ok_or("sale_price_unavailable")?;
+        add_crafted_output(&mut inventory, &gold_definition, total.min(u32::from(u16::MAX)) as u16, (None, None));
+        self.players.get_mut(&player_id).expect("player was checked").inventory = inventory;
+        Ok(())
+    }
+
     pub fn learn_spell(
         &mut self,
         player_id: EntityId,

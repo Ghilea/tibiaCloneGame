@@ -89,6 +89,11 @@ pub enum ClientMessage {
         offer_id: String,
         quantity: u16,
     },
+    SellToNpc {
+        npc_id: String,
+        instance_id: game_types::EntityId,
+        quantity: u16,
+    },
     DepositItem {
         npc_id: String,
         instance_id: game_types::EntityId,
