@@ -40,10 +40,10 @@ use world::World;
 use world::WorldEvent;
 
 const WORLD_REGION_RADIUS: i32 = 48;
-// Refresh from the last streamed center instead of toggling at global chunk
-// borders. A 64-tile threshold keeps the 48-tile stream radius useful while
-// preventing short back-and-forth walks from rebuilding the client map.
-const WORLD_REGION_REFRESH_DISTANCE: i32 = 128;
+// Refresh before the player reaches the edge of the current payload. Keeping a
+// 16-tile margin lets the next region arrive before the camera exposes missing
+// terrain, while measuring from the last center avoids chunk-border thrashing.
+const WORLD_REGION_REFRESH_DISTANCE: i32 = 32;
 
 #[derive(Clone)]
 struct AppState {
@@ -2486,11 +2486,11 @@ mod region_streaming_tests {
         ));
         assert!(!should_refresh_world_region(
             center,
-            Position { x: 63, y: 10, z: 7 }
+            Position { x: 62, y: 10, z: 7 }
         ));
         assert!(should_refresh_world_region(
             center,
-            Position { x: 95, y: 10, z: 7 }
+            Position { x: 63, y: 10, z: 7 }
         ));
         assert!(should_refresh_world_region(
             center,

@@ -198,6 +198,10 @@ export class WorldState {
         }
         this.resourceNodes.clear();
         for (const node of message.resource_nodes) this.resourceNodes.set(node.id, node);
+        // Static terrain is rendered by a dedicated visual subscription. A
+        // region swap must invalidate that scene directly; a normal UI update
+        // alone can leave ThreeWorld displaying the initial payload.
+        this.notifyVisual();
         break;
       case "player_joined":
         this.players.set(message.player.id, message.player);

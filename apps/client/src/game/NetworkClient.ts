@@ -128,12 +128,16 @@ export class NetworkClient {
   disconnect() {
     this.clearAttackTarget();
     this.stopPingTimer();
+    this.stopAttackTimer();
     if (this.incomingFrame !== null) window.cancelAnimationFrame(this.incomingFrame);
     this.incomingFrame = null;
     this.incomingMessages.length = 0;
     const socket = this.socket;
     this.socket = null;
     socket?.close();
+    this.world.prepareForConnection();
+    this.world.connection = "offline";
+    this.world.notify();
   }
 
   private flushIncomingMessages() {

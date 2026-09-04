@@ -73,6 +73,26 @@ describe("server message batching", () => {
     expect(world.creatures.get("rat-a")?.position).toEqual(position(1, 2));
     expect(world.creatures.get("rat-b")?.position).toEqual(position(2, 2));
   });
+
+  it("invalidates the rendered scene when a streamed world region arrives", () => {
+    const world = new WorldState();
+    let visualUpdates = 0;
+    world.subscribeVisual(() => { visualUpdates += 1; });
+    const map = {
+      width: 35_000, height: 35_000, floor: 7, blocked: [position(100, 100)],
+      water: [], bridges: [], trees: [], roads: [], floors: [], houseWalls: [],
+      castleWalls: [], windows: [], torches: [], terrainMaterials: [], objects: [],
+      buildings: [], doors: [], stairs: [],
+    };
+
+    world.applyBatch([{
+      type: "world_region", map, ground_items: [], creatures: [], npcs: [], resource_nodes: [],
+    }]);
+
+    expect(world.map).toBe(map);
+    expect(world.isMapTileBlocked(position(100, 100))).toBe(true);
+    expect(visualUpdates).toBe(1);
+  });
 });
 
 describe("authored shutter synchronization", () => {
