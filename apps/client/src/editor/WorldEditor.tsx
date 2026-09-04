@@ -162,7 +162,15 @@ export function WorldEditor() {
   const mapScrollRef = useRef<HTMLDivElement>(null);
   const [saveStatus, setSaveStatus] = useState("Autosaved locally");
   const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
-  const layerSets = useMemo(() => Object.fromEntries(tileLayers.map((layer) => [layer, new Set(document[layer].filter((tile) => tile.z === activeFloor).map(key))])) as Record<(typeof tileLayers)[number], Set<string>>, [document, activeFloor]);
+  const blockedTiles = useMemo(() => new Set(document.blocked.filter((tile) => tile.z === activeFloor).map(key)), [document.blocked, activeFloor]);
+  const waterTiles = useMemo(() => new Set(document.water.filter((tile) => tile.z === activeFloor).map(key)), [document.water, activeFloor]);
+  const bridgeTiles = useMemo(() => new Set(document.bridges.filter((tile) => tile.z === activeFloor).map(key)), [document.bridges, activeFloor]);
+  const treeTiles = useMemo(() => new Set(document.trees.filter((tile) => tile.z === activeFloor).map(key)), [document.trees, activeFloor]);
+  const roadTiles = useMemo(() => new Set(document.roads.filter((tile) => tile.z === activeFloor).map(key)), [document.roads, activeFloor]);
+  const floorTiles = useMemo(() => new Set(document.floors.filter((tile) => tile.z === activeFloor).map(key)), [document.floors, activeFloor]);
+  const houseWallTiles = useMemo(() => new Set(document.houseWalls.filter((tile) => tile.z === activeFloor).map(key)), [document.houseWalls, activeFloor]);
+  const castleWallTiles = useMemo(() => new Set(document.castleWalls.filter((tile) => tile.z === activeFloor).map(key)), [document.castleWalls, activeFloor]);
+  const layerSets = useMemo(() => ({ blocked: blockedTiles, water: waterTiles, bridges: bridgeTiles, trees: treeTiles, roads: roadTiles, floors: floorTiles, houseWalls: houseWallTiles, castleWalls: castleWallTiles }), [blockedTiles, bridgeTiles, castleWallTiles, floorTiles, houseWallTiles, roadTiles, treeTiles, waterTiles]);
   const spawnByTile = useMemo(() => new Map(document.spawns.filter((entry) => entry.position.z === activeFloor).map((entry) => [key(entry.position), entry])), [document.spawns, activeFloor]);
   const doorByTile = useMemo(() => new Map(document.doors.filter((entry) => entry.position.z === activeFloor).map((entry) => [key(entry.position), entry])), [document.doors, activeFloor]);
   const stairsByTile = useMemo(() => new Map(document.stairs.filter((entry) => entry.from.z === activeFloor).map((entry) => [key(entry.from), entry])), [document.stairs, activeFloor]);
@@ -184,17 +192,10 @@ export function WorldEditor() {
     }
     return result;
   }, [document.buildings, activeFloor]);
-  const authoredTileKeys = useMemo(() => {
-    const result = new Set<string>();
-    for (const layer of tileLayers) for (const tileKey of layerSets[layer]) result.add(tileKey);
-    for (const collection of [spawnByTile, doorByTile, stairsByTile, npcByTile, resourceNodeByTile, terrainByTile, worldObjectByTile, buildingByTile]) {
-      for (const tileKey of collection.keys()) result.add(tileKey);
-    }
-    for (const tileKey of windows) result.add(tileKey);
-    for (const tileKey of torches) result.add(tileKey);
-    if (document.playerSpawn.z === activeFloor) result.add(key(document.playerSpawn));
-    return result;
-  }, [activeFloor, buildingByTile, document.playerSpawn, doorByTile, layerSets, npcByTile, resourceNodeByTile, spawnByTile, stairsByTile, terrainByTile, torches, windows, worldObjectByTile]);
+  const hasIndexedContentAt = (position: Position, tileKey = key(position)) => same(document.playerSpawn, position)
+    || tileLayers.some((layer) => layerSets[layer].has(tileKey))
+    || [spawnByTile, doorByTile, stairsByTile, npcByTile, resourceNodeByTile, terrainByTile, worldObjectByTile, buildingByTile].some((collection) => collection.has(tileKey))
+    || windows.has(tileKey) || torches.has(tileKey);
   const viewportX = Math.max(0, Math.min(viewX, Math.max(0, document.width - VIEW_COLUMNS)));
   const viewportY = Math.max(0, Math.min(viewY, Math.max(0, document.height - VIEW_ROWS)));
   const visibleWidth = Math.min(document.width - viewportX, Math.max(VIEW_COLUMNS, Math.floor((mapViewport.width - 40) / (EDITOR_TILE_SIZE * zoom))));
@@ -232,11 +233,28 @@ export function WorldEditor() {
     const position = { x, y, z: activeFloor }; const positionKey = key(position);
     if (dragging && lastPainted.current === positionKey) return;
     lastPainted.current = positionKey;
-    const source = documentRef.current; const next = structuredClone(source);
+    const source = documentRef.current;
     if (tool === "select") {
       setSelectedPosition(hasAuthoredContent(source, position) ? position : null);
       return;
-    } else if (tool === "removeBuilding") {
+    }
+    if (tool.startsWith("object_")) {
+      const kind = tool.slice("object_".length) as WorldObjectKind;
+      const solid = ["mountain_wall", "forest_tree", "pine_tree", "snowy_pine", "snow_bank", "well", "table", "wooden_crate", "rock_pile", "campfire", "fence_post"].includes(kind);
+      if (same(source.playerSpawn, position) || waterTiles.has(positionKey)) return;
+      const existing = source.objects.find((entry) => same(entry.position, position));
+      const alreadyBlocked = blockedTiles.has(positionKey);
+      if (existing?.kind === kind && (!solid || alreadyBlocked)) return;
+      const object = { id: `object_${kind}_${activeFloor}_${x}_${y}`, kind, position };
+      const objects = existing
+        ? source.objects.map((entry) => same(entry.position, position) ? object : entry)
+        : [...source.objects, object];
+      const next = { ...source, objects, blocked: solid && !alreadyBlocked ? [...source.blocked, position] : source.blocked };
+      commit(next, !dragging);
+      return;
+    }
+    const next = structuredClone(source);
+    if (tool === "removeBuilding") {
       const building = next.buildings.find((entry) => entry.floor === activeFloor && x >= entry.x && y >= entry.y && x < entry.x + entry.width && y < entry.y + entry.height);
       if (!building) return;
       const inside = (tile: Position) => tile.z === building.floor && tile.x >= building.x && tile.y >= building.y && tile.x < building.x + building.width && tile.y < building.y + building.height;
@@ -264,13 +282,6 @@ export function WorldEditor() {
     } else if (["packed_earth", "moss_stone", "sandstone", "mud", "gravel", "crypt_stone", "wood_planks", "marsh_grass", "ash_soil"].includes(tool)) {
       next.terrainMaterials = next.terrainMaterials.filter((entry) => !same(entry.position, position));
       next.terrainMaterials.push({ position, material: tool as TerrainMaterialId });
-    } else if (tool.startsWith("object_")) {
-      const kind = tool.slice("object_".length) as WorldObjectKind;
-      const solid = ["mountain_wall", "forest_tree", "pine_tree", "snowy_pine", "snow_bank", "well", "table", "wooden_crate", "rock_pile", "campfire", "fence_post"].includes(kind);
-      if (same(next.playerSpawn, position) || next.water.some((tile) => same(tile, position))) return;
-      next.objects = next.objects.filter((entry) => !same(entry.position, position));
-      next.objects.push({ id: `object_${kind}_${activeFloor}_${x}_${y}`, kind, position });
-      if (solid && !next.blocked.some((tile) => same(tile, position))) next.blocked.push(position);
     } else if (tool === "door" && !next.doors.some((entry) => same(entry.position, position))) {
       next.houseWalls = next.houseWalls.filter((tile) => !same(tile, position)); next.castleWalls = next.castleWalls.filter((tile) => !same(tile, position)); next.trees = next.trees.filter((tile) => !same(tile, position)); next.blocked = next.blocked.filter((tile) => !same(tile, position));
       next.windows = next.windows.filter((entry) => !same(entry, position));
@@ -454,7 +465,7 @@ export function WorldEditor() {
     const target = pendingPan.current; pendingPan.current = null;
     if (target) panTo(target.x, target.y);
   };
-  const objectAt = (position: Position): EditorDrag | null => { const tileKey = key(position); if (same(document.playerSpawn, position)) return { kind: "playerSpawn" }; const npc = npcByTile.get(tileKey); if (npc) return { kind: "npc", id: npc.id }; const resourceNode = resourceNodeByTile.get(tileKey); if (resourceNode) return { kind: "resourceNode", id: resourceNode.id }; const door = doorByTile.get(tileKey); if (door) return { kind: "door", id: door.id }; if (windows.has(tileKey)) return { kind: "window", position }; if (torches.has(tileKey)) return { kind: "torch", position }; const stairs = stairsByTile.get(tileKey); if (stairs) return { kind: "stairs", id: stairs.id }; const spawn = spawnByTile.get(tileKey); if (spawn) return { kind: "spawn", id: spawn.id }; const building = buildingByTile.get(tileKey); return building ? { kind: "building", id: building.id, offsetX: position.x - building.x, offsetY: position.y - building.y } : authoredTileKeys.has(tileKey) ? { kind: "tile", position } : null; };
+  const objectAt = (position: Position): EditorDrag | null => { const tileKey = key(position); if (same(document.playerSpawn, position)) return { kind: "playerSpawn" }; const npc = npcByTile.get(tileKey); if (npc) return { kind: "npc", id: npc.id }; const resourceNode = resourceNodeByTile.get(tileKey); if (resourceNode) return { kind: "resourceNode", id: resourceNode.id }; const door = doorByTile.get(tileKey); if (door) return { kind: "door", id: door.id }; if (windows.has(tileKey)) return { kind: "window", position }; if (torches.has(tileKey)) return { kind: "torch", position }; const stairs = stairsByTile.get(tileKey); if (stairs) return { kind: "stairs", id: stairs.id }; const spawn = spawnByTile.get(tileKey); if (spawn) return { kind: "spawn", id: spawn.id }; const building = buildingByTile.get(tileKey); return building ? { kind: "building", id: building.id, offsetX: position.x - building.x, offsetY: position.y - building.y } : hasIndexedContentAt(position, tileKey) ? { kind: "tile", position } : null; };
   const moveObject = (target: Position) => {
     const dragged = editorDrag.current; if (!dragged) return; const next = structuredClone(documentRef.current);
     if (dragged.kind === "selection") {
@@ -559,9 +570,9 @@ export function WorldEditor() {
               style={{ width: EDITOR_TILE_SIZE * zoom, height: EDITOR_TILE_SIZE * zoom, left: column * EDITOR_TILE_SIZE * zoom, top: row * EDITOR_TILE_SIZE * zoom, zIndex: 1 }}
               key={index}
               onPointerDown={(event) => { const panning = window.document.body.classList.contains("editor-space-pan"); if (event.button !== 0 || panning) return; if (tool === "select") { event.preventDefault(); if (selectedArea && insideSelection(position, selectedArea)) { editorDrag.current = { kind: "selection", bounds: selectedArea, origin: position }; dragOrigin.current = position; setDragTarget(position); return; } if (editorObject) { editorDrag.current = editorObject; dragOrigin.current = position; setDragTarget(position); setSelectedArea(null); setSelectedPosition(position); setSelectedNpcId(npc?.id ?? null); return; } marqueeStart.current = position; marqueeEnd.current = position; setMarqueeArea(selectionBounds(position, position)); setSelectedArea(null); setSelectedPosition(null); setSelectedNpcId(null); return; } if (continuousTool(tool)) paint(x, y); }}
-              onClick={() => { if (tool === "select") { if (suppressSelectClick.current) { suppressSelectClick.current = false; return; } setSelectedArea(null); setSelectedPosition(authoredTileKeys.has(tileKey) ? position : null); setSelectedNpcId(npc?.id ?? null); return; } if (npc) { setSelectedNpcId(npc.id); return; } if (!continuousTool(tool)) paint(x, y); }}
+              onClick={() => { if (tool === "select") { if (suppressSelectClick.current) { suppressSelectClick.current = false; return; } setSelectedArea(null); setSelectedPosition(hasIndexedContentAt(position, tileKey) ? position : null); setSelectedNpcId(npc?.id ?? null); return; } if (npc) { setSelectedNpcId(npc.id); return; } if (!continuousTool(tool)) paint(x, y); }}
               onPointerEnter={(event) => { if (event.buttons !== 1 || window.document.body.classList.contains("editor-space-pan")) return; if (tool === "select" && marqueeStart.current) { marqueeEnd.current = position; setMarqueeArea(selectionBounds(marqueeStart.current, position)); return; } if (tool === "select" && editorDrag.current) { setDragTarget(position); return; } if (continuousTool(tool)) paint(x, y, true); }}
-              onPointerUp={() => { if (tool === "select" && marqueeStart.current) { const start = marqueeStart.current; const selection = selectionBounds(start, position); const isSingleTile = same(start, position); marqueeStart.current = null; marqueeEnd.current = null; setMarqueeArea(null); if (isSingleTile) { setSelectedArea(null); setSelectedPosition(authoredTileKeys.has(tileKey) ? position : null); setSelectedNpcId(npc?.id ?? null); } else { setSelectedArea(selection); setSelectedPosition(null); } suppressSelectClick.current = true; return; } if (tool === "select" && editorDrag.current) { const origin = dragOrigin.current; if (origin && !same(origin, position)) moveObject(position); else { editorDrag.current = null; setDragTarget(null); suppressSelectClick.current = true; } dragOrigin.current = null; } lastPainted.current = ""; saveLocal(documentRef.current); }}
+              onPointerUp={() => { if (tool === "select" && marqueeStart.current) { const start = marqueeStart.current; const selection = selectionBounds(start, position); const isSingleTile = same(start, position); marqueeStart.current = null; marqueeEnd.current = null; setMarqueeArea(null); if (isSingleTile) { setSelectedArea(null); setSelectedPosition(hasIndexedContentAt(position, tileKey) ? position : null); setSelectedNpcId(npc?.id ?? null); } else { setSelectedArea(selection); setSelectedPosition(null); } suppressSelectClick.current = true; return; } if (tool === "select" && editorDrag.current) { const origin = dragOrigin.current; if (origin && !same(origin, position)) moveObject(position); else { editorDrag.current = null; setDragTarget(null); suppressSelectClick.current = true; } dragOrigin.current = null; } lastPainted.current = ""; saveLocal(documentRef.current); }}
             >{playerSpawn ? "P" : npc ? "N" : resourceNode ? "⛏" : door ? "D" : windows.has(tileKey) ? "W" : torches.has(tileKey) ? "T" : stairs ? (stairs.to.z < activeFloor ? "U" : "D") : spawn ? "C" : ""}</button>;
           })}
           {selectedArea && <div className="editor-selection-frame" aria-hidden="true" style={{ left: (selectedArea.minX - viewportX) * EDITOR_TILE_SIZE * zoom, top: (selectedArea.minY - viewportY) * EDITOR_TILE_SIZE * zoom, width: (selectedArea.maxX - selectedArea.minX + 1) * EDITOR_TILE_SIZE * zoom, height: (selectedArea.maxY - selectedArea.minY + 1) * EDITOR_TILE_SIZE * zoom }} />}
