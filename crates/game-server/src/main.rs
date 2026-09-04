@@ -5,10 +5,15 @@ mod world;
 
 use std::{
     env,
+    fs,
+    path::Path as FsPath,
+    process::Command,
     sync::Arc,
-    time::{Duration, Instant},
+    sync::atomic::{AtomicBool, Ordering},
+    time::{Duration, Instant, UNIX_EPOCH},
 };
 
+use anyhow::Context;
 use axum::{
     Json, Router,
     extract::{
@@ -144,10 +149,64 @@ async fn main() -> anyhow::Result<()> {
     let address = env::var("GAME_SERVER_ADDR").unwrap_or_else(|_| "127.0.0.1:4000".into());
     let listener = tokio::net::TcpListener::bind(&address).await?;
     info!(progress = 100, elapsed_ms = startup_started.elapsed().as_millis(), %address, protocol_version = PROTOCOL_VERSION, "game server ready");
+    let restart_requested = Arc::new(AtomicBool::new(false));
+    let restart_flag = restart_requested.clone();
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(async move {
+            tokio::select! {
+                _ = shutdown_signal() => {}
+                _ = world_change_signal() => {
+                    restart_flag.store(true, Ordering::Release);
+                    info!("world files changed; restarting server");
+                }
+            }
+        })
         .await?;
+
+    if restart_requested.load(Ordering::Acquire) {
+        let executable = env::current_exe()?;
+        Command::new(executable)
+            .args(env::args_os().skip(1))
+            .spawn()
+            .context("failed to restart game server after world change")?;
+    }
     Ok(())
+}
+
+fn world_files_snapshot() -> Vec<(String, u64, u128)> {
+    let worlds_dir = FsPath::new(env!("CARGO_MANIFEST_DIR")).join("../../worlds");
+    let mut snapshot = fs::read_dir(worlds_dir)
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let path = entry.path();
+            let metadata = entry.metadata().ok()?;
+            if !metadata.is_file() {
+                return None;
+            }
+            let modified = metadata
+                .modified()
+                .ok()?
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            Some((path.to_string_lossy().into_owned(), metadata.len(), modified))
+        })
+        .collect::<Vec<_>>();
+    snapshot.sort();
+    snapshot
+}
+
+async fn world_change_signal() {
+    let initial = world_files_snapshot();
+    loop {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        if world_files_snapshot() != initial {
+            return;
+        }
+    }
 }
 
 async fn health() -> StatusCode {

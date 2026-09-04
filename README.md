@@ -44,7 +44,7 @@ world breadth.
 
 Walls, doors, house roofs, and keeps retain distinct elevated faces in the editor's top-down view.
 
-The server automatically loads `worlds/northwest-first-marches.world.json` when it exists, so the normal command is:
+The server automatically loads the first file (alphabetically) from `worlds`, regardless of its filename or file extension, so the normal command is:
 
 ```powershell
 cargo run -p game-server

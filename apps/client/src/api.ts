@@ -9,6 +9,7 @@ export type CharacterSummary = {
 type AuthResponse = { sessionToken: string; accountId: string };
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:4000/api";
+const HEALTH_URL = API_URL.replace(/\/api\/?$/, "") + "/health";
 
 export class ApiFailure extends Error {
   constructor(public code: string, message: string, public status: number) { super(message); }
@@ -28,6 +29,15 @@ export async function createCharacter(token: string, name: string) {
 
 export async function deleteCharacter(token: string, characterId: string) {
   return request<void>(`/characters/${encodeURIComponent(characterId)}`, { method: "DELETE" }, token);
+}
+
+export async function checkServer() {
+  try {
+    const response = await fetch(HEALTH_URL, { cache: "no-store" });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 async function request<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {

@@ -18,6 +18,10 @@ h1, h2, h3 { font-family: Cinzel, Georgia, serif; }
 .login-shell { min-height: 100vh; display: grid; place-items: center; background: radial-gradient(circle at 50% 24%, #33483b 0, #15221c 35%, #070b09 76%); position: relative; }
 .login-shell::before { content: ""; position: absolute; inset: 22px; border: 1px solid #9e7c3d55; pointer-events: none; }
 .login-card { width: min(540px, calc(100vw - 40px)); padding: 50px; background: linear-gradient(145deg, #17231eee, #0b100eee); border: 1px solid #826b3f; border-radius: 12px; box-shadow: 0 30px 100px #000d, inset 0 1px #ffffff0b; backdrop-filter: blur(20px); }
+.server-status { display: flex; align-items: center; gap: 7px; margin-bottom: 26px; color: #9ca9a0; font-size: 11px; }
+.server-status i { width: 9px; height: 9px; border-radius: 50%; background: #8f9a93; box-shadow: 0 0 9px #8f9a9366; }
+.server-status.online i { background: #5bc47b; box-shadow: 0 0 10px #5bc47baa; }
+.server-status.offline i { background: #d46767; box-shadow: 0 0 10px #d46767aa; }
 .login-card h1 { margin: 15px 0 20px; color: #f0dfb6; font-size: clamp(36px, 7vw, 56px); line-height: 1; }
 .intro { color: #aab6ae; line-height: 1.65; }
 .login-card form { display: grid; gap: 10px; margin-top: 28px; }

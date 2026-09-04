@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     env, fs,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, OnceLock},
     time::{Duration, Instant},
 };
@@ -21,8 +21,21 @@ use tracing::{info, warn};
 
 use crate::content::ContentCatalog;
 
+fn default_world_file() -> Option<PathBuf> {
+    let worlds_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../worlds");
+
+    let mut world_files: Vec<PathBuf> = fs::read_dir(worlds_dir)
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.is_file())
+        .collect();
+
+    world_files.sort();
+    world_files.into_iter().next()
+}
+
 pub const SPAWN: Position = Position { x: 10, y: 8, z: 7 };
-const DEFAULT_WORLD_FILE: &str = "../../worlds/northwest-first-marches.world.json";
 // The client walks at 165 ms. A small acceptance margin prevents ordinary
 // packet jitter from compressing two valid steps into a false rejection.
 const MOVE_COOLDOWN: Duration = Duration::from_millis(145);
@@ -1335,19 +1348,23 @@ impl World {
         ground_items: Vec<GroundItem>,
     ) -> anyhow::Result<(Self, Option<(String, String)>)> {
         let configured_path = env::var_os("WORLD_FILE").map(std::path::PathBuf::from);
-        let default_path = Path::new(env!("CARGO_MANIFEST_DIR")).join(DEFAULT_WORLD_FILE);
+        let default_path = default_world_file();
         let path = match configured_path {
             Some(path) if path.is_file() => Some(path),
-            Some(path) if default_path.is_file() => {
+            Some(path)
+                if default_path
+                    .as_ref()
+                    .is_some_and(|default_path| default_path.is_file()) =>
+            {
                 warn!(
                     configured_path = %path.display(),
-                    default_path = %default_path.display(),
+                    default_path = %default_path.as_ref().expect("checked above").display(),
                     "WORLD_FILE does not exist; loading the default world instead"
                 );
-                Some(default_path)
+                default_path
             }
             Some(path) => Some(path),
-            None => default_path.is_file().then_some(default_path),
+            None => default_path,
         };
         let Some(path) = path else {
             return Ok((Self::new(content, ground_items), None));
@@ -1705,34 +1722,70 @@ impl World {
         Some(skills)
     }
     pub fn discovered_knowledge(&self, id: EntityId) -> Option<Vec<String>> {
-        let mut discoveries: Vec<_> = self.players.get(&id)?.discovered_knowledge.iter().cloned().collect();
+        let mut discoveries: Vec<_> = self
+            .players
+            .get(&id)?
+            .discovered_knowledge
+            .iter()
+            .cloned()
+            .collect();
         discoveries.sort();
         Some(discoveries)
     }
-    pub fn can_inspect_world_object(&self, player_id: EntityId, object_id: &str) -> Result<Option<&'static str>, &'static str> {
+    pub fn can_inspect_world_object(
+        &self,
+        player_id: EntityId,
+        object_id: &str,
+    ) -> Result<Option<&'static str>, &'static str> {
         let player = self.players.get(&player_id).ok_or("unknown_player")?;
-        let object = self.map.view.objects.iter().find(|object| object.id == object_id).ok_or("world_object_not_found")?;
-        if !within_interaction_reach(player.view.position, object.position) { return Err("world_object_out_of_reach"); }
+        let object = self
+            .map
+            .view
+            .objects
+            .iter()
+            .find(|object| object.id == object_id)
+            .ok_or("world_object_not_found")?;
+        if !within_interaction_reach(player.view.position, object.position) {
+            return Err("world_object_out_of_reach");
+        }
         let text = match object_id {
-            "rivercross_mire_notice" => "The damp notice reads: \"East road closed after dusk. Three reed-cutters failed to return. Do not follow lights across the water.\" The seal below is smudged into the shape of a river bird.",
-            "mire_drowned_supply_note" => "A page is pinned beneath a rusted barrel hoop, swollen with black water. Most of the ink is gone, save for one line: \"The reeds bent east, though there was no wind.\"",
-            "mire_eastward_slick" => "The black water moves against the wind. Beneath its oily skin, caught between the roots, lies a stoppered vial of Bog Ichor — fresh, though nothing here should have survived the flood.",
+            "rivercross_mire_notice" => {
+                "The damp notice reads: \"East road closed after dusk. Three reed-cutters failed to return. Do not follow lights across the water.\" The seal below is smudged into the shape of a river bird."
+            }
+            "mire_drowned_supply_note" => {
+                "A page is pinned beneath a rusted barrel hoop, swollen with black water. Most of the ink is gone, save for one line: \"The reeds bent east, though there was no wind.\""
+            }
+            "mire_eastward_slick" => {
+                "The black water moves against the wind. Beneath its oily skin, caught between the roots, lies a stoppered vial of Bog Ichor — fresh, though nothing here should have survived the flood."
+            }
             _ => return Err("world_object_not_inspectable"),
         };
         Ok(Some(text))
     }
-    pub fn record_world_object_discovery(&mut self, player_id: EntityId, object_id: &str) -> Result<(bool, bool), &'static str> {
+    pub fn record_world_object_discovery(
+        &mut self,
+        player_id: EntityId,
+        object_id: &str,
+    ) -> Result<(bool, bool), &'static str> {
         let player = self.players.get(&player_id).ok_or("unknown_player")?;
         let newly_discovered = !player.discovered_knowledge.contains(object_id);
-        let reward = (newly_discovered && object_id == "mire_eastward_slick").then_some("bog_ichor");
+        let reward =
+            (newly_discovered && object_id == "mire_eastward_slick").then_some("bog_ichor");
         let definition = reward.and_then(|id| self.content.item(id)).cloned();
         let mut inventory = player.inventory.clone();
         if let Some(definition) = definition.as_ref() {
             add_crafted_output(&mut inventory, definition, 1, (None, None));
-            if self.inventory_weight(&inventory) > player.max_capacity + f32::EPSILON { return Err("too_heavy"); }
-            if !self.inventory_slots_valid(&inventory) { return Err("inventory_full"); }
+            if self.inventory_weight(&inventory) > player.max_capacity + f32::EPSILON {
+                return Err("too_heavy");
+            }
+            if !self.inventory_slots_valid(&inventory) {
+                return Err("inventory_full");
+            }
         }
-        let player = self.players.get_mut(&player_id).expect("player was checked");
+        let player = self
+            .players
+            .get_mut(&player_id)
+            .expect("player was checked");
         player.discovered_knowledge.insert(object_id.into());
         let inventory_changed = player.inventory != inventory;
         player.inventory = inventory;

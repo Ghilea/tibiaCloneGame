@@ -10,7 +10,7 @@ import {
   type MouseEvent,
   type PointerEvent,
 } from "react";
-import { authenticate } from "./api";
+import { ApiFailure, authenticate, checkServer, listCharacters } from "./api";
 import { CharacterLobby, CharacterPreview } from "./CharacterLobby";
 import { MenuMusic, WorldMusic } from "./audio/WorldMusic";
 import { InputController } from "./game/InputController";
@@ -31,6 +31,9 @@ export default function App() {
   const [sessionToken, setSessionToken] = useState(
     () => localStorage.getItem("sessionToken") ?? "",
   );
+  const [sessionStatus, setSessionStatus] = useState<"ready" | "checking">(
+    () => (localStorage.getItem("sessionToken") ? "checking" : "ready"),
+  );
   useSyncExternalStore(
     (callback) => world.subscribe(callback),
     () => world.revision,
@@ -44,10 +47,36 @@ export default function App() {
     network.disconnect();
     localStorage.removeItem("sessionToken");
     setSessionToken("");
+    setSessionStatus("ready");
   }, []);
+  useEffect(() => {
+    if (!sessionToken) {
+      setSessionStatus("ready");
+      return;
+    }
+
+    let active = true;
+    setSessionStatus("checking");
+    void listCharacters(sessionToken)
+      .then(() => {
+        if (active) setSessionStatus("ready");
+      })
+      .catch((failure) => {
+        if (!active) return;
+        if (failure instanceof ApiFailure && [401, 403].includes(failure.status)) {
+          logout();
+          return;
+        }
+        logout();
+      });
+    return () => {
+      active = false;
+    };
+  }, [sessionToken, logout]);
   if (world.connection === "online" && world.localPlayerId)
     return <Game onLeave={() => network.disconnect()} />;
   if (!sessionToken) return <><MenuMusic /><AccountLogin onAuthenticated={authenticated} /></>;
+  if (sessionStatus === "checking") return <><MenuMusic /><AccountLogin onAuthenticated={authenticated} /></>;
   if (world.connection === "connecting") {
     return (
       <main className="game-shell loading-shell">
@@ -80,6 +109,20 @@ function AccountLogin({
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [serverOnline, setServerOnline] = useState<boolean | null>(null);
+  useEffect(() => {
+    let active = true;
+    const updateServerStatus = async () => {
+      const online = await checkServer();
+      if (active) setServerOnline(online);
+    };
+    void updateServerStatus();
+    const timer = window.setInterval(() => void updateServerStatus(), 5000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
@@ -101,6 +144,7 @@ function AccountLogin({
   return (
     <main className="login-shell">
       <section className="login-card">
+        <ServerStatusIndicator online={serverOnline} />
         <p className="eyebrow">A world shaped by its people</p>
         <h1>Embers of Aldoria</h1>
         <p className="intro">
@@ -155,6 +199,11 @@ function AccountLogin({
       </section>
     </main>
   );
+}
+
+function ServerStatusIndicator({ online }: { online: boolean | null }) {
+  const label = online === null ? "Checking server" : online ? "Server online" : "Server offline";
+  return <div className={`server-status ${online === true ? "online" : online === false ? "offline" : "checking"}`}><i aria-hidden="true" />{label}</div>;
 }
 
 type Panel = "inventory" | "crafting" | "character" | "help" | "options";
