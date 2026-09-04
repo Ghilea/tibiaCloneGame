@@ -1017,7 +1017,10 @@ function ItemIcon({ definitionId }: { definitionId: string }) {
 function NpcShop({ npcId }: { npcId: string }) {
   const npc = world.npcs.get(npcId);
   const [quantity, setQuantity] = useState(1);
+  const [category, setCategory] = useState<ShopCategory>("all");
   if (!npc) return null;
+  const categories = ["all", ...SHOP_CATEGORIES.filter((entry) => npc.offers.some((offer) => shopCategory(world.itemDefinitions.get(offer.itemDefinitionId)) === entry))] as ShopCategory[];
+  const visibleOffers = npc.offers.filter((offer) => category === "all" || shopCategory(world.itemDefinitions.get(offer.itemDefinitionId)) === category);
   const gold = world.inventory
     .filter((item) => item.definitionId === "gold_coin")
     .reduce((sum, item) => sum + item.quantity, 0);
@@ -1032,8 +1035,17 @@ function NpcShop({ npcId }: { npcId: string }) {
           </span>
           <b>{gold} Gold Coins</b>
         </section>
-        <div className="shop-offers">
-          {npc.offers.map((offer) => {
+        <div className="shop-browser">
+          <nav className="shop-categories" aria-label="Shop categories">
+            {categories.map((entry) => (
+              <button key={entry} className={category === entry ? "selected" : ""} onClick={() => setCategory(entry)}>
+                {SHOP_CATEGORY_LABELS[entry]}
+                <b>{entry === "all" ? npc.offers.length : npc.offers.filter((offer) => shopCategory(world.itemDefinitions.get(offer.itemDefinitionId)) === entry).length}</b>
+              </button>
+            ))}
+          </nav>
+          <div className="shop-offers">
+          {visibleOffers.map((offer) => {
             const item = world.itemDefinitions.get(offer.itemDefinitionId);
             const totalPrice = offer.price * quantity;
             return (
@@ -1075,10 +1087,34 @@ function NpcShop({ npcId }: { npcId: string }) {
               </article>
             );
           })}
+          {visibleOffers.length === 0 && <p className="shop-empty">No items in this category.</p>}
+          </div>
         </div>
       </div>
     </GameModal>
   );
+}
+
+type ShopCategory = "all" | "weapons" | "armor" | "consumables" | "tools" | "materials" | "other";
+const SHOP_CATEGORIES: ShopCategory[] = ["weapons", "armor", "consumables", "tools", "materials", "other"];
+const SHOP_CATEGORY_LABELS: Record<ShopCategory, string> = {
+  all: "All",
+  weapons: "Weapons",
+  armor: "Armor",
+  consumables: "Consumables",
+  tools: "Tools",
+  materials: "Materials",
+  other: "Other",
+};
+
+function shopCategory(item: ReturnType<WorldState["itemDefinitions"]["get"]>): ShopCategory {
+  if (!item) return "other";
+  if (item.equipmentSlot === "weapon") return "weapons";
+  if (["helmet", "chest", "back", "legs", "shoes", "amulet", "ring", "shield", "backpack"].includes(item.equipmentSlot ?? "")) return "armor";
+  if (item.foodEffect || item.charges || item.id.includes("potion") || item.id.includes("tonic")) return "consumables";
+  if (item.equipmentSlot?.endsWith("_tool") || ["mining_tool", "fishing_tool", "woodcutting_tool"].includes(item.equipmentSlot ?? "")) return "tools";
+  if (item.id.includes("ore") || item.id.includes("fiber") || item.id.includes("hide") || item.id.includes("coal") || item.id.includes("herb")) return "materials";
+  return "other";
 }
 
 function SpellTrainerModal({ npcId }: { npcId: string }) {
