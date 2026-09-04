@@ -13,6 +13,55 @@ $env:DATABASE_URL="postgres://postgres:postgres@localhost:5433/aldoria"
 cargo run -p game-server
 ```
 
+### Simulated multiplayer load test
+
+Node 22+ includes the WebSocket client used by the load test. Start the server
+normally, then run small steps before increasing the player count:
+
+```powershell
+npm run load-test -- --players=10 --duration=30
+npm run load-test -- --players=100 --duration=60
+npm run load-test -- --players=1000 --duration=60
+```
+
+The complete flow can also be run with one command. It starts a temporary
+server, waits for `/health`, provisions database-backed test accounts when
+needed, runs the load test, and shuts the server down afterward:
+
+```powershell
+npm run load-test-all -- --players=100 --duration=60
+npm run load-test-all -- --players=1000 --duration=60
+```
+
+For a non-persistent anonymous test, use:
+
+```powershell
+npm run load-test-all -- --anonymous --players=100 --duration=60
+```
+
+Serverloggarna döljs automatiskt under testet så att sammanfattningen syns
+tydligt. Lägg till `--verbose` om du vill se serverns logg samtidigt.
+
+The anonymous mode requires the server to run without a database. With the
+repository `.env` present, use an empty variable to override it:
+
+```powershell
+$env:DATABASE_URL=""
+cargo run -p game-server
+```
+
+For a
+database-backed test, pass a JSON file with one unique online character per
+entry:
+
+```powershell
+npm run create-load-test-accounts -- --players=100 --output=load-test-accounts.json
+npm run load-test -- --players=100 --accounts=load-test-accounts.json --duration=60
+```
+
+The test reports successful welcomes, disconnects, movement events, join/leave
+events, and ping latency. Watch CPU and memory separately while it runs.
+
 Start the client in a second terminal:
 
 ```bash

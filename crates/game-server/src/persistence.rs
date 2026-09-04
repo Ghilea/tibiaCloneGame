@@ -96,6 +96,10 @@ impl Database {
             warn!("DATABASE_URL is not set; running with ephemeral character state");
             return Ok(None);
         };
+        if url.trim().is_empty() {
+            warn!("DATABASE_URL is empty; running with ephemeral character state");
+            return Ok(None);
+        }
         let pool = PgPoolOptions::new()
             .max_connections(5)
             .connect(&url)

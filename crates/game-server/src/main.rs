@@ -4,6 +4,7 @@ mod persistence;
 mod world;
 
 use std::{
+    collections::HashSet,
     env,
     fs,
     path::Path as FsPath,
@@ -28,7 +29,7 @@ use futures_util::{SinkExt, StreamExt};
 use game_protocol::{
     ClientMessage, ItemDestination, PROTOCOL_VERSION, ServerMessage, WelcomePayload,
 };
-use game_types::PlayerView;
+use game_types::{PlayerView, Position};
 use serde_json::json;
 use tokio::sync::{RwLock, broadcast};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -65,6 +66,59 @@ impl AppState {
 
     fn private(&self, player_id: Uuid, message: ServerMessage) {
         self.publish(Some(player_id), message);
+    }
+
+    async fn broadcast_near(&self, center: Position, message: ServerMessage) {
+        let recipients = self.world.read().await.player_ids_near(center, WORLD_REGION_RADIUS);
+        for recipient in recipients {
+            self.publish(Some(recipient), message.clone());
+        }
+    }
+
+    async fn publish_player_movement(
+        &self,
+        player_id: Uuid,
+        previous: Position,
+        current: Position,
+        sequence: u32,
+    ) {
+        let world = self.world.read().await;
+        let old_recipients: HashSet<_> = world
+            .player_ids_near(previous, WORLD_REGION_RADIUS)
+            .into_iter()
+            .collect();
+        let new_recipients: HashSet<_> = world
+            .player_ids_near(current, WORLD_REGION_RADIUS)
+            .into_iter()
+            .collect();
+        let current_player = world.player(player_id).map(|player| player.view.clone());
+        drop(world);
+
+        for recipient in &new_recipients {
+            if *recipient == player_id || old_recipients.contains(recipient) {
+                self.publish(
+                    Some(*recipient),
+                    ServerMessage::PlayerMoved {
+                        player_id,
+                        position: current,
+                        sequence,
+                    },
+                );
+            } else if let Some(player) = &current_player {
+                self.publish(
+                    Some(*recipient),
+                    ServerMessage::PlayerJoined {
+                        player: player.clone(),
+                    },
+                );
+            }
+        }
+        for recipient in old_recipients.difference(&new_recipients) {
+            self.publish(
+                Some(*recipient),
+                ServerMessage::PlayerLeft { player_id },
+            );
+        }
     }
 
     fn publish(&self, recipient: Option<Uuid>, message: ServerMessage) {
@@ -114,7 +168,7 @@ async fn main() -> anyhow::Result<()> {
         ground_items = ground_items.len(),
         "server startup: persistent ground state loaded"
     );
-    let (events, _) = broadcast::channel(256);
+    let (events, _) = broadcast::channel(4096);
     let (world, loaded_world) = World::from_environment(content, ground_items)?;
     if let Some((name, path)) = loaded_world {
         info!(world = %name, %path, "custom world loaded");
@@ -602,7 +656,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
         map,
     ) = {
         let mut world = state.world.write().await;
-        let existing = world.views();
+        let existing = world.views_near(position, WORLD_REGION_RADIUS);
         world.insert_player(player.clone());
         let (inventory, weight, capacity) = world.inventory_state(id).expect("player inserted");
         let depot = world.depot_state(id).expect("player inserted");
@@ -654,15 +708,23 @@ async fn session(mut socket: WebSocket, state: AppState) {
         },
     )
     .await;
-    state.broadcast(ServerMessage::PlayerJoined {
+    state.broadcast_near(position, ServerMessage::PlayerJoined {
         player: player.view.clone(),
-    });
+    }).await;
     let mut streamed_region_center = position;
 
     let (mut outgoing, mut incoming) = socket.split();
     let mut events = state.events.subscribe();
     let writer = tokio::spawn(async move {
-        while let Ok(event) = events.recv().await {
+        loop {
+            let event = match events.recv().await {
+                Ok(event) => event,
+                Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                    warn!(%id, skipped, "player event stream lagged; continuing with newest events");
+                    continue;
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
+            };
             if event.recipient.is_some_and(|recipient| recipient != id) {
                 continue;
             }
@@ -678,14 +740,22 @@ async fn session(mut socket: WebSocket, state: AppState) {
         };
         match serde_json::from_str::<ClientMessage>(&raw) {
             Ok(ClientMessage::MoveRequest { sequence, position }) => {
-                let result = state.world.write().await.try_move(id, position);
+                let (previous_position, result) = {
+                    let mut world = state.world.write().await;
+                    let previous_position = world.player(id).map(|player| player.view.position);
+                    let result = world.try_move(id, position);
+                    (previous_position, result)
+                };
                 match result {
                     Ok(position) => {
-                        state.broadcast(ServerMessage::PlayerMoved {
-                            player_id: id,
-                            position,
-                            sequence,
-                        });
+                        state
+                            .publish_player_movement(
+                                id,
+                                previous_position.unwrap_or(position),
+                                position,
+                                sequence,
+                            )
+                            .await;
                         if should_refresh_world_region(streamed_region_center, position) {
                             let world = state.world.read().await;
                             let message = world
@@ -939,7 +1009,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
         .await
         .player(id)
         .map(|player| player.view.clone());
-    if let Some(player) = final_player {
+    if let Some(player) = &final_player {
         state.auth.save_position(id, player.position).await;
         if let Some(database) = &state.database
             && let Err(error) = database
@@ -974,7 +1044,11 @@ async fn session(mut socket: WebSocket, state: AppState) {
         );
     }
     state.world.write().await.remove_player(id);
-    state.broadcast(ServerMessage::PlayerLeft { player_id: id });
+    if let Some(player) = final_player {
+        state
+            .broadcast_near(player.position, ServerMessage::PlayerLeft { player_id: id })
+            .await;
+    }
     info!(%id, "player disconnected");
 }
 

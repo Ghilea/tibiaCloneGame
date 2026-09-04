@@ -1640,6 +1640,20 @@ impl World {
     pub fn views(&self) -> Vec<PlayerView> {
         self.players.values().map(|p| p.view.clone()).collect()
     }
+    pub fn views_near(&self, center: Position, radius: i32) -> Vec<PlayerView> {
+        self.players
+            .values()
+            .filter(|player| position_in_region(player.view.position, center, radius))
+            .map(|player| player.view.clone())
+            .collect()
+    }
+    pub fn player_ids_near(&self, center: Position, radius: i32) -> Vec<EntityId> {
+        self.players
+            .values()
+            .filter(|player| position_in_region(player.view.position, center, radius))
+            .map(|player| player.view.id)
+            .collect()
+    }
     pub fn ground_items(&self) -> &[GroundItem] {
         &self.ground_items
     }

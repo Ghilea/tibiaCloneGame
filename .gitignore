@@ -3,6 +3,7 @@ dist/
 target/
 .env
 *.log
+.load-test-accounts.json
 *.tsbuildinfo
 apps/client/vite.config.js
 apps/client/vite.config.d.ts
