@@ -1,0 +1,32 @@
+{
+  "resources-consumables-source.png": [
+    "copper_ore",
+    "mire_fiber",
+    "bog_ichor",
+    "gold_coin",
+    "reed_hide",
+    "fen_tusk",
+    "field_bread",
+    "smoked_mire_meat"
+  ],
+  "equipment-utility-source.png": [
+    "field_backpack",
+    "ember_sigil_formula",
+    "iron_pickaxe",
+    "wooden_buckler",
+    "worn_cap",
+    "patched_tunic",
+    "frayed_trousers",
+    "work_boots"
+  ],
+  "remains-source.png": [
+    "mireling_remains",
+    "mire_skulker_remains",
+    "reed_stalker_remains",
+    "fen_brute_remains",
+    "castle_rat_remains",
+    "crypt_guard_remains",
+    "bone_acolyte_remains",
+    "cellar_warden_remains"
+  ]
+}
