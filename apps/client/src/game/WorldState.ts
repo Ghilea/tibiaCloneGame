@@ -97,6 +97,18 @@ export class WorldState {
     for (const listener of this.visualListeners) listener();
   }
 
+  prepareForConnection() {
+    this.players.clear();
+    this.localPlayerId = null;
+    this.attackTargetId = null;
+    this.selectedPlayerId = null;
+    this.playerContext = null;
+    this.activeNpcId = null;
+    this.incomingTrade = null;
+    this.trade = null;
+    this.pendingLocalMoves.clear();
+  }
+
   applyBatch(messages: readonly ServerMessage[]) {
     this.batchDepth += 1;
     try {

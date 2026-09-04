@@ -13,17 +13,34 @@ export class NetworkClient {
 
   connect(sessionToken: string, characterId: string) {
     this.disconnect();
+    this.sequence = 0;
+    this.world.prepareForConnection();
     this.world.connection = "connecting";
     this.world.notify();
     const url = import.meta.env.VITE_GAME_SERVER_URL ?? "ws://127.0.0.1:4000/ws";
-    this.socket = new WebSocket(url);
-    this.socket.addEventListener("open", () => {
-      this.send({ type: "hello", protocol_version: PROTOCOL_VERSION, client_version: CLIENT_VERSION, session_token: sessionToken, character_id: characterId });
-      this.pingTimer = window.setInterval(() => this.send({ type: "ping", sent_at: Date.now() }), 3000);
+    const socket = new WebSocket(url);
+    this.socket = socket;
+    socket.addEventListener("open", () => {
+      if (this.socket !== socket) return;
+      socket.send(JSON.stringify({ type: "hello", protocol_version: PROTOCOL_VERSION, client_version: CLIENT_VERSION, session_token: sessionToken, character_id: characterId } satisfies ClientMessage));
+      this.stopPingTimer();
+      this.pingTimer = window.setInterval(() => {
+        if (this.socket === socket) this.send({ type: "ping", sent_at: Date.now() });
+      }, 3000);
     });
-    this.socket.addEventListener("message", (event) => {
+    socket.addEventListener("message", (event) => {
+      if (this.socket !== socket) return;
       try {
         const message = JSON.parse(event.data) as ServerMessage;
+        if (message.type === "welcome" && message.player.id !== characterId) {
+          this.world.addSystemMessage("The server returned a different character. Please try again.");
+          this.world.connection = "error";
+          this.world.notify();
+          this.socket = null;
+          this.stopPingTimer();
+          socket.close();
+          return;
+        }
         this.incomingMessages.push(message);
         if (this.incomingFrame === null) {
           this.incomingFrame = window.requestAnimationFrame(() => this.flushIncomingMessages());
@@ -31,14 +48,20 @@ export class NetworkClient {
       }
       catch { this.world.connection = "error"; this.world.notify(); }
     });
-    this.socket.addEventListener("close", () => {
-      if (this.pingTimer) window.clearInterval(this.pingTimer);
+    socket.addEventListener("close", () => {
+      if (this.socket !== socket) return;
+      this.socket = null;
+      this.stopPingTimer();
       this.stopAttackTimer();
       this.world.attackTargetId = null;
       this.world.connection = "offline";
       this.world.notify();
     });
-    this.socket.addEventListener("error", () => { this.world.connection = "error"; this.world.notify(); });
+    socket.addEventListener("error", () => {
+      if (this.socket !== socket) return;
+      this.world.connection = "error";
+      this.world.notify();
+    });
   }
 
   move(position: Position) {
@@ -104,11 +127,13 @@ export class NetworkClient {
 
   disconnect() {
     this.clearAttackTarget();
+    this.stopPingTimer();
     if (this.incomingFrame !== null) window.cancelAnimationFrame(this.incomingFrame);
     this.incomingFrame = null;
     this.incomingMessages.length = 0;
-    this.socket?.close();
+    const socket = this.socket;
     this.socket = null;
+    socket?.close();
   }
 
   private flushIncomingMessages() {
@@ -139,5 +164,10 @@ export class NetworkClient {
   private stopAttackTimer() {
     if (this.attackTimer !== null) window.clearInterval(this.attackTimer);
     this.attackTimer = null;
+  }
+
+  private stopPingTimer() {
+    if (this.pingTimer !== null) window.clearInterval(this.pingTimer);
+    this.pingTimer = null;
   }
 }
