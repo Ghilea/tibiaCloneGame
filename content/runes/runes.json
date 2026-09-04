@@ -37,5 +37,31 @@
     "craftTimeMs": 2200,
     "learnPrice": 18,
     "requiredSkillLevel": 5
+  },
+  {
+    "id": "mark_frost_sigil",
+    "name": "Mark Frost Sigil",
+    "craftKind": "sigils",
+    "inputDefinitionId": "blank_rune",
+    "inputQuantity": 1,
+    "outputDefinitionId": "frost_rune",
+    "outputQuantity": 1,
+    "manaCost": 45,
+    "craftTimeMs": 1700,
+    "learnPrice": 45,
+    "requiredSkillLevel": 4
+  },
+  {
+    "id": "mark_venom_sigil",
+    "name": "Mark Venom Sigil",
+    "craftKind": "sigils",
+    "inputDefinitionId": "blank_rune",
+    "inputQuantity": 1,
+    "outputDefinitionId": "venom_rune",
+    "outputQuantity": 1,
+    "manaCost": 55,
+    "craftTimeMs": 1900,
+    "learnPrice": 60,
+    "requiredSkillLevel": 6
   }
 ]

@@ -277,6 +277,12 @@ const Terrain = memo(function Terrain({
   const packedEarthTexture = useWorldTexture("/assets/world/aldoria-packed-earth-v1.png");
   const mossStoneTexture = useWorldTexture("/assets/world/aldoria-moss-stone-v1.png");
   const sandstoneTexture = useWorldTexture("/assets/world/aldoria-sandstone-v1.png");
+  const mudTexture = useWorldTexture("/assets/world/aldoria-mud-v1.png");
+  const gravelTexture = useWorldTexture("/assets/world/aldoria-gravel-v1.png");
+  const cryptStoneTexture = useWorldTexture("/assets/world/aldoria-crypt-stone-v1.png");
+  const woodPlanksTexture = useWorldTexture("/assets/world/aldoria-wood-planks-floor-v1.png");
+  const marshGrassTexture = useWorldTexture("/assets/world/aldoria-marsh-grass-v1.png");
+  const ashSoilTexture = useWorldTexture("/assets/world/aldoria-ash-soil-v1.png");
   const bridgeTexture = useWorldTexture("/assets/world/aldoria-bridge-planks-v1.png");
   const onFloor = (positions: readonly Position[]) => positions.filter((tile) => tile.z === floor);
   const materials = new Map(map.terrainMaterials.filter((entry) => entry.position.z === floor).map((entry) => [`${entry.position.x}:${entry.position.y}`, entry.material]));
@@ -298,6 +304,10 @@ const Terrain = memo(function Terrain({
         "snow_bank",
         "well",
         "table",
+        "wooden_crate",
+        "rock_pile",
+        "campfire",
+        "fence_post",
       ].includes(object.kind))
       .map((object) => object.position),
   ].map(tileKey));
@@ -314,6 +324,12 @@ const Terrain = memo(function Terrain({
       <InstancedTiles positions={materialTiles("packed_earth")} color="#b29676" texture={packedEarthTexture} height={0.048} y={0.03} />
       <InstancedTiles positions={materialTiles("moss_stone")} color="#a4ad9a" texture={mossStoneTexture} height={0.052} y={0.034} />
       <InstancedTiles positions={materialTiles("sandstone")} color="#d0ba91" texture={sandstoneTexture} height={0.052} y={0.034} />
+      <InstancedTiles positions={materialTiles("mud")} color="#806248" texture={mudTexture} height={0.049} y={0.031} />
+      <InstancedTiles positions={materialTiles("gravel")} color="#aaa18f" texture={gravelTexture} height={0.051} y={0.033} />
+      <InstancedTiles positions={materialTiles("crypt_stone")} color="#89908a" texture={cryptStoneTexture} height={0.052} y={0.034} />
+      <InstancedTiles positions={materialTiles("wood_planks")} color="#a0744d" texture={woodPlanksTexture} height={0.052} y={0.034} />
+      <InstancedTiles positions={materialTiles("marsh_grass")} color="#71865d" texture={marshGrassTexture} height={0.05} y={0.032} />
+      <InstancedTiles positions={materialTiles("ash_soil")} color="#746d63" texture={ashSoilTexture} height={0.049} y={0.031} />
       <WaterTiles positions={onFloor(map.water)} />
       <BridgeTiles positions={onFloor(map.bridges)} texture={bridgeTexture} />
       <InstancedTiles positions={visibleRocks} color="#626d66" height={0.55} y={0.275} scale={0.72} castShadow />
@@ -657,6 +673,14 @@ function WorldObjects({ objects }: { objects: readonly WorldObjectView[] }) {
     if (object.kind === "bent_reeds") return <group key={object.id} position={[x, 0, z]} rotation={[0, 0.82, -0.18]}>{[-0.23, -0.08, 0.08, 0.22].map((offset, index) => <group key={offset} position={[offset, 0, (index % 2 - 0.5) * 0.12]} rotation={[0, 0, 0.24 + index * 0.06]}><mesh castShadow position={[0, 0.34 + index * 0.025, 0]}><cylinderGeometry args={[0.017, 0.025, 0.7 + index * 0.05, 5]} /><meshStandardMaterial color="#526a36" roughness={0.96} /></mesh><mesh castShadow position={[0.07, 0.61 + index * 0.04, 0]} rotation={[0, 0, -0.48]}><planeGeometry args={[0.18, 0.045]} /><meshStandardMaterial color="#6f873f" roughness={0.92} side={2} /></mesh></group>)}</group>;
     if (object.kind === "wrecked_planks") return <group key={object.id} position={[x, 0.08, z]} rotation={[0, 0.36, 0]}>{[-0.22, 0, 0.22].map((offset, index) => <mesh key={offset} castShadow position={[offset, index * 0.025, (index - 1) * 0.12]} rotation={[0, 0.22 * (index - 1), 0.1 * (index - 1)]}><boxGeometry args={[0.62, 0.09, 0.16]} /><meshStandardMaterial color={index === 1 ? "#4d392a" : "#66452d"} roughness={1} /></mesh>)}</group>;
     if (object.kind === "well") return <group key={object.id} position={[x, 0, z]}><mesh castShadow position={[0, 0.3, 0]}><cylinderGeometry args={[0.42, 0.48, 0.55, 10]} /><meshStandardMaterial color="#77807b" roughness={0.98} /></mesh><mesh position={[0, 0.59, 0]}><torusGeometry args={[0.34, 0.09, 6, 10]} /><meshStandardMaterial color="#58615d" roughness={0.95} /></mesh></group>;
+    if (object.kind === "wooden_crate") return <group key={object.id} position={[x, 0, z]}><mesh castShadow receiveShadow position={[0, 0.28, 0]}><boxGeometry args={[0.66, 0.56, 0.66]} /><meshStandardMaterial color="#855833" roughness={0.92} /></mesh><mesh castShadow position={[0, 0.29, 0.35]}><boxGeometry args={[0.72, 0.08, 0.06]} /><meshStandardMaterial color="#4f321f" roughness={1} /></mesh><mesh castShadow position={[0, 0.29, -0.35]}><boxGeometry args={[0.72, 0.08, 0.06]} /><meshStandardMaterial color="#4f321f" roughness={1} /></mesh></group>;
+    if (object.kind === "grain_sack") return <group key={object.id} position={[x, 0, z]}><mesh castShadow position={[0, 0.3, 0]} scale={[0.78, 1.08, 0.7]}><sphereGeometry args={[0.34, 10, 8]} /><meshStandardMaterial color="#b39a6a" roughness={1} /></mesh><mesh castShadow position={[0, 0.64, 0]}><sphereGeometry args={[0.09, 7, 6]} /><meshStandardMaterial color="#7c6542" roughness={1} /></mesh></group>;
+    if (object.kind === "bone_pile") return <group key={object.id} position={[x, 0.08, z]}>{[[-0.18,0.1,-0.08,0.7],[0.13,0.12,0.12,-0.55],[-0.02,0.15,0.2,1.1]].map(([bx,by,bz,rot], index) => <mesh key={index} castShadow position={[bx,by,bz]} rotation={[Math.PI / 2, rot, 0]}><cylinderGeometry args={[0.035, 0.04, 0.48, 7]} /><meshStandardMaterial color="#cfc4a2" roughness={0.95} /></mesh>)}<mesh castShadow position={[0.22, 0.18, -0.14]}><sphereGeometry args={[0.14, 8, 7]} /><meshStandardMaterial color="#bfb28f" roughness={0.96} /></mesh></group>;
+    if (object.kind === "rock_pile") return <group key={object.id} position={[x, 0, z]}>{[[-0.18,0.17,0.02,0.24],[0.16,0.2,0.1,0.3],[0.03,0.28,-0.14,0.25]].map(([rx,ry,rz,r], index) => <mesh key={index} castShadow receiveShadow position={[rx,ry,rz]}><dodecahedronGeometry args={[r, 0]} /><meshStandardMaterial color={index === 1 ? "#666d69" : "#7a807b"} roughness={0.99} /></mesh>)}</group>;
+    if (object.kind === "mushroom_patch") return <group key={object.id} position={[x, 0, z]}>{[[-0.2,0.12,-0.08,0.12],[0.12,0.16,0.05,0.15],[0.24,0.1,-0.18,0.1]].map(([mx,my,mz,size], index) => <group key={index} position={[mx,0,mz]}><mesh castShadow position={[0,my * 0.55,0]}><cylinderGeometry args={[0.025,0.035,my,6]} /><meshStandardMaterial color="#d8c6a1" roughness={1} /></mesh><mesh castShadow position={[0,my + 0.015,0]} scale={[1,0.45,1]}><sphereGeometry args={[size,8,6]} /><meshStandardMaterial color={index === 1 ? "#c68155" : "#9c6048"} roughness={0.9} /></mesh></group>)}</group>;
+    if (object.kind === "campfire") return <group key={object.id} position={[x, 0, z]}><mesh castShadow position={[0,0.1,0]} rotation={[0,0.7,Math.PI / 2]}><cylinderGeometry args={[0.07,0.08,0.62,7]} /><meshStandardMaterial color="#5d3924" roughness={1} /></mesh><mesh castShadow position={[0,0.1,0]} rotation={[0,-0.7,Math.PI / 2]}><cylinderGeometry args={[0.07,0.08,0.62,7]} /><meshStandardMaterial color="#5d3924" roughness={1} /></mesh><mesh position={[0,0.37,0]}><coneGeometry args={[0.16,0.55,8]} /><meshStandardMaterial color="#ff9a38" emissive="#e84d16" emissiveIntensity={1.8} toneMapped={false} /></mesh></group>;
+    if (object.kind === "hay_bundle") return <group key={object.id} position={[x, 0.22, z]} rotation={[0,0.25,Math.PI / 2]}><mesh castShadow><cylinderGeometry args={[0.27,0.27,0.68,10]} /><meshStandardMaterial color="#b49543" roughness={1} /></mesh>{[-0.2,0.2].map((offset) => <mesh key={offset} position={[0,offset,0]}><torusGeometry args={[0.275,0.018,5,12]} /><meshStandardMaterial color="#6f5930" roughness={1} /></mesh>)}</group>;
+    if (object.kind === "fence_post") return <group key={object.id} position={[x,0,z]}><mesh castShadow position={[0,0.52,0]}><boxGeometry args={[0.13,1.04,0.13]} /><meshStandardMaterial color="#6e482d" roughness={1} /></mesh><mesh castShadow position={[0,0.62,0]}><boxGeometry args={[0.82,0.11,0.1]} /><meshStandardMaterial color="#805638" roughness={1} /></mesh><mesh castShadow position={[0,0.34,0]}><boxGeometry args={[0.82,0.11,0.1]} /><meshStandardMaterial color="#805638" roughness={1} /></mesh></group>;
     const isTable = object.kind === "table"; return <group key={object.id} position={[x, 0, z]}><mesh castShadow position={[0, isTable ? 0.58 : 0.35, 0]}><boxGeometry args={[isTable ? 0.78 : 0.9, 0.13, isTable ? 0.58 : 0.25]} /><meshStandardMaterial color="#80502d" roughness={0.9} /></mesh>{isTable && [-0.29, 0.29].flatMap((dx) => [-0.2, 0.2].map((dz) => <mesh key={`${dx}:${dz}`} castShadow position={[dx, 0.28, dz]}><boxGeometry args={[0.1, 0.56, 0.1]} /><meshStandardMaterial color="#61391f" roughness={1} /></mesh>))}</group>;
   })}</group>;
 }

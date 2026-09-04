@@ -1,0 +1,42 @@
+{
+  "pack": "aldoria-items-update-v2",
+  "createdAt": "2026-09-04T12:31:46.872Z",
+  "created": [
+    "apps/client/public/assets/sprites/items/blank_rune.png",
+    "apps/client/public/assets/sprites/items/ember_rune.png",
+    "apps/client/public/assets/sprites/items/traveler_blade.png",
+    "apps/client/public/assets/sprites/items/ashwood_bow.png",
+    "apps/client/public/assets/sprites/items/rough_arrow.png",
+    "apps/client/public/assets/sprites/items/frost_rune.png",
+    "apps/client/public/assets/sprites/items/venom_rune.png",
+    "apps/client/public/assets/sprites/items/iron_battle_axe.png",
+    "apps/client/public/assets/sprites/items/iron_war_hammer.png",
+    "apps/client/public/assets/sprites/items/ironbound_shield.png",
+    "apps/client/public/assets/sprites/items/iron_helmet.png",
+    "apps/client/public/assets/sprites/items/studded_armor.png",
+    "apps/client/public/assets/sprites/items/reinforced_boots.png",
+    "apps/client/public/assets/sprites/items/emerald_ring.png",
+    "apps/client/public/assets/sprites/items/ember_amulet.png",
+    "apps/client/public/assets/sprites/items/mana_tonic.png",
+    "scripts/aldoria-update.ps1",
+    "scripts/aldoria-rollback.mjs"
+  ],
+  "backedUp": [
+    "content/items/items.json",
+    "content/runes/runes.json",
+    "content/npcs/npcs.json",
+    "apps/client/src/App.tsx",
+    "apps/client/src/editor/WorldEditor.tsx",
+    "package.json",
+    "apps/client/public/assets/sprites/items/iron_ore.png",
+    "apps/client/public/assets/sprites/items/coal_chunk.png",
+    "apps/client/public/assets/sprites/items/healing_herbs.png",
+    "apps/client/public/assets/sprites/items/rope_bundle.png",
+    "apps/client/public/assets/sprites/items/rusty_key.png",
+    "apps/client/public/assets/sprites/items/shovel.png",
+    "apps/client/public/assets/sprites/items/leather_satchel.png",
+    "apps/client/public/assets/sprites/items/torch_bundle.png",
+    "apps/client/public/assets/sprites/items/iron_short_sword.png",
+    "apps/client/public/assets/sprites/items/red_apple.png"
+  ]
+}

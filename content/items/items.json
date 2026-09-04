@@ -1,31 +1,438 @@
 [
-  { "id": "blank_rune", "name": "Unmarked Sigil", "weight": 1.2, "stackable": true, "maxStack": 100 },
-  { "id": "ember_rune", "name": "Ember Sigil", "weight": 1.2, "stackable": false, "maxStack": 1, "charges": 5, "combatEffect": { "damage": 12, "range": 5, "cooldownMs": 800 } },
-  { "id": "traveler_blade", "name": "Traveler's Blade", "weight": 24.0, "stackable": false, "maxStack": 1, "attack": 8, "equipmentSlot": "weapon" },
-  { "id": "ashwood_bow", "name": "Ashwood Bow", "weight": 19.0, "stackable": false, "maxStack": 1, "equipmentSlot": "weapon", "distanceWeapon": { "damage": 4, "range": 6, "cooldownMs": 750, "ammunitionId": "rough_arrow" } },
-  { "id": "rough_arrow", "name": "Rough Arrow", "weight": 0.08, "stackable": true, "maxStack": 100 },
-  { "id": "field_backpack", "name": "Field Backpack", "weight": 18.0, "stackable": false, "maxStack": 1, "containerSlots": 12, "equipmentSlot": "backpack" },
-  { "id": "mire_fiber", "name": "Mire Fiber", "weight": 0.8, "stackable": true, "maxStack": 100 },
-  { "id": "gold_coin", "name": "Gold Coin", "weight": 0.1, "stackable": true, "maxStack": 100 },
-  { "id": "field_bread", "name": "Field Bread", "weight": 1.4, "stackable": true, "maxStack": 20, "foodEffect": { "healthPerTick": 2, "manaPerTick": 2, "durationSeconds": 60 } },
-  { "id": "smoked_mire_meat", "name": "Smoked Mire Meat", "weight": 2.2, "stackable": true, "maxStack": 20, "foodEffect": { "healthPerTick": 3, "manaPerTick": 1, "durationSeconds": 90 } },
-  { "id": "mireling_remains", "name": "Mireling Remains", "weight": 30.0, "stackable": false, "maxStack": 1, "containerSlots": 8, "pickupable": false },
-  { "id": "bog_ichor", "name": "Bog Ichor", "weight": 0.6, "stackable": true, "maxStack": 100 },
-  { "id": "reed_hide", "name": "Reed Hide", "weight": 2.4, "stackable": true, "maxStack": 100 },
-  { "id": "fen_tusk", "name": "Fen Tusk", "weight": 4.8, "stackable": true, "maxStack": 100 },
-  { "id": "mire_skulker_remains", "name": "Mire Skulker Remains", "weight": 36.0, "stackable": false, "maxStack": 1, "containerSlots": 8, "pickupable": false },
-  { "id": "reed_stalker_remains", "name": "Reed Stalker Remains", "weight": 54.0, "stackable": false, "maxStack": 1, "containerSlots": 10, "pickupable": false },
-  { "id": "fen_brute_remains", "name": "Fen Brute Remains", "weight": 90.0, "stackable": false, "maxStack": 1, "containerSlots": 12, "pickupable": false },
-  { "id": "castle_rat_remains", "name": "Castle Rat Remains", "weight": 22.0, "stackable": false, "maxStack": 1, "containerSlots": 6, "pickupable": false },
-  { "id": "crypt_guard_remains", "name": "Crypt Guard Remains", "weight": 58.0, "stackable": false, "maxStack": 1, "containerSlots": 10, "pickupable": false },
-  { "id": "bone_acolyte_remains", "name": "Bone Acolyte Remains", "weight": 45.0, "stackable": false, "maxStack": 1, "containerSlots": 10, "pickupable": false },
-  { "id": "cellar_warden_remains", "name": "Cellar Warden Remains", "weight": 110.0, "stackable": false, "maxStack": 1, "containerSlots": 14, "pickupable": false },
-  { "id": "ember_sigil_formula", "name": "Ember Sigil Formula", "weight": 0.2, "stackable": false, "maxStack": 1, "teachesRecipeId": "mark_ember_sigil" },
-  { "id": "worn_cap", "name": "Worn Cap", "weight": 4.0, "stackable": false, "maxStack": 1, "equipmentSlot": "helmet" },
-  { "id": "patched_tunic", "name": "Patched Tunic", "weight": 12.0, "stackable": false, "maxStack": 1, "equipmentSlot": "chest" },
-  { "id": "frayed_trousers", "name": "Frayed Trousers", "weight": 8.0, "stackable": false, "maxStack": 1, "equipmentSlot": "legs" },
-  { "id": "work_boots", "name": "Work Boots", "weight": 6.0, "stackable": false, "maxStack": 1, "equipmentSlot": "shoes" },
-  { "id": "wooden_buckler", "name": "Wooden Buckler", "weight": 10.0, "stackable": false, "maxStack": 1, "equipmentSlot": "offhand" },
-  { "id": "iron_pickaxe", "name": "Iron Pickaxe", "weight": 22.0, "stackable": false, "maxStack": 1, "equipmentSlot": "mining_tool" },
-  { "id": "copper_ore", "name": "Copper Ore", "weight": 2.5, "stackable": true, "maxStack": 100 }
+  {
+    "id": "blank_rune",
+    "name": "Unmarked Sigil",
+    "weight": 1.2,
+    "stackable": true,
+    "maxStack": 100
+  },
+  {
+    "id": "ember_rune",
+    "name": "Ember Sigil",
+    "weight": 1.2,
+    "stackable": false,
+    "maxStack": 1,
+    "charges": 5,
+    "combatEffect": {
+      "damage": 12,
+      "range": 5,
+      "cooldownMs": 800
+    }
+  },
+  {
+    "id": "traveler_blade",
+    "name": "Traveler's Blade",
+    "weight": 24,
+    "stackable": false,
+    "maxStack": 1,
+    "attack": 8,
+    "equipmentSlot": "weapon"
+  },
+  {
+    "id": "ashwood_bow",
+    "name": "Ashwood Bow",
+    "weight": 19,
+    "stackable": false,
+    "maxStack": 1,
+    "equipmentSlot": "weapon",
+    "distanceWeapon": {
+      "damage": 4,
+      "range": 6,
+      "cooldownMs": 750,
+      "ammunitionId": "rough_arrow"
+    }
+  },
+  {
+    "id": "rough_arrow",
+    "name": "Rough Arrow",
+    "weight": 0.08,
+    "stackable": true,
+    "maxStack": 100
+  },
+  {
+    "id": "field_backpack",
+    "name": "Field Backpack",
+    "weight": 18,
+    "stackable": false,
+    "maxStack": 1,
+    "containerSlots": 12,
+    "equipmentSlot": "backpack"
+  },
+  {
+    "id": "mire_fiber",
+    "name": "Mire Fiber",
+    "weight": 0.8,
+    "stackable": true,
+    "maxStack": 100
+  },
+  {
+    "id": "gold_coin",
+    "name": "Gold Coin",
+    "weight": 0.1,
+    "stackable": true,
+    "maxStack": 100
+  },
+  {
+    "id": "field_bread",
+    "name": "Field Bread",
+    "weight": 1.4,
+    "stackable": true,
+    "maxStack": 20,
+    "foodEffect": {
+      "healthPerTick": 2,
+      "manaPerTick": 2,
+      "durationSeconds": 60
+    }
+  },
+  {
+    "id": "smoked_mire_meat",
+    "name": "Smoked Mire Meat",
+    "weight": 2.2,
+    "stackable": true,
+    "maxStack": 20,
+    "foodEffect": {
+      "healthPerTick": 3,
+      "manaPerTick": 1,
+      "durationSeconds": 90
+    }
+  },
+  {
+    "id": "mireling_remains",
+    "name": "Mireling Remains",
+    "weight": 30,
+    "stackable": false,
+    "maxStack": 1,
+    "containerSlots": 8,
+    "pickupable": false
+  },
+  {
+    "id": "bog_ichor",
+    "name": "Bog Ichor",
+    "weight": 0.6,
+    "stackable": true,
+    "maxStack": 100
+  },
+  {
+    "id": "reed_hide",
+    "name": "Reed Hide",
+    "weight": 2.4,
+    "stackable": true,
+    "maxStack": 100
+  },
+  {
+    "id": "fen_tusk",
+    "name": "Fen Tusk",
+    "weight": 4.8,
+    "stackable": true,
+    "maxStack": 100
+  },
+  {
+    "id": "mire_skulker_remains",
+    "name": "Mire Skulker Remains",
+    "weight": 36,
+    "stackable": false,
+    "maxStack": 1,
+    "containerSlots": 8,
+    "pickupable": false
+  },
+  {
+    "id": "reed_stalker_remains",
+    "name": "Reed Stalker Remains",
+    "weight": 54,
+    "stackable": false,
+    "maxStack": 1,
+    "containerSlots": 10,
+    "pickupable": false
+  },
+  {
+    "id": "fen_brute_remains",
+    "name": "Fen Brute Remains",
+    "weight": 90,
+    "stackable": false,
+    "maxStack": 1,
+    "containerSlots": 12,
+    "pickupable": false
+  },
+  {
+    "id": "castle_rat_remains",
+    "name": "Castle Rat Remains",
+    "weight": 22,
+    "stackable": false,
+    "maxStack": 1,
+    "containerSlots": 6,
+    "pickupable": false
+  },
+  {
+    "id": "crypt_guard_remains",
+    "name": "Crypt Guard Remains",
+    "weight": 58,
+    "stackable": false,
+    "maxStack": 1,
+    "containerSlots": 10,
+    "pickupable": false
+  },
+  {
+    "id": "bone_acolyte_remains",
+    "name": "Bone Acolyte Remains",
+    "weight": 45,
+    "stackable": false,
+    "maxStack": 1,
+    "containerSlots": 10,
+    "pickupable": false
+  },
+  {
+    "id": "cellar_warden_remains",
+    "name": "Cellar Warden Remains",
+    "weight": 110,
+    "stackable": false,
+    "maxStack": 1,
+    "containerSlots": 14,
+    "pickupable": false
+  },
+  {
+    "id": "ember_sigil_formula",
+    "name": "Ember Sigil Formula",
+    "weight": 0.2,
+    "stackable": false,
+    "maxStack": 1,
+    "teachesRecipeId": "mark_ember_sigil"
+  },
+  {
+    "id": "worn_cap",
+    "name": "Worn Cap",
+    "weight": 4,
+    "stackable": false,
+    "maxStack": 1,
+    "equipmentSlot": "helmet"
+  },
+  {
+    "id": "patched_tunic",
+    "name": "Patched Tunic",
+    "weight": 12,
+    "stackable": false,
+    "maxStack": 1,
+    "equipmentSlot": "chest"
+  },
+  {
+    "id": "frayed_trousers",
+    "name": "Frayed Trousers",
+    "weight": 8,
+    "stackable": false,
+    "maxStack": 1,
+    "equipmentSlot": "legs"
+  },
+  {
+    "id": "work_boots",
+    "name": "Work Boots",
+    "weight": 6,
+    "stackable": false,
+    "maxStack": 1,
+    "equipmentSlot": "shoes"
+  },
+  {
+    "id": "wooden_buckler",
+    "name": "Wooden Buckler",
+    "weight": 10,
+    "stackable": false,
+    "maxStack": 1,
+    "equipmentSlot": "offhand"
+  },
+  {
+    "id": "iron_pickaxe",
+    "name": "Iron Pickaxe",
+    "weight": 22,
+    "stackable": false,
+    "maxStack": 1,
+    "equipmentSlot": "mining_tool"
+  },
+  {
+    "id": "copper_ore",
+    "name": "Copper Ore",
+    "weight": 2.5,
+    "stackable": true,
+    "maxStack": 100
+  },
+  {
+    "id": "iron_ore",
+    "name": "Iron Ore",
+    "weight": 3,
+    "stackable": true,
+    "maxStack": 100
+  },
+  {
+    "id": "coal_chunk",
+    "name": "Coal Chunk",
+    "weight": 1.4,
+    "stackable": true,
+    "maxStack": 100
+  },
+  {
+    "id": "healing_herbs",
+    "name": "Healing Herbs",
+    "weight": 0.25,
+    "stackable": true,
+    "maxStack": 100
+  },
+  {
+    "id": "rope_bundle",
+    "name": "Rope Bundle",
+    "weight": 2,
+    "stackable": true,
+    "maxStack": 20
+  },
+  {
+    "id": "rusty_key",
+    "name": "Rusty Key",
+    "weight": 0.3,
+    "stackable": false,
+    "maxStack": 1
+  },
+  {
+    "id": "shovel",
+    "name": "Shovel",
+    "weight": 18,
+    "stackable": false,
+    "maxStack": 1
+  },
+  {
+    "id": "leather_satchel",
+    "name": "Leather Satchel",
+    "weight": 7.5,
+    "stackable": false,
+    "maxStack": 1,
+    "containerSlots": 8,
+    "equipmentSlot": "backpack"
+  },
+  {
+    "id": "torch_bundle",
+    "name": "Torch Bundle",
+    "weight": 1.6,
+    "stackable": true,
+    "maxStack": 20
+  },
+  {
+    "id": "iron_short_sword",
+    "name": "Iron Short Sword",
+    "weight": 24,
+    "stackable": false,
+    "maxStack": 1,
+    "attack": 10,
+    "equipmentSlot": "weapon"
+  },
+  {
+    "id": "red_apple",
+    "name": "Red Apple",
+    "weight": 0.4,
+    "stackable": true,
+    "maxStack": 20,
+    "foodEffect": {
+      "healthPerTick": 1,
+      "manaPerTick": 1,
+      "durationSeconds": 25
+    }
+  },
+  {
+    "id": "frost_rune",
+    "name": "Frost Sigil",
+    "weight": 1.2,
+    "stackable": false,
+    "maxStack": 1,
+    "charges": 5,
+    "combatEffect": {
+      "damage": 14,
+      "range": 5,
+      "cooldownMs": 900
+    }
+  },
+  {
+    "id": "venom_rune",
+    "name": "Venom Sigil",
+    "weight": 1.2,
+    "stackable": false,
+    "maxStack": 1,
+    "charges": 6,
+    "combatEffect": {
+      "damage": 10,
+      "range": 5,
+      "cooldownMs": 750
+    }
+  },
+  {
+    "id": "iron_battle_axe",
+    "name": "Iron Battle Axe",
+    "weight": 35,
+    "stackable": false,
+    "maxStack": 1,
+    "attack": 12,
+    "equipmentSlot": "weapon"
+  },
+  {
+    "id": "iron_war_hammer",
+    "name": "Iron War Hammer",
+    "weight": 42,
+    "stackable": false,
+    "maxStack": 1,
+    "attack": 14,
+    "equipmentSlot": "weapon"
+  },
+  {
+    "id": "ironbound_shield",
+    "name": "Ironbound Shield",
+    "weight": 18,
+    "stackable": false,
+    "maxStack": 1,
+    "equipmentSlot": "offhand"
+  },
+  {
+    "id": "iron_helmet",
+    "name": "Iron Helmet",
+    "weight": 12,
+    "stackable": false,
+    "maxStack": 1,
+    "equipmentSlot": "helmet"
+  },
+  {
+    "id": "studded_armor",
+    "name": "Studded Armor",
+    "weight": 38,
+    "stackable": false,
+    "maxStack": 1,
+    "equipmentSlot": "chest"
+  },
+  {
+    "id": "reinforced_boots",
+    "name": "Reinforced Boots",
+    "weight": 10,
+    "stackable": false,
+    "maxStack": 1,
+    "equipmentSlot": "shoes"
+  },
+  {
+    "id": "emerald_ring",
+    "name": "Emerald Ring",
+    "weight": 0.2,
+    "stackable": false,
+    "maxStack": 1,
+    "equipmentSlot": "ring1"
+  },
+  {
+    "id": "ember_amulet",
+    "name": "Ember Amulet",
+    "weight": 0.4,
+    "stackable": false,
+    "maxStack": 1,
+    "equipmentSlot": "amulet"
+  },
+  {
+    "id": "mana_tonic",
+    "name": "Mana Tonic",
+    "weight": 1,
+    "stackable": true,
+    "maxStack": 20,
+    "foodEffect": {
+      "healthPerTick": 0,
+      "manaPerTick": 4,
+      "durationSeconds": 30
+    }
+  }
 ]

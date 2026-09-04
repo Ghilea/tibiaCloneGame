@@ -474,6 +474,30 @@ select {
   background-image: url("/assets/world/aldoria-sandstone-v1.png");
   background-size: 180px 180px;
 }
+.editor-tile.material-mud {
+  background-image: url("/assets/world/aldoria-mud-v1.png");
+  background-size: 180px 180px;
+}
+.editor-tile.material-gravel {
+  background-image: url("/assets/world/aldoria-gravel-v1.png");
+  background-size: 180px 180px;
+}
+.editor-tile.material-crypt_stone {
+  background-image: url("/assets/world/aldoria-crypt-stone-v1.png");
+  background-size: 180px 180px;
+}
+.editor-tile.material-wood_planks {
+  background-image: url("/assets/world/aldoria-wood-planks-floor-v1.png");
+  background-size: 180px 180px;
+}
+.editor-tile.material-marsh_grass {
+  background-image: url("/assets/world/aldoria-marsh-grass-v1.png");
+  background-size: 180px 180px;
+}
+.editor-tile.material-ash_soil {
+  background-image: url("/assets/world/aldoria-ash-soil-v1.png");
+  background-size: 180px 180px;
+}
 .editor-tile.roads {
   background: #716b5f;
 }
@@ -835,6 +859,14 @@ select {
 .editor-tile.world-object-dirt_path { background-image: url("/assets/world/aldoria-wilderness-atlas-v1.png"); background-size: 300% 200%; background-position: 0 0; }
 .editor-tile.world-object-snow_ground { background-image: url("/assets/world/aldoria-wilderness-atlas-v1.png"); background-size: 300% 200%; background-position: 50% 0; }
 .editor-tile.world-object-snow_bank { background-image: radial-gradient(ellipse at 50% 60%, #d8e8e9 0 42%, #a9c4ca 44% 48%, transparent 50%), url("/assets/world/aldoria-wilderness-atlas-v1.png"); background-size: auto, 300% 200%; background-position: center, 50% 0; background-color: #e4eeeb; }
+.editor-tile.world-object-wooden_crate { background: #70492c; box-shadow: inset 0 0 0 5px #9b6b40, inset 0 0 0 7px #4b321f; }
+.editor-tile.world-object-grain_sack { background: radial-gradient(ellipse at 50% 58%, #bda878 0 36%, #7e6c49 40% 47%, transparent 50%), #40513d; }
+.editor-tile.world-object-bone_pile { background: linear-gradient(35deg, transparent 34%, #d5cba9 36% 43%, transparent 45%), linear-gradient(-28deg, transparent 39%, #c8bc98 41% 48%, transparent 50%), #40513d; }
+.editor-tile.world-object-rock_pile { background: radial-gradient(circle at 38% 58%, #858984 0 22%, transparent 24%), radial-gradient(circle at 62% 48%, #696e6a 0 25%, transparent 27%), #40513d; }
+.editor-tile.world-object-mushroom_patch { background: radial-gradient(circle at 34% 55%, #bd7650 0 10%, transparent 12%), radial-gradient(circle at 59% 42%, #d6a069 0 9%, transparent 11%), radial-gradient(circle at 67% 67%, #8f5741 0 8%, transparent 10%), #40513d; }
+.editor-tile.world-object-campfire { background: radial-gradient(circle, #ffd56a 0 10%, #e97630 12% 22%, #5c3928 24% 35%, transparent 37%), #40513d; }
+.editor-tile.world-object-hay_bundle { background: repeating-linear-gradient(12deg, #b99a47 0 3px, #8f7338 3px 5px); }
+.editor-tile.world-object-fence_post { background: linear-gradient(90deg, transparent 40%, #755036 41% 59%, transparent 60%), linear-gradient(#40513d, #40513d); }
 @media (max-width: 1050px) {
   .editor-shell { grid-template-columns: 250px 1fr; }
   .tool-grid { grid-template-columns: 1fr; }

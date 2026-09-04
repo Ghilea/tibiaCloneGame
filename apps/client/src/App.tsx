@@ -987,7 +987,9 @@ const itemSpriteOrder = [
   "reed_stalker_remains",
   "fen_brute_remains",
 ];
+const standaloneItemSpriteIds = new Set(["iron_ore", "coal_chunk", "healing_herbs", "rope_bundle", "rusty_key", "shovel", "leather_satchel", "torch_bundle", "iron_short_sword", "red_apple", "blank_rune", "ember_rune", "traveler_blade", "ashwood_bow", "rough_arrow", "frost_rune", "venom_rune", "iron_battle_axe", "iron_war_hammer", "ironbound_shield", "iron_helmet", "studded_armor", "reinforced_boots", "emerald_ring", "ember_amulet", "mana_tonic"]);
 function ItemIcon({ definitionId }: { definitionId: string }) {
+  if (standaloneItemSpriteIds.has(definitionId)) return <i className="item-icon" style={{ backgroundImage: `url('/assets/sprites/items/${definitionId}.png')`, backgroundSize: "contain", backgroundPosition: "center", backgroundRepeat: "no-repeat" }} />;
   if (definitionId === "iron_pickaxe") return <i className="item-icon food-icon">⛏</i>;
   if (definitionId === "worn_cap") return <i className="item-icon food-icon">🧢</i>;
   if (definitionId === "patched_tunic") return <i className="item-icon food-icon">🥋</i>;

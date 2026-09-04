@@ -437,10 +437,10 @@ impl WorldMap {
         if view.terrain_materials.iter().any(|entry| {
             !matches!(
                 entry.material.as_str(),
-                "packed_earth" | "moss_stone" | "sandstone"
+                "packed_earth" | "moss_stone" | "sandstone" | "mud" | "gravel" | "crypt_stone" | "wood_planks" | "marsh_grass" | "ash_soil"
             )
         }) {
-            bail!("terrain material must be packed_earth, moss_stone, or sandstone");
+            bail!("terrain material is not supported by this server build");
         }
         let valid_object_kind = |kind: &str| {
             matches!(
@@ -461,6 +461,14 @@ impl WorldMap {
                     | "dirt_path"
                     | "snow_ground"
                     | "snow_bank"
+                    | "wooden_crate"
+                    | "grain_sack"
+                    | "bone_pile"
+                    | "rock_pile"
+                    | "mushroom_patch"
+                    | "campfire"
+                    | "hay_bundle"
+                    | "fence_post"
             )
         };
         let mut object_ids = HashSet::new();
@@ -509,6 +517,10 @@ impl WorldMap {
                             | "snow_bank"
                             | "well"
                             | "table"
+                            | "wooden_crate"
+                            | "rock_pile"
+                            | "campfire"
+                            | "fence_post"
                     )
                 })
                 .map(|entry| entry.position),

@@ -46,9 +46,9 @@ export type MapView = {
   doors: DoorView[];
   stairs: StairView[];
 };
-export type WorldObjectKind = "chair" | "table" | "bench" | "well" | "barrel" | "notice_post" | "bent_reeds" | "bog_slick" | "wrecked_planks" | "mountain_wall" | "forest_tree" | "pine_tree" | "snowy_pine" | "dirt_path" | "snow_ground" | "snow_bank";
+export type WorldObjectKind = "chair" | "table" | "bench" | "well" | "barrel" | "notice_post" | "bent_reeds" | "bog_slick" | "wrecked_planks" | "mountain_wall" | "forest_tree" | "pine_tree" | "snowy_pine" | "dirt_path" | "snow_ground" | "snow_bank" | "wooden_crate" | "grain_sack" | "bone_pile" | "rock_pile" | "mushroom_patch" | "campfire" | "hay_bundle" | "fence_post";
 export type WorldObjectView = { id: string; kind: WorldObjectKind; position: Position };
-export type TerrainMaterialId = "packed_earth" | "moss_stone" | "sandstone";
+export type TerrainMaterialId = "packed_earth" | "moss_stone" | "sandstone" | "mud" | "gravel" | "crypt_stone" | "wood_planks" | "marsh_grass" | "ash_soil";
 export type TerrainMaterialView = { position: Position; material: TerrainMaterialId };
 export type BuildingView = { id: string; name: string; kind: "keep" | "house"; x: number; y: number; width: number; height: number; floor: number };
 export type DoorView = { id: string; position: Position; open: boolean };

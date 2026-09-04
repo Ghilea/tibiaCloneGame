@@ -1,0 +1,880 @@
+:root {
+  font-family: Inter, system-ui, sans-serif;
+  color: #e9eee9;
+  background: #090d0b;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  overflow: hidden;
+}
+#editor-root {
+  width: 100vw;
+  height: 100vh;
+}
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+.editor-shell {
+  display: grid;
+  grid-template: 72px 1fr 34px / 240px 1fr;
+  width: 100vw;
+  height: 100vh;
+  background: #0c110e;
+}
+
+.editor-loading { position: fixed; z-index: 100; inset: 0; display: grid; place-content: center; justify-items: center; gap: 8px; padding: 24px; text-align: center; background: radial-gradient(circle at 50% 42%, #31483a 0, #111b16 36%, #050806e8 78%); backdrop-filter: blur(7px); }
+.editor-loading i { width: 52px; height: 52px; margin-bottom: 13px; border: 3px solid #ffffff17; border-top-color: #ddb86d; border-radius: 50%; animation: editor-loading-spin .9s linear infinite; }.editor-loading strong { color: #f0dfb6; font: 700 22px Cinzel, serif; }.editor-loading span { color: #cfad6c; font-size: 11px; }.editor-loading small { max-width: 450px; margin-top: 6px; color: #84928a; font-size: 9px; line-height: 1.55; }
+@keyframes editor-loading-spin { to { transform: rotate(360deg); } }
+.editor-shell header {
+  grid-column: 1 / 3;
+  display: grid;
+  grid-template-columns: auto minmax(220px, 420px) 1fr auto;
+  align-items: center;
+  gap: 24px;
+  padding: 10px 18px;
+  background: #141c18;
+  border-bottom: 1px solid #455149;
+}
+.editor-shell header p {
+  margin: 0;
+  color: #c99e57;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+}
+.editor-shell h1 {
+  margin: 2px 0 0;
+  font: 700 20px Georgia;
+  color: #ead8ae;
+}
+.editor-shell header input,
+select {
+  padding: 8px;
+  background: #0b100d;
+  border: 1px solid #4c5b52;
+  border-radius: 5px;
+}
+.editor-shell header span {
+  color: #829087;
+  font-size: 12px;
+}
+.editor-shell header a {
+  color: #e1bd78;
+}
+.palette {
+  padding: 14px;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: #111814;
+  border-right: 1px solid #3f4a43;
+  scrollbar-width: thin;
+  scrollbar-color: #80683e #0b100d;
+}
+.palette::-webkit-scrollbar {
+  width: 9px;
+}
+.palette::-webkit-scrollbar-track {
+  background: #0b100d;
+  border-left: 1px solid #26342b;
+}
+.palette::-webkit-scrollbar-thumb {
+  background: linear-gradient(#a9854e, #5d4a2f);
+  border: 2px solid #0b100d;
+  border-radius: 8px;
+}
+.palette::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(#d0ad68, #80683e);
+}
+.palette h2 {
+  margin: 0 0 12px;
+  font: 600 13px Georgia;
+}
+.palette button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  margin: 4px 0;
+  padding: 8px;
+  color: #bac5be;
+  text-align: left;
+  background: #18211c;
+  border: 1px solid #334139;
+  border-radius: 5px;
+}
+.palette button.active {
+  color: #f1d99f;
+  border-color: #c99e57;
+  background: #2c2a1d;
+}
+.palette button i {
+  width: 17px;
+  height: 17px;
+  border: 1px solid #ffffff33;
+  border-radius: 3px;
+}
+.palette hr {
+  border: 0;
+  border-top: 1px solid #354139;
+  margin: 15px 0;
+}
+.palette label {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  color: #8f9c94;
+  font-size: 11px;
+}
+.palette small {
+  display: block;
+  color: #708078;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.palette .resize-button {
+  justify-content: center;
+  color: #e8cc91;
+  border-color: #7b6843;
+}
+.npc-inspector {
+  min-width: 0;
+  margin-top: 16px;
+  padding-top: 2px;
+}
+.npc-inspector textarea,
+.npc-inspector input {
+  min-width: 0;
+  width: 100%;
+  padding: 7px;
+  color: #e9eee9;
+  background: #0b100d;
+  border: 1px solid #4c5b52;
+  border-radius: 5px;
+  resize: vertical;
+}
+.npc-inspector h3 {
+  margin: 12px 0 7px;
+  color: #b9c7be;
+  font-size: 11px;
+}
+.npc-service-editor {
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px;
+  background: #0b100d;
+  border: 1px solid #334139;
+  border-radius: 6px;
+}
+.offer-editor {
+  min-width: 0;
+  max-width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-bottom: 8px;
+  padding: 8px;
+  border-bottom: 1px solid #ffffff12;
+  border: 1px solid #334139;
+  border-radius: 6px;
+  background: #111914;
+}
+.shop-offers-heading,
+.offer-editor-title,
+.offer-add-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.shop-offers-heading {
+  margin-bottom: 8px;
+}
+.shop-offers-heading h3,
+.offer-add-title strong,
+.offer-editor-title strong {
+  margin: 0;
+  color: #e8d5a9;
+  font-size: 11px;
+}
+.shop-offers-heading span {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  color: #d8bb79;
+  background: #2a2519;
+  border: 1px solid #665333;
+  border-radius: 999px;
+  font-size: 9px;
+}
+.shop-offers-heading small,
+.offer-add-title small {
+  margin-top: 3px;
+}
+.offer-editor-title,
+.offer-add-title {
+  grid-column: 1 / -1;
+  align-items: center;
+}
+.offer-editor-title button {
+  width: auto;
+  padding: 4px 7px;
+  color: #f0b0a5;
+  background: #3a211e;
+  border-color: #874d45;
+  font-size: 9px;
+}
+.offer-editor label,
+.offer-add label {
+  min-width: 0;
+  margin: 3px 0;
+  color: #8f9c94;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.offer-editor label input,
+.offer-editor label select,
+.offer-add label input,
+.offer-add label select {
+  min-width: 0;
+  width: 100%;
+  margin-top: 2px;
+}
+.empty-offers {
+  margin: 8px 0 12px;
+  padding: 8px;
+  color: #89978e;
+  background: #111914;
+  border: 1px dashed #46564b;
+  border-radius: 5px;
+  font-size: 10px;
+}
+.offer-editor > *,
+.offer-add > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.offer-editor select,
+.offer-add select {
+  width: 100%;
+}
+.offer-editor button,
+.offer-add button {
+  justify-content: center;
+  margin: 0;
+}
+.offer-add {
+  min-width: 0;
+  margin-top: 10px;
+  padding-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 52px 52px;
+  gap: 5px;
+  border-top: 1px solid #ffffff18;
+}
+.offer-add button {
+  grid-column: 1 / 4;
+}
+.spell-toggle {
+  display: flex !important;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+.spell-toggle input {
+  width: auto;
+}
+.palette .remove-npc {
+  justify-content: center;
+  margin-top: 12px;
+  color: #f0b0a5;
+  border-color: #874d45;
+  background: #3a211e;
+}
+.editor-tile.npc-selected {
+  outline: 3px solid #5fe0c2;
+  outline-offset: -4px;
+}
+.number-pair {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 5px;
+}
+.number-pair input {
+  min-width: 0;
+  width: 100%;
+  padding: 7px;
+  color: #e9eee9;
+  background: #0b100d;
+  border: 1px solid #4c5b52;
+  border-radius: 5px;
+}
+.number-pair b {
+  font-weight: 400;
+}
+.editor-workspace {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 56px 1fr;
+}
+.editor-workspace nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 7px 10px;
+  background: #151d19;
+  border-bottom: 1px solid #354139;
+}
+.editor-workspace nav button,
+.file-button {
+  flex: 0 0 auto;
+  padding: 7px 11px;
+  background: #253029;
+  border: 1px solid #536259;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.editor-workspace nav button:disabled {
+  opacity: 0.35;
+}
+.editor-workspace nav label {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  color: #909e95;
+  font-size: 11px;
+}
+.editor-workspace nav > label:has(input[type="range"]) {
+  display: none;
+}
+.editor-workspace nav .primary {
+  margin-left: auto;
+  color: #1a160d;
+  background: #d1a85e;
+}
+.file-button input {
+  display: none;
+}
+.pan-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid #354139;
+  border-radius: 6px;
+}
+.pan-controls button {
+  padding: 5px 7px !important;
+}
+.pan-controls input {
+  width: 62px;
+  padding: 5px;
+  background: #0b100d;
+  border: 1px solid #4c5b52;
+  border-radius: 4px;
+}
+.map-scroll {
+  overflow: auto;
+  padding: 36px;
+  touch-action: none;
+  background-color: #080b09;
+  background-image: radial-gradient(#334039 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+.map-scroll.pan-mode,
+.map-scroll.pan-mode .editor-tile {
+  cursor: grab;
+}
+.map-scroll.pan-mode:active,
+.map-scroll.pan-mode:active .editor-tile {
+  cursor: grabbing;
+}
+.editor-grid.top-down {
+  position: relative;
+  width: max-content;
+  filter: drop-shadow(0 20px 26px #000c);
+}
+.editor-tile {
+  position: absolute;
+  min-width: 0;
+  padding: 0;
+  color: #f3c978;
+  background: #334536;
+  border: 1px solid #17241c;
+  border-radius: 0;
+  clip-path: none;
+  font-weight: 900;
+  text-shadow: 0 1px 2px #000;
+}
+.editor-tile.movable {
+  cursor: grab;
+  box-shadow: inset 0 0 0 2px rgba(143, 197, 138, 0.45);
+}
+.editor-tile.movable:active {
+  cursor: grabbing;
+}
+.editor-tile.selected {
+  outline: 3px solid #f4d27f;
+  outline-offset: -4px;
+  box-shadow: inset 0 0 0 2px #fff1b0, 0 0 14px rgba(244, 210, 127, 0.55);
+  z-index: 4 !important;
+}
+.editor-tile.marquee-selected {
+  outline: 2px dashed rgba(244, 210, 127, 0.95);
+  outline-offset: -3px;
+}
+.editor-selection-frame,
+.editor-marquee {
+  position: absolute;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+.editor-selection-frame {
+  z-index: 5;
+  border: 3px solid #f4d27f;
+  box-shadow: inset 0 0 0 1px #fff1b0, 0 0 13px rgba(244, 210, 127, 0.55);
+}
+.editor-marquee {
+  z-index: 6;
+  border: 2px dashed #f4d27f;
+  background: rgba(244, 210, 127, 0.16);
+}
+.editor-tile.drag-preview {
+  opacity: 0.58;
+  outline: 3px solid #87e6b0;
+  outline-offset: -4px;
+  filter: brightness(1.35) saturate(1.15);
+  box-shadow: inset 0 0 18px rgba(93, 238, 158, 0.7);
+}
+.editor-tile.drag-preview::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  pointer-events: none;
+  border: 2px dashed #f4d27f;
+  background: rgba(244, 210, 127, 0.24);
+  box-shadow: inset 0 0 12px rgba(255, 239, 176, 0.42);
+}
+.editor-tile.material-packed_earth {
+  background-image: url("/assets/world/aldoria-packed-earth-v1.png");
+  background-size: 180px 180px;
+}
+.editor-tile.material-moss_stone {
+  background-image: url("/assets/world/aldoria-moss-stone-v1.png");
+  background-size: 180px 180px;
+}
+.editor-tile.material-sandstone {
+  background-image: url("/assets/world/aldoria-sandstone-v1.png");
+  background-size: 180px 180px;
+}
+.editor-tile.roads {
+  background: #716b5f;
+}
+.editor-tile.floors {
+  background: repeating-linear-gradient(20deg, #805d3e 0 7px, #9b744f 8px 9px);
+}
+.editor-tile.water {
+  background: #245b65;
+}
+.editor-tile.blocked {
+  box-shadow: inset 0 0 0 3px #d04d46;
+}
+.editor-tile.houseWalls {
+  background: linear-gradient(150deg, #b08a63, #6d4e35);
+  filter: drop-shadow(0 7px 1px #3d2a1d);
+}
+.editor-tile.castleWalls {
+  background: linear-gradient(150deg, #87918d, #4a514f);
+  filter: drop-shadow(0 8px 1px #282d2b);
+}
+.editor-tile.player-spawn {
+  color: #241e0d;
+  background-image: radial-gradient(
+    ellipse,
+    #f1d16f 0 28%,
+    #756632 31%,
+    #334536 34%
+  );
+  outline: 2px solid #f1d16f;
+  outline-offset: -4px;
+}
+.editor-tile:hover {
+  filter: brightness(1.35);
+  outline: 2px solid #e8c77e;
+  outline-offset: -4px;
+}
+.editor-shell footer {
+  grid-column: 1 / 3;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 0 14px;
+  color: #839088;
+  background: #121915;
+  border-top: 1px solid #3d4841;
+  font-size: 10px;
+}
+.editor-shell footer strong {
+  color: #e3bd73;
+}
+.editor-shell footer small {
+  margin-left: auto;
+}
+.editor-tile.houseWalls,
+.editor-tile.castleWalls {
+  filter: none;
+}
+.editor-tile.houseWalls:hover,
+.editor-tile.castleWalls:hover {
+  filter: brightness(1.35);
+}
+.editor-tile.water {
+  --water-north: transparent;
+  --water-east: transparent;
+  --water-south: transparent;
+  --water-west: transparent;
+  background-color: #164b57;
+  background-image:
+    linear-gradient(45deg, transparent 38%, var(--water-north) 40% 58%, transparent 60%),
+    linear-gradient(135deg, transparent 38%, var(--water-east) 40% 58%, transparent 60%),
+    linear-gradient(45deg, transparent 38%, var(--water-south) 40% 58%, transparent 60%),
+    linear-gradient(135deg, transparent 38%, var(--water-west) 40% 58%, transparent 60%),
+    url("/assets/world/aldoria-water-v1.png");
+  background-position: 100% 0, 100% 100%, 0 100%, 0 0, 0 0;
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, repeat;
+  background-size: 50% 50%, 50% 50%, 50% 50%, 50% 50%, 180px 180px;
+  box-shadow: none;
+  animation: none;
+}
+.water-shore-north { --water-north: #cdbb82; }
+.water-shore-east { --water-east: #cdbb82; }
+.water-shore-south { --water-south: #cdbb82; }
+.water-shore-west { --water-west: #cdbb82; }
+.water-cliff-north { --water-north: #59605a; }
+.water-cliff-east { --water-east: #59605a; }
+.water-cliff-south { --water-south: #59605a; }
+.water-cliff-west { --water-west: #59605a; }
+.editor-tile.water.bridges {
+  background-color: #765033;
+  background-image:
+    linear-gradient(0deg, transparent 12%, #b08350 13% 18%, transparent 19% 81%, #b08350 82% 87%, transparent 88%),
+    repeating-linear-gradient(90deg, #765033 0 9px, #49301f 10px 11px, #8b6039 12px 19px);
+  background-position: 0 0;
+  background-repeat: repeat;
+  background-size: auto;
+  animation: none;
+  box-shadow: inset 0 0 0 2px #3a281c;
+}
+/* Modern editor workspace */
+.editor-shell {
+  grid-template: 68px 1fr 34px / 292px 1fr;
+}
+.editor-shell header {
+  padding-inline: 20px;
+  background: linear-gradient(180deg, #18221d, #121a16);
+  box-shadow: 0 8px 28px #0006;
+  z-index: 5;
+}
+.editor-shell header input {
+  height: 38px;
+  padding-inline: 12px;
+  border-radius: 8px;
+}
+.editor-shell header a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: #f0d49a;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-decoration: none;
+  border: 1px solid #9b7943;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #3a3020, #211b13);
+  box-shadow: inset 0 1px #ffffff10, 0 4px 14px #0004;
+  transition: border-color 120ms ease, color 120ms ease, transform 120ms ease;
+}
+.editor-shell header a:hover {
+  color: #ffe7b2;
+  border-color: #d0a356;
+  transform: translateY(-1px);
+}
+.editor-shell header a:focus-visible {
+  outline: 2px solid #e7bd6d;
+  outline-offset: 2px;
+}
+.palette {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  background: linear-gradient(180deg, #121a16, #0e1512);
+}
+.editor-onboarding,
+.editor-minimap,
+.tool-context,
+.world-settings,
+.npc-inspector {
+  padding: 12px;
+  border: 1px solid #334139;
+  border-radius: 10px;
+  background: #18211ccc;
+  box-shadow: 0 7px 18px #0003;
+}
+.editor-onboarding {
+  display: grid;
+  gap: 5px;
+}
+.editor-onboarding strong {
+  color: #ead8ae;
+  font: 600 14px Georgia, serif;
+}
+.editor-onboarding span {
+  color: #aebbb3;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.editor-minimap { display: grid; gap: 8px; }
+.minimap-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }.minimap-header > div:first-child { display: grid; gap: 2px; }.minimap-header strong { color: #ead8ae; font: 600 12px Georgia, serif; }.minimap-header span { color: #829188; font-size: 9px; }
+.minimap-controls { display: grid; grid-template-columns: 24px 31px 24px 24px; align-items: center; overflow: hidden; border: 1px solid #4c5b52; border-radius: 6px; background: #0a100d; }.palette .minimap-controls button { display: grid; place-items: center; width: 24px; height: 24px; min-height: 0; margin: 0; padding: 0; border: 0; border-left: 1px solid #ffffff0b; border-radius: 0; background: transparent; font-size: 15px; }.palette .minimap-controls button:first-child { border-left: 0; }.minimap-controls output { color: #d9bd7e; font-size: 9px; font-weight: 700; text-align: center; }
+.minimap-canvas { position: relative; width: 100%; overflow: hidden; background: #070b09; border: 1px solid #45534b; border-radius: 7px; box-shadow: inset 0 0 24px #000b; aspect-ratio: 512 / 280; }
+.minimap-canvas canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; image-rendering: pixelated; transform-origin: 0 0; will-change: transform; }.minimap-canvas canvas:last-child { cursor: crosshair; touch-action: none; }.minimap-canvas canvas:last-child:active { cursor: grabbing; }
+.minimap-legend { display: flex; flex-wrap: wrap; gap: 5px 9px; }.minimap-legend span { display: inline-flex; align-items: center; gap: 4px; color: #84928a; font-size: 8px; }.minimap-legend span::before { content: ""; width: 7px; height: 7px; background: #bd8b59; border-radius: 2px; }.minimap-legend .water-key::before { background: #296b7c; }.minimap-legend .road-key::before { background: #aaa18b; }.minimap-legend .life-key::before { background: #55e4be; }
+.editor-minimap > small { margin-top: -2px; }
+.tool-tabs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border-radius: 9px;
+  background: #0a100d;
+}
+.palette .tool-tabs button {
+  justify-content: center;
+  margin: 0;
+  padding: 7px 3px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 10px;
+}
+.palette .tool-tabs button.active {
+  color: #211b0e;
+  border-color: #d6b66f;
+  background: #d1ad67;
+}
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.palette .tool-grid button {
+  min-height: 43px;
+  margin: 0;
+  padding: 7px 8px;
+  border-radius: 8px;
+}
+.palette .tool-grid button i,
+.tool-context-title > i {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border: 1px solid #ffffff38;
+  border-radius: 5px;
+  box-shadow: inset 0 1px #ffffff24;
+}
+.palette .tool-grid button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.tool-context {
+  display: grid;
+  gap: 9px;
+}
+.tool-context-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+.tool-context-title div {
+  display: grid;
+  gap: 3px;
+}
+.tool-context-title strong {
+  color: #e8d5a9;
+  font-size: 12px;
+}
+.tool-context-title span {
+  color: #8f9d94;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.tool-context label,
+.world-settings label {
+  margin: 2px 0;
+}
+.world-settings {
+  margin-top: auto;
+}
+.world-settings summary {
+  color: #c8d2cc;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+.world-settings[open] summary {
+  margin-bottom: 10px;
+}
+.palette .world-settings button {
+  margin-block: 8px;
+}
+.npc-inspector {
+  margin-top: 0;
+}
+.npc-inspector hr {
+  display: none;
+}
+.selection-inspector { display: grid; gap: 9px; min-width: 0; padding: 12px; border: 1px solid #5d704f; border-radius: 10px; background: linear-gradient(145deg, #1b261e, #111813); box-shadow: 0 7px 18px #0003; }.selection-inspector hr { display: none; }.selection-inspector h2 { margin: 0; color: #ead8ae; font: 600 14px Georgia, serif; }.selection-inspector > small { color: #8f9d94; font-size: 9px; line-height: 1.4; }.selection-inspector fieldset { display: grid; min-width: 0; gap: 6px; margin: 0; padding: 8px; border: 1px solid #3b4a40; border-radius: 7px; background: #0b100dcc; }.selection-inspector legend { padding: 0 4px; color: #d5ba79; font-size: 10px; font-weight: 700; }.selection-inspector label { display: grid; gap: 3px; color: #afbbb2; font-size: 9px; }.selection-inspector input, .selection-inspector select { min-width: 0; width: 100%; padding: 7px; color: #e9eee9; background: #0b100d; border: 1px solid #4c5b52; border-radius: 5px; }.selection-inspector .property-toggle { display: flex; align-items: center; gap: 7px; }.selection-inspector .property-toggle input { width: auto; }.selection-inspector fieldset > small { color: #8f9d94; font-size: 9px; }.palette .remove-selected { margin: 0; color: #f0b6a7; border-color: #7a4139; background: #301815; }
+.editor-workspace nav {
+  gap: 12px;
+  height: 56px;
+  padding-inline: 14px;
+  background: #151e19f2;
+  box-shadow: 0 6px 18px #0004;
+  z-index: 4;
+}
+.history-controls,
+.document-controls {
+  display: flex;
+  gap: 5px;
+}
+.document-controls {
+  margin-left: auto;
+}
+.save-status {
+  max-width: 180px;
+  margin-left: auto;
+  overflow: hidden;
+  color: #90a298;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.save-status + .document-controls {
+  margin-left: 0;
+}
+.editor-workspace nav button,
+.file-button {
+  border-radius: 8px;
+}
+.map-scroll {
+  padding: 20px;
+  background-color: #090d0b;
+  background-image:
+    radial-gradient(circle at 50% 20%, #1a2820 0, transparent 38%),
+    radial-gradient(#314038 1px, transparent 1px);
+  background-size: 100% 100%, 18px 18px;
+}
+.editor-space-pan .map-scroll,
+.editor-space-pan .map-scroll .editor-tile {
+  cursor: grab !important;
+}
+.editor-space-pan .map-scroll:active,
+.editor-space-pan .map-scroll:active .editor-tile {
+  cursor: grabbing !important;
+}
+.editor-tile {
+  background-color: #40513d;
+  background-image: url("/assets/world/greyhaven-grass.png");
+  background-size: 170px 170px;
+}
+.editor-tile.roads {
+  background-color: #625e55;
+  background-image: url("/assets/world/greyhaven-cobble.png");
+  background-size: 190px 190px;
+}
+.editor-tile.floors {
+  background-color: #805d3e;
+  background-image: repeating-linear-gradient(20deg, #68492f 0 7px, #a0784f 8px 10px);
+}
+.editor-tile.houseWalls {
+  background-color: #a77840;
+  background-image: url("/assets/world/aldoria-timber-plaster-v1.png");
+  background-size: 150px 150px;
+}
+.editor-tile.castleWalls {
+  background-color: #68706d;
+  background-image: url("/assets/world/aldoria-castle-stone-v2.png");
+  background-size: 150px 150px;
+}
+.editor-tile.trees {
+  background-color: #40513d;
+  background-image: radial-gradient(ellipse at 50% 42%, #609047 0 24%, #315e35 26% 42%, transparent 44%), url("/assets/world/greyhaven-grass.png");
+  background-position: center, center;
+  background-repeat: no-repeat, repeat;
+  background-size: auto, 170px 170px;
+  box-shadow: inset 0 0 0 2px rgba(101, 150, 78, 0.72);
+}
+.editor-tile.world-object { color: #fff0c5; background-position: center; background-repeat: no-repeat; font-size: 15px; }
+.editor-tile.world-object-chair, .editor-tile.world-object-table, .editor-tile.world-object-bench, .editor-tile.world-object-barrel { background-color: #40513d; background-image: radial-gradient(ellipse at center, #a46b3d 0 30%, #694025 32% 48%, transparent 50%), url("/assets/world/greyhaven-grass.png"); background-size: auto, 170px 170px; }
+.editor-tile.world-object-well { background-color: #40513d; background-image: radial-gradient(circle at center, #233638 0 17%, #aeb7ae 19% 32%, #5c6764 34% 44%, transparent 46%), url("/assets/world/greyhaven-grass.png"); background-size: auto, 170px 170px; }
+.editor-tile.world-object-mountain_wall { background-color: #65706c; background-image: linear-gradient(135deg, #88908a 0 20%, #4d5553 21% 45%, #737b75 46% 65%, #454d4c 66%); }
+.editor-tile.world-object-forest_tree, .editor-tile.world-object-pine_tree, .editor-tile.world-object-snowy_pine { background-color: #40513d; background-image: radial-gradient(ellipse at center 42%, #4d8146 0 26%, #24462f 28% 43%, transparent 45%), url("/assets/world/greyhaven-grass.png"); background-size: auto, 170px 170px; }
+.editor-tile.world-object-snowy_pine { background-image: radial-gradient(ellipse at center 42%, #e4efeb 0 22%, #35634d 24% 42%, transparent 45%), url("/assets/world/greyhaven-grass.png"); }
+.editor-tile.world-object-dirt_path { background-image: url("/assets/world/aldoria-wilderness-atlas-v1.png"); background-size: 300% 200%; background-position: 0 0; }
+.editor-tile.world-object-snow_ground { background-image: url("/assets/world/aldoria-wilderness-atlas-v1.png"); background-size: 300% 200%; background-position: 50% 0; }
+.editor-tile.world-object-snow_bank { background-image: radial-gradient(ellipse at 50% 60%, #d8e8e9 0 42%, #a9c4ca 44% 48%, transparent 50%), url("/assets/world/aldoria-wilderness-atlas-v1.png"); background-size: auto, 300% 200%; background-position: center, 50% 0; background-color: #e4eeeb; }
+@media (max-width: 1050px) {
+  .editor-shell { grid-template-columns: 250px 1fr; }
+  .tool-grid { grid-template-columns: 1fr; }
+  .editor-onboarding { display: none; }
+  .pan-controls label { display: none; }
+}
+
+/* Category tabs live inside the palette so they never obscure world tiles. */
+.tool-tabs {
+  position: static;
+  z-index: auto;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  flex-direction: initial;
+  gap: 4px;
+  width: auto;
+  padding: 5px;
+  background: #111814;
+  border: 1px solid #3f4a43;
+  border-radius: 9px;
+  box-shadow: 0 7px 18px #0003;
+}
+.palette .tool-tabs button {
+  width: 100%;
+  min-height: 32px;
+  margin: 0;
+  padding: 6px 4px;
+  justify-content: center;
+  color: #9ba89f;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.palette .tool-tabs button.active {
+  color: #211b0e;
+  border-color: #d6b66f;
+  background: #d1ad67;
+}
+@media (max-width: 1050px) {
+  .tool-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

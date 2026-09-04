@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import type { BuildingView, DoorView, NpcView, Position, StairView, TerrainMaterialId, TerrainMaterialView, WorldObjectKind, WorldObjectView } from "../protocol";
 import { waterEdgesAt } from "../game/WaterEdges";
 
-type PaintLayer = "select" | "blocked" | "water" | "bridges" | "trees" | "roads" | "floors" | "packed_earth" | "moss_stone" | "sandstone" | "houseWalls" | "castleWalls" | "house" | "keep" | "removeBuilding" | "door" | "window" | "torch" | "stairs" | "spawn" | "npc" | "resourceNode" | "playerSpawn" | `object_${WorldObjectKind}`;
+type PaintLayer = "select" | "blocked" | "water" | "bridges" | "trees" | "roads" | "floors" | "packed_earth" | "moss_stone" | "sandstone" | "mud" | "gravel" | "crypt_stone" | "wood_planks" | "marsh_grass" | "ash_soil" | "houseWalls" | "castleWalls" | "house" | "keep" | "removeBuilding" | "door" | "window" | "torch" | "stairs" | "spawn" | "npc" | "resourceNode" | "playerSpawn" | `object_${WorldObjectKind}`;
 type ToolGroup = "navigate" | "terrain" | "structures" | "objects" | "entities";
 type SpawnView = { id: string; definitionId: string; position: Position };
 type ResourceNodeDocument = { id: string; kind: "copper_vein"; position: Position; respawnMs: number; requiredSkillLevel: number };
@@ -36,6 +36,12 @@ const tools: { id: PaintLayer; label: string; swatch: string; group: ToolGroup; 
   { id: "packed_earth", label: "Packed earth", swatch: "#76583b", group: "terrain", description: "Paint a compacted earthen terrain material." },
   { id: "moss_stone", label: "Moss stone", swatch: "#4d5740", group: "terrain", description: "Paint old damp flagstones with mossy joints." },
   { id: "sandstone", label: "Sandstone", swatch: "#c9a66c", group: "terrain", description: "Paint warm worn sandstone paving." },
+  { id: "mud", label: "Mud", swatch: "#60452f", group: "terrain", description: "Paint mud terrain." },
+  { id: "gravel", label: "Gravel", swatch: "#8c8371", group: "terrain", description: "Paint gravel terrain." },
+  { id: "crypt_stone", label: "Crypt stone", swatch: "#59615d", group: "terrain", description: "Paint crypt stone terrain." },
+  { id: "wood_planks", label: "Wood planks", swatch: "#865a35", group: "terrain", description: "Paint wood planks terrain." },
+  { id: "marsh_grass", label: "Marsh grass", swatch: "#526b3e", group: "terrain", description: "Paint marsh grass terrain." },
+  { id: "ash_soil", label: "Ash soil", swatch: "#4f4a43", group: "terrain", description: "Paint ash soil terrain." },
   { id: "object_chair", label: "Chair", swatch: "#9d6638", group: "objects", description: "Place a wooden chair." },
   { id: "object_table", label: "Table", swatch: "#704526", group: "objects", description: "Place a solid wooden table." },
   { id: "object_bench", label: "Bench", swatch: "#a66d3f", group: "objects", description: "Place a village bench." },
@@ -52,6 +58,14 @@ const tools: { id: PaintLayer; label: string; swatch: string; group: ToolGroup; 
   { id: "object_dirt_path", label: "Dirt path", swatch: "#96734f", group: "objects", description: "Paint a worn country path." },
   { id: "object_snow_ground", label: "Snow ground", swatch: "#e4eee9", group: "objects", description: "Paint crisp snow ground." },
   { id: "object_snow_bank", label: "Snow bank", swatch: "#b9d0d2", group: "objects", description: "Place an impassable snow bank." },
+  { id: "object_wooden_crate", label: "Wooden crate", swatch: "#8e6038", group: "objects", description: "Place wooden crate with collision." },
+  { id: "object_grain_sack", label: "Grain sack", swatch: "#b49a6a", group: "objects", description: "Place grain sack." },
+  { id: "object_bone_pile", label: "Bone pile", swatch: "#d0c5a1", group: "objects", description: "Place bone pile." },
+  { id: "object_rock_pile", label: "Rock pile", swatch: "#777b76", group: "objects", description: "Place rock pile with collision." },
+  { id: "object_mushroom_patch", label: "Mushrooms", swatch: "#a96f4e", group: "objects", description: "Place mushrooms." },
+  { id: "object_campfire", label: "Campfire", swatch: "#e17732", group: "objects", description: "Place campfire with collision." },
+  { id: "object_hay_bundle", label: "Hay bundle", swatch: "#b89a4e", group: "objects", description: "Place hay bundle." },
+  { id: "object_fence_post", label: "Fence post", swatch: "#765039", group: "objects", description: "Place fence post with collision." },
   { id: "house", label: "House", swatch: "#b9875d", group: "structures", description: "Place a complete timber house using the selected size." },
   { id: "keep", label: "Keep", swatch: "#818b87", group: "structures", description: "Place a complete fortified stone building." },
   { id: "houseWalls", label: "House wall", swatch: "#9a7654", group: "structures", description: "Paint individual timber-and-plaster wall sections." },
@@ -67,8 +81,8 @@ const tools: { id: PaintLayer; label: string; swatch: string; group: ToolGroup; 
   { id: "resourceNode", label: "Copper vein", swatch: "#bd7548", group: "entities", description: "Place a mineable copper vein with configurable respawn and skill requirement." },
 ];
 const creatureIds = ["castle_rat", "crypt_guard", "bone_acolyte", "cellar_warden", "mireling", "mire_skulker", "reed_stalker", "fen_brute"];
-const worldObjectKinds: WorldObjectKind[] = ["chair", "table", "bench", "well", "barrel", "notice_post", "bent_reeds", "bog_slick", "wrecked_planks", "mountain_wall", "forest_tree", "pine_tree", "snowy_pine", "dirt_path", "snow_ground", "snow_bank"];
-const itemIds = ["blank_rune", "ember_rune", "traveler_blade", "ashwood_bow", "rough_arrow", "field_backpack", "mire_fiber", "gold_coin", "field_bread", "smoked_mire_meat", "bog_ichor", "reed_hide", "fen_tusk", "iron_pickaxe", "copper_ore"];
+const worldObjectKinds: WorldObjectKind[] = ["chair", "table", "bench", "well", "barrel", "notice_post", "bent_reeds", "bog_slick", "wrecked_planks", "mountain_wall", "forest_tree", "pine_tree", "snowy_pine", "dirt_path", "snow_ground", "snow_bank", "wooden_crate", "grain_sack", "bone_pile", "rock_pile", "mushroom_patch", "campfire", "hay_bundle", "fence_post"];
+const itemIds = ["blank_rune", "ember_rune", "traveler_blade", "ashwood_bow", "rough_arrow", "field_backpack", "mire_fiber", "gold_coin", "field_bread", "smoked_mire_meat", "bog_ichor", "reed_hide", "fen_tusk", "iron_pickaxe", "copper_ore", "iron_ore", "coal_chunk", "healing_herbs", "rope_bundle", "rusty_key", "shovel", "leather_satchel", "torch_bundle", "iron_short_sword", "red_apple", "frost_rune", "venom_rune", "iron_battle_axe", "iron_war_hammer", "ironbound_shield", "iron_helmet", "studded_armor", "reinforced_boots", "emerald_ring", "ember_amulet", "mana_tonic"];
 const spellIds = ["ember_bolt"];
 const recipeIds = ["mark_ember_sigil", "fletch_rough_arrows", "forge_copper_blade"];
 const VIEW_COLUMNS = 40;
@@ -247,12 +261,12 @@ export function WorldEditor() {
       if (!next[layer].some((tile) => same(tile, position))) next[layer].push(position);
       if (["water", "houseWalls", "castleWalls"].includes(layer) && !next.blocked.some((tile) => same(tile, position))) next.blocked.push(position);
       if (["blocked", "houseWalls", "castleWalls"].includes(layer)) next.bridges = next.bridges.filter((tile) => !same(tile, position));
-    } else if (["packed_earth", "moss_stone", "sandstone"].includes(tool)) {
+    } else if (["packed_earth", "moss_stone", "sandstone", "mud", "gravel", "crypt_stone", "wood_planks", "marsh_grass", "ash_soil"].includes(tool)) {
       next.terrainMaterials = next.terrainMaterials.filter((entry) => !same(entry.position, position));
       next.terrainMaterials.push({ position, material: tool as TerrainMaterialId });
     } else if (tool.startsWith("object_")) {
       const kind = tool.slice("object_".length) as WorldObjectKind;
-      const solid = ["mountain_wall", "forest_tree", "pine_tree", "snowy_pine", "snow_bank", "well", "table"].includes(kind);
+      const solid = ["mountain_wall", "forest_tree", "pine_tree", "snowy_pine", "snow_bank", "well", "table", "wooden_crate", "rock_pile", "campfire", "fence_post"].includes(kind);
       if (same(next.playerSpawn, position) || next.water.some((tile) => same(tile, position))) return;
       next.objects = next.objects.filter((entry) => !same(entry.position, position));
       next.objects.push({ id: `object_${kind}_${activeFloor}_${x}_${y}`, kind, position });
@@ -702,7 +716,7 @@ function drawMinimapPositions(context: CanvasRenderingContext2D, positions: read
 }
 
 function drawMinimapMaterials(context: CanvasRenderingContext2D, entries: readonly TerrainMaterialView[], floor: number, projection: ReturnType<typeof minimapProjection>) {
-  const colors: Record<TerrainMaterialId, string> = { packed_earth: "#765739", moss_stone: "#59644e", sandstone: "#c7a269" };
+  const colors: Record<TerrainMaterialId, string> = { packed_earth: "#765739", moss_stone: "#59644e", sandstone: "#c7a269", mud: "#60452f", gravel: "#8c8371", crypt_stone: "#59615d", wood_planks: "#865a35", marsh_grass: "#526b3e", ash_soil: "#4f4a43" };
   for (const entry of entries) {
     if (entry.position.z !== floor) continue;
     context.fillStyle = colors[entry.material];
@@ -721,7 +735,7 @@ function SelectionInspector({ position, resourceNode, resourceKindCount, object,
     {spawn && <fieldset><legend>Creature spawn</legend><label>Stable ID<input value={spawn.id} onChange={(event) => onSpawnChange({ ...spawn, id: stableId(event.target.value) })} /></label><label>Creature<select value={spawn.definitionId} onChange={(event) => onSpawnChange({ ...spawn, definitionId: event.target.value })}>{creatureIds.map((id) => <option key={id}>{id}</option>)}</select></label></fieldset>}
     {door && <fieldset><legend>Door</legend><label>Stable ID<input value={door.id} onChange={(event) => onDoorChange({ ...door, id: stableId(event.target.value) })} /></label><label className="property-toggle"><input type="checkbox" checked={door.open} onChange={(event) => onDoorChange({ ...door, open: event.target.checked })} />Starts open</label></fieldset>}
     {stairs && <fieldset><legend>Stairs</legend><label>Stable ID<input value={stairs.id} onChange={(event) => onStairsChange({ ...stairs, id: stableId(event.target.value) })} /></label><label>Destination floor<select value={stairs.to.z} onChange={(event) => onStairsChange({ ...stairs, to: { ...stairs.to, z: Number(event.target.value) } })}>{[6, 7, 8, 9].map((floor) => <option key={floor} value={floor}>{floor}</option>)}</select></label></fieldset>}
-    {material && <fieldset><legend>Terrain material</legend><label>Material<select value={material.material} onChange={(event) => onMaterialChange({ ...material, material: event.target.value as TerrainMaterialId })}><option value="packed_earth">Packed earth</option><option value="moss_stone">Moss stone</option><option value="sandstone">Sandstone</option></select></label></fieldset>}
+    {material && <fieldset><legend>Terrain material</legend><label>Material<select value={material.material} onChange={(event) => onMaterialChange({ ...material, material: event.target.value as TerrainMaterialId })}><option value="packed_earth">Packed earth</option><option value="moss_stone">Moss stone</option><option value="sandstone">Sandstone</option><option value="mud">Mud</option><option value="gravel">Gravel</option><option value="crypt_stone">Crypt stone</option><option value="wood_planks">Wood planks</option><option value="marsh_grass">Marsh grass</option><option value="ash_soil">Ash soil</option></select></label></fieldset>}
     {building && <fieldset><legend>{building.kind === "keep" ? "Keep" : "House"}</legend><label>Stable ID<input value={building.id} onChange={(event) => onBuildingChange({ ...building, id: stableId(event.target.value) })} /></label><label>Display name<input value={building.name} onChange={(event) => onBuildingChange({ ...building, name: event.target.value })} /></label><small>{building.width} × {building.height} tiles · use Move objects to relocate.</small></fieldset>}
     {(playerSpawn || window || torch) && <fieldset><legend>Tile markers</legend>{playerSpawn && <small>Player start</small>}{window && <small>Window</small>}{torch && <small>Torch</small>}</fieldset>}
     <button type="button" className="remove-selected" onClick={onRemove}>Remove selected content</button>

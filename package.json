@@ -10,6 +10,9 @@
     "load-test-all": "node scripts/run-load-test.mjs",
     "build": "npm --prefix apps/client run build",
     "test": "npm --prefix apps/client run test",
-    "check": "npm --prefix apps/client run check"
+    "check": "npm --prefix apps/client run check",
+    "content:update": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/aldoria-update.ps1",
+    "content:update:dry": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/aldoria-update.ps1 --dry-run",
+    "content:rollback": "node scripts/aldoria-rollback.mjs"
   }
 }
