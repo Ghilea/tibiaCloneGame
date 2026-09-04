@@ -33,7 +33,7 @@ const TILE_HEIGHT = 0.12;
 const WALL_HEIGHT = 3.2;
 const CASTLE_HEIGHT = 4.1;
 const DOOR_HEIGHT = 2.2;
-const CAMERA_ZOOM = 125;
+const CAMERA_ZOOM = 90;
 const CAMERA_HEIGHT = 18;
 // About 27 degrees away from straight down: enough to read wall fronts and
 // actor silhouettes without returning to the old diagonal isometric view.
