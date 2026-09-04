@@ -631,7 +631,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
             },
             None => Vec::new(),
         },
-        max_capacity: f32::from(adventurer_profile.capacity),
+        max_capacity: world::capacity_for_level(level),
         last_move: Instant::now() - Duration::from_millis(165),
         last_attack: Instant::now() - Duration::from_millis(700),
         last_item_use: Instant::now() - Duration::from_millis(900),

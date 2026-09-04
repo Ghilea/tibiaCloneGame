@@ -117,6 +117,11 @@ pub struct CraftingUpdate {
     pub inventory_changed: bool,
 }
 
+/// Carry capacity starts at 100 and grows by 10 weight per level.
+pub fn capacity_for_level(level: u32) -> f32 {
+    100.0 + level.saturating_sub(1) as f32 * 10.0
+}
+
 #[derive(Debug, Clone)]
 pub struct MiningUpdate {
     pub node: ResourceNodeView,
@@ -1892,7 +1897,7 @@ impl World {
         let mut inventory = player.inventory.clone();
         if let Some(definition) = definition.as_ref() {
             add_crafted_output(&mut inventory, definition, 1, (None, None));
-            if self.inventory_weight(&inventory) > player.max_capacity + f32::EPSILON {
+            if self.inventory_weight(&inventory) > self.carry_capacity(player) + f32::EPSILON {
                 return Err("too_heavy");
             }
             if !self.inventory_slots_valid(&inventory) {
@@ -1975,7 +1980,7 @@ impl World {
             .ok_or("unknown_item_definition")?;
         let mut inventory = player.inventory.clone();
         add_crafted_output(&mut inventory, &definition, quantity, (None, None));
-        if self.inventory_weight(&inventory) > player.max_capacity + f32::EPSILON {
+        if self.inventory_weight(&inventory) > self.carry_capacity(player) + f32::EPSILON {
             return Err("too_heavy");
         }
         if !self.inventory_slots_valid(&inventory) {
@@ -2099,7 +2104,7 @@ impl World {
             offer.quantity.saturating_mul(quantity),
             (None, None),
         );
-        if self.inventory_weight(&inventory) > player.max_capacity + f32::EPSILON {
+        if self.inventory_weight(&inventory) > self.carry_capacity(player) + f32::EPSILON {
             return Err("shop_capacity_exceeded");
         }
         if !self.inventory_slots_valid(&inventory) {
@@ -2335,7 +2340,7 @@ impl World {
             .collect();
         let mut combined = player.inventory.clone();
         combined.extend(transferred.iter().cloned());
-        if self.inventory_weight(&combined) > player.max_capacity + f32::EPSILON {
+        if self.inventory_weight(&combined) > self.carry_capacity(player) + f32::EPSILON {
             return Err("too_heavy");
         }
         if !self.inventory_slots_valid(&combined) {
@@ -2377,7 +2382,7 @@ impl World {
         Some((
             player.inventory.clone(),
             self.inventory_weight(&player.inventory),
-            player.max_capacity,
+            self.carry_capacity(player),
         ))
     }
 
@@ -2543,8 +2548,8 @@ impl World {
         let items_b = take_trade_items(&mut inventory_b, &trade.offer_b)?;
         inventory_a.extend(items_b.into_iter().map(clear_item_location));
         inventory_b.extend(items_a.into_iter().map(clear_item_location));
-        if self.inventory_weight(&inventory_a) > player_a.max_capacity + f32::EPSILON
-            || self.inventory_weight(&inventory_b) > player_b.max_capacity + f32::EPSILON
+        if self.inventory_weight(&inventory_a) > self.carry_capacity(player_a) + f32::EPSILON
+            || self.inventory_weight(&inventory_b) > self.carry_capacity(player_b) + f32::EPSILON
         {
             let session = self.trades.get_mut(&trade_id).expect("trade exists");
             session.confirmed_a = false;
@@ -3231,7 +3236,7 @@ impl World {
             } else {
                 definition.weight * f32::from(picked_item.quantity)
             };
-        if weight > player.max_capacity + f32::EPSILON {
+        if weight > self.carry_capacity(player) + f32::EPSILON {
             return Err("too_heavy");
         }
         if !is_currency
@@ -3848,6 +3853,7 @@ impl World {
         let player = self.players.get_mut(&player_id).expect("checked above");
         player.view.experience = player.view.experience.saturating_add(definition.experience);
         player.view.level = level_for_experience(player.view.experience);
+        player.max_capacity = capacity_for_level(player.view.level);
         let stats = player.view.clone();
         let corpse_id = uuid::Uuid::new_v4();
         let mut contents = Vec::new();
@@ -4302,6 +4308,17 @@ impl World {
                     .map(|definition| definition.weight * f32::from(item.quantity))
             })
             .sum()
+    }
+
+    fn carry_capacity(&self, player: &Player) -> f32 {
+        let backpack_bonus = player
+            .inventory
+            .iter()
+            .find(|item| item.equipped_slot.as_deref() == Some("backpack"))
+            .and_then(|item| self.content.item(&item.definition_id))
+            .and_then(|definition| definition.container_slots)
+            .map_or(0.0, |slots| f32::from(slots) * 5.0);
+        player.max_capacity + backpack_bonus
     }
 
     fn inventory_slot_capacity(&self, inventory: &[ItemInstance]) -> usize {
@@ -5074,6 +5091,13 @@ pub fn is_walkable(position: Position) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn carry_capacity_grows_with_level() {
+        assert_eq!(capacity_for_level(1), 100.0);
+        assert_eq!(capacity_for_level(10), 190.0);
+        assert_eq!(capacity_for_level(50), 590.0);
+    }
     use game_types::{CreatureAttack, CreatureDefinition, LootEntry, RuneRecipe};
     use uuid::Uuid;
 
