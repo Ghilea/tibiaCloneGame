@@ -4,7 +4,7 @@ use game_types::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u16 = 26;
+pub const PROTOCOL_VERSION: u16 = 27;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -326,6 +326,7 @@ pub enum ServerMessage {
         fletching_tries: u32,
         magic_level: u16,
         magic_tries: u32,
+        max_capacity: f32,
     },
     PlayerDied {
         player_id: game_types::EntityId,

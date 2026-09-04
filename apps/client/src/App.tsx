@@ -488,10 +488,13 @@ function Game({ onLeave }: { onLeave: () => void }) {
             className={`ability-slot ${skill ? "skill-ability" : "empty-ability"}`}
             key={slot}
             data-action-slot={slot}
+            draggable={false}
             title={skill ? `${skill.name}: open skill window` : "Drop a skill here"}
-            onClick={() => skill && setPanel("character")}
+            onClick={() => skill && setPanel("skills")}
             onContextMenu={(event) => { event.preventDefault(); clearActionSkill(slot); }}
-            onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }}
+            onPointerDown={(event) => { if (skill) beginSkillPointerDrag(event, skill.id); }}
+            onDragStart={(event) => { if (!skill) { event.preventDefault(); return; } event.dataTransfer.setData("application/x-aldoria-skill", skill.id); event.dataTransfer.setData("text/plain", skill.id); event.dataTransfer.effectAllowed = "move"; }}
+            onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; }}
             onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const skillValue = event.dataTransfer.getData("application/x-aldoria-skill") || event.dataTransfer.getData("text/plain"); if (skillValue && actionSkillDefinitions.some((entry) => entry.id === skillValue)) assignActionSkill(slot, skillValue); }}
           >
             <kbd>{slot}</kbd>
@@ -1053,7 +1056,11 @@ function NpcShop({ npcId }: { npcId: string }) {
   const [category, setCategory] = useState<ShopCategory>("all");
   const [shopMode, setShopMode] = useState<"buy" | "sell">("buy");
   if (!npc) return null;
-  const sellableItems = world.inventory.filter((item) => !item.equippedSlot && !item.containerId && item.definitionId !== "gold_coin");
+  const sellableItems = world.inventory.filter((item) =>
+    !item.equippedSlot
+    && item.definitionId !== "gold_coin"
+    && !world.inventory.some((child) => child.containerId === item.instanceId),
+  );
   const categories = ["all", ...SHOP_CATEGORIES.filter((entry) => (shopMode === "buy"
     ? npc.offers.some((offer) => shopCategory(world.itemDefinitions.get(offer.itemDefinitionId)) === entry)
     : sellableItems.some((item) => shopCategory(world.itemDefinitions.get(item.definitionId)) === entry)))] as ShopCategory[];
@@ -1474,6 +1481,7 @@ let activeSkillPointerDrag: string | null = null;
 
 function beginSkillPointerDrag(event: PointerEvent<HTMLElement>, skillId: string) {
   if (event.button !== 0) return;
+  event.preventDefault();
   activeSkillPointerDrag = skillId;
   const finish = (release: globalThis.PointerEvent) => {
     const target = document.elementFromPoint(release.clientX, release.clientY)?.closest<HTMLElement>("[data-action-slot]");
@@ -1502,7 +1510,7 @@ function ActionSkillList({ player }: { player: PlayerView }) {
     <div>{actionSkillDefinitions.map((skill) => <div
       key={skill.id}
       className="action-skill-source"
-      draggable
+      draggable={false}
       title={skill.description}
       onPointerDown={(event) => beginSkillPointerDrag(event, skill.id)}
       onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.setData("application/x-aldoria-skill", skill.id); event.dataTransfer.setData("text/plain", skill.id); event.dataTransfer.effectAllowed = "copy"; }}

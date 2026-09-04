@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = 26;
+export const PROTOCOL_VERSION = 27;
 export const CLIENT_VERSION = "0.1.0";
 
 export type Position = { x: number; y: number; z: number };
@@ -130,7 +130,7 @@ export type ServerMessage =
   | { type: "creature_state_changed"; creature_id: string; state: string; immune: boolean; health: number; max_health: number }
   | { type: "creature_damaged"; creature_id: string; health: number; max_health: number; damage: number }
   | { type: "creature_died"; creature_id: string; killer_id: string; experience: number }
-  | { type: "player_stats_changed"; player_id: string; health: number; max_health: number; level: number; experience: number; mana: number; max_mana: number; sword_skill: number; sword_tries: number; distance_skill: number; distance_tries: number; fletching_skill: number; fletching_tries: number; magic_level: number; magic_tries: number }
+  | { type: "player_stats_changed"; player_id: string; health: number; max_health: number; level: number; experience: number; mana: number; max_mana: number; sword_skill: number; sword_tries: number; distance_skill: number; distance_tries: number; fletching_skill: number; fletching_tries: number; magic_level: number; magic_tries: number; max_capacity: number }
   | { type: "rune_crafting_changed"; player_id: string; recipe_id: string | null; remaining: number; status: string }
   | { type: "player_died"; player_id: string; killer_id: string }
   | { type: "error"; code: string; message: string };

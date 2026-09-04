@@ -2040,6 +2040,13 @@ async fn process_crafting(state: &AppState) {
 }
 
 async fn send_crafting_update(state: &AppState, update: world::CraftingUpdate) {
+    let max_capacity = state
+        .world
+        .read()
+        .await
+        .inventory_state(update.player.id)
+        .map(|(_, _, capacity)| capacity)
+        .unwrap_or_else(|| world::capacity_for_level(update.player.level));
     state.private(
         update.player.id,
         ServerMessage::PlayerStatsChanged {
@@ -2058,6 +2065,7 @@ async fn send_crafting_update(state: &AppState, update: world::CraftingUpdate) {
             fletching_tries: update.player.fletching_tries,
             magic_level: update.player.magic_level,
             magic_tries: update.player.magic_tries,
+            max_capacity,
         },
     );
     if update.inventory_changed {
@@ -2263,6 +2271,11 @@ async fn dispatch_world_events(state: &AppState, events: Vec<WorldEvent>) {
                 {
                     warn!(player_id = %player.id, %error, "failed to persist player stats");
                 }
+                let inventory_state = state.world.read().await.inventory_state(player.id);
+                let max_capacity = inventory_state
+                    .as_ref()
+                    .map(|(_, _, capacity)| *capacity)
+                    .unwrap_or_else(|| world::capacity_for_level(player.level));
                 state.broadcast(ServerMessage::PlayerStatsChanged {
                     player_id: player.id,
                     health: player.health,
@@ -2279,10 +2292,9 @@ async fn dispatch_world_events(state: &AppState, events: Vec<WorldEvent>) {
                     fletching_tries: player.fletching_tries,
                     magic_level: player.magic_level,
                     magic_tries: player.magic_tries,
+                    max_capacity,
                 });
-                if let Some((inventory, inventory_weight, max_capacity)) =
-                    state.world.read().await.inventory_state(player.id)
-                {
+                if let Some((inventory, inventory_weight, max_capacity)) = inventory_state {
                     state.private(player.id, ServerMessage::InventoryChanged {
                         player_id: player.id,
                         inventory,

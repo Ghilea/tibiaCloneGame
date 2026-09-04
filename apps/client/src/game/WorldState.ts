@@ -372,6 +372,7 @@ export class WorldState {
       case "player_stats_changed": {
         const player = this.players.get(message.player_id);
         if (player) this.players.set(player.id, { ...player, health: message.health, maxHealth: message.max_health, level: message.level, experience: message.experience, mana: message.mana, maxMana: message.max_mana, swordSkill: message.sword_skill, swordTries: message.sword_tries, distanceSkill: message.distance_skill, distanceTries: message.distance_tries, fletchingSkill: message.fletching_skill, fletchingTries: message.fletching_tries, magicLevel: message.magic_level, magicTries: message.magic_tries });
+        if (message.player_id === this.localPlayerId) this.maxCapacity = message.max_capacity;
         break;
       }
       case "rune_crafting_changed":

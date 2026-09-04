@@ -2136,7 +2136,7 @@ impl World {
             return Err("npc_out_of_reach");
         }
         let item = player.inventory.iter().find(|item| item.instance_id == instance_id).ok_or("sale_item_not_found")?;
-        if item.definition_id == "gold_coin" || item.equipped_slot.is_some() || item.container_id.is_some()
+        if item.definition_id == "gold_coin" || item.equipped_slot.is_some()
             || self.players.get(&player_id).is_some_and(|player| player.inventory.iter().any(|child| child.container_id == Some(instance_id)))
         {
             return Err("item_not_sellable");
@@ -5690,6 +5690,27 @@ mod tests {
                 .sum::<u16>(),
             10
         );
+    }
+
+    #[test]
+    fn npc_shop_buys_items_from_inside_the_backpack() {
+        let id = Uuid::new_v4();
+        let mut player = test_player(id, 100.0);
+        equip_test_backpack(&mut player);
+        let backpack_id = player.inventory.iter().find(|item| item.equipped_slot.as_deref() == Some("backpack")).unwrap().instance_id;
+        let mut arrows = instance("rough_arrow");
+        arrows.quantity = 10;
+        arrows.container_id = Some(backpack_id);
+        let arrow_id = arrows.instance_id;
+        player.inventory.push(arrows);
+        let mut world = World::new(combat_catalog(), vec![]);
+        world.insert_player(player);
+
+        world.sell_to_npc(id, "mara_quartermaster", arrow_id, 5).unwrap();
+
+        let inventory = &world.player(id).unwrap().inventory;
+        assert_eq!(inventory.iter().find(|item| item.instance_id == arrow_id).unwrap().quantity, 5);
+        assert_eq!(inventory.iter().filter(|item| item.definition_id == "gold_coin").map(|item| item.quantity).sum::<u16>(), 5);
     }
 
     #[test]
