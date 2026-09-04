@@ -862440,6 +862440,30 @@
           "itemDefinitionId": "blank_rune",
           "quantity": 1,
           "price": 6
+        },
+        {
+          "id": "ironbound_shield",
+          "itemDefinitionId": "ironbound_shield",
+          "quantity": 1,
+          "price": 10
+        },
+        {
+          "id": "iron_helmet",
+          "itemDefinitionId": "iron_helmet",
+          "quantity": 1,
+          "price": 10
+        },
+        {
+          "id": "studded_armor",
+          "itemDefinitionId": "studded_armor",
+          "quantity": 1,
+          "price": 10
+        },
+        {
+          "id": "iron_war_hammer",
+          "itemDefinitionId": "iron_war_hammer",
+          "quantity": 1,
+          "price": 10
         }
       ],
       "spellIds": [],
