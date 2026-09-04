@@ -23,6 +23,7 @@ type EditorDocument = {
 };
 
 const tileLayers = ["blocked", "water", "bridges", "trees", "roads", "floors", "houseWalls", "castleWalls"] as const;
+const editorCollectionKeys = [...tileLayers, "buildings", "windows", "torches", "terrainMaterials", "doors", "stairs", "spawns", "npcs", "resourceNodes", "objects"] as const;
 const toolGroups: { id: ToolGroup; label: string }[] = [
   { id: "navigate", label: "Select" }, { id: "terrain", label: "Terrain" }, { id: "structures", label: "Build" }, { id: "objects", label: "Objects" }, { id: "entities", label: "Life" },
 ];
@@ -122,6 +123,23 @@ const saveLocal = (document: EditorDocument) => {
   if (authoredEntries > MAX_LOCAL_AUTOSAVE_ENTRIES) return;
   try { localStorage.setItem("aldoria-world-editor", JSON.stringify(document)); } catch { /* JSON file saving remains available. */ }
 };
+
+function shallowPaintDocument(source: EditorDocument): EditorDocument {
+  const next = { ...source } as EditorDocument;
+  const mutable = next as unknown as Record<string, unknown>;
+  for (const collection of editorCollectionKeys) mutable[collection] = [...source[collection]];
+  return next;
+}
+
+function preserveUnchangedCollections(source: EditorDocument, next: EditorDocument): EditorDocument {
+  const mutable = next as unknown as Record<string, unknown>;
+  for (const collection of editorCollectionKeys) {
+    const before = source[collection] as readonly unknown[];
+    const after = next[collection] as readonly unknown[];
+    if (before.length === after.length && before.every((entry, index) => entry === after[index])) mutable[collection] = before;
+  }
+  return next;
+}
 
 export function WorldEditor() {
   const [document, setDocument] = useState<EditorDocument>(() => loadLocal());
@@ -253,7 +271,7 @@ export function WorldEditor() {
       commit(next, !dragging);
       return;
     }
-    const next = structuredClone(source);
+    const next = shallowPaintDocument(source);
     if (tool === "removeBuilding") {
       const building = next.buildings.find((entry) => entry.floor === activeFloor && x >= entry.x && y >= entry.y && x < entry.x + entry.width && y < entry.y + entry.height);
       if (!building) return;
@@ -326,7 +344,7 @@ export function WorldEditor() {
         if (perimeter) { if (!next[wallLayer].some((entry) => same(entry, tile))) next[wallLayer].push(tile); if (!next.blocked.some((entry) => same(entry, tile))) next.blocked.push(tile); }
       }
     }
-    commit(next, !dragging);
+    commit(preserveUnchangedCollections(source, next), !dragging);
   };
   const restore = (next: EditorDocument) => { documentRef.current = next; setDocument(next); saveLocal(next); };
   const removeAt = (position: Position) => {
