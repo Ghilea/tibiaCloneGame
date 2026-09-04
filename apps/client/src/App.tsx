@@ -267,10 +267,10 @@ function Game({ onLeave }: { onLeave: () => void }) {
   const assignActionSkill = (slot: number, skillId: string) => {
     setActionSkills((current) => ({ ...current, [slot]: skillId }));
   };
-  actionSkillDropHandler = assignActionSkill;
   const clearActionSkill = (slot: number) => {
     setActionSkills((current) => ({ ...current, [slot]: null }));
   };
+  actionSkillDragHandlers = { assign: assignActionSkill, clear: clearActionSkill };
   useEffect(() => {
     localStorage.setItem("aldoria.action-skills", JSON.stringify(actionSkills));
   }, [actionSkills]);
@@ -490,9 +490,9 @@ function Game({ onLeave }: { onLeave: () => void }) {
             data-action-slot={slot}
             draggable={false}
             title={skill ? `${skill.name}: open skill window` : "Drop a skill here"}
-            onClick={() => skill && setPanel("skills")}
+            onClick={() => skill && Date.now() >= suppressActionSkillClickUntil && setPanel("skills")}
             onContextMenu={(event) => { event.preventDefault(); clearActionSkill(slot); }}
-            onPointerDown={(event) => { if (skill) beginSkillPointerDrag(event, skill.id); }}
+            onPointerDown={(event) => { if (skill) beginSkillPointerDrag(event, skill.id, slot); }}
             onDragStart={(event) => { if (!skill) { event.preventDefault(); return; } event.dataTransfer.setData("application/x-aldoria-skill", skill.id); event.dataTransfer.setData("text/plain", skill.id); event.dataTransfer.effectAllowed = "move"; }}
             onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; }}
             onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const skillValue = event.dataTransfer.getData("application/x-aldoria-skill") || event.dataTransfer.getData("text/plain"); if (skillValue && actionSkillDefinitions.some((entry) => entry.id === skillValue)) assignActionSkill(slot, skillValue); }}
@@ -1449,7 +1449,7 @@ function SkillPanel() {
   const player = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
   if (!player) return null;
   return <div className="standalone-skills-panel">
-    <p className="drag-hint">Drag a skill to action bar slots 3–8. Right-click an action slot to remove it.</p>
+    <p className="drag-hint">Drag a skill to action bar slots 3–8. Drag it out of the bar or right-click to remove it.</p>
     <ActionSkillList player={player} />
     <SkillRow name="Melee Skill" level={player.swordSkill} tries={player.swordTries} description="Advances through successful hits with any melee weapon." />
     <SkillRow name="Distance Skill" level={player.distanceSkill} tries={player.distanceTries} description="Advances when ammunition hits a creature." />
@@ -1476,26 +1476,72 @@ const actionSkillDefinitions: ActionSkill[] = [
   { id: "fishing", name: "Fishing", glyph: "F", description: "Fish and aquatic resources" },
   { id: "cooking", name: "Cooking", glyph: "C", description: "Meals with restorative effects" },
 ];
-let actionSkillDropHandler: ((slot: number, skillId: string) => void) | null = null;
-let activeSkillPointerDrag: string | null = null;
+let actionSkillDragHandlers: { assign: (slot: number, skillId: string) => void; clear: (slot: number) => void } | null = null;
+let suppressActionSkillClickUntil = 0;
 
-function beginSkillPointerDrag(event: PointerEvent<HTMLElement>, skillId: string) {
+function beginSkillPointerDrag(event: PointerEvent<HTMLElement>, skillId: string, sourceSlot?: number) {
   if (event.button !== 0) return;
   event.preventDefault();
-  activeSkillPointerDrag = skillId;
+  const source = event.currentTarget;
+  const skill = actionSkillDefinition(skillId);
+  const startX = event.clientX;
+  const startY = event.clientY;
+  let dragging = false;
+  let ghost: HTMLDivElement | null = null;
+  let dropTarget: HTMLElement | null = null;
+
+  const setDropTarget = (next: HTMLElement | null) => {
+    if (dropTarget === next) return;
+    dropTarget?.classList.remove("skill-drop-target");
+    dropTarget = next;
+    dropTarget?.classList.add("skill-drop-target");
+  };
+  const move = (pointer: globalThis.PointerEvent) => {
+    if (!dragging && Math.hypot(pointer.clientX - startX, pointer.clientY - startY) < 5) return;
+    if (!dragging) {
+      dragging = true;
+      source.classList.add("skill-dragging");
+      ghost = document.createElement("div");
+      ghost.className = "skill-drag-ghost";
+      const glyph = document.createElement("i");
+      glyph.textContent = skill?.glyph ?? "?";
+      const label = document.createElement("span");
+      label.textContent = skill?.name ?? skillId;
+      ghost.append(glyph, label);
+      document.body.append(ghost);
+    }
+    ghost?.style.setProperty("transform", `translate3d(${pointer.clientX + 14}px, ${pointer.clientY + 14}px, 0)`);
+    const candidate = document.elementFromPoint(pointer.clientX, pointer.clientY)?.closest<HTMLElement>("[data-action-slot]") ?? null;
+    const slot = Number(candidate?.dataset.actionSlot);
+    setDropTarget(candidate && Number.isInteger(slot) && slot >= 3 && slot <= 8 ? candidate : null);
+  };
+  const cleanup = () => {
+    source.classList.remove("skill-dragging");
+    setDropTarget(null);
+    ghost?.remove();
+    ghost = null;
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", finish);
+    window.removeEventListener("pointercancel", cancel);
+  };
   const finish = (release: globalThis.PointerEvent) => {
     const target = document.elementFromPoint(release.clientX, release.clientY)?.closest<HTMLElement>("[data-action-slot]");
     const slot = Number(target?.dataset.actionSlot);
-    if (target && Number.isInteger(slot) && slot >= 3 && slot <= 8) actionSkillDropHandler?.(slot, skillId);
-    activeSkillPointerDrag = null;
-    window.removeEventListener("pointerup", finish);
-    window.removeEventListener("pointercancel", cancel);
+    if (dragging) {
+      suppressActionSkillClickUntil = Date.now() + 250;
+      if (target && Number.isInteger(slot) && slot >= 3 && slot <= 8) {
+        actionSkillDragHandlers?.assign(slot, skillId);
+        if (sourceSlot !== undefined && sourceSlot !== slot) actionSkillDragHandlers?.clear(sourceSlot);
+      } else if (sourceSlot !== undefined) {
+        actionSkillDragHandlers?.clear(sourceSlot);
+      }
+    }
+    cleanup();
   };
   const cancel = () => {
-    activeSkillPointerDrag = null;
-    window.removeEventListener("pointerup", finish);
-    window.removeEventListener("pointercancel", cancel);
+    cleanup();
   };
+  window.addEventListener("pointermove", move);
   window.addEventListener("pointerup", finish);
   window.addEventListener("pointercancel", cancel);
 }
@@ -1506,7 +1552,7 @@ function actionSkillDefinition(id: string, _player?: PlayerView | null) {
 
 function ActionSkillList({ player }: { player: PlayerView }) {
   return <section className="action-skill-list">
-    <header><small>Action bar</small><span>Drag skills to slots 3–8 · Right-click a slot to remove</span></header>
+    <header><small>Action bar</small><span>Drag skills to slots 3–8 · Drag out or right-click to remove</span></header>
     <div>{actionSkillDefinitions.map((skill) => <div
       key={skill.id}
       className="action-skill-source"
