@@ -1,5 +1,6 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { WorldState } from "../game/WorldState";
+import { effectiveMusicVolume, getAudioSettings, subscribeAudioSettings } from "./audioSettings";
 
 type MusicMood = "menu" | "town" | "wilderness" | "swamp" | "battle";
 
@@ -15,11 +16,13 @@ function MusicPlayer({ mood }: { mood: MusicMood }) {
   const audio = useRef<HTMLAudioElement | null>(null);
   const started = useRef(false);
   const track = TRACK_BY_MOOD[mood];
+  const settings = useSyncExternalStore(subscribeAudioSettings, getAudioSettings, getAudioSettings);
+  const volume = effectiveMusicVolume(settings);
 
   useEffect(() => {
     const element = new Audio();
     element.preload = "metadata";
-    element.volume = 0.18;
+    element.volume = volume;
     element.loop = mood === "swamp";
     audio.current = element;
     const start = () => {
@@ -37,6 +40,10 @@ function MusicPlayer({ mood }: { mood: MusicMood }) {
       audio.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (audio.current) audio.current.volume = volume;
+  }, [volume]);
 
   useEffect(() => {
     const element = audio.current;

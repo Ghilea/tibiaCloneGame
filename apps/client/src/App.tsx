@@ -13,6 +13,7 @@ import {
 import { ApiFailure, authenticate, checkServer, listCharacters } from "./api";
 import { CharacterLobby, CharacterPreview } from "./CharacterLobby";
 import { MenuMusic, WorldMusic } from "./audio/WorldMusic";
+import { getAudioSettings, subscribeAudioSettings, updateAudioSettings } from "./audio/audioSettings";
 import { InputController } from "./game/InputController";
 import { GameMinimap } from "./game/GameMinimap";
 import { ThreeWorld } from "./game/ThreeWorld";
@@ -240,8 +241,8 @@ function Game({ onLeave }: { onLeave: () => void }) {
   const [panel, setPanel] = useState<Panel | null>(null);
   const [showInventoryCharacter, setShowInventoryCharacter] = useState(false);
   const [escapeMenu, setEscapeMenu] = useState(false);
-  const [showPerformance, setShowPerformance] = useState(true);
-  const [reducedMotion, setReducedMotion] = useState(false);
+  const [showPerformance, setShowPerformance] = useState(() => loadStoredBoolean("aldoria.show-performance", true));
+  const [reducedMotion, setReducedMotion] = useState(() => loadStoredBoolean("aldoria.reduced-motion", false));
   const [sceneReady, setSceneReady] = useState(false);
   const [actionSkills, setActionSkills] = useState<Record<number, string | null>>(() => loadActionSkills());
   const pendingGoldPickups = useRef(new Set<string>());
@@ -280,6 +281,8 @@ function Game({ onLeave }: { onLeave: () => void }) {
   useEffect(() => {
     localStorage.setItem("aldoria.action-skills", JSON.stringify(actionSkills));
   }, [actionSkills]);
+  useEffect(() => localStorage.setItem("aldoria.show-performance", String(showPerformance)), [showPerformance]);
+  useEffect(() => localStorage.setItem("aldoria.reduced-motion", String(reducedMotion)), [reducedMotion]);
   useEffect(() => {
     if (panel || escapeMenu || world.trade || world.incomingTrade || world.activeNpcId)
       input.releaseAll();
@@ -822,6 +825,7 @@ function EscapeMenu({ onResume, onOpen, onLeave }: { onResume: () => void; onOpe
 function OptionsPanel({ showPerformance, reducedMotion, onShowPerformance, onReducedMotion }: { showPerformance: boolean; reducedMotion: boolean; onShowPerformance: (value: boolean) => void; onReducedMotion: (value: boolean) => void }) {
   const [worldTime, setWorldTimeInput] = useState(() => worldTimeLabel(worldEnvironment()));
   const [worldTimePaused, setWorldTimePausedInput] = useState(() => isWorldTimePaused());
+  const audio = useSyncExternalStore(subscribeAudioSettings, getAudioSettings, getAudioSettings);
   const parsedWorldTime = () => {
     const [hour, minute] = worldTime.split(":").map(Number);
     return Number.isFinite(hour) && Number.isFinite(minute) ? { hour, minute } : null;
@@ -842,6 +846,13 @@ function OptionsPanel({ showPerformance, reducedMotion, onShowPerformance, onRed
   return (
     <div className="options-panel">
       <section>
+        <header><span className="option-icon">VOL</span><div><h3>Audio</h3><p>Set overall, music and future game-effect volume.</p></div></header>
+        <AudioSlider label="Master volume" description="Controls every sound in the game." value={audio.masterVolume} onChange={(masterVolume) => updateAudioSettings({ masterVolume })} />
+        <AudioSlider label="Music volume" description="Controls menu, exploration and battle music." value={audio.musicVolume} onChange={(musicVolume) => updateAudioSettings({ musicVolume })} />
+        <AudioSlider label="Effects volume" description="Saved for combat, creatures and interface sounds." value={audio.effectsVolume} onChange={(effectsVolume) => updateAudioSettings({ effectsVolume })} />
+        <label><span><strong>Mute all audio</strong><small>Keep the volume levels but silence playback.</small></span><input type="checkbox" checked={audio.muted} onChange={(event) => updateAudioSettings({ muted: event.target.checked })} /></label>
+      </section>
+      <section>
         <header><span className="option-icon">UI</span><div><h3>Interface</h3><p>Choose which diagnostic information is visible while playing.</p></div></header>
         <label><span><strong>Performance display</strong><small>Show position, FPS and draw calls.</small></span><input type="checkbox" checked={showPerformance} onChange={(event) => onShowPerformance(event.target.checked)} /></label>
       </section>
@@ -857,6 +868,10 @@ function OptionsPanel({ showPerformance, reducedMotion, onShowPerformance, onRed
       <p className="options-note">Gameplay shortcuts remain active: C for Character, I for Inventory, K for Skills, R for Crafting and H for Help.</p>
     </div>
   );
+}
+
+function AudioSlider({ label, description, value, onChange }: { label: string; description: string; value: number; onChange: (value: number) => void }) {
+  return <label className="audio-option"><span><strong>{label}</strong><small>{description}</small></span><div><input type="range" min="0" max="100" step="1" value={value} onChange={(event) => onChange(Number(event.target.value))} /><output>{value}%</output></div></label>;
 }
 
 function GameModal({
@@ -2726,6 +2741,11 @@ function loadActionSkills(): Record<number, string | null> {
   } catch {
     return defaults;
   }
+}
+
+function loadStoredBoolean(key: string, fallback: boolean) {
+  const value = localStorage.getItem(key);
+  return value === "true" ? true : value === "false" ? false : fallback;
 }
 
 function moveInventoryItem(current: (string | null)[], itemId: string, targetIndex: number, slotCount: number) {
