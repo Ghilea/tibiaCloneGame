@@ -63,57 +63,5 @@
     "craftTimeMs": 1900,
     "learnPrice": 60,
     "requiredSkillLevel": 6
-  },
-  {
-    "id": "mark_spark_sigil",
-    "name": "Mark Spark Sigil",
-    "craftKind": "sigils",
-    "inputDefinitionId": "blank_rune",
-    "inputQuantity": 1,
-    "outputDefinitionId": "spark_rune",
-    "outputQuantity": 1,
-    "manaCost": 30,
-    "craftTimeMs": 1400,
-    "learnPrice": 30,
-    "requiredSkillLevel": 2
-  },
-  {
-    "id": "mark_stone_sigil",
-    "name": "Mark Stone Sigil",
-    "craftKind": "sigils",
-    "inputDefinitionId": "blank_rune",
-    "inputQuantity": 1,
-    "outputDefinitionId": "stone_rune",
-    "outputQuantity": 1,
-    "manaCost": 60,
-    "craftTimeMs": 2200,
-    "learnPrice": 70,
-    "requiredSkillLevel": 6
-  },
-  {
-    "id": "mark_storm_sigil",
-    "name": "Mark Storm Sigil",
-    "craftKind": "sigils",
-    "inputDefinitionId": "blank_rune",
-    "inputQuantity": 1,
-    "outputDefinitionId": "storm_rune",
-    "outputQuantity": 1,
-    "manaCost": 55,
-    "craftTimeMs": 1900,
-    "learnPrice": 60,
-    "requiredSkillLevel": 5
-  },
-  {
-    "id": "mark_shadow_sigil",
-    "name": "Mark Shadow Sigil",
-    "craftKind": "sigils",
-    "inputDefinitionId": "blank_rune",
-    "inputQuantity": 1,
-    "outputDefinitionId": "shadow_rune",
-    "outputQuantity": 1,
-    "manaCost": 48,
-    "craftTimeMs": 1700,
-    "learnPrice": 52,
-    "requiredSkillLevel": 4
   }
 ]

@@ -64,114 +64,6 @@
         "itemDefinitionId": "iron_pickaxe",
         "quantity": 1,
         "price": 12
-      },
-      {
-        "id": "health_tonic_offer",
-        "itemDefinitionId": "health_tonic",
-        "quantity": 1,
-        "price": 7
-      },
-      {
-        "id": "antidote_vial_offer",
-        "itemDefinitionId": "antidote_vial",
-        "quantity": 1,
-        "price": 6
-      },
-      {
-        "id": "bandage_roll_offer",
-        "itemDefinitionId": "bandage_roll",
-        "quantity": 1,
-        "price": 5
-      },
-      {
-        "id": "dried_rations_offer",
-        "itemDefinitionId": "dried_rations",
-        "quantity": 2,
-        "price": 5
-      },
-      {
-        "id": "iron_dagger_offer",
-        "itemDefinitionId": "iron_dagger",
-        "quantity": 1,
-        "price": 9
-      },
-      {
-        "id": "hunting_spear_offer",
-        "itemDefinitionId": "hunting_spear",
-        "quantity": 1,
-        "price": 10
-      },
-      {
-        "id": "woodsman_hatchet_offer",
-        "itemDefinitionId": "woodsman_hatchet",
-        "quantity": 1,
-        "price": 11
-      },
-      {
-        "id": "oak_staff_offer",
-        "itemDefinitionId": "oak_staff",
-        "quantity": 1,
-        "price": 11
-      },
-      {
-        "id": "traveler_cloak_offer",
-        "itemDefinitionId": "traveler_cloak",
-        "quantity": 1,
-        "price": 10
-      },
-      {
-        "id": "leather_jerkin_offer",
-        "itemDefinitionId": "leather_jerkin",
-        "quantity": 1,
-        "price": 14
-      },
-      {
-        "id": "stitched_leggings_offer",
-        "itemDefinitionId": "stitched_leggings",
-        "quantity": 1,
-        "price": 9
-      },
-      {
-        "id": "round_kite_shield_offer",
-        "itemDefinitionId": "round_kite_shield",
-        "quantity": 1,
-        "price": 14
-      },
-      {
-        "id": "chain_coif_offer",
-        "itemDefinitionId": "chain_coif",
-        "quantity": 1,
-        "price": 16
-      },
-      {
-        "id": "bronze_ring_offer",
-        "itemDefinitionId": "bronze_ring",
-        "quantity": 1,
-        "price": 10
-      },
-      {
-        "id": "bone_amulet_offer",
-        "itemDefinitionId": "bone_amulet",
-        "quantity": 1,
-        "price": 12
-      },
-      {
-        "id": "lantern_oil_offer",
-        "itemDefinitionId": "lantern_oil",
-        "quantity": 1,
-        "price": 6
-      },
-      {
-        "id": "fishhook_bundle_offer",
-        "itemDefinitionId": "fishhook_bundle",
-        "quantity": 5,
-        "price": 3
-      },
-      {
-        "id": "lockpick_set_offer",
-        "itemDefinitionId": "lockpick_set",
-        "quantity": 1,
-        "price": 15
       }
     ],
     "spellIds": [],
@@ -209,11 +101,7 @@
     ],
     "recipeIds": [
       "mark_frost_sigil",
-      "mark_venom_sigil",
-      "mark_spark_sigil",
-      "mark_stone_sigil",
-      "mark_storm_sigil",
-      "mark_shadow_sigil"
+      "mark_venom_sigil"
     ]
   },
   {
