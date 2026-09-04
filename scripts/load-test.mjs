@@ -138,7 +138,10 @@ await new Promise((resolve) => setTimeout(resolve, durationSeconds * 1_000));
 clearInterval(movementTimer);
 clearInterval(pingTimer);
 for (const bot of bots) bot.socket.close();
-await new Promise((resolve) => setTimeout(resolve, 500));
+const closeDeadline = Date.now() + 5_000;
+while (stats.closed < bots.length && Date.now() < closeDeadline) {
+  await new Promise((resolve) => setTimeout(resolve, 50));
+}
 
 const sortedLatency = [...stats.latencySamples].sort((a, b) => a - b);
 const percentile = (value) => sortedLatency.length ? sortedLatency[Math.min(sortedLatency.length - 1, Math.floor(sortedLatency.length * value))] : 0;

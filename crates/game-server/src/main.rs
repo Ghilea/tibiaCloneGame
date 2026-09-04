@@ -10,6 +10,7 @@ use std::{
     path::Path as FsPath,
     process::Command,
     sync::Arc,
+    sync::RwLock as StdRwLock,
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant, UNIX_EPOCH},
 };
@@ -31,7 +32,7 @@ use game_protocol::{
 };
 use game_types::{PlayerView, Position};
 use serde_json::json;
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::{RwLock, mpsc, watch};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -48,15 +49,63 @@ const WORLD_REGION_REFRESH_DISTANCE: i32 = 32;
 #[derive(Clone)]
 struct AppState {
     world: Arc<RwLock<World>>,
-    events: broadcast::Sender<ServerEvent>,
+    events: Arc<EventBus>,
     auth: auth::AuthService,
     database: Option<persistence::Database>,
 }
 
 #[derive(Debug, Clone)]
 struct ServerEvent {
-    recipient: Option<Uuid>,
     text: Utf8Bytes,
+}
+
+struct PlayerEventChannels {
+    control: mpsc::Sender<ServerEvent>,
+    updates: mpsc::Sender<ServerEvent>,
+    movement: watch::Sender<Option<ServerEvent>>,
+}
+
+struct EventBus {
+    players: StdRwLock<std::collections::HashMap<Uuid, PlayerEventChannels>>,
+}
+
+impl EventBus {
+    fn new() -> Self {
+        Self { players: StdRwLock::new(std::collections::HashMap::new()) }
+    }
+
+    fn register(&self, player_id: Uuid) -> (mpsc::Receiver<ServerEvent>, mpsc::Receiver<ServerEvent>, watch::Receiver<Option<ServerEvent>>) {
+        let (control_tx, control_rx) = mpsc::channel(256);
+        let (updates_tx, updates_rx) = mpsc::channel(4096);
+        let (movement_tx, movement_rx) = watch::channel(None);
+        self.players.write().expect("event bus lock").insert(player_id, PlayerEventChannels { control: control_tx, updates: updates_tx, movement: movement_tx });
+        (control_rx, updates_rx, movement_rx)
+    }
+
+    fn unregister(&self, player_id: Uuid) {
+        self.players.write().expect("event bus lock").remove(&player_id);
+    }
+
+    fn send(&self, recipient: Uuid, event: ServerEvent, control: bool) {
+        let players = self.players.read().expect("event bus lock");
+        let Some(channels) = players.get(&recipient) else { return; };
+        let sender = if control { &channels.control } else { &channels.updates };
+        let _ = sender.try_send(event);
+    }
+
+    fn send_to_all(&self, event: ServerEvent) {
+        let players = self.players.read().expect("event bus lock");
+        for channels in players.values() {
+            let _ = channels.updates.try_send(event.clone());
+        }
+    }
+
+    fn send_movement(&self, recipient: Uuid, event: ServerEvent) {
+        let players = self.players.read().expect("event bus lock");
+        if let Some(channels) = players.get(&recipient) {
+            let _ = channels.movement.send(Some(event));
+        }
+    }
 }
 
 impl AppState {
@@ -71,7 +120,7 @@ impl AppState {
     async fn broadcast_near(&self, center: Position, message: ServerMessage) {
         let recipients = self.world.read().await.player_ids_near(center, WORLD_REGION_RADIUS);
         for recipient in recipients {
-            self.publish(Some(recipient), message.clone());
+            self.publish_update(recipient, message.clone());
         }
     }
 
@@ -94,40 +143,56 @@ impl AppState {
         let current_player = world.player(player_id).map(|player| player.view.clone());
         drop(world);
 
+        let movement_event = serde_json::to_string(&ServerMessage::PlayerMoved {
+            player_id,
+            position: current,
+            sequence,
+        })
+        .ok()
+        .map(|text| ServerEvent { text: text.into() });
+        let joined_event = current_player.as_ref().and_then(|player| {
+            serde_json::to_string(&ServerMessage::PlayerJoined {
+                player: player.clone(),
+            })
+            .ok()
+            .map(|text| ServerEvent { text: text.into() })
+        });
+        let left_event = serde_json::to_string(&ServerMessage::PlayerLeft { player_id })
+            .ok()
+            .map(|text| ServerEvent { text: text.into() });
+
         for recipient in &new_recipients {
             if *recipient == player_id || old_recipients.contains(recipient) {
-                self.publish(
-                    Some(*recipient),
-                    ServerMessage::PlayerMoved {
-                        player_id,
-                        position: current,
-                        sequence,
-                    },
-                );
-            } else if let Some(player) = &current_player {
-                self.publish(
-                    Some(*recipient),
-                    ServerMessage::PlayerJoined {
-                        player: player.clone(),
-                    },
-                );
+                if let Some(event) = &movement_event {
+                    self.events.send_movement(*recipient, event.clone());
+                }
+            } else if let Some(event) = &joined_event {
+                self.events.send(*recipient, event.clone(), false);
             }
         }
         for recipient in old_recipients.difference(&new_recipients) {
-            self.publish(
-                Some(*recipient),
-                ServerMessage::PlayerLeft { player_id },
-            );
+            if let Some(event) = &left_event {
+                self.events.send(*recipient, event.clone(), false);
+            }
         }
     }
 
     fn publish(&self, recipient: Option<Uuid>, message: ServerMessage) {
+        self.publish_with_priority(recipient, message, true);
+    }
+
+    fn publish_update(&self, recipient: Uuid, message: ServerMessage) {
+        self.publish_with_priority(Some(recipient), message, false);
+    }
+
+    fn publish_with_priority(&self, recipient: Option<Uuid>, message: ServerMessage, control: bool) {
         match serde_json::to_string(&message) {
             Ok(text) => {
-                let _ = self.events.send(ServerEvent {
-                    recipient,
-                    text: text.into(),
-                });
+                let event = ServerEvent { text: text.into() };
+                match recipient {
+                    Some(player_id) => self.events.send(player_id, event, control),
+                    None => self.events.send_to_all(event),
+                }
             }
             Err(error) => warn!(%error, "failed to serialize server event"),
         }
@@ -168,7 +233,7 @@ async fn main() -> anyhow::Result<()> {
         ground_items = ground_items.len(),
         "server startup: persistent ground state loaded"
     );
-    let (events, _) = broadcast::channel(4096);
+    let events = Arc::new(EventBus::new());
     let (world, loaded_world) = World::from_environment(content, ground_items)?;
     if let Some((name, path)) = loaded_world {
         info!(world = %name, %path, "custom world loaded");
@@ -464,12 +529,17 @@ async fn session(mut socket: WebSocket, state: AppState) {
             .await;
             return;
         }
+        let position = if env::var_os("LOAD_TEST_SPREAD").is_some() {
+            state.world.read().await.load_test_spawn(&name)
+        } else {
+            world_spawn
+        };
         (
             Uuid::new_v4(),
             name,
             "knight".to_owned(),
             Vec::new(),
-            world_spawn,
+            position,
             1,
             0,
             150,
@@ -681,6 +751,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
         )
     };
     info!(%id, %name, %client_version, "player connected");
+    let (mut control_events, mut update_events, mut movement_events) = state.events.register(id);
     send(
         &mut socket,
         &ServerMessage::Welcome {
@@ -714,20 +785,16 @@ async fn session(mut socket: WebSocket, state: AppState) {
     let mut streamed_region_center = position;
 
     let (mut outgoing, mut incoming) = socket.split();
-    let mut events = state.events.subscribe();
     let writer = tokio::spawn(async move {
         loop {
-            let event = match events.recv().await {
-                Ok(event) => event,
-                Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                    warn!(%id, skipped, "player event stream lagged; continuing with newest events");
-                    continue;
-                }
-                Err(broadcast::error::RecvError::Closed) => break,
+            let Some(event) = (tokio::select! {
+                biased;
+                event = control_events.recv() => event,
+                changed = movement_events.changed() => changed.ok().and_then(|_| movement_events.borrow_and_update().clone()),
+                event = update_events.recv() => event,
+            }) else {
+                break;
             };
-            if event.recipient.is_some_and(|recipient| recipient != id) {
-                continue;
-            }
             if outgoing.send(Message::Text(event.text)).await.is_err() {
                 break;
             }
@@ -1003,6 +1070,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
     }
 
     writer.abort();
+    state.events.unregister(id);
     let final_player = state
         .world
         .read()

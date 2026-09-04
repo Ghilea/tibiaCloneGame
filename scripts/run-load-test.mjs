@@ -2,6 +2,7 @@
 
 import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
+import net from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 
 const args = new Map(process.argv.slice(2).map((value) => {
@@ -19,10 +20,16 @@ const accountsFile = ".load-test-accounts.json";
 const serverEnv = { ...process.env };
 if (anonymous) serverEnv.DATABASE_URL = "";
 else if (!serverEnv.DATABASE_URL) delete serverEnv.DATABASE_URL;
+// Keep load-test clients distributed across the map so interest management is
+// measured under realistic conditions instead of worst-case spawn stacking.
+serverEnv.LOAD_TEST_SPREAD = "1";
 
 if (!Number.isInteger(players) || players < 1 || players > 10_000) throw new Error("--players must be between 1 and 10000");
 
-const server = spawn("cargo", ["run", "-p", "game-server"], {
+await assertPortAvailable(wsUrl);
+// Capacity tests must use optimized code. Debug builds add substantial CPU
+// overhead and make high-player results misleading.
+const server = spawn("cargo", ["run", "--release", "-p", "game-server"], {
   cwd: process.cwd(),
   env: serverEnv,
   stdio: verbose ? "inherit" : ["ignore", "ignore", "ignore"],
@@ -43,7 +50,8 @@ try {
 
 async function waitForHealth(url) {
   process.stdout.write(`Waiting for server health at ${url}`);
-  for (let attempt = 0; attempt < 60; attempt += 1) {
+  // The first release build can take a while on a clean checkout.
+  for (let attempt = 0; attempt < 180; attempt += 1) {
     try {
       const response = await fetch(url, { cache: "no-store" });
       if (response.ok) {
@@ -54,7 +62,24 @@ async function waitForHealth(url) {
     process.stdout.write(".");
     await delay(1_000);
   }
-  throw new Error("Server did not become healthy within 60 seconds");
+  throw new Error("Server did not become healthy within 180 seconds");
+}
+
+async function assertPortAvailable(webSocketUrl) {
+  const target = new URL(webSocketUrl);
+  const port = Number(target.port || (target.protocol === "wss:" ? 443 : 80));
+  await new Promise((resolve, reject) => {
+    const socket = net.createConnection({ host: target.hostname, port });
+    socket.once("connect", () => {
+      socket.destroy();
+      reject(new Error(`Port ${port} is already in use. Stop the existing server before starting a load test.`));
+    });
+    socket.once("error", (error) => {
+      socket.destroy();
+      if (error.code === "ECONNREFUSED") resolve();
+      else reject(error);
+    });
+  });
 }
 
 function run(command, commandArgs) {

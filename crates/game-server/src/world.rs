@@ -60,7 +60,18 @@ const CREATURE_LEASH_RANGE: i32 = 8;
 const CREATURE_SIMULATION_RANGE: i32 = 18;
 const CREATURE_UNREACHABLE_TIMEOUT: Duration = Duration::from_millis(1_500);
 const MAX_WORLD_DIMENSION: i32 = 35_000;
+const PLAYER_INDEX_CELL_SIZE: i32 = 32;
 static BLOCKED_TILE_SET: OnceLock<HashSet<Position>> = OnceLock::new();
+
+type PlayerIndexCell = (i16, i32, i32);
+
+fn player_index_cell(position: Position) -> PlayerIndexCell {
+    (
+        position.z,
+        position.x.div_euclid(PLAYER_INDEX_CELL_SIZE),
+        position.y.div_euclid(PLAYER_INDEX_CELL_SIZE),
+    )
+}
 
 #[derive(Debug, Clone)]
 pub struct Player {
@@ -1312,6 +1323,7 @@ pub enum WorldEvent {
 #[derive(Debug, Clone)]
 pub struct World {
     players: HashMap<EntityId, Player>,
+    player_index: HashMap<PlayerIndexCell, HashSet<EntityId>>,
     ground_items: Vec<GroundItem>,
     ground_decay: HashMap<EntityId, Instant>,
     content: ContentCatalog,
@@ -1429,6 +1441,7 @@ impl World {
             .collect();
         let mut world = Self {
             players: HashMap::new(),
+            player_index: HashMap::new(),
             ground_items,
             ground_decay,
             content,
@@ -1609,10 +1622,16 @@ impl World {
     }
 
     pub fn insert_player(&mut self, player: Player) {
-        self.players.insert(player.view.id, player);
+        let id = player.view.id;
+        if let Some(previous) = self.players.insert(id, player) {
+            self.remove_from_player_index(id, previous.view.position);
+        }
+        self.add_to_player_index(id);
     }
     pub fn remove_player(&mut self, id: EntityId) {
-        self.players.remove(&id);
+        if let Some(player) = self.players.remove(&id) {
+            self.remove_from_player_index(id, player.view.position);
+        }
     }
     pub fn player(&self, id: EntityId) -> Option<&Player> {
         self.players.get(&id)
@@ -1641,18 +1660,72 @@ impl World {
         self.players.values().map(|p| p.view.clone()).collect()
     }
     pub fn views_near(&self, center: Position, radius: i32) -> Vec<PlayerView> {
-        self.players
-            .values()
-            .filter(|player| position_in_region(player.view.position, center, radius))
-            .map(|player| player.view.clone())
+        self.player_ids_near(center, radius)
+            .into_iter()
+            .filter_map(|id| self.players.get(&id).map(|player| player.view.clone()))
             .collect()
     }
     pub fn player_ids_near(&self, center: Position, radius: i32) -> Vec<EntityId> {
-        self.players
+        let min_cell_x = (center.x - radius).div_euclid(PLAYER_INDEX_CELL_SIZE);
+        let max_cell_x = (center.x + radius).div_euclid(PLAYER_INDEX_CELL_SIZE);
+        let min_cell_y = (center.y - radius).div_euclid(PLAYER_INDEX_CELL_SIZE);
+        let max_cell_y = (center.y + radius).div_euclid(PLAYER_INDEX_CELL_SIZE);
+        let mut nearby = Vec::new();
+        for cell_y in min_cell_y..=max_cell_y {
+            for cell_x in min_cell_x..=max_cell_x {
+                if let Some(players) = self.player_index.get(&(center.z, cell_x, cell_y)) {
+                    nearby.extend(players.iter().copied().filter(|id| {
+                        self.players
+                            .get(id)
+                            .is_some_and(|player| position_in_region(player.view.position, center, radius))
+                    }));
+                }
+            }
+        }
+        nearby
+    }
+
+    fn add_to_player_index(&mut self, id: EntityId) {
+        let Some(player) = self.players.get(&id) else { return; };
+        self.player_index
+            .entry(player_index_cell(player.view.position))
+            .or_default()
+            .insert(id);
+    }
+
+    fn remove_from_player_index(&mut self, id: EntityId, position: Position) {
+        let cell = player_index_cell(position);
+        if let Some(players) = self.player_index.get_mut(&cell) {
+            players.remove(&id);
+            if players.is_empty() {
+                self.player_index.remove(&cell);
+            }
+        }
+    }
+
+    fn move_in_player_index(&mut self, id: EntityId, previous: Position, current: Position) {
+        if player_index_cell(previous) != player_index_cell(current) {
+            self.remove_from_player_index(id, previous);
+            self.player_index
+                .entry(player_index_cell(current))
+                .or_default()
+                .insert(id);
+        }
+    }
+
+    fn rebuild_player_index(&mut self) {
+        self.player_index.clear();
+        let entries: Vec<_> = self
+            .players
             .values()
-            .filter(|player| position_in_region(player.view.position, center, radius))
-            .map(|player| player.view.id)
-            .collect()
+            .map(|player| (player.view.id, player.view.position))
+            .collect();
+        for (id, position) in entries {
+            self.player_index
+                .entry(player_index_cell(position))
+                .or_default()
+                .insert(id);
+        }
     }
     pub fn ground_items(&self) -> &[GroundItem] {
         &self.ground_items
@@ -1678,6 +1751,7 @@ impl World {
 
     pub fn restore_player_state(&mut self, backup: PlayerStateBackup) {
         self.players = backup.players;
+        self.rebuild_player_index();
     }
 
     pub fn combat_state_backup(
@@ -1701,6 +1775,7 @@ impl World {
     pub fn restore_combat_state(&mut self, backup: CombatStateBackup) {
         let spawn_index = backup.creature.spawn_index;
         self.players.insert(backup.player_id, backup.player);
+        self.rebuild_player_index();
         self.creatures.insert(backup.creature_id, backup.creature);
         self.spawns[spawn_index] = backup.spawn;
         self.restore_ground_state(backup.ground);
@@ -2828,6 +2903,7 @@ impl World {
         if elapsed < move_cooldown {
             return Err("moving_too_fast");
         }
+        let previous_position = player.view.position;
         player.view.position = destination;
         // If the world lock briefly delayed networking, permit one genuinely
         // elapsed buffered step instead of rejecting it and rubberbanding the
@@ -2838,6 +2914,7 @@ impl World {
         } else {
             player.last_move = now;
         }
+        self.move_in_player_index(id, previous_position, destination);
         Ok(destination)
     }
 
@@ -3047,6 +3124,30 @@ impl World {
     }
 
     pub fn player_spawn(&self) -> Position {
+        self.map.player_spawn
+    }
+
+    /// Deterministic, test-only spawn selection. This keeps load-test clients
+    /// distributed across the walkable map without changing normal spawns.
+    pub fn load_test_spawn(&self, name: &str) -> Position {
+        let mut hash = 2_166_136_261u32;
+        for byte in name.bytes() {
+            hash ^= u32::from(byte);
+            hash = hash.wrapping_mul(16_777_619);
+        }
+        let total = self.map.view.width.saturating_mul(self.map.view.height).max(1);
+        let start = (hash as i64).rem_euclid(i64::from(total)) as i32;
+        for offset in 0..total {
+            let index = (start + offset) % total;
+            let position = Position {
+                x: index % self.map.view.width,
+                y: index / self.map.view.width,
+                z: self.map.player_spawn.z,
+            };
+            if self.map.is_walkable(position) {
+                return position;
+            }
+        }
         self.map.player_spawn
     }
 
@@ -4077,20 +4178,27 @@ impl World {
         events: &mut Vec<WorldEvent>,
     ) {
         let respawn_position = self.player_spawn();
-        let Some(player) = self.players.get_mut(&player_id) else {
-            return;
+        let (previous_position, current_position, view) = {
+            let Some(player) = self.players.get_mut(&player_id) else {
+                return;
+            };
+            let previous_position = player.view.position;
+            if damage >= player.view.health {
+                player.view.health = player.view.max_health;
+                player.view.position = respawn_position;
+                events.push(WorldEvent::PlayerDied {
+                    player_id,
+                    killer_id: creature_id,
+                });
+            } else {
+                player.view.health -= damage;
+            }
+            (previous_position, player.view.position, player.view.clone())
         };
-        if damage >= player.view.health {
-            player.view.health = player.view.max_health;
-            player.view.position = respawn_position;
-            events.push(WorldEvent::PlayerDied {
-                player_id,
-                killer_id: creature_id,
-            });
-        } else {
-            player.view.health -= damage;
+        if previous_position != current_position {
+            self.move_in_player_index(player_id, previous_position, current_position);
         }
-        events.push(WorldEvent::PlayerStats(player.view.clone()));
+        events.push(WorldEvent::PlayerStats(view));
     }
 
     fn occupied_positions(&self) -> HashSet<Position> {
