@@ -392,7 +392,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
     inventory: "Inventory",
     crafting: "Crafting & Production",
     skills: "Skills",
-    character: "Character & Skills",
+    character: "Character",
     help: "Controls",
     options: "Options",
   };
@@ -721,28 +721,6 @@ function PlayerProgress({ player }: { player: PlayerView }) {
   return <div className="player-progression">
     <ProgressBar className="experience" label={`XP · ${remainingExperience.toLocaleString()} to level ${player.level + 1}`} value={earnedExperience} max={requiredExperience} detail={`${earnedExperience.toLocaleString()} / ${requiredExperience.toLocaleString()} XP`} />
   </div>;
-}
-
-function PrimarySkillProgress({ player }: { player: PlayerView }) {
-  const primarySkills = [
-    { name: "Melee", level: player.swordSkill, tries: player.swordTries },
-    { name: "Distance", level: player.distanceSkill, tries: player.distanceTries },
-    { name: "Fletching", level: player.fletchingSkill, tries: player.fletchingTries },
-    { name: "Magic", level: player.magicLevel, tries: player.magicTries },
-  ];
-  return <SkillProgressGrid skills={primarySkills} />;
-}
-
-function SkillProgressGrid({ skills }: { skills: { name: string; level: number; tries: number }[] }) {
-  return <div className="player-skill-progress" aria-label="Skill progress">
-    {skills.map((skill) => <SkillProgress key={skill.name} {...skill} />)}
-  </div>;
-}
-
-function SkillProgress({ name, level, tries }: { name: string; level: number; tries: number }) {
-  const required = 5 + level * 2;
-  const remaining = Math.max(0, required - tries);
-  return <ProgressBar className="skill" label={`${name} ${level} · ${remaining} left`} value={tries} max={required} detail={`${tries} / ${required}`} />;
 }
 
 function ProgressBar({ className, label, value, max, detail }: { className: "experience" | "skill"; label: string; value: number; max: number; detail: string }) {
@@ -1389,11 +1367,10 @@ const professionToolLayout = [
 ];
 
 function CompactCharacterPanel() {
-  const [showDetails, setShowDetails] = useState(false);
   const player = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
   if (!player) return null;
   return (
-    <div className={`compact-character-panel ${showDetails ? "skills-open" : ""}`}>
+    <div className="compact-character-panel">
       <div className="compact-character-main">
         <header className="character-identity">
           <div className="character-portrait">{player.name.slice(0, 1)}</div>
@@ -1402,20 +1379,6 @@ function CompactCharacterPanel() {
         <EquipmentPaperdoll interactive />
         <OutfitPicker outfit={player.outfit} />
       </div>
-      <button className="character-details-toggle" aria-expanded={showDetails} onClick={() => setShowDetails((current) => !current)}>
-        <span>{showDetails ? "Hide" : "Skills"}</span><b>{showDetails ? "‹" : "›"}</b>
-      </button>
-      {showDetails && (
-        <aside className="character-skills-drawer">
-          <header><span><small>Progression</small><h3>Skills</h3></span><button aria-label="Hide skills" onClick={() => setShowDetails(false)}>×</button></header>
-          <section className="character-skills-view">
-            <small className="skill-group-label">Primary skills</small>
-            <PrimarySkillProgress player={player} />
-            <ActionSkillList player={player} />
-            <SecondarySkillsPicker selected={player.secondarySkills} />
-          </section>
-        </aside>
-      )}
     </div>
   );
 }
