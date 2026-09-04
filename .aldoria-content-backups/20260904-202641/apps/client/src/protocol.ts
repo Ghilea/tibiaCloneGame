@@ -24,7 +24,7 @@ export type PlayerView = {
   magicTries: number;
 };
 export type CharacterOutfit = "knight" | "mage" | "ranger" | "rogue";
-export type SecondarySkill = "alchemy" | "mining" | "woodcutting" | "fishing" | "cooking" | "smithing" | "leatherworking";
+export type SecondarySkill = "alchemy" | "mining" | "woodcutting" | "fishing" | "cooking";
 export type CreatureView = { id: string; definitionId: string; name: string; position: Position; health: number; maxHealth: number; state: string; immune: boolean };
 export type MapView = {
   width: number;
@@ -54,7 +54,7 @@ export type BuildingView = { id: string; name: string; kind: "keep" | "house"; x
 export type DoorView = { id: string; position: Position; open: boolean };
 export type WindowView = { id: string; position: Position; open: boolean };
 export type StairView = { id: string; from: Position; to: Position };
-export type ItemDefinition = { id: string; name: string; weight: number; stackable: boolean; maxStack: number; charges?: number; attack?: number; defense?: number; containerSlots?: number; equipmentSlot?: string; pickupable: boolean; combatEffect?: { damage: number; range: number; cooldownMs: number }; distanceWeapon?: { damage: number; range: number; cooldownMs: number; ammunitionId: string }; foodEffect?: { healthPerTick: number; manaPerTick: number; durationSeconds: number }; teachesRecipeId?: string; lightSource?: { radius: number; intensity: number } };
+export type ItemDefinition = { id: string; name: string; weight: number; stackable: boolean; maxStack: number; charges?: number; attack?: number; containerSlots?: number; equipmentSlot?: string; pickupable: boolean; combatEffect?: { damage: number; range: number; cooldownMs: number }; distanceWeapon?: { damage: number; range: number; cooldownMs: number; ammunitionId: string }; foodEffect?: { healthPerTick: number; manaPerTick: number; durationSeconds: number }; teachesRecipeId?: string; lightSource?: { radius: number; intensity: number } };
 export type ItemInstance = { instanceId: string; definitionId: string; quantity: number; charges?: number; containerId?: string; equippedSlot?: string };
 export type GroundItem = { item: ItemInstance; position: Position; contents: ItemInstance[] };
 export type ResourceNodeView = { id: string; kind: "copper_vein" | string; position: Position; available: boolean; respawnMs: number; requiredSkillLevel: number };

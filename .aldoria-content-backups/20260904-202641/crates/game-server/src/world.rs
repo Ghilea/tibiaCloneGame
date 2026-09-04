@@ -2762,18 +2762,6 @@ impl World {
         if crafting_skill < recipe.required_skill_level {
             return Err("crafting_skill_too_low");
         }
-        let required_tool_slot = match recipe.craft_kind.as_str() {
-            "smithing" => Some("smithing_tool"),
-            "leatherworking" => Some("leatherworking_tool"),
-            _ => None,
-        };
-        if let Some(required_tool_slot) = required_tool_slot
-            && !player.inventory.iter().any(|item| {
-                item.equipped_slot.as_deref() == Some(required_tool_slot)
-            })
-        {
-            return Err("crafting_tool_required");
-        }
         let material_count: u32 = player
             .inventory
             .iter()
@@ -4118,7 +4106,7 @@ impl World {
                 creature.pending_attack = None;
                 creature.last_attack = now;
                 for victim_id in victims {
-                    let damage = self.apply_creature_damage(creature_id, victim_id, damage, &mut events);
+                    self.apply_creature_damage(creature_id, victim_id, damage, &mut events);
                     events.push(WorldEvent::CombatEffect {
                         source_id: creature_id,
                         target_id: victim_id,
@@ -4240,7 +4228,7 @@ impl World {
                             .get_mut(&creature_id)
                             .expect("creature exists")
                             .last_attack = now;
-                        let damage = self.apply_creature_damage(creature_id, target_id, damage, &mut events);
+                        self.apply_creature_damage(creature_id, target_id, damage, &mut events);
                         events.push(WorldEvent::CombatEffect {
                             source_id: creature_id,
                             target_id,
@@ -4323,30 +4311,11 @@ impl World {
         player_id: EntityId,
         damage: u16,
         events: &mut Vec<WorldEvent>,
-    ) -> u16 {
+    ) {
         let respawn_position = self.player_spawn();
-        let total_defense: u16 = self
-            .players
-            .get(&player_id)
-            .map(|player| {
-                player
-                    .inventory
-                    .iter()
-                    .filter(|item| item.equipped_slot.is_some())
-                    .filter_map(|item| {
-                        self.content
-                            .item(&item.definition_id)
-                            .and_then(|definition| definition.defense)
-                    })
-                    .sum()
-            })
-            .unwrap_or(0);
-        // Four defense points reduce incoming creature damage by one.
-        // A hit always deals at least one damage, so armor never grants immunity.
-        let damage = damage.saturating_sub(total_defense / 4).max(1);
         let (previous_position, current_position, view) = {
             let Some(player) = self.players.get_mut(&player_id) else {
-                return 0;
+                return;
             };
             let previous_position = player.view.position;
             if damage >= player.view.health {
@@ -4365,7 +4334,6 @@ impl World {
             self.move_in_player_index(player_id, previous_position, current_position);
         }
         events.push(WorldEvent::PlayerStats(view));
-        damage
     }
 
     fn occupied_positions(&self) -> HashSet<Position> {

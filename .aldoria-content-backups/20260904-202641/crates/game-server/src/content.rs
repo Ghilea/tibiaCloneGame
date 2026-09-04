@@ -86,12 +86,6 @@ impl ContentCatalog {
             {
                 bail!("invalid item capabilities: {}", definition.id);
             }
-            if definition
-                .defense
-                .is_some_and(|defense| defense == 0 || defense > 40 || definition.equipment_slot.is_none())
-            {
-                bail!("invalid item defense: {}", definition.id);
-            }
             if definition.combat_effect.as_ref().is_some_and(|effect| {
                 effect.damage == 0
                     || effect.range == 0
@@ -251,8 +245,6 @@ impl ContentCatalog {
                         | "woodcutting"
                         | "fishing"
                         | "cooking"
-                        | "smithing"
-                        | "leatherworking"
                 )
                 || recipe.required_skill_level > MAX_SKILL_LEVEL
                 || (recipe.craft_kind == "sigils" && recipe.mana_cost == 0)
@@ -329,7 +321,6 @@ mod tests {
             max_stack: 1,
             charges: None,
             attack: None,
-            defense: None,
             container_slots: None,
             equipment_slot: None,
             pickupable: true,

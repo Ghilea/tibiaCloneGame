@@ -353,7 +353,7 @@
     "name": "Orin",
     "title": "Greyhaven Artificer",
     "service": "craft_trainer",
-    "dialogue": "Ore is only half a craft. Hide, scale, bone and old plate all have their uses. Bring me the right creature products and I will teach you how to turn them into equipment worth carrying.",
+    "dialogue": "Good craft is not only metal and wood. Bring me what the wilds leave behind, and I can teach you how to turn creature products into useful field supplies.",
     "position": {
       "x": 9,
       "y": 5,
@@ -371,21 +371,7 @@
       "carve_bone_fishhooks",
       "brew_graveward_tonic",
       "brew_focus_draught",
-      "bind_warden_glow_charm",
-      "stitch_rat_pelt_cap",
-      "weave_mireweave_cloak",
-      "stitch_fenhide_boots",
-      "stitch_fenhide_leggings",
-      "stitch_skulker_scale_vest",
-      "forge_stalker_claw_blade",
-      "forge_cryptbone_buckler",
-      "forge_fenbone_maul",
-      "forge_warden_plate_helmet",
-      "forge_warden_plate_shield",
-      "forge_warden_plate_armor",
-      "forge_warden_core_hammer",
-      "bind_reed_sinew_bow",
-      "bind_acolyte_focus_amulet"
+      "bind_warden_glow_charm"
     ]
   }
 ]

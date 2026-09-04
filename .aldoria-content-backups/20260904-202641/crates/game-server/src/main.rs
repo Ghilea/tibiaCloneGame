@@ -2116,7 +2116,6 @@ fn crafting_error_message(code: &str) -> &'static str {
     match code {
         "cannot_craft_while_trading" => "Finish or cancel your trade before crafting",
         "crafting_skill_not_selected" => "Choose the matching secondary profession before crafting this recipe",
-        "crafting_tool_required" => "Equip the matching profession tool before crafting",
         "crafting_skill_too_low" => "Your matching crafting skill is too low",
         "missing_craft_material" => "You do not have enough crafting materials",
         "invalid_craft_quantity" => "Choose between 1 and 20 sigils",

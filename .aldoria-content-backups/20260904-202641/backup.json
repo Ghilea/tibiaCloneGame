@@ -1,0 +1,32 @@
+{
+  "pack": "aldoria-creature-crafting-v7",
+  "createdAt": "2026-09-04T18:26:41.218Z",
+  "created": [
+    "apps/client/public/assets/sprites/items/rat_pelt_cap.png",
+    "apps/client/public/assets/sprites/items/mireweave_cloak.png",
+    "apps/client/public/assets/sprites/items/skulker_scale_vest.png",
+    "apps/client/public/assets/sprites/items/fenhide_leggings.png",
+    "apps/client/public/assets/sprites/items/fenhide_boots.png",
+    "apps/client/public/assets/sprites/items/cryptbone_buckler.png",
+    "apps/client/public/assets/sprites/items/warden_plate_helmet.png",
+    "apps/client/public/assets/sprites/items/warden_plate_armor.png",
+    "apps/client/public/assets/sprites/items/warden_plate_shield.png",
+    "apps/client/public/assets/sprites/items/stalker_claw_blade.png",
+    "apps/client/public/assets/sprites/items/fenbone_maul.png",
+    "apps/client/public/assets/sprites/items/reed_sinew_bow.png",
+    "apps/client/public/assets/sprites/items/acolyte_focus_amulet.png",
+    "apps/client/public/assets/sprites/items/warden_core_hammer.png"
+  ],
+  "backedUp": [
+    "content/items/items.json",
+    "content/runes/runes.json",
+    "content/npcs/npcs.json",
+    "crates/game-types/src/lib.rs",
+    "crates/game-server/src/content.rs",
+    "crates/game-server/src/world.rs",
+    "crates/game-server/src/main.rs",
+    "apps/client/src/protocol.ts",
+    "apps/client/src/App.tsx",
+    "apps/client/src/editor/WorldEditor.tsx"
+  ]
+}

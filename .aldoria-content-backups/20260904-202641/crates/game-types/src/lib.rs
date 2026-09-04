@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 pub type EntityId = Uuid;
 
-pub const SECONDARY_SKILLS: [&str; 7] = ["alchemy", "mining", "woodcutting", "fishing", "cooking", "smithing", "leatherworking"];
+pub const SECONDARY_SKILLS: [&str; 5] = ["alchemy", "mining", "woodcutting", "fishing", "cooking"];
 pub const FREE_SKILL_LEVEL: u16 = 50;
 pub const MAX_SKILL_LEVEL: u16 = 100;
 pub const MASTERY_BUDGET: u16 = 100;
@@ -81,8 +81,6 @@ pub struct ItemDefinition {
     pub charges: Option<u16>,
     #[serde(default)]
     pub attack: Option<u16>,
-    #[serde(default)]
-    pub defense: Option<u16>,
     #[serde(default)]
     pub container_slots: Option<u16>,
     #[serde(default)]

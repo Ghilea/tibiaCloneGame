@@ -991,7 +991,7 @@ const itemSpriteOrder = [
   "reed_stalker_remains",
   "fen_brute_remains",
 ];
-const standaloneItemSpriteIds = new Set(["iron_ore", "coal_chunk", "healing_herbs", "rope_bundle", "rusty_key", "shovel", "leather_satchel", "torch_bundle", "iron_short_sword", "red_apple", "blank_rune", "ember_rune", "traveler_blade", "ashwood_bow", "rough_arrow", "frost_rune", "venom_rune", "iron_battle_axe", "iron_war_hammer", "ironbound_shield", "iron_helmet", "studded_armor", "reinforced_boots", "emerald_ring", "ember_amulet", "mana_tonic", "copper_ore", "mire_fiber", "bog_ichor", "gold_coin", "reed_hide", "fen_tusk", "field_bread", "smoked_mire_meat", "field_backpack", "ember_sigil_formula", "iron_pickaxe", "wooden_buckler", "worn_cap", "patched_tunic", "frayed_trousers", "work_boots", "mireling_remains", "mire_skulker_remains", "reed_stalker_remains", "fen_brute_remains", "castle_rat_remains", "crypt_guard_remains", "bone_acolyte_remains", "cellar_warden_remains", "iron_dagger", "rusty_mace", "hunting_spear", "woodsman_hatchet", "oak_staff", "traveler_cloak", "chain_coif", "leather_jerkin", "stitched_leggings", "round_kite_shield", "bronze_ring", "bone_amulet", "spark_rune", "stone_rune", "storm_rune", "shadow_rune", "health_tonic", "antidote_vial", "bandage_roll", "dried_rations", "tin_ore", "iron_ingot", "beast_claw", "spider_silk", "mandrake_root", "wolf_pelt", "lantern_oil", "lockpick_set", "fishhook_bundle", "raw_hide", "duelist_blade", "parrying_dagger", "corsair_cutlass", "stiletto", "raider_hatchet", "hook_sabre", "fishing_rod", "tackle_box", "bait_bucket", "miner_pickhammer", "smith_tongs", "skinning_knife", "flint_and_steel", "grappling_hook", "hand_torch", "hooded_lantern", "rope_coil", "repair_kit", "whetstone", "bedroll", "waterskin", "candle_bundle", "offhand_stiletto", "twinfang_blades", "paired_hatchets", "rat_tail", "rat_pelt", "mire_gland", "mire_spore_cluster", "skulker_venom_sac", "skulker_scale", "reed_sinew", "stalker_claw", "fen_brute_hide", "fen_brute_bone", "crypt_bone_shard", "grave_dust", "acolyte_focus_shard", "warden_core", "warden_plate_fragment", "mire_recovery_tonic", "purifying_tonic", "fen_marrow_stew", "graveward_tonic", "focus_draught", "warden_glow_charm", "rat_pelt_cap", "mireweave_cloak", "skulker_scale_vest", "fenhide_leggings", "fenhide_boots", "cryptbone_buckler", "warden_plate_helmet", "warden_plate_armor", "warden_plate_shield", "stalker_claw_blade", "fenbone_maul", "reed_sinew_bow", "acolyte_focus_amulet", "warden_core_hammer"]);
+const standaloneItemSpriteIds = new Set(["iron_ore", "coal_chunk", "healing_herbs", "rope_bundle", "rusty_key", "shovel", "leather_satchel", "torch_bundle", "iron_short_sword", "red_apple", "blank_rune", "ember_rune", "traveler_blade", "ashwood_bow", "rough_arrow", "frost_rune", "venom_rune", "iron_battle_axe", "iron_war_hammer", "ironbound_shield", "iron_helmet", "studded_armor", "reinforced_boots", "emerald_ring", "ember_amulet", "mana_tonic", "copper_ore", "mire_fiber", "bog_ichor", "gold_coin", "reed_hide", "fen_tusk", "field_bread", "smoked_mire_meat", "field_backpack", "ember_sigil_formula", "iron_pickaxe", "wooden_buckler", "worn_cap", "patched_tunic", "frayed_trousers", "work_boots", "mireling_remains", "mire_skulker_remains", "reed_stalker_remains", "fen_brute_remains", "castle_rat_remains", "crypt_guard_remains", "bone_acolyte_remains", "cellar_warden_remains", "iron_dagger", "rusty_mace", "hunting_spear", "woodsman_hatchet", "oak_staff", "traveler_cloak", "chain_coif", "leather_jerkin", "stitched_leggings", "round_kite_shield", "bronze_ring", "bone_amulet", "spark_rune", "stone_rune", "storm_rune", "shadow_rune", "health_tonic", "antidote_vial", "bandage_roll", "dried_rations", "tin_ore", "iron_ingot", "beast_claw", "spider_silk", "mandrake_root", "wolf_pelt", "lantern_oil", "lockpick_set", "fishhook_bundle", "raw_hide", "duelist_blade", "parrying_dagger", "corsair_cutlass", "stiletto", "raider_hatchet", "hook_sabre", "fishing_rod", "tackle_box", "bait_bucket", "miner_pickhammer", "smith_tongs", "skinning_knife", "flint_and_steel", "grappling_hook", "hand_torch", "hooded_lantern", "rope_coil", "repair_kit", "whetstone", "bedroll", "waterskin", "candle_bundle", "offhand_stiletto", "twinfang_blades", "paired_hatchets", "rat_tail", "rat_pelt", "mire_gland", "mire_spore_cluster", "skulker_venom_sac", "skulker_scale", "reed_sinew", "stalker_claw", "fen_brute_hide", "fen_brute_bone", "crypt_bone_shard", "grave_dust", "acolyte_focus_shard", "warden_core", "warden_plate_fragment", "mire_recovery_tonic", "purifying_tonic", "fen_marrow_stew", "graveward_tonic", "focus_draught", "warden_glow_charm"]);
 function ItemIcon({ definitionId }: { definitionId: string }) {
   if (standaloneItemSpriteIds.has(definitionId)) return <i className="item-icon" style={{ backgroundImage: `url('/assets/sprites/items/${definitionId}.png')`, backgroundSize: "contain", backgroundPosition: "center", backgroundRepeat: "no-repeat" }} />;
   if (definitionId === "iron_pickaxe") return <i className="item-icon food-icon">⛏</i>;
@@ -1139,7 +1139,7 @@ const SHOP_CATEGORY_LABELS: Record<ShopCategory, string> = {
 function shopCategory(item: ReturnType<WorldState["itemDefinitions"]["get"]>): ShopCategory {
   if (!item) return "other";
   if (item.equipmentSlot === "weapon") return "weapons";
-  if (["helmet", "chest", "back", "legs", "shoes", "amulet", "ring", "ring1", "ring2", "shield", "offhand", "backpack"].includes(item.equipmentSlot ?? "")) return "armor";
+  if (["helmet", "chest", "back", "legs", "shoes", "amulet", "ring", "shield", "backpack"].includes(item.equipmentSlot ?? "")) return "armor";
   if (item.foodEffect || item.charges || item.id.includes("potion") || item.id.includes("tonic")) return "consumables";
   if (item.equipmentSlot?.endsWith("_tool") || ["mining_tool", "fishing_tool", "woodcutting_tool"].includes(item.equipmentSlot ?? "")) return "tools";
   if (item.id.includes("ore") || item.id.includes("fiber") || item.id.includes("hide") || item.id.includes("coal") || item.id.includes("herb")) return "materials";
@@ -1380,8 +1380,6 @@ const equipmentLayout = [
 const professionToolLayout = [
   { id: "mining_tool", label: "Mining tool", glyph: "⛏" },
   { id: "fishing_tool", label: "Fishing rod", glyph: "🎣" },
-  { id: "smithing_tool", label: "Smithing tool", glyph: "⚒" },
-  { id: "leatherworking_tool", label: "Leatherworking tool", glyph: "✂" },
 ];
 
 function CompactCharacterPanel() {
@@ -1431,8 +1429,6 @@ const actionSkillDefinitions: ActionSkill[] = [
   { id: "woodcutting", name: "Woodcutting", glyph: "W", description: "Timber and uncommon woods" },
   { id: "fishing", name: "Fishing", glyph: "F", description: "Fish and aquatic resources" },
   { id: "cooking", name: "Cooking", glyph: "C", description: "Meals with restorative effects" },
-  { id: "smithing", name: "Smithing", glyph: "S", description: "Weapons, armor and metalwork" },
-  { id: "leatherworking", name: "Leatherworking", glyph: "L", description: "Hide, scale and flexible armor" },
 ];
 const fixedActionDefinitions: ActionSkill[] = [
   { id: "ember_sigil", name: "Ember Sigil", glyph: "ES", description: "Deal fire damage to the selected target" },
@@ -1549,8 +1545,6 @@ const secondarySkillOptions: { id: SecondarySkill; name: string; description: st
   { id: "woodcutting", name: "Woodcutting", description: "Timber and uncommon woods" },
   { id: "fishing", name: "Fishing", description: "Fish and aquatic resources" },
   { id: "cooking", name: "Cooking", description: "Meals with restorative effects" },
-  { id: "smithing", name: "Smithing", description: "Weapons, armor and metalwork" },
-  { id: "leatherworking", name: "Leatherworking", description: "Hide, scale and flexible armor" },
 ];
 
 function SecondarySkillsPicker({ selected }: { selected: SecondarySkill[] }) {

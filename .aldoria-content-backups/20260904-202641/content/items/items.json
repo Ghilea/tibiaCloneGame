@@ -203,8 +203,7 @@
     "weight": 4,
     "stackable": false,
     "maxStack": 1,
-    "equipmentSlot": "helmet",
-    "defense": 1
+    "equipmentSlot": "helmet"
   },
   {
     "id": "patched_tunic",
@@ -212,8 +211,7 @@
     "weight": 12,
     "stackable": false,
     "maxStack": 1,
-    "equipmentSlot": "chest",
-    "defense": 2
+    "equipmentSlot": "chest"
   },
   {
     "id": "frayed_trousers",
@@ -221,8 +219,7 @@
     "weight": 8,
     "stackable": false,
     "maxStack": 1,
-    "equipmentSlot": "legs",
-    "defense": 1
+    "equipmentSlot": "legs"
   },
   {
     "id": "work_boots",
@@ -230,8 +227,7 @@
     "weight": 6,
     "stackable": false,
     "maxStack": 1,
-    "equipmentSlot": "shoes",
-    "defense": 1
+    "equipmentSlot": "shoes"
   },
   {
     "id": "wooden_buckler",
@@ -239,8 +235,7 @@
     "weight": 10,
     "stackable": false,
     "maxStack": 1,
-    "equipmentSlot": "offhand",
-    "defense": 2
+    "equipmentSlot": "offhand"
   },
   {
     "id": "iron_pickaxe",
@@ -391,8 +386,7 @@
     "weight": 18,
     "stackable": false,
     "maxStack": 1,
-    "equipmentSlot": "offhand",
-    "defense": 5
+    "equipmentSlot": "offhand"
   },
   {
     "id": "iron_helmet",
@@ -400,8 +394,7 @@
     "weight": 12,
     "stackable": false,
     "maxStack": 1,
-    "equipmentSlot": "helmet",
-    "defense": 4
+    "equipmentSlot": "helmet"
   },
   {
     "id": "studded_armor",
@@ -409,8 +402,7 @@
     "weight": 38,
     "stackable": false,
     "maxStack": 1,
-    "equipmentSlot": "chest",
-    "defense": 6
+    "equipmentSlot": "chest"
   },
   {
     "id": "reinforced_boots",
@@ -418,8 +410,7 @@
     "weight": 10,
     "stackable": false,
     "maxStack": 1,
-    "equipmentSlot": "shoes",
-    "defense": 2
+    "equipmentSlot": "shoes"
   },
   {
     "id": "emerald_ring",
@@ -439,8 +430,7 @@
     "lightSource": {
       "radius": 40,
       "intensity": 7.5
-    },
-    "defense": 1
+    }
   },
   {
     "id": "mana_tonic",
@@ -505,8 +495,7 @@
     "weight": 8,
     "stackable": false,
     "maxStack": 1,
-    "equipmentSlot": "back",
-    "defense": 1
+    "equipmentSlot": "back"
   },
   {
     "id": "chain_coif",
@@ -514,8 +503,7 @@
     "weight": 10,
     "stackable": false,
     "maxStack": 1,
-    "equipmentSlot": "helmet",
-    "defense": 3
+    "equipmentSlot": "helmet"
   },
   {
     "id": "leather_jerkin",
@@ -523,8 +511,7 @@
     "weight": 24,
     "stackable": false,
     "maxStack": 1,
-    "equipmentSlot": "chest",
-    "defense": 4
+    "equipmentSlot": "chest"
   },
   {
     "id": "stitched_leggings",
@@ -532,8 +519,7 @@
     "weight": 12,
     "stackable": false,
     "maxStack": 1,
-    "equipmentSlot": "legs",
-    "defense": 2
+    "equipmentSlot": "legs"
   },
   {
     "id": "round_kite_shield",
@@ -541,8 +527,7 @@
     "weight": 15,
     "stackable": false,
     "maxStack": 1,
-    "equipmentSlot": "offhand",
-    "defense": 4
+    "equipmentSlot": "offhand"
   },
   {
     "id": "bronze_ring",
@@ -558,8 +543,7 @@
     "weight": 0.4,
     "stackable": false,
     "maxStack": 1,
-    "equipmentSlot": "amulet",
-    "defense": 1
+    "equipmentSlot": "amulet"
   },
   {
     "id": "spark_rune",
@@ -820,16 +804,14 @@
     "name": "Smith Tongs",
     "weight": 5,
     "stackable": false,
-    "maxStack": 1,
-    "equipmentSlot": "smithing_tool"
+    "maxStack": 1
   },
   {
     "id": "skinning_knife",
     "name": "Skinning Knife",
     "weight": 4,
     "stackable": false,
-    "maxStack": 1,
-    "equipmentSlot": "leatherworking_tool"
+    "maxStack": 1
   },
   {
     "id": "flint_and_steel",
@@ -1086,146 +1068,6 @@
     "lightSource": {
       "radius": 8.5,
       "intensity": 4.5
-    },
-    "defense": 1
-  },
-  {
-    "id": "rat_pelt_cap",
-    "name": "Rat Pelt Cap",
-    "weight": 2.4,
-    "stackable": false,
-    "maxStack": 1,
-    "defense": 2,
-    "equipmentSlot": "helmet"
-  },
-  {
-    "id": "mireweave_cloak",
-    "name": "Mireweave Cloak",
-    "weight": 5,
-    "stackable": false,
-    "maxStack": 1,
-    "defense": 2,
-    "equipmentSlot": "back"
-  },
-  {
-    "id": "skulker_scale_vest",
-    "name": "Skulker Scale Vest",
-    "weight": 20,
-    "stackable": false,
-    "maxStack": 1,
-    "defense": 6,
-    "equipmentSlot": "chest"
-  },
-  {
-    "id": "fenhide_leggings",
-    "name": "Fenhide Leggings",
-    "weight": 13,
-    "stackable": false,
-    "maxStack": 1,
-    "defense": 4,
-    "equipmentSlot": "legs"
-  },
-  {
-    "id": "fenhide_boots",
-    "name": "Fenhide Boots",
-    "weight": 8,
-    "stackable": false,
-    "maxStack": 1,
-    "defense": 3,
-    "equipmentSlot": "shoes"
-  },
-  {
-    "id": "cryptbone_buckler",
-    "name": "Cryptbone Buckler",
-    "weight": 13,
-    "stackable": false,
-    "maxStack": 1,
-    "defense": 5,
-    "equipmentSlot": "offhand"
-  },
-  {
-    "id": "warden_plate_helmet",
-    "name": "Warden Plate Helmet",
-    "weight": 18,
-    "stackable": false,
-    "maxStack": 1,
-    "defense": 7,
-    "equipmentSlot": "helmet"
-  },
-  {
-    "id": "warden_plate_armor",
-    "name": "Warden Plate Armor",
-    "weight": 40,
-    "stackable": false,
-    "maxStack": 1,
-    "defense": 10,
-    "equipmentSlot": "chest"
-  },
-  {
-    "id": "warden_plate_shield",
-    "name": "Warden Plate Shield",
-    "weight": 27,
-    "stackable": false,
-    "maxStack": 1,
-    "defense": 9,
-    "equipmentSlot": "offhand"
-  },
-  {
-    "id": "stalker_claw_blade",
-    "name": "Stalker Claw Blade",
-    "weight": 12,
-    "stackable": false,
-    "maxStack": 1,
-    "attack": 12,
-    "equipmentSlot": "weapon"
-  },
-  {
-    "id": "fenbone_maul",
-    "name": "Fenbone Maul",
-    "weight": 30,
-    "stackable": false,
-    "maxStack": 1,
-    "attack": 15,
-    "equipmentSlot": "weapon"
-  },
-  {
-    "id": "reed_sinew_bow",
-    "name": "Reed Sinew Bow",
-    "weight": 17,
-    "stackable": false,
-    "maxStack": 1,
-    "equipmentSlot": "weapon",
-    "distanceWeapon": {
-      "damage": 8,
-      "range": 6,
-      "cooldownMs": 800,
-      "ammunitionId": "rough_arrow"
-    }
-  },
-  {
-    "id": "acolyte_focus_amulet",
-    "name": "Acolyte Focus Amulet",
-    "weight": 0.6,
-    "stackable": false,
-    "maxStack": 1,
-    "defense": 2,
-    "equipmentSlot": "amulet",
-    "lightSource": {
-      "radius": 6,
-      "intensity": 2.6
-    }
-  },
-  {
-    "id": "warden_core_hammer",
-    "name": "Warden Core Hammer",
-    "weight": 36,
-    "stackable": false,
-    "maxStack": 1,
-    "attack": 18,
-    "equipmentSlot": "weapon",
-    "lightSource": {
-      "radius": 7.5,
-      "intensity": 4
     }
   }
 ]
