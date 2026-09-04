@@ -1444,15 +1444,34 @@ function Atmosphere({ torches, local, visualTarget, playerLight }: { torches: re
 }
 
 function PlayerLight({ target, visualTarget, profile }: { target?: Position; visualTarget: MutableRefObject<THREE.Vector3>; profile: PlayerLightProfile }) {
-  const light = useRef<THREE.PointLight>(null);
+  const lightRing = useRef<THREE.Group>(null);
   useFrame(() => {
-    if (!light.current || !target) return;
+    if (!lightRing.current || !target) return;
     const rendered = visualTarget.current;
     const x = Number.isFinite(rendered.x) ? rendered.x : tileCenter(target.x);
     const z = Number.isFinite(rendered.z) ? rendered.z : tileCenter(target.y);
-    light.current.position.set(x, 1.85, z);
+    lightRing.current.position.set(x, 0, z);
   }, -0.5);
-  return <pointLight ref={light} color="#ffd49a" intensity={profile.intensity} distance={profile.radius} decay={1.65} />;
+  // A tight ring approximates one circular player-centered light without
+  // placing a high-intensity point directly inside the character model.
+  const ringRadius = 1.15 * WORLD_TILE_SIZE;
+  const lightCount = 8;
+  const lightIntensity = profile.intensity * 1.5 / lightCount;
+  return (
+    <group ref={lightRing}>
+      {Array.from({ length: lightCount }, (_, index) => {
+        const angle = index / lightCount * Math.PI * 2;
+        return <pointLight
+          key={index}
+          position={[Math.cos(angle) * ringRadius, 0.55, Math.sin(angle) * ringRadius]}
+          color="#ffd49a"
+          intensity={lightIntensity}
+          distance={profile.radius}
+          decay={1.65}
+        />;
+      })}
+    </group>
+  );
 }
 
 function ClientPerformanceMonitor({ label, positionLabel, world }: {

@@ -2,7 +2,7 @@ import type { ItemDefinition, ItemInstance } from "../protocol";
 
 export type PlayerLightProfile = { radius: number; intensity: number };
 
-export const BASE_PLAYER_LIGHT: PlayerLightProfile = { radius: 5.25, intensity: 3.4 };
+export const BASE_PLAYER_LIGHT: PlayerLightProfile = { radius: 30.25, intensity: 5.4 };
 
 export function playerLightProfile(
   inventory: readonly ItemInstance[],

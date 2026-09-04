@@ -311,8 +311,8 @@
     "maxStack": 20,
     "equipmentSlot": "offhand",
     "lightSource": {
-      "radius": 10,
-      "intensity": 8
+      "radius": 32,
+      "intensity": 10
     }
   },
   {
@@ -428,8 +428,8 @@
     "maxStack": 1,
     "equipmentSlot": "amulet",
     "lightSource": {
-      "radius": 7.5,
-      "intensity": 5.5
+      "radius": 26,
+      "intensity": 7.5
     }
   },
   {
