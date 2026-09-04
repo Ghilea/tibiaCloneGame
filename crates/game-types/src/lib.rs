@@ -95,6 +95,15 @@ pub struct ItemDefinition {
     pub food_effect: Option<FoodEffect>,
     #[serde(default)]
     pub teaches_recipe_id: Option<String>,
+    #[serde(default)]
+    pub light_source: Option<ItemLightSource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemLightSource {
+    pub radius: f32,
+    pub intensity: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

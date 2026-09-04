@@ -22,6 +22,7 @@ import { CreatureModel } from "./CreatureModels";
 import { CLIENT_STEP_MS, InputController } from "./InputController";
 import { GabledRoof, HangingSign, HouseDoorway, HouseWindowOpening, InstancedHousePlinths, InstancedHouseWalls, MedievalDoorWall, MedievalWall, ShutterWindow } from "./MedievalModels";
 import { createHouseDoorwayLayout, createHouseWindowLayout } from "./DoorwayLayout";
+import { playerLightProfile, type PlayerLightProfile } from "./PlayerLight";
 import { WorldState, type CombatEffectView } from "./WorldState";
 import { tileCenter, worldToTile, WORLD_TILE_SIZE } from "./WorldCoordinates";
 import { worldEnvironment } from "./worldEnvironment";
@@ -145,6 +146,7 @@ function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHov
   const creatures = [...world.creatures.values()].filter((entry) => insideRenderBounds(entry.position, region.bounds));
   const npcs = [...world.npcs.values()].filter((entry) => insideRenderBounds(entry.position, region.bounds));
   const resourceNodes = [...world.resourceNodes.values()].filter((entry) => insideRenderBounds(entry.position, region.bounds));
+  const playerLight = playerLightProfile(world.inventory, world.itemDefinitions);
   const onGround = useCallback((event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
     if (event.button === 2) event.nativeEvent.preventDefault();
@@ -157,7 +159,7 @@ function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHov
 
   return (
     <>
-      <Atmosphere torches={region.map.torches} local={local?.position} />
+      <Atmosphere torches={region.map.torches} local={local?.position} visualTarget={localVisualPosition} playerLight={playerLight} />
       <FollowCamera target={local?.position} visualTarget={localVisualPosition} mapWidth={map.width} mapHeight={map.height} />
       <Terrain map={region.map} floor={floor} bounds={region.bounds} onGround={onGround} />
       <Structures map={region.map} input={input} world={world} discoveryRevision={world.worldObjectCallout?.key ?? 0} floor={floor} indoorBuildingId={indoorBuildingId} onHover={onLootHover} />
@@ -1409,7 +1411,7 @@ function nearbyOccluders(index: OccluderIndex, target: THREE.Vector3): Set<Occlu
   return result;
 }
 
-function Atmosphere({ torches, local }: { torches: readonly Position[]; local?: Position }) {
+function Atmosphere({ torches, local, visualTarget, playerLight }: { torches: readonly Position[]; local?: Position; visualTarget: MutableRefObject<THREE.Vector3>; playerLight: PlayerLightProfile }) {
   const { scene } = useThree();
   const sun = useRef<THREE.DirectionalLight>(null);
   const ambient = useRef<THREE.HemisphereLight>(null);
@@ -1435,9 +1437,22 @@ function Atmosphere({ torches, local }: { torches: readonly Position[]; local?: 
     <>
       <hemisphereLight ref={ambient} args={["#bfd5cb", "#172019", 0.8]} />
       <directionalLight ref={sun} position={[14, 24, 9]} intensity={1.8} color="#ffe1aa" castShadow shadow-mapSize={[1024, 1024]} shadow-camera-near={1} shadow-camera-far={70} shadow-camera-left={-18} shadow-camera-right={18} shadow-camera-top={18} shadow-camera-bottom={-18} />
+      <PlayerLight target={local} visualTarget={visualTarget} profile={playerLight} />
       {activeTorches.map((torch) => <pointLight key={tileKey(torch)} position={[torch.x + 0.5, 1.55, torch.y + 0.5]} color="#ff6a24" intensity={5.4} distance={6.1} decay={2} />)}
     </>
   );
+}
+
+function PlayerLight({ target, visualTarget, profile }: { target?: Position; visualTarget: MutableRefObject<THREE.Vector3>; profile: PlayerLightProfile }) {
+  const light = useRef<THREE.PointLight>(null);
+  useFrame(() => {
+    if (!light.current || !target) return;
+    const rendered = visualTarget.current;
+    const x = Number.isFinite(rendered.x) ? rendered.x : tileCenter(target.x);
+    const z = Number.isFinite(rendered.z) ? rendered.z : tileCenter(target.y);
+    light.current.position.set(x, 1.85, z);
+  }, -0.5);
+  return <pointLight ref={light} color="#ffd49a" intensity={profile.intensity} distance={profile.radius} decay={1.65} />;
 }
 
 function ClientPerformanceMonitor({ label, positionLabel, world }: {

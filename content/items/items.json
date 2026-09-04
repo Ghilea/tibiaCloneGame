@@ -308,7 +308,12 @@
     "name": "Torch Bundle",
     "weight": 1.6,
     "stackable": true,
-    "maxStack": 20
+    "maxStack": 20,
+    "equipmentSlot": "offhand",
+    "lightSource": {
+      "radius": 10,
+      "intensity": 8
+    }
   },
   {
     "id": "iron_short_sword",
@@ -421,7 +426,11 @@
     "weight": 0.4,
     "stackable": false,
     "maxStack": 1,
-    "equipmentSlot": "amulet"
+    "equipmentSlot": "amulet",
+    "lightSource": {
+      "radius": 7.5,
+      "intensity": 5.5
+    }
   },
   {
     "id": "mana_tonic",

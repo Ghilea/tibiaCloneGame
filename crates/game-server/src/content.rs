@@ -110,6 +110,15 @@ impl ContentCatalog {
             }) {
                 bail!("invalid food effect: {}", definition.id);
             }
+            if definition.light_source.as_ref().is_some_and(|light| {
+                !light.radius.is_finite()
+                    || !light.intensity.is_finite()
+                    || !(2.0..=20.0).contains(&light.radius)
+                    || !(0.1..=20.0).contains(&light.intensity)
+                    || definition.equipment_slot.is_none()
+            }) {
+                bail!("invalid equipped light source: {}", definition.id);
+            }
             items.insert(definition.id.clone(), definition);
         }
         if items.is_empty() {
@@ -313,6 +322,7 @@ mod tests {
             distance_weapon: None,
             food_effect: None,
             teaches_recipe_id: None,
+            light_source: None,
         }
     }
 

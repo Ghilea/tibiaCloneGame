@@ -5163,6 +5163,7 @@ mod tests {
                 distance_weapon: None,
                 food_effect: None,
                 teaches_recipe_id: None,
+                light_source: None,
             },
             test_backpack_definition(),
         ])
@@ -5354,6 +5355,7 @@ mod tests {
                 distance_weapon: None,
                 food_effect: None,
                 teaches_recipe_id: None,
+                light_source: None,
             },
             ItemDefinition {
                 id: "bag".into(),
@@ -5370,6 +5372,7 @@ mod tests {
                 distance_weapon: None,
                 food_effect: None,
                 teaches_recipe_id: None,
+                light_source: None,
             },
             ItemDefinition {
                 id: "blade".into(),
@@ -5386,6 +5389,7 @@ mod tests {
                 distance_weapon: None,
                 food_effect: None,
                 teaches_recipe_id: None,
+                light_source: None,
             },
             test_backpack_definition(),
         ])
@@ -5411,6 +5415,7 @@ mod tests {
                     distance_weapon: None,
                     food_effect: None,
                     teaches_recipe_id: None,
+                    light_source: None,
                 },
                 ItemDefinition {
                     id: "gold_coin".into(),
@@ -5427,6 +5432,7 @@ mod tests {
                     distance_weapon: None,
                     food_effect: None,
                     teaches_recipe_id: None,
+                    light_source: None,
                 },
                 ItemDefinition {
                     id: "mireling_remains".into(),
@@ -5443,6 +5449,7 @@ mod tests {
                     distance_weapon: None,
                     food_effect: None,
                     teaches_recipe_id: None,
+                    light_source: None,
                 },
                 ItemDefinition {
                     id: "blank_rune".into(),
@@ -5459,6 +5466,7 @@ mod tests {
                     distance_weapon: None,
                     food_effect: None,
                     teaches_recipe_id: None,
+                    light_source: None,
                 },
                 ItemDefinition {
                     id: "ember_rune".into(),
@@ -5479,6 +5487,7 @@ mod tests {
                     distance_weapon: None,
                     food_effect: None,
                     teaches_recipe_id: None,
+                    light_source: None,
                 },
                 ItemDefinition {
                     id: "rough_arrow".into(),
@@ -5495,6 +5504,7 @@ mod tests {
                     distance_weapon: None,
                     food_effect: None,
                     teaches_recipe_id: None,
+                    light_source: None,
                 },
                 ItemDefinition {
                     id: "ashwood_bow".into(),
@@ -5516,6 +5526,7 @@ mod tests {
                     }),
                     food_effect: None,
                     teaches_recipe_id: None,
+                    light_source: None,
                 },
             ],
             vec![CreatureDefinition {
@@ -5601,6 +5612,7 @@ mod tests {
             distance_weapon: None,
             food_effect: None,
             teaches_recipe_id: None,
+            light_source: None,
         }
     }
 
