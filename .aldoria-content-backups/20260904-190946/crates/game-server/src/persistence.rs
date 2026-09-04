@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::Context;
-use game_types::{EntityId, GroundItem, ItemInstance, Position, ProfessionSkillView};
+use game_types::{EntityId, GroundItem, ItemInstance, Position};
 use sqlx::{PgPool, Postgres, Transaction, postgres::PgPoolOptions};
 use tracing::{info, warn};
 
@@ -569,7 +569,6 @@ impl Database {
         player: &game_types::PlayerView,
         inventory: &[ItemInstance],
         ground_items: &[GroundItem],
-        profession_skills: &[ProfessionSkillView],
     ) -> Result<(), sqlx::Error> {
         let mut transaction = self.pool.begin().await?;
         sqlx::query("UPDATE characters SET mana = $2, sword_skill = $3, sword_tries = $4, distance_skill = $5, distance_tries = $6, fletching_skill = $7, fletching_tries = $8, magic_level = $9, magic_tries = $10, updated_at = NOW() WHERE id = $1")
@@ -586,15 +585,6 @@ impl Database {
             .execute(&mut *transaction)
             .await?;
         write_items(&mut transaction, player.id, inventory, ground_items).await?;
-        for skill in profession_skills {
-            sqlx::query("INSERT INTO character_profession_skills (character_id, skill_id, level, tries) VALUES ($1, $2, $3, $4) ON CONFLICT (character_id, skill_id) DO UPDATE SET level = EXCLUDED.level, tries = EXCLUDED.tries")
-                .bind(player.id)
-                .bind(&skill.id)
-                .bind(i32::from(skill.level))
-                .bind(i32::try_from(skill.tries).unwrap_or(i32::MAX))
-                .execute(&mut *transaction)
-                .await?;
-        }
         transaction.commit().await?;
         Ok(())
     }

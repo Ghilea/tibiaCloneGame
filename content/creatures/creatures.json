@@ -6,11 +6,45 @@
     "experience": 18,
     "speed": 85,
     "corpseId": "mireling_remains",
-    "attacks": [{ "type": "melee", "minDamage": 2, "maxDamage": 7, "intervalMs": 1200 }],
+    "attacks": [
+      {
+        "type": "melee",
+        "minDamage": 2,
+        "maxDamage": 7,
+        "intervalMs": 1200
+      }
+    ],
     "loot": [
-      { "definitionId": "mire_fiber", "chance": 1.0, "minQuantity": 1, "maxQuantity": 2 },
-      { "definitionId": "smoked_mire_meat", "chance": 0.35, "minQuantity": 1, "maxQuantity": 1 },
-      { "definitionId": "gold_coin", "chance": 0.65, "minQuantity": 1, "maxQuantity": 4 }
+      {
+        "definitionId": "mire_fiber",
+        "chance": 1,
+        "minQuantity": 1,
+        "maxQuantity": 2
+      },
+      {
+        "definitionId": "smoked_mire_meat",
+        "chance": 0.35,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "definitionId": "gold_coin",
+        "chance": 0.65,
+        "minQuantity": 1,
+        "maxQuantity": 4
+      },
+      {
+        "definitionId": "mire_gland",
+        "chance": 0.36,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "definitionId": "mire_spore_cluster",
+        "chance": 0.28,
+        "minQuantity": 1,
+        "maxQuantity": 2
+      }
     ]
   },
   {
@@ -20,10 +54,39 @@
     "experience": 30,
     "speed": 100,
     "corpseId": "mire_skulker_remains",
-    "attacks": [{ "type": "melee", "minDamage": 3, "maxDamage": 9, "intervalMs": 1100 }],
+    "attacks": [
+      {
+        "type": "melee",
+        "minDamage": 3,
+        "maxDamage": 9,
+        "intervalMs": 1100
+      }
+    ],
     "loot": [
-      { "definitionId": "bog_ichor", "chance": 0.7, "minQuantity": 1, "maxQuantity": 2 },
-      { "definitionId": "gold_coin", "chance": 0.75, "minQuantity": 2, "maxQuantity": 5 }
+      {
+        "definitionId": "bog_ichor",
+        "chance": 0.7,
+        "minQuantity": 1,
+        "maxQuantity": 2
+      },
+      {
+        "definitionId": "gold_coin",
+        "chance": 0.75,
+        "minQuantity": 2,
+        "maxQuantity": 5
+      },
+      {
+        "definitionId": "skulker_venom_sac",
+        "chance": 0.38,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "definitionId": "skulker_scale",
+        "chance": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 2
+      }
     ]
   },
   {
@@ -33,11 +96,45 @@
     "experience": 52,
     "speed": 92,
     "corpseId": "reed_stalker_remains",
-    "attacks": [{ "type": "melee", "minDamage": 5, "maxDamage": 13, "intervalMs": 1250 }],
+    "attacks": [
+      {
+        "type": "melee",
+        "minDamage": 5,
+        "maxDamage": 13,
+        "intervalMs": 1250
+      }
+    ],
     "loot": [
-      { "definitionId": "reed_hide", "chance": 0.8, "minQuantity": 1, "maxQuantity": 2 },
-      { "definitionId": "mire_fiber", "chance": 0.65, "minQuantity": 2, "maxQuantity": 4 },
-      { "definitionId": "gold_coin", "chance": 0.8, "minQuantity": 3, "maxQuantity": 8 }
+      {
+        "definitionId": "reed_hide",
+        "chance": 0.8,
+        "minQuantity": 1,
+        "maxQuantity": 2
+      },
+      {
+        "definitionId": "mire_fiber",
+        "chance": 0.65,
+        "minQuantity": 2,
+        "maxQuantity": 4
+      },
+      {
+        "definitionId": "gold_coin",
+        "chance": 0.8,
+        "minQuantity": 3,
+        "maxQuantity": 8
+      },
+      {
+        "definitionId": "reed_sinew",
+        "chance": 0.55,
+        "minQuantity": 1,
+        "maxQuantity": 2
+      },
+      {
+        "definitionId": "stalker_claw",
+        "chance": 0.32,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
     ]
   },
   {
@@ -47,11 +144,45 @@
     "experience": 95,
     "speed": 72,
     "corpseId": "fen_brute_remains",
-    "attacks": [{ "type": "melee", "minDamage": 8, "maxDamage": 18, "intervalMs": 1450 }],
+    "attacks": [
+      {
+        "type": "melee",
+        "minDamage": 8,
+        "maxDamage": 18,
+        "intervalMs": 1450
+      }
+    ],
     "loot": [
-      { "definitionId": "fen_tusk", "chance": 0.55, "minQuantity": 1, "maxQuantity": 1 },
-      { "definitionId": "bog_ichor", "chance": 0.8, "minQuantity": 2, "maxQuantity": 4 },
-      { "definitionId": "gold_coin", "chance": 0.9, "minQuantity": 6, "maxQuantity": 14 }
+      {
+        "definitionId": "fen_tusk",
+        "chance": 0.55,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "definitionId": "bog_ichor",
+        "chance": 0.8,
+        "minQuantity": 2,
+        "maxQuantity": 4
+      },
+      {
+        "definitionId": "gold_coin",
+        "chance": 0.9,
+        "minQuantity": 6,
+        "maxQuantity": 14
+      },
+      {
+        "definitionId": "fen_brute_hide",
+        "chance": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "definitionId": "fen_brute_bone",
+        "chance": 0.42,
+        "minQuantity": 1,
+        "maxQuantity": 2
+      }
     ]
   },
   {
@@ -61,10 +192,39 @@
     "experience": 16,
     "speed": 112,
     "corpseId": "castle_rat_remains",
-    "attacks": [{ "type": "melee", "minDamage": 1, "maxDamage": 6, "intervalMs": 1050 }],
+    "attacks": [
+      {
+        "type": "melee",
+        "minDamage": 1,
+        "maxDamage": 6,
+        "intervalMs": 1050
+      }
+    ],
     "loot": [
-      { "definitionId": "gold_coin", "chance": 0.55, "minQuantity": 1, "maxQuantity": 3 },
-      { "definitionId": "rough_arrow", "chance": 0.18, "minQuantity": 1, "maxQuantity": 3 }
+      {
+        "definitionId": "gold_coin",
+        "chance": 0.55,
+        "minQuantity": 1,
+        "maxQuantity": 3
+      },
+      {
+        "definitionId": "rough_arrow",
+        "chance": 0.18,
+        "minQuantity": 1,
+        "maxQuantity": 3
+      },
+      {
+        "definitionId": "rat_tail",
+        "chance": 0.55,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "definitionId": "rat_pelt",
+        "chance": 0.3,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
     ]
   },
   {
@@ -74,10 +234,39 @@
     "experience": 58,
     "speed": 78,
     "corpseId": "crypt_guard_remains",
-    "attacks": [{ "type": "melee", "minDamage": 5, "maxDamage": 14, "intervalMs": 1250 }],
+    "attacks": [
+      {
+        "type": "melee",
+        "minDamage": 5,
+        "maxDamage": 14,
+        "intervalMs": 1250
+      }
+    ],
     "loot": [
-      { "definitionId": "gold_coin", "chance": 0.82, "minQuantity": 3, "maxQuantity": 9 },
-      { "definitionId": "traveler_blade", "chance": 0.04, "minQuantity": 1, "maxQuantity": 1 }
+      {
+        "definitionId": "gold_coin",
+        "chance": 0.82,
+        "minQuantity": 3,
+        "maxQuantity": 9
+      },
+      {
+        "definitionId": "traveler_blade",
+        "chance": 0.04,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "definitionId": "crypt_bone_shard",
+        "chance": 0.56,
+        "minQuantity": 1,
+        "maxQuantity": 2
+      },
+      {
+        "definitionId": "grave_dust",
+        "chance": 0.32,
+        "minQuantity": 1,
+        "maxQuantity": 2
+      }
     ]
   },
   {
@@ -87,12 +276,53 @@
     "experience": 72,
     "speed": 88,
     "corpseId": "bone_acolyte_remains",
-    "attacks": [{ "type": "ranged", "minDamage": 7, "maxDamage": 17, "intervalMs": 1350, "range": 5, "effectId": "bone_bolt" }],
+    "attacks": [
+      {
+        "type": "ranged",
+        "minDamage": 7,
+        "maxDamage": 17,
+        "intervalMs": 1350,
+        "range": 5,
+        "effectId": "bone_bolt"
+      }
+    ],
     "loot": [
-      { "definitionId": "gold_coin", "chance": 0.86, "minQuantity": 4, "maxQuantity": 11 },
-      { "definitionId": "blank_rune", "chance": 0.25, "minQuantity": 1, "maxQuantity": 2 },
-      { "definitionId": "ember_rune", "chance": 0.04, "minQuantity": 1, "maxQuantity": 1 },
-      { "definitionId": "ember_sigil_formula", "chance": 0.06, "minQuantity": 1, "maxQuantity": 1 }
+      {
+        "definitionId": "gold_coin",
+        "chance": 0.86,
+        "minQuantity": 4,
+        "maxQuantity": 11
+      },
+      {
+        "definitionId": "blank_rune",
+        "chance": 0.25,
+        "minQuantity": 1,
+        "maxQuantity": 2
+      },
+      {
+        "definitionId": "ember_rune",
+        "chance": 0.04,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "definitionId": "ember_sigil_formula",
+        "chance": 0.06,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "definitionId": "acolyte_focus_shard",
+        "chance": 0.28,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "definitionId": "grave_dust",
+        "chance": 0.45,
+        "minQuantity": 1,
+        "maxQuantity": 2
+      }
     ]
   },
   {
@@ -102,11 +332,49 @@
     "experience": 140,
     "speed": 68,
     "corpseId": "cellar_warden_remains",
-    "attacks": [{ "type": "area", "minDamage": 10, "maxDamage": 24, "intervalMs": 2200, "range": 1, "radius": 1, "telegraphMs": 850, "effectId": "warden_slam" }],
+    "attacks": [
+      {
+        "type": "area",
+        "minDamage": 10,
+        "maxDamage": 24,
+        "intervalMs": 2200,
+        "range": 1,
+        "radius": 1,
+        "telegraphMs": 850,
+        "effectId": "warden_slam"
+      }
+    ],
     "loot": [
-      { "definitionId": "gold_coin", "chance": 1.0, "minQuantity": 10, "maxQuantity": 24 },
-      { "definitionId": "traveler_blade", "chance": 0.1, "minQuantity": 1, "maxQuantity": 1 },
-      { "definitionId": "ember_rune", "chance": 0.08, "minQuantity": 1, "maxQuantity": 1 }
+      {
+        "definitionId": "gold_coin",
+        "chance": 1,
+        "minQuantity": 10,
+        "maxQuantity": 24
+      },
+      {
+        "definitionId": "traveler_blade",
+        "chance": 0.1,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "definitionId": "ember_rune",
+        "chance": 0.08,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "definitionId": "warden_core",
+        "chance": 0.22,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "definitionId": "warden_plate_fragment",
+        "chance": 0.58,
+        "minQuantity": 1,
+        "maxQuantity": 2
+      }
     ]
   }
 ]

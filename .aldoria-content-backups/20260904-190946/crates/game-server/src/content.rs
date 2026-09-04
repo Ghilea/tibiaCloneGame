@@ -238,13 +238,7 @@ impl ContentCatalog {
                 || recipe.output_quantity == 0
                 || !matches!(
                     recipe.craft_kind.as_str(),
-                    "sigils"
-                        | "fletching"
-                        | "alchemy"
-                        | "mining"
-                        | "woodcutting"
-                        | "fishing"
-                        | "cooking"
+                    "sigils" | "fletching" | "mining"
                 )
                 || recipe.required_skill_level > MAX_SKILL_LEVEL
                 || (recipe.craft_kind == "sigils" && recipe.mana_cost == 0)

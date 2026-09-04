@@ -353,7 +353,7 @@
     "name": "Orin",
     "title": "Greyhaven Artificer",
     "service": "craft_trainer",
-    "dialogue": "Good craft is not only metal and wood. Bring me what the wilds leave behind, and I can teach you how to turn creature products into useful field supplies.",
+    "dialogue": "Good work begins with sound technique. Bring coin, and I will teach you the craft of dependable ammunition.",
     "position": {
       "x": 9,
       "y": 5,
@@ -363,15 +363,7 @@
     "spellIds": [],
     "recipeIds": [
       "fletch_rough_arrows",
-      "forge_copper_blade",
-      "brew_mire_recovery_tonic",
-      "distill_purifying_tonic",
-      "fletch_sinew_arrows",
-      "cook_fen_marrow_stew",
-      "carve_bone_fishhooks",
-      "brew_graveward_tonic",
-      "brew_focus_draught",
-      "bind_warden_glow_charm"
+      "forge_copper_blade"
     ]
   }
 ]

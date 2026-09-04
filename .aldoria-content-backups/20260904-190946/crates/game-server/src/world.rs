@@ -2743,21 +2743,11 @@ impl World {
         let crafting_skill = match recipe.craft_kind.as_str() {
             "fletching" => player.view.fletching_skill,
             "sigils" => player.view.magic_level,
-            profession => {
-                if !player
-                    .view
-                    .secondary_skills
-                    .iter()
-                    .any(|skill| skill == profession)
-                {
-                    return Err("crafting_skill_not_selected");
-                }
-                player
-                    .profession_skills
-                    .get(profession)
-                    .map(|skill| skill.0)
-                    .unwrap_or(0)
-            }
+            profession => player
+                .profession_skills
+                .get(profession)
+                .map(|skill| skill.0)
+                .unwrap_or(0),
         };
         if crafting_skill < recipe.required_skill_level {
             return Err("crafting_skill_too_low");
@@ -2898,13 +2888,6 @@ impl World {
                         advance_player_skill(&mut player.view, TrainedSkill::Fletching, 1);
                     } else if recipe.craft_kind == "sigils" {
                         advance_player_skill(&mut player.view, TrainedSkill::Magic, 1);
-                    } else {
-                        let skill = player
-                            .profession_skills
-                            .entry(recipe.craft_kind.clone())
-                            .or_insert((0, 0));
-                        advance_skill(&mut skill.0, &mut skill.1, 1);
-                        skill.0 = skill.0.min(MAX_SKILL_LEVEL);
                     }
                     queue.remaining -= 1;
                     queue.ready_at = now + Duration::from_millis(recipe.craft_time_ms);

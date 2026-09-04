@@ -1,0 +1,39 @@
+{
+  "pack": "aldoria-creature-products-v6",
+  "createdAt": "2026-09-04T17:09:46.039Z",
+  "created": [
+    "apps/client/public/assets/sprites/items/rat_tail.png",
+    "apps/client/public/assets/sprites/items/rat_pelt.png",
+    "apps/client/public/assets/sprites/items/mire_gland.png",
+    "apps/client/public/assets/sprites/items/mire_spore_cluster.png",
+    "apps/client/public/assets/sprites/items/skulker_venom_sac.png",
+    "apps/client/public/assets/sprites/items/skulker_scale.png",
+    "apps/client/public/assets/sprites/items/reed_sinew.png",
+    "apps/client/public/assets/sprites/items/stalker_claw.png",
+    "apps/client/public/assets/sprites/items/fen_brute_hide.png",
+    "apps/client/public/assets/sprites/items/fen_brute_bone.png",
+    "apps/client/public/assets/sprites/items/crypt_bone_shard.png",
+    "apps/client/public/assets/sprites/items/grave_dust.png",
+    "apps/client/public/assets/sprites/items/acolyte_focus_shard.png",
+    "apps/client/public/assets/sprites/items/warden_core.png",
+    "apps/client/public/assets/sprites/items/warden_plate_fragment.png",
+    "apps/client/public/assets/sprites/items/mire_recovery_tonic.png",
+    "apps/client/public/assets/sprites/items/purifying_tonic.png",
+    "apps/client/public/assets/sprites/items/fen_marrow_stew.png",
+    "apps/client/public/assets/sprites/items/graveward_tonic.png",
+    "apps/client/public/assets/sprites/items/focus_draught.png",
+    "apps/client/public/assets/sprites/items/warden_glow_charm.png"
+  ],
+  "backedUp": [
+    "content/items/items.json",
+    "content/creatures/creatures.json",
+    "content/runes/runes.json",
+    "content/npcs/npcs.json",
+    "apps/client/src/App.tsx",
+    "apps/client/src/editor/WorldEditor.tsx",
+    "crates/game-server/src/content.rs",
+    "crates/game-server/src/world.rs",
+    "crates/game-server/src/persistence.rs",
+    "crates/game-server/src/main.rs"
+  ]
+}

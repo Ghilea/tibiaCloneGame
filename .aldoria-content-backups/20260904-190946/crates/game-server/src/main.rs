@@ -2016,16 +2016,8 @@ async fn process_crafting(state: &AppState) {
             let (inventory, _, _) = world
                 .inventory_state(update.player.id)
                 .expect("crafting player exists");
-            let profession_skills = world
-                .profession_skills(update.player.id)
-                .expect("crafting player exists");
             if let Err(error) = database
-                .persist_crafting_state(
-                    &update.player,
-                    &inventory,
-                    world.ground_items(),
-                    &profession_skills,
-                )
+                .persist_crafting_state(&update.player, &inventory, world.ground_items())
                 .await
             {
                 world.restore_player_state(backup);
@@ -2091,15 +2083,6 @@ async fn send_crafting_update(state: &AppState, update: world::CraftingUpdate) {
                 },
             );
         }
-        if let Some(skills) = world.profession_skills(update.player.id) {
-            state.private(
-                update.player.id,
-                ServerMessage::ProfessionSkillsChanged {
-                    player_id: update.player.id,
-                    skills,
-                },
-            );
-        }
     }
     state.private(
         update.player.id,
@@ -2115,7 +2098,6 @@ async fn send_crafting_update(state: &AppState, update: world::CraftingUpdate) {
 fn crafting_error_message(code: &str) -> &'static str {
     match code {
         "cannot_craft_while_trading" => "Finish or cancel your trade before crafting",
-        "crafting_skill_not_selected" => "Choose the matching secondary profession before crafting this recipe",
         "crafting_skill_too_low" => "Your matching crafting skill is too low",
         "missing_craft_material" => "You do not have enough crafting materials",
         "invalid_craft_quantity" => "Choose between 1 and 20 sigils",
