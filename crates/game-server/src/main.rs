@@ -814,6 +814,27 @@ async fn session(mut socket: WebSocket, state: AppState) {
                 };
                 match result {
                     Ok(position) => {
+                        // Send a new floor/region before the movement event. The
+                        // control channel is prioritized by the websocket writer,
+                        // so the client can prepare geometry before rendering the
+                        // player on the new floor.
+                        if should_refresh_world_region(streamed_region_center, position) {
+                            let world = state.world.read().await;
+                            let message = world
+                                .requires_region_streaming(WORLD_REGION_RADIUS)
+                                .then(|| ServerMessage::WorldRegion {
+                                    map: Box::new(world.map_view_near(position, WORLD_REGION_RADIUS)),
+                                    ground_items: world.ground_items_near(position, WORLD_REGION_RADIUS),
+                                    creatures: world.creature_views_near(position, WORLD_REGION_RADIUS),
+                                    npcs: world.npc_views_near(position, WORLD_REGION_RADIUS),
+                                    resource_nodes: world.resource_nodes_near(position, WORLD_REGION_RADIUS),
+                                });
+                            drop(world);
+                            if let Some(message) = message {
+                                state.private(id, message);
+                            }
+                            streamed_region_center = position;
+                        }
                         state
                             .publish_player_movement(
                                 id,
@@ -822,28 +843,6 @@ async fn session(mut socket: WebSocket, state: AppState) {
                                 sequence,
                             )
                             .await;
-                        if should_refresh_world_region(streamed_region_center, position) {
-                            let world = state.world.read().await;
-                            let message = world
-                                .requires_region_streaming(WORLD_REGION_RADIUS)
-                                .then(|| ServerMessage::WorldRegion {
-                                    map: Box::new(
-                                        world.map_view_near(position, WORLD_REGION_RADIUS),
-                                    ),
-                                    ground_items: world
-                                        .ground_items_near(position, WORLD_REGION_RADIUS),
-                                    creatures: world
-                                        .creature_views_near(position, WORLD_REGION_RADIUS),
-                                    npcs: world.npc_views_near(position, WORLD_REGION_RADIUS),
-                                    resource_nodes: world
-                                        .resource_nodes_near(position, WORLD_REGION_RADIUS),
-                                });
-                            drop(world);
-                            if let Some(message) = message {
-                                state.private(id, message);
-                            }
-                            streamed_region_center = position;
-                        }
                     }
                     Err(reason) => {
                         let world = state.world.read().await;
@@ -2281,6 +2280,16 @@ async fn dispatch_world_events(state: &AppState, events: Vec<WorldEvent>) {
                     magic_level: player.magic_level,
                     magic_tries: player.magic_tries,
                 });
+                if let Some((inventory, inventory_weight, max_capacity)) =
+                    state.world.read().await.inventory_state(player.id)
+                {
+                    state.private(player.id, ServerMessage::InventoryChanged {
+                        player_id: player.id,
+                        inventory,
+                        inventory_weight,
+                        max_capacity,
+                    });
+                }
             }
             WorldEvent::PlayerDied {
                 player_id,

@@ -234,7 +234,7 @@ function ServerStatusIndicator({ online }: { online: boolean | null }) {
   return <div className={`server-status ${online === true ? "online" : online === false ? "offline" : "checking"}`}><i aria-hidden="true" />{label}</div>;
 }
 
-type Panel = "inventory" | "crafting" | "character" | "help" | "options";
+type Panel = "inventory" | "crafting" | "skills" | "character" | "help" | "options";
 
 function Game({ onLeave }: { onLeave: () => void }) {
   const [panel, setPanel] = useState<Panel | null>(null);
@@ -243,6 +243,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
   const [showPerformance, setShowPerformance] = useState(true);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [sceneReady, setSceneReady] = useState(false);
+  const [actionSkills, setActionSkills] = useState<Record<number, string | null>>(() => loadActionSkills());
   const pendingGoldPickups = useRef(new Set<string>());
   const emberSigil = world.inventory.find(
     (item) => item.definitionId === "ember_rune" && (item.charges ?? 0) > 0,
@@ -263,6 +264,16 @@ function Game({ onLeave }: { onLeave: () => void }) {
         "Learn Ember Bolt from Seraphine in Greyhaven first.",
       );
   };
+  const assignActionSkill = (slot: number, skillId: string) => {
+    setActionSkills((current) => ({ ...current, [slot]: skillId }));
+  };
+  actionSkillDropHandler = assignActionSkill;
+  const clearActionSkill = (slot: number) => {
+    setActionSkills((current) => ({ ...current, [slot]: null }));
+  };
+  useEffect(() => {
+    localStorage.setItem("aldoria.action-skills", JSON.stringify(actionSkills));
+  }, [actionSkills]);
   useEffect(() => {
     if (panel || escapeMenu || world.trade || world.incomingTrade || world.activeNpcId)
       input.releaseAll();
@@ -276,7 +287,8 @@ function Game({ onLeave }: { onLeave: () => void }) {
   useEffect(() => {
     const hotkeys: Record<string, Panel> = {
       i: "inventory",
-      k: "crafting",
+      k: "skills",
+      r: "crafting",
       c: "character",
       h: "help",
     };
@@ -377,6 +389,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
   const titles: Record<Panel, string> = {
     inventory: "Inventory",
     crafting: "Crafting & Production",
+    skills: "Skills",
     character: "Character & Skills",
     help: "Controls",
     options: "Options",
@@ -468,12 +481,23 @@ function Game({ onLeave }: { onLeave: () => void }) {
           <span className="ability-glyph">EB</span>
           <small>{knowsEmberBolt ? emberBolt?.manaCost ?? 0 : "—"}</small>
         </button>
-        {[3, 4, 5, 6, 7, 8].map((slot) => (
-          <button className="ability-slot empty-ability" key={slot} disabled title="Empty action slot">
+        {[3, 4, 5, 6, 7, 8].map((slot) => {
+          const skillId = actionSkills[slot];
+          const skill = skillId ? actionSkillDefinition(skillId, local) : null;
+          return <button
+            className={`ability-slot ${skill ? "skill-ability" : "empty-ability"}`}
+            key={slot}
+            data-action-slot={slot}
+            title={skill ? `${skill.name}: open skill window` : "Drop a skill here"}
+            onClick={() => skill && setPanel("character")}
+            onContextMenu={(event) => { event.preventDefault(); clearActionSkill(slot); }}
+            onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }}
+            onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const skillValue = event.dataTransfer.getData("application/x-aldoria-skill") || event.dataTransfer.getData("text/plain"); if (skillValue && actionSkillDefinitions.some((entry) => entry.id === skillValue)) assignActionSkill(slot, skillValue); }}
+          >
             <kbd>{slot}</kbd>
-            <span>+</span>
-          </button>
-        ))}
+            {skill ? <><span className="ability-glyph">{skill.glyph}</span><small>{skill.name}</small></> : <span>+</span>}
+          </button>;
+        })}
       </nav>
       <nav className="panel-dock" aria-label="Character panels">
         <DockButton
@@ -498,6 +522,13 @@ function Game({ onLeave }: { onLeave: () => void }) {
         />
         <DockButton
           hotkey="K"
+          icon={"\u2605"}
+          label="Skills"
+          active={panel === "skills"}
+          onClick={() => setPanel(panel === "skills" ? null : "skills")}
+        />
+        <DockButton
+          hotkey="R"
           icon={"\u2692"}
           label="Crafting"
           active={panel === "crafting"}
@@ -525,6 +556,8 @@ function Game({ onLeave }: { onLeave: () => void }) {
         <GameModal title={titles[panel]} kind={panel === "character" ? "character-compact" : panel} onClose={() => setPanel(null)}>
           {panel === "crafting" ? (
             <RuneCraftingPanel />
+          ) : panel === "skills" ? (
+            <SkillPanel />
           ) : panel === "character" ? (
             <CompactCharacterPanel />
           ) : panel === "help" ? (
@@ -865,7 +898,7 @@ function OptionsPanel({ showPerformance, reducedMotion, onShowPerformance, onRed
         <label><span><strong>Time of day</strong><small>Change the current world clock.</small></span><input type="time" value={worldTime} onChange={(event) => changeWorldTime(event.target.value)} /></label>
         <label><span><strong>Pause world clock</strong><small>Keep the selected time from advancing.</small></span><input type="checkbox" checked={worldTimePaused} onChange={(event) => changeWorldTimePaused(event.target.checked)} /></label>
       </section>
-      <p className="options-note">Gameplay shortcuts remain active: C for Character, I for Inventory, K for Crafting and H for Help.</p>
+      <p className="options-note">Gameplay shortcuts remain active: C for Character, I for Inventory, K for Skills, R for Crafting and H for Help.</p>
     </div>
   );
 }
@@ -1396,12 +1429,88 @@ function CompactCharacterPanel() {
           <section className="character-skills-view">
             <small className="skill-group-label">Primary skills</small>
             <PrimarySkillProgress player={player} />
+            <ActionSkillList player={player} />
             <SecondarySkillsPicker selected={player.secondarySkills} />
           </section>
         </aside>
       )}
     </div>
   );
+}
+
+function SkillPanel() {
+  const player = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
+  if (!player) return null;
+  return <div className="standalone-skills-panel">
+    <p className="drag-hint">Drag a skill to action bar slots 3–8. Right-click an action slot to remove it.</p>
+    <ActionSkillList player={player} />
+    <SkillRow name="Melee Skill" level={player.swordSkill} tries={player.swordTries} description="Advances through successful hits with any melee weapon." />
+    <SkillRow name="Distance Skill" level={player.distanceSkill} tries={player.distanceTries} description="Advances when ammunition hits a creature." />
+    <SkillRow name="Fletching Skill" level={player.fletchingSkill} tries={player.fletchingTries} description="Advances by producing physical ammunition." />
+    <SkillRow name="Magic Level" level={player.magicLevel} tries={player.magicTries} description="Advances through sigil crafting and magic use." />
+    <SecondarySkillsPicker selected={player.secondarySkills} />
+    {player.secondarySkills.map((id) => {
+      const skill = world.professionSkills.get(id);
+      const definition = secondarySkillOptions.find((entry) => entry.id === id);
+      return <SkillRow key={id} name={definition?.name ?? id} level={skill?.level ?? 0} tries={skill?.tries ?? 0} description={definition?.description ?? "Profession skill."} />;
+    })}
+  </div>;
+}
+
+type ActionSkill = { id: string; name: string; glyph: string; description: string };
+const actionSkillDefinitions: ActionSkill[] = [
+  { id: "melee", name: "Melee", glyph: "M", description: "Melee weapon skill" },
+  { id: "distance", name: "Distance", glyph: "D", description: "Distance weapon skill" },
+  { id: "fletching", name: "Fletching", glyph: "F", description: "Ammunition crafting skill" },
+  { id: "magic", name: "Magic", glyph: "✦", description: "Magic level" },
+  { id: "alchemy", name: "Alchemy", glyph: "A", description: "Potions, extracts and reagents" },
+  { id: "mining", name: "Mining", glyph: "M", description: "Ore, stone and rare minerals" },
+  { id: "woodcutting", name: "Woodcutting", glyph: "W", description: "Timber and uncommon woods" },
+  { id: "fishing", name: "Fishing", glyph: "F", description: "Fish and aquatic resources" },
+  { id: "cooking", name: "Cooking", glyph: "C", description: "Meals with restorative effects" },
+];
+let actionSkillDropHandler: ((slot: number, skillId: string) => void) | null = null;
+let activeSkillPointerDrag: string | null = null;
+
+function beginSkillPointerDrag(event: PointerEvent<HTMLElement>, skillId: string) {
+  if (event.button !== 0) return;
+  activeSkillPointerDrag = skillId;
+  const finish = (release: globalThis.PointerEvent) => {
+    const target = document.elementFromPoint(release.clientX, release.clientY)?.closest<HTMLElement>("[data-action-slot]");
+    const slot = Number(target?.dataset.actionSlot);
+    if (target && Number.isInteger(slot) && slot >= 3 && slot <= 8) actionSkillDropHandler?.(slot, skillId);
+    activeSkillPointerDrag = null;
+    window.removeEventListener("pointerup", finish);
+    window.removeEventListener("pointercancel", cancel);
+  };
+  const cancel = () => {
+    activeSkillPointerDrag = null;
+    window.removeEventListener("pointerup", finish);
+    window.removeEventListener("pointercancel", cancel);
+  };
+  window.addEventListener("pointerup", finish);
+  window.addEventListener("pointercancel", cancel);
+}
+
+function actionSkillDefinition(id: string, _player?: PlayerView | null) {
+  return actionSkillDefinitions.find((skill) => skill.id === id);
+}
+
+function ActionSkillList({ player }: { player: PlayerView }) {
+  return <section className="action-skill-list">
+    <header><small>Action bar</small><span>Drag skills to slots 3–8 · Right-click a slot to remove</span></header>
+    <div>{actionSkillDefinitions.map((skill) => <div
+      key={skill.id}
+      className="action-skill-source"
+      draggable
+      title={skill.description}
+      onPointerDown={(event) => beginSkillPointerDrag(event, skill.id)}
+      onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.setData("application/x-aldoria-skill", skill.id); event.dataTransfer.setData("text/plain", skill.id); event.dataTransfer.effectAllowed = "copy"; }}
+    >
+      <i>{skill.glyph}</i><span><strong>{skill.name}</strong><small>{skill.description}</small></span>
+      <b>{skill.id === "melee" ? player.swordSkill : skill.id === "distance" ? player.distanceSkill : skill.id === "fletching" ? player.fletchingSkill : skill.id === "magic" ? player.magicLevel : world.professionSkills.get(skill.id)?.level ?? 0}</b>
+    </div>)}</div>
+  </section>;
 }
 
 function CompactSkill({ name, level, description }: { name: string; level?: number; description: string }) {
@@ -2591,6 +2700,18 @@ function loadInventoryLayout(storageKey: string): (string | null)[] {
       : [];
   } catch {
     return [];
+  }
+}
+
+function loadActionSkills(): Record<number, string | null> {
+  try {
+    const value = JSON.parse(localStorage.getItem("aldoria.action-skills") ?? "{}");
+    if (!value || typeof value !== "object") return {};
+    return Object.fromEntries(Object.entries(value).filter(([slot, skill]) =>
+      /^[3-8]$/.test(slot) && (skill === null || typeof skill === "string"),
+    )) as Record<number, string | null>;
+  } catch {
+    return {};
   }
 }
 
