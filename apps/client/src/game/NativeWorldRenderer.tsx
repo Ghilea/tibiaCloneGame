@@ -23,6 +23,7 @@ import type {
   WorldObjectView,
 } from "../protocol";
 import { CLIENT_STEP_MS, type InputController } from "./InputController";
+import { playerLightProfile } from "./PlayerLight";
 import {
   HOUSE_DOOR_PLACEMENT,
   createHouseDoorwayLayout,
@@ -42,8 +43,12 @@ const NATIVE_CAMERA_ZOOM = 90;
 // TIBIAGAME_NATIVE_RENDERER_V24_1
 // TIBIAGAME_NATIVE_RENDERER_V24_2
 // TIBIAGAME_NATIVE_RENDERER_V25
-// Visual-parity phase 1: authored medieval wall/shutter model parts, real roof
-// tiles, gabled roofs, chimneys, hanging signs, and proper facade openings.
+// TIBIAGAME_NATIVE_RENDERER_V25_1
+// TIBIAGAME_NATIVE_RENDERER_V26
+// TIBIAGAME_NATIVE_RENDERER_V27
+// TIBIAGAME_NATIVE_RENDERER_V28
+// Native visual parity phase 4: shared-atlas damage text, spell-family VFX,
+// resource-family art and imperative canvas hover feedback.
 
 type NativeWorldRendererProps = {
   world: WorldState;
@@ -87,6 +92,9 @@ type StaticSnapshot = {
   houseRoofsAlongX: Transform[];
   keepRoofsAlongZ: Transform[];
   keepRoofsAlongX: Transform[];
+  keepMerlons: Transform[];
+  keepCornerTowers: Transform[];
+  keepTowerCaps: Transform[];
   chimneys: Transform[];
   chimneyCaps: Transform[];
   signArms: Transform[];
@@ -248,7 +256,7 @@ type NativeGltfPart = {
 };
 
 type NativeMedievalAssets = {
-  scene: THREE.Group;
+  scenes: readonly THREE.Group[];
   wallParts: readonly NativeGltfPart[];
   shutterOpenParts: readonly NativeGltfPart[];
   shutterClosedParts: readonly NativeGltfPart[];
@@ -327,54 +335,119 @@ class NativeGltfInstancedSet {
   }
 }
 
-function extractNativeGltfParts(
-  scene: THREE.Group,
+function normalizeGltfNodeName(name: string) {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function findNativeGltfNode(
+  scenes: readonly THREE.Group[],
   nodeName: string,
-): readonly NativeGltfPart[] {
-  const source = scene.getObjectByName(nodeName);
-  if (!source) {
-    throw new Error(`Native V25: missing medieval node ${nodeName}`);
+) {
+  // TIBIAGAME_NATIVE_RENDERER_V25_1
+  // The medieval GLB contains authored nodes in more than one scene. The old
+  // R3F loader searched gltf.scenes; V25 accidentally searched gltf.scene only.
+  for (const scene of scenes) {
+    const exact = scene.getObjectByName(nodeName);
+    if (exact) return exact;
   }
 
-  scene.updateWorldMatrix(true, true);
+  // Be tolerant of exporter punctuation/suffix changes without silently
+  // accepting unrelated nodes.
+  const wanted = normalizeGltfNodeName(nodeName);
+  for (const scene of scenes) {
+    let normalizedMatch: THREE.Object3D | null = null;
+    scene.traverse((candidate) => {
+      if (normalizedMatch) return;
+      const normalized = normalizeGltfNodeName(candidate.name);
+      if (
+        normalized === wanted
+        || normalized.startsWith(`${wanted}0`)
+        || normalized.startsWith(`${wanted}00`)
+      ) {
+        normalizedMatch = candidate;
+      }
+    });
+    if (normalizedMatch) return normalizedMatch;
+  }
+
+  return null;
+}
+
+function extractNativeGltfParts(
+  scenes: readonly THREE.Group[],
+  nodeName: string,
+): readonly NativeGltfPart[] {
+  const source = findNativeGltfNode(scenes, nodeName);
+  if (!source) {
+    const candidates: string[] = [];
+    for (const scene of scenes) {
+      scene.traverse((candidate) => {
+        const normalized = normalizeGltfNodeName(candidate.name);
+        if (
+          normalized.includes("window")
+          || normalized.includes("shutter")
+          || normalized.includes("plaster")
+        ) {
+          candidates.push(candidate.name);
+        }
+      });
+    }
+
+    throw new Error(
+      `Native V25.1: missing medieval node ${nodeName}. `
+      + `Available related nodes: ${[...new Set(candidates)].slice(0, 40).join(", ")}`,
+    );
+  }
+
+  // Update the root scene containing this source so matrixWorld is valid.
+  const owningScene = scenes.find((scene) => {
+    let found = false;
+    scene.traverse((candidate) => {
+      if (candidate === source) found = true;
+    });
+    return found;
+  });
+  owningScene?.updateWorldMatrix(true, true);
   source.updateWorldMatrix(true, true);
+
   const inverse = source.matrixWorld.clone().invert();
   const parts: NativeGltfPart[] = [];
 
   source.traverse((child) => {
     if (!(child instanceof THREE.Mesh)) return;
-    const material = Array.isArray(child.material)
-      ? child.material
-      : child.material;
     parts.push({
       geometry: child.geometry,
-      material,
+      material: child.material,
       localMatrix: inverse.clone().multiply(child.matrixWorld),
     });
   });
 
   if (!parts.length) {
-    throw new Error(`Native V25: ${nodeName} contains no mesh parts`);
+    throw new Error(`Native V25.1: ${nodeName} contains no mesh parts`);
   }
   return parts;
 }
 
 async function loadNativeMedievalAssets(): Promise<NativeMedievalAssets> {
   const gltf = await new GLTFLoader().loadAsync(MEDIEVAL_VILLAGE_ASSET);
-  const scene = gltf.scene;
+  const scenes = gltf.scenes.length > 0
+    ? gltf.scenes
+    : [gltf.scene];
 
   return {
-    scene,
+    scenes,
     wallParts: extractNativeGltfParts(
-      scene,
+      scenes,
       "Wall_Plaster_Straight",
     ),
     shutterOpenParts: extractNativeGltfParts(
-      scene,
+      scenes,
       "WindowShutters_Wide_Flat_Open",
     ),
     shutterClosedParts: extractNativeGltfParts(
-      scene,
+      scenes,
       "WindowShutters_Wide_Flat_Closed",
     ),
   };
@@ -385,19 +458,21 @@ function disposeNativeMedievalAssets(assets: NativeMedievalAssets) {
   const materials = new Set<THREE.Material>();
   const textures = new Set<THREE.Texture>();
 
-  assets.scene.traverse((object) => {
-    if (!(object instanceof THREE.Mesh)) return;
-    geometries.add(object.geometry);
-    const entries = Array.isArray(object.material)
-      ? object.material
-      : [object.material];
-    for (const material of entries) {
-      materials.add(material);
-      for (const value of Object.values(material)) {
-        if (value instanceof THREE.Texture) textures.add(value);
+  for (const scene of assets.scenes) {
+    scene.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      geometries.add(object.geometry);
+      const entries = Array.isArray(object.material)
+        ? object.material
+        : [object.material];
+      for (const material of entries) {
+        materials.add(material);
+        for (const value of Object.values(material)) {
+          if (value instanceof THREE.Texture) textures.add(value);
+        }
       }
-    }
-  });
+    });
+  }
 
   for (const geometry of geometries) geometry.dispose();
   for (const material of materials) material.dispose();
@@ -947,6 +1022,9 @@ function prepareNativeSnapshot(
     houseRoofsAlongX: [],
     keepRoofsAlongZ: [],
     keepRoofsAlongX: [],
+    keepMerlons: [],
+    keepCornerTowers: [],
+    keepTowerCaps: [],
     chimneys: [],
     chimneyCaps: [],
     signArms: [],
@@ -1115,6 +1193,76 @@ function prepareNativeSnapshot(
       snapshot.signPosts,
       snapshot.signBoards,
     );
+
+    if (building.kind === "keep") {
+      const maxX = building.x + building.width;
+      const maxY = building.y + building.height;
+      const merlonY = KEEP_WALL_HEIGHT + 0.32;
+
+      for (let x = building.x; x < maxX; x += 1) {
+        snapshot.keepMerlons.push([
+          x + 0.5,
+          merlonY,
+          building.y,
+          0.42,
+          0.64,
+          0.38,
+        ]);
+        snapshot.keepMerlons.push([
+          x + 0.5,
+          merlonY,
+          maxY,
+          0.42,
+          0.64,
+          0.38,
+        ]);
+      }
+
+      for (let y = building.y; y < maxY; y += 1) {
+        snapshot.keepMerlons.push([
+          building.x,
+          merlonY,
+          y + 0.5,
+          0.38,
+          0.64,
+          0.42,
+        ]);
+        snapshot.keepMerlons.push([
+          maxX,
+          merlonY,
+          y + 0.5,
+          0.38,
+          0.64,
+          0.42,
+        ]);
+      }
+
+      const corners = [
+        [building.x, building.y],
+        [maxX, building.y],
+        [building.x, maxY],
+        [maxX, maxY],
+      ] as const;
+
+      for (const [towerX, towerZ] of corners) {
+        snapshot.keepCornerTowers.push([
+          towerX,
+          KEEP_WALL_HEIGHT * 0.54,
+          towerZ,
+          1,
+          1,
+          1,
+        ]);
+        snapshot.keepTowerCaps.push([
+          towerX,
+          KEEP_WALL_HEIGHT + 1.02,
+          towerZ,
+          1,
+          1,
+          1,
+        ]);
+      }
+    }
   }
 
   for (const door of map.doors) {
@@ -2088,6 +2236,10 @@ class NativeSpriteCreatureActor {
     scene.add(this.root);
   }
 
+  get visualPosition() {
+    return this.root.position;
+  }
+
   setTarget(
     creature: CreatureView,
     floor: number,
@@ -2343,6 +2495,14 @@ class NativeActorManager {
     return this.players.get(playerId)?.visualPosition ?? null;
   }
 
+  entityVisualPosition(entityId: string | null) {
+    if (!entityId) return null;
+    return this.players.get(entityId)?.visualPosition
+      ?? this.npcs.get(entityId)?.visualPosition
+      ?? this.creatures.get(entityId)?.visualPosition
+      ?? null;
+  }
+
   dispose() {
     for (const actor of this.players.values()) {
       actor.dispose(this.scene);
@@ -2359,6 +2519,1292 @@ class NativeActorManager {
   }
 }
 
+
+const NATIVE_PLAYER_LIGHT_COUNT = 8;
+const NATIVE_TORCH_LIGHT_COUNT = 10;
+const NATIVE_COMBAT_EFFECT_LIFETIME_MS = 850;
+
+type NativeDynamicLayers = {
+  groundItems: NativeInstancedLayer;
+  groundEquipment: NativeInstancedLayer;
+  groundConsumables: NativeInstancedLayer;
+  groundRunes: NativeInstancedLayer;
+  groundCoins: NativeInstancedLayer;
+  corpses: NativeInstancedLayer;
+  lootRings: NativeInstancedLayer;
+  resourceAvailable: NativeInstancedLayer;
+  resourceDepleted: NativeInstancedLayer;
+  resourceCopper: NativeInstancedLayer;
+  resourceWood: NativeInstancedLayer;
+  resourceHerb: NativeInstancedLayer;
+  resourceWater: NativeInstancedLayer;
+  combatIncoming: NativeInstancedLayer;
+  combatOutgoing: NativeInstancedLayer;
+  combatOther: NativeInstancedLayer;
+  combatRings: NativeInstancedLayer;
+  combatFire: NativeInstancedLayer;
+  combatPoison: NativeInstancedLayer;
+  combatIce: NativeInstancedLayer;
+  combatArcane: NativeInstancedLayer;
+  areaWarnings: NativeInstancedLayer;
+};
+
+
+type NativeGroundItemFamily =
+  | "generic"
+  | "equipment"
+  | "consumable"
+  | "rune"
+  | "coin";
+
+function nativeGroundItemFamily(
+  definitionId: string,
+  definition: {
+    name: string;
+    stackable: boolean;
+    charges?: number;
+    attack?: number;
+    defense?: number;
+    equipmentSlot?: string;
+    combatEffect?: unknown;
+    distanceWeapon?: unknown;
+    foodEffect?: unknown;
+    teachesRecipeId?: string;
+  } | undefined,
+): NativeGroundItemFamily {
+  if (!definition) return "generic";
+
+  const identity = `${definitionId} ${definition.name}`.toLowerCase();
+  if (
+    identity.includes("coin")
+    || identity.includes("gold")
+    || identity.includes("silver")
+  ) {
+    return "coin";
+  }
+
+  if (
+    definition.combatEffect
+    || definition.teachesRecipeId
+    || definition.charges
+    || identity.includes("rune")
+    || identity.includes("sigil")
+  ) {
+    return "rune";
+  }
+
+  if (
+    definition.foodEffect
+    || identity.includes("potion")
+    || identity.includes("flask")
+    || identity.includes("vial")
+  ) {
+    return "consumable";
+  }
+
+  if (
+    definition.equipmentSlot
+    || definition.attack
+    || definition.defense
+    || definition.distanceWeapon
+  ) {
+    return "equipment";
+  }
+
+  return "generic";
+}
+
+
+const DAMAGE_ATLAS_GLYPHS = "-0123456789";
+const DAMAGE_NUMBER_CAPACITY = 320;
+
+function createDamageGlyphAtlas() {
+  const cellWidth = 64;
+  const cellHeight = 72;
+  const canvas = document.createElement("canvas");
+  canvas.width = DAMAGE_ATLAS_GLYPHS.length * cellWidth;
+  canvas.height = cellHeight;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Native V28: 2D canvas unavailable for damage atlas");
+  }
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.font = '700 52px system-ui, -apple-system, "Segoe UI", sans-serif';
+  context.lineWidth = 8;
+  context.lineJoin = "round";
+
+  for (let index = 0; index < DAMAGE_ATLAS_GLYPHS.length; index += 1) {
+    const x = index * cellWidth + cellWidth / 2;
+    const y = cellHeight / 2 - 2;
+    const glyph = DAMAGE_ATLAS_GLYPHS[index];
+
+    context.strokeStyle = "rgba(12, 8, 7, 0.92)";
+    context.strokeText(glyph, x, y);
+    context.fillStyle = "#ffffff";
+    context.fillText(glyph, x, y);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+class NativeDamageNumberLayer {
+  readonly mesh: THREE.InstancedMesh;
+  private readonly geometry: THREE.PlaneGeometry;
+  private readonly material: THREE.ShaderMaterial;
+  private readonly atlas: THREE.CanvasTexture;
+  private readonly glyphAttribute: THREE.InstancedBufferAttribute;
+  private readonly tintAttribute: THREE.InstancedBufferAttribute;
+  private readonly alphaAttribute: THREE.InstancedBufferAttribute;
+  private readonly matrix = new THREE.Matrix4();
+  private readonly translation = new THREE.Vector3();
+  private readonly scale = new THREE.Vector3();
+  private readonly rotation = new THREE.Quaternion();
+
+  constructor(scene: THREE.Scene) {
+    this.atlas = createDamageGlyphAtlas();
+    this.geometry = new THREE.PlaneGeometry(0.34, 0.46);
+
+    this.glyphAttribute = new THREE.InstancedBufferAttribute(
+      new Float32Array(DAMAGE_NUMBER_CAPACITY),
+      1,
+    );
+    this.tintAttribute = new THREE.InstancedBufferAttribute(
+      new Float32Array(DAMAGE_NUMBER_CAPACITY * 3),
+      3,
+    );
+    this.alphaAttribute = new THREE.InstancedBufferAttribute(
+      new Float32Array(DAMAGE_NUMBER_CAPACITY),
+      1,
+    );
+
+    this.geometry.setAttribute("instanceGlyph", this.glyphAttribute);
+    this.geometry.setAttribute("instanceTint", this.tintAttribute);
+    this.geometry.setAttribute("instanceAlpha", this.alphaAttribute);
+
+    this.material = new THREE.ShaderMaterial({
+      uniforms: {
+        glyphAtlas: { value: this.atlas },
+        glyphCount: { value: DAMAGE_ATLAS_GLYPHS.length },
+      },
+      vertexShader: `
+        attribute float instanceGlyph;
+        attribute vec3 instanceTint;
+        attribute float instanceAlpha;
+
+        uniform float glyphCount;
+
+        varying vec2 vGlyphUv;
+        varying vec3 vTint;
+        varying float vAlpha;
+
+        void main() {
+          float cellWidth = 1.0 / glyphCount;
+          vGlyphUv = vec2(
+            (instanceGlyph + uv.x) * cellWidth,
+            uv.y
+          );
+          vTint = instanceTint;
+          vAlpha = instanceAlpha;
+
+          vec4 localPosition = instanceMatrix * vec4(position, 1.0);
+          gl_Position =
+            projectionMatrix * modelViewMatrix * localPosition;
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D glyphAtlas;
+
+        varying vec2 vGlyphUv;
+        varying vec3 vTint;
+        varying float vAlpha;
+
+        void main() {
+          vec4 glyph = texture2D(glyphAtlas, vGlyphUv);
+          float alpha = glyph.a * vAlpha;
+          if (alpha < 0.035) discard;
+          gl_FragColor = vec4(glyph.rgb * vTint, alpha);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      toneMapped: false,
+      side: THREE.DoubleSide,
+    });
+
+    this.mesh = new THREE.InstancedMesh(
+      this.geometry,
+      this.material,
+      DAMAGE_NUMBER_CAPACITY,
+    );
+    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 30;
+    this.mesh.count = 0;
+    scene.add(this.mesh);
+  }
+
+  setEffects(
+    world: WorldState,
+    floor: number,
+    now: number,
+    camera: THREE.Camera,
+  ) {
+    let instance = 0;
+    const glyphArray = this.glyphAttribute.array as Float32Array;
+    const tintArray = this.tintAttribute.array as Float32Array;
+    const alphaArray = this.alphaAttribute.array as Float32Array;
+
+    this.rotation.copy(camera.quaternion);
+
+    for (const effect of world.combatEffects) {
+      if (effect.position.z !== floor) continue;
+      const age = now - effect.createdAt;
+      if (age < 0 || age >= NATIVE_COMBAT_EFFECT_LIFETIME_MS) continue;
+
+      const progress = THREE.MathUtils.clamp(
+        age / NATIVE_COMBAT_EFFECT_LIFETIME_MS,
+        0,
+        1,
+      );
+      const alpha = 1 - THREE.MathUtils.smoothstep(progress, 0.52, 1);
+      const text = `-${effect.damage}`;
+      const totalWidth = text.length * 0.235;
+
+      const tint = effect.targetId === world.localPlayerId
+        ? [1, 0.305, 0.274]
+        : effect.sourceId === world.localPlayerId
+          ? [1, 0.824, 0.408]
+          : [0.945, 0.542, 0.337];
+
+      for (let charIndex = 0; charIndex < text.length; charIndex += 1) {
+        if (instance >= DAMAGE_NUMBER_CAPACITY) break;
+        const glyphIndex = DAMAGE_ATLAS_GLYPHS.indexOf(text[charIndex]);
+        if (glyphIndex < 0) continue;
+
+        const horizontal =
+          charIndex * 0.235 - totalWidth / 2 + 0.1175;
+        this.translation.set(
+          effect.position.x + 0.5 + horizontal,
+          1.08 + progress * 1.18,
+          effect.position.y + 0.5,
+        );
+        const pulse = 0.88 + Math.sin(progress * Math.PI) * 0.18;
+        this.scale.setScalar(pulse);
+        this.matrix.compose(
+          this.translation,
+          this.rotation,
+          this.scale,
+        );
+        this.matrix.toArray(
+          this.mesh.instanceMatrix.array as Float32Array,
+          instance * 16,
+        );
+
+        glyphArray[instance] = glyphIndex;
+        tintArray[instance * 3] = tint[0];
+        tintArray[instance * 3 + 1] = tint[1];
+        tintArray[instance * 3 + 2] = tint[2];
+        alphaArray[instance] = alpha;
+        instance += 1;
+      }
+    }
+
+    this.mesh.count = instance;
+    if (instance > 0) {
+      this.mesh.instanceMatrix.needsUpdate = true;
+      this.glyphAttribute.needsUpdate = true;
+      this.tintAttribute.needsUpdate = true;
+      this.alphaAttribute.needsUpdate = true;
+    }
+  }
+
+  dispose(scene: THREE.Scene) {
+    scene.remove(this.mesh);
+    this.geometry.dispose();
+    this.material.dispose();
+    this.atlas.dispose();
+  }
+}
+
+type NativeSpellEffectFamily =
+  | "fire"
+  | "poison"
+  | "ice"
+  | "arcane"
+  | null;
+
+function nativeSpellEffectFamily(effectId: string): NativeSpellEffectFamily {
+  const id = effectId.toLowerCase();
+
+  if (
+    id.includes("fire")
+    || id.includes("flame")
+    || id.includes("burn")
+  ) {
+    return "fire";
+  }
+  if (
+    id.includes("poison")
+    || id.includes("venom")
+    || id.includes("toxic")
+  ) {
+    return "poison";
+  }
+  if (
+    id.includes("ice")
+    || id.includes("frost")
+    || id.includes("cold")
+  ) {
+    return "ice";
+  }
+  if (
+    id !== "melee_hit"
+    && (
+      id.includes("spell")
+      || id.includes("magic")
+      || id.includes("arcane")
+      || id.includes("rune")
+      || id.includes("sigil")
+    )
+  ) {
+    return "arcane";
+  }
+
+  return null;
+}
+
+type NativeResourceFamily =
+  | "ore"
+  | "wood"
+  | "herb"
+  | "water"
+  | "generic";
+
+function nativeResourceFamily(kind: string): NativeResourceFamily {
+  const id = kind.toLowerCase();
+
+  if (
+    id.includes("ore")
+    || id.includes("vein")
+    || id.includes("stone")
+    || id.includes("rock")
+  ) {
+    return "ore";
+  }
+  if (
+    id.includes("wood")
+    || id.includes("tree")
+    || id.includes("log")
+  ) {
+    return "wood";
+  }
+  if (
+    id.includes("herb")
+    || id.includes("plant")
+    || id.includes("flower")
+  ) {
+    return "herb";
+  }
+  if (
+    id.includes("fish")
+    || id.includes("water")
+    || id.includes("pond")
+  ) {
+    return "water";
+  }
+
+  return "generic";
+}
+
+class NativeDynamicSceneManager {
+  private readonly attackRing: THREE.Mesh;
+  private readonly selectionRing: THREE.Mesh;
+  private readonly attackArrow: THREE.Mesh;
+  private readonly hoverRing: THREE.Mesh;
+  private readonly markerGeometry: THREE.RingGeometry;
+  private readonly selectedGeometry: THREE.RingGeometry;
+  private readonly hoverGeometry: THREE.RingGeometry;
+  private readonly arrowGeometry: THREE.ConeGeometry;
+  private readonly damageNumbers: NativeDamageNumberLayer;
+  private readonly attackMaterial: THREE.MeshBasicMaterial;
+  private readonly selectionMaterial: THREE.MeshBasicMaterial;
+  private readonly hoverMaterial: THREE.MeshBasicMaterial;
+  private readonly arrowMaterial: THREE.MeshBasicMaterial;
+
+  private readonly playerLights: THREE.PointLight[] = [];
+  private readonly torchLights: THREE.PointLight[] = [];
+  private lastDynamicSignature = "";
+  private lastTorchSignature = "";
+
+  constructor(
+    private readonly scene: THREE.Scene,
+    private readonly layers: NativeDynamicLayers,
+    private readonly camera: THREE.Camera,
+    dynamicLightsEnabled: boolean,
+  ) {
+    this.markerGeometry = new THREE.RingGeometry(0.46, 0.55, 32);
+    this.markerGeometry.rotateX(-Math.PI / 2);
+    this.selectedGeometry = new THREE.RingGeometry(0.5, 0.58, 32);
+    this.selectedGeometry.rotateX(-Math.PI / 2);
+    this.hoverGeometry = new THREE.RingGeometry(0.45, 0.54, 32);
+    this.hoverGeometry.rotateX(-Math.PI / 2);
+    this.arrowGeometry = new THREE.ConeGeometry(0.18, 0.38, 4);
+
+    this.attackMaterial = new THREE.MeshBasicMaterial({
+      color: "#ff5148",
+      transparent: true,
+      opacity: 0.92,
+      depthWrite: false,
+      depthTest: true,
+    });
+    this.selectionMaterial = new THREE.MeshBasicMaterial({
+      color: "#70b8ff",
+      transparent: true,
+      opacity: 0.82,
+      depthWrite: false,
+      depthTest: true,
+    });
+    this.hoverMaterial = new THREE.MeshBasicMaterial({
+      color: "#f0bc55",
+      transparent: true,
+      opacity: 0.86,
+      depthWrite: false,
+      depthTest: true,
+    });
+    this.arrowMaterial = new THREE.MeshBasicMaterial({
+      color: "#ff5148",
+      depthWrite: false,
+      depthTest: false,
+      toneMapped: false,
+    });
+
+    this.attackRing = new THREE.Mesh(
+      this.markerGeometry,
+      this.attackMaterial,
+    );
+    this.attackRing.visible = false;
+    this.attackRing.renderOrder = 18;
+    this.attackRing.position.y = 0.035;
+
+    this.selectionRing = new THREE.Mesh(
+      this.selectedGeometry,
+      this.selectionMaterial,
+    );
+    this.selectionRing.visible = false;
+    this.selectionRing.renderOrder = 17;
+    this.selectionRing.position.y = 0.03;
+
+    this.hoverRing = new THREE.Mesh(
+      this.hoverGeometry,
+      this.hoverMaterial,
+    );
+    this.hoverRing.visible = false;
+    this.hoverRing.renderOrder = 20;
+    this.hoverRing.position.y = 0.04;
+
+    this.attackArrow = new THREE.Mesh(
+      this.arrowGeometry,
+      this.arrowMaterial,
+    );
+    this.attackArrow.visible = false;
+    this.attackArrow.renderOrder = 19;
+    this.attackArrow.rotation.z = Math.PI;
+
+    scene.add(
+      this.attackRing,
+      this.selectionRing,
+      this.hoverRing,
+      this.attackArrow,
+    );
+
+    this.damageNumbers = new NativeDamageNumberLayer(scene);
+
+    // Keep light count fixed for the complete runtime. Changing the number of
+    // active Three.js lights changes shader program shape, which is exactly the
+    // kind of first-use stall the native renderer is designed to avoid.
+    if (dynamicLightsEnabled) {
+      for (let index = 0; index < NATIVE_PLAYER_LIGHT_COUNT; index += 1) {
+        const light = new THREE.PointLight(
+          "#ffd49a",
+          0,
+          34,
+          2,
+        );
+        light.castShadow = false;
+        this.playerLights.push(light);
+        scene.add(light);
+      }
+
+      for (let index = 0; index < NATIVE_TORCH_LIGHT_COUNT; index += 1) {
+        const light = new THREE.PointLight(
+          "#ff6a24",
+          0,
+          6.1,
+          2,
+        );
+        light.castShadow = false;
+        this.torchLights.push(light);
+        scene.add(light);
+      }
+    }
+  }
+
+  setHover(
+    position: Position | null,
+    kind: "loot" | "resource" | "npc" | null,
+  ) {
+    if (!position || !kind) {
+      this.hoverRing.visible = false;
+      return;
+    }
+
+    this.hoverRing.visible = true;
+    this.hoverRing.position.set(
+      position.x + 0.5,
+      0.04,
+      position.y + 0.5,
+    );
+    this.hoverMaterial.color.set(
+      kind === "loot"
+        ? "#f0bc55"
+        : kind === "resource"
+          ? "#75d887"
+          : "#b793e8",
+    );
+  }
+
+  private logicalEntityPosition(
+    world: WorldState,
+    entityId: string | null,
+  ) {
+    if (!entityId) return null;
+    return world.players.get(entityId)?.position
+      ?? world.creatures.get(entityId)?.position
+      ?? world.npcs.get(entityId)?.position
+      ?? null;
+  }
+
+  private updateGroundAndResources(
+    world: WorldState,
+    floor: number,
+    local: Position,
+  ) {
+    const signature = [
+      world.revision,
+      world.streamRegionRevision,
+      floor,
+    ].join(":");
+    if (signature === this.lastDynamicSignature) return;
+    this.lastDynamicSignature = signature;
+
+    const items: Transform[] = [];
+    const equipment: Transform[] = [];
+    const consumables: Transform[] = [];
+    const runes: Transform[] = [];
+    const coins: Transform[] = [];
+    const corpses: Transform[] = [];
+    const lootRings: Transform[] = [];
+
+    for (const entry of world.groundItems) {
+      if (!nativeInside(entry.position, floor, local.x, local.y)) continue;
+
+      const x = entry.position.x + 0.5;
+      const z = entry.position.y + 0.5;
+      const corpse = entry.contents.length > 0;
+      const pickupable = Boolean(
+        world.itemDefinitions.get(entry.item.definitionId)?.pickupable,
+      );
+
+      if (corpse) {
+        corpses.push([x, 0.12, z, 1, 1, 1]);
+      } else {
+        const definition = world.itemDefinitions.get(
+          entry.item.definitionId,
+        );
+        const family = nativeGroundItemFamily(
+          entry.item.definitionId,
+          definition,
+        );
+        const rotation =
+          (entry.position.x * 0.77 + entry.position.y * 0.37) % Math.PI;
+
+        switch (family) {
+          case "equipment":
+            equipment.push([
+              x,
+              0.22,
+              z,
+              0.72,
+              0.12,
+              0.22,
+              rotation,
+            ]);
+            break;
+          case "consumable":
+            consumables.push([
+              x,
+              0.22,
+              z,
+              1,
+              1,
+              1,
+            ]);
+            break;
+          case "rune":
+            runes.push([
+              x,
+              0.14,
+              z,
+              1,
+              1,
+              1,
+              rotation,
+            ]);
+            break;
+          case "coin":
+            coins.push([
+              x,
+              0.105,
+              z,
+              1,
+              1,
+              1,
+              rotation,
+            ]);
+            break;
+          default:
+            items.push([x, 0.24, z, 1, 1, 1]);
+            break;
+        }
+      }
+
+      if (corpse || pickupable) {
+        lootRings.push([x, 0.035, z, 1, 1, 1]);
+      }
+    }
+
+    const availableResources: Transform[] = [];
+    const depletedResources: Transform[] = [];
+    const copper: Transform[] = [];
+    const wood: Transform[] = [];
+    const herbs: Transform[] = [];
+    const waterResources: Transform[] = [];
+
+    for (const node of world.resourceNodes.values()) {
+      if (!nativeInside(node.position, floor, local.x, local.y)) continue;
+
+      const x = node.position.x + 0.5;
+      const z = node.position.y + 0.5;
+      const transform: Transform = [
+        x,
+        0.34,
+        z,
+        1,
+        1,
+        1,
+        (node.position.x * 0.73 + node.position.y * 0.31) % Math.PI,
+      ];
+
+      if (node.available) {
+        switch (nativeResourceFamily(node.kind)) {
+          case "ore":
+            availableResources.push(transform);
+            if (node.kind === "copper_vein") {
+              copper.push([
+                x + 0.08,
+                0.48,
+                z - 0.05,
+                1,
+                1,
+                1,
+              ]);
+            }
+            break;
+          case "wood":
+            wood.push([
+              x,
+              0.38,
+              z,
+              1,
+              1,
+              1,
+              transform[6],
+            ]);
+            break;
+          case "herb":
+            herbs.push([
+              x,
+              0.29,
+              z,
+              1,
+              1,
+              1,
+              transform[6],
+            ]);
+            break;
+          case "water":
+            waterResources.push([
+              x,
+              0.055,
+              z,
+              1,
+              1,
+              1,
+            ]);
+            break;
+          default:
+            availableResources.push(transform);
+            break;
+        }
+      } else {
+        depletedResources.push(transform);
+      }
+    }
+
+    this.layers.groundItems.setTransforms(items);
+    this.layers.groundEquipment.setTransforms(equipment);
+    this.layers.groundConsumables.setTransforms(consumables);
+    this.layers.groundRunes.setTransforms(runes);
+    this.layers.groundCoins.setTransforms(coins);
+    this.layers.corpses.setTransforms(corpses);
+    this.layers.lootRings.setTransforms(lootRings);
+    this.layers.resourceAvailable.setTransforms(availableResources);
+    this.layers.resourceDepleted.setTransforms(depletedResources);
+    this.layers.resourceCopper.setTransforms(copper);
+    this.layers.resourceWood.setTransforms(wood);
+    this.layers.resourceHerb.setTransforms(herbs);
+    this.layers.resourceWater.setTransforms(waterResources);
+  }
+
+  private updateEffects(
+    world: WorldState,
+    floor: number,
+    now: number,
+  ) {
+    const incoming: Transform[] = [];
+    const outgoing: Transform[] = [];
+    const other: Transform[] = [];
+    const rings: Transform[] = [];
+    const fire: Transform[] = [];
+    const poison: Transform[] = [];
+    const ice: Transform[] = [];
+    const arcane: Transform[] = [];
+
+    for (const effect of world.combatEffects) {
+      if (effect.position.z !== floor) continue;
+      const age = now - effect.createdAt;
+      if (age < 0 || age >= NATIVE_COMBAT_EFFECT_LIFETIME_MS) continue;
+
+      const progress = THREE.MathUtils.clamp(
+        age / NATIVE_COMBAT_EFFECT_LIFETIME_MS,
+        0,
+        1,
+      );
+      const scale = 0.25 + progress * 1.1;
+      const transform: Transform = [
+        effect.position.x + 0.5,
+        0.35 + progress * 1.25,
+        effect.position.y + 0.5,
+        scale,
+        scale,
+        scale,
+      ];
+
+      if (effect.targetId === world.localPlayerId) {
+        incoming.push(transform);
+      } else if (effect.sourceId === world.localPlayerId) {
+        outgoing.push(transform);
+      } else {
+        other.push(transform);
+      }
+
+      const ringScale = 0.55 + progress * 0.85;
+      rings.push([
+        effect.position.x + 0.5,
+        0.045,
+        effect.position.y + 0.5,
+        ringScale,
+        1,
+        ringScale,
+      ]);
+
+      const family = nativeSpellEffectFamily(effect.effectId);
+      if (family) {
+        const spellScale =
+          0.34 + Math.sin(progress * Math.PI) * 0.82;
+        const spellTransform: Transform = [
+          effect.position.x + 0.5,
+          0.46 + progress * 0.58,
+          effect.position.y + 0.5,
+          spellScale,
+          spellScale,
+          spellScale,
+          progress * Math.PI * 2,
+        ];
+
+        switch (family) {
+          case "fire":
+            fire.push(spellTransform);
+            break;
+          case "poison":
+            poison.push(spellTransform);
+            break;
+          case "ice":
+            ice.push(spellTransform);
+            break;
+          case "arcane":
+            arcane.push(spellTransform);
+            break;
+        }
+      }
+    }
+
+    const warnings: Transform[] = [];
+    for (const warning of world.areaWarnings) {
+      if (warning.position.z !== floor) continue;
+      const age = now - warning.createdAt;
+      if (age < 0 || age >= warning.durationMs) continue;
+
+      const pulse =
+        1 + Math.sin((age / Math.max(1, warning.durationMs)) * Math.PI * 8)
+          * 0.035;
+      const radius = Math.max(0.5, warning.radius) * pulse;
+      warnings.push([
+        warning.position.x + 0.5,
+        0.05,
+        warning.position.y + 0.5,
+        radius,
+        1,
+        radius,
+      ]);
+    }
+
+    this.layers.combatIncoming.setTransforms(incoming);
+    this.layers.combatOutgoing.setTransforms(outgoing);
+    this.layers.combatOther.setTransforms(other);
+    this.layers.combatRings.setTransforms(rings);
+    this.layers.combatFire.setTransforms(fire);
+    this.layers.combatPoison.setTransforms(poison);
+    this.layers.combatIce.setTransforms(ice);
+    this.layers.combatArcane.setTransforms(arcane);
+    this.layers.areaWarnings.setTransforms(warnings);
+
+    this.damageNumbers.setEffects(
+      world,
+      floor,
+      now,
+      this.camera,
+    );
+  }
+
+  private updateMarkers(
+    world: WorldState,
+    floor: number,
+    actorManager: NativeActorManager,
+    now: number,
+  ) {
+    const attackId = world.attackTargetId;
+    const attackLogical = this.logicalEntityPosition(world, attackId);
+    const attackVisual = actorManager.entityVisualPosition(attackId);
+
+    if (attackLogical?.z === floor) {
+      const x = attackVisual?.x ?? attackLogical.x + 0.5;
+      const z = attackVisual?.z ?? attackLogical.y + 0.5;
+      const pulse = 1 + Math.sin(now * 0.008) * 0.055;
+
+      this.attackRing.visible = true;
+      this.attackRing.position.set(x, 0.035, z);
+      this.attackRing.scale.set(pulse, 1, pulse);
+
+      this.attackArrow.visible = true;
+      this.attackArrow.position.set(x, 2.2, z);
+      this.attackArrow.rotation.y = now * 0.0012;
+    } else {
+      this.attackRing.visible = false;
+      this.attackArrow.visible = false;
+    }
+
+    const selectedId = world.selectedPlayerId;
+    const selectedLogical = this.logicalEntityPosition(world, selectedId);
+    const selectedVisual = actorManager.entityVisualPosition(selectedId);
+
+    if (
+      selectedId
+      && selectedId !== attackId
+      && selectedLogical?.z === floor
+    ) {
+      const x = selectedVisual?.x ?? selectedLogical.x + 0.5;
+      const z = selectedVisual?.z ?? selectedLogical.y + 0.5;
+      this.selectionRing.visible = true;
+      this.selectionRing.position.set(x, 0.03, z);
+    } else {
+      this.selectionRing.visible = false;
+    }
+  }
+
+  private updateLights(
+    world: WorldState,
+    map: MapView,
+    floor: number,
+    local: Position,
+    visualLocal: THREE.Vector3 | null,
+    now: number,
+  ) {
+    if (!this.playerLights.length && !this.torchLights.length) return;
+
+    const profile = playerLightProfile(
+      world.inventory,
+      world.itemDefinitions,
+    );
+    const centerX = visualLocal?.x ?? local.x + 0.5;
+    const centerZ = visualLocal?.z ?? local.y + 0.5;
+    const ringRadius = 1.15;
+    const playerIntensity =
+      profile.intensity * 1.5 / NATIVE_PLAYER_LIGHT_COUNT;
+
+    for (let index = 0; index < this.playerLights.length; index += 1) {
+      const angle =
+        index / NATIVE_PLAYER_LIGHT_COUNT * Math.PI * 2;
+      const light = this.playerLights[index];
+      light.position.set(
+        centerX + Math.cos(angle) * ringRadius,
+        0.55,
+        centerZ + Math.sin(angle) * ringRadius,
+      );
+      light.intensity = playerIntensity;
+      light.distance = profile.radius;
+    }
+
+    const torchSignature = [
+      floor,
+      local.x,
+      local.y,
+      world.streamRegionRevision,
+      world.dynamicMapRevision,
+    ].join(":");
+
+    if (torchSignature !== this.lastTorchSignature) {
+      this.lastTorchSignature = torchSignature;
+      const nearest = map.torches
+        .filter((torch) => torch.z === floor)
+        .map((torch) => ({
+          torch,
+          distance:
+            (torch.x - local.x) ** 2
+            + (torch.y - local.y) ** 2,
+        }))
+        .sort((left, right) => left.distance - right.distance)
+        .slice(0, NATIVE_TORCH_LIGHT_COUNT);
+
+      for (let index = 0; index < this.torchLights.length; index += 1) {
+        const light = this.torchLights[index];
+        const entry = nearest[index];
+        if (!entry) {
+          light.userData.active = false;
+          light.intensity = 0;
+          continue;
+        }
+
+        light.userData.active = true;
+        light.position.set(
+          entry.torch.x + 0.5,
+          1.55,
+          entry.torch.y + 0.5,
+        );
+        light.distance = 6.1;
+      }
+    }
+
+    for (let index = 0; index < this.torchLights.length; index += 1) {
+      const light = this.torchLights[index];
+      if (!light.userData.active) continue;
+      // Intensity-only flicker does not change shader shape or allocate objects.
+      light.intensity =
+        5.25 + Math.sin(now * 0.0075 + index * 1.91) * 0.28;
+    }
+  }
+
+  update(
+    world: WorldState,
+    map: MapView,
+    floor: number,
+    local: Position,
+    visualLocal: THREE.Vector3 | null,
+    actorManager: NativeActorManager,
+    now: number,
+  ) {
+    this.updateGroundAndResources(world, floor, local);
+    this.updateEffects(world, floor, now);
+    this.updateMarkers(world, floor, actorManager, now);
+    this.updateLights(
+      world,
+      map,
+      floor,
+      local,
+      visualLocal,
+      now,
+    );
+  }
+
+  dispose() {
+    this.scene.remove(
+      this.attackRing,
+      this.selectionRing,
+      this.hoverRing,
+      this.attackArrow,
+    );
+    this.damageNumbers.dispose(this.scene);
+
+    for (const light of this.playerLights) {
+      this.scene.remove(light);
+    }
+    for (const light of this.torchLights) {
+      this.scene.remove(light);
+    }
+
+    this.markerGeometry.dispose();
+    this.selectedGeometry.dispose();
+    this.hoverGeometry.dispose();
+    this.arrowGeometry.dispose();
+    this.attackMaterial.dispose();
+    this.selectionMaterial.dispose();
+    this.hoverMaterial.dispose();
+    this.arrowMaterial.dispose();
+  }
+}
+
+
+const NATIVE_DOOR_ANIMATION_MS = 190;
+const NATIVE_SHUTTER_ANIMATION_MS = 170;
+
+type NativeOpeningProgress = {
+  value: number;
+  target: number;
+  updatedAt: number;
+  seenAt: number;
+};
+
+function advanceOpeningProgress(
+  state: NativeOpeningProgress,
+  target: number,
+  now: number,
+  durationMs: number,
+) {
+  const elapsed = Math.max(0, now - state.updatedAt);
+  state.updatedAt = now;
+  state.target = target;
+  state.seenAt = now;
+
+  const step = elapsed / Math.max(1, durationMs);
+  if (state.value < target) {
+    state.value = Math.min(target, state.value + step);
+  } else if (state.value > target) {
+    state.value = Math.max(target, state.value - step);
+  }
+
+  return THREE.MathUtils.smoothstep(state.value, 0, 1);
+}
+
+class NativeOpeningAnimationManager {
+  private readonly doors = new Map<string, NativeOpeningProgress>();
+  private readonly windows = new Map<string, NativeOpeningProgress>();
+
+  constructor(
+    private readonly doorLeaves: NativeInstancedLayer,
+    private readonly doorKnobs: NativeInstancedLayer,
+    private readonly shutterOpen: NativeGltfInstancedSet,
+    private readonly shutterClosed: NativeGltfInstancedSet,
+    private readonly shutterOpenParts: readonly NativeGltfPart[],
+    private readonly shutterClosedParts: readonly NativeGltfPart[],
+  ) {}
+
+  update(
+    map: MapView,
+    floor: number,
+    center: Position,
+    now: number,
+  ) {
+    const doorLeaves: Transform[] = [];
+    const doorKnobs: Transform[] = [];
+
+    for (const door of map.doors) {
+      if (!nativeInside(door.position, floor, center.x, center.y)) continue;
+      const building = openingBuilding(door.position, map.buildings);
+      if (!building || building.kind !== "house") continue;
+
+      const target = door.open ? 1 : 0;
+      let state = this.doors.get(door.id);
+      if (!state) {
+        state = {
+          value: target,
+          target,
+          updatedAt: now,
+          seenAt: now,
+        };
+        this.doors.set(door.id, state);
+      }
+
+      const progress = advanceOpeningProgress(
+        state,
+        target,
+        now,
+        NATIVE_DOOR_ANIMATION_MS,
+      );
+      const transform = wallOpeningTransform(door.position, building);
+      const layout = createHouseDoorwayLayout(
+        HOUSE_WALL_HEIGHT,
+        HOUSE_WALL_LENGTH,
+      );
+      const angle = THREE.MathUtils.lerp(
+        HOUSE_DOOR_PLACEMENT.closedAngle,
+        HOUSE_DOOR_PLACEMENT.outwardOpenAngle,
+        progress,
+      );
+
+      const hingeX = -layout.leafWidth / 2;
+      const hingeZ = -layout.leafDepth / 2;
+      const halfLeafX = layout.leafWidth / 2;
+      const leafLocalX =
+        hingeX + halfLeafX * Math.cos(angle);
+      const leafLocalZ =
+        hingeZ - halfLeafX * Math.sin(angle);
+
+      doorLeaves.push(
+        facadeBox(
+          transform.x,
+          transform.z,
+          transform.rotation,
+          leafLocalX,
+          layout.openingBottom + 0.04 + layout.leafHeight / 2,
+          leafLocalZ,
+          layout.leafWidth,
+          layout.leafHeight,
+          layout.leafDepth,
+          angle,
+        ),
+      );
+
+      const knobAlongLeaf = layout.leafWidth * 0.34;
+      const knobLocalX =
+        hingeX + knobAlongLeaf * Math.cos(angle);
+      const knobLocalZ =
+        hingeZ - knobAlongLeaf * Math.sin(angle) - 0.04;
+      doorKnobs.push(
+        facadeBox(
+          transform.x,
+          transform.z,
+          transform.rotation,
+          knobLocalX,
+          layout.openingBottom + layout.leafHeight * 0.52,
+          knobLocalZ,
+          0.08,
+          0.08,
+          0.08,
+        ),
+      );
+    }
+
+    this.doorLeaves.setTransforms(doorLeaves);
+    this.doorKnobs.setTransforms(doorKnobs);
+
+    const openTransforms: Transform[] = [];
+    const closedTransforms: Transform[] = [];
+
+    for (const window of map.windows) {
+      if (!nativeInside(window.position, floor, center.x, center.y)) continue;
+      const building = openingBuilding(window.position, map.buildings);
+      if (!building || building.kind !== "house") continue;
+
+      const target = window.open ? 1 : 0;
+      let state = this.windows.get(window.id);
+      if (!state) {
+        state = {
+          value: target,
+          target,
+          updatedAt: now,
+          seenAt: now,
+        };
+        this.windows.set(window.id, state);
+      }
+
+      const progress = advanceOpeningProgress(
+        state,
+        target,
+        now,
+        NATIVE_SHUTTER_ANIMATION_MS,
+      );
+      const transform = wallOpeningTransform(window.position, building);
+
+      const baseScaleX =
+        HOUSE_WALL_LENGTH / MEDIEVAL_SOURCE_WIDTH;
+      const baseScaleY =
+        HOUSE_WALL_HEIGHT / MEDIEVAL_SOURCE_HEIGHT;
+      const baseScaleZ = Math.max(
+        0.28,
+        0.13 / MEDIEVAL_SOURCE_DEPTH,
+      );
+
+      // The GLB contains authored open/closed shutter poses rather than a
+      // hinge rig. Fold the old pose down on X while folding the new pose up.
+      // This keeps the authored silhouettes and removes the single-frame snap.
+      const closedFold = 1 - progress;
+      const openFold = progress;
+
+      if (closedFold > 0.015) {
+        closedTransforms.push([
+          transform.x,
+          0,
+          transform.z,
+          baseScaleX * closedFold,
+          baseScaleY,
+          baseScaleZ,
+          transform.rotation,
+        ]);
+      }
+      if (openFold > 0.015) {
+        openTransforms.push([
+          transform.x,
+          0,
+          transform.z,
+          baseScaleX * openFold,
+          baseScaleY,
+          baseScaleZ,
+          transform.rotation,
+        ]);
+      }
+    }
+
+    this.shutterOpen.setTransforms(
+      this.shutterOpenParts,
+      openTransforms,
+    );
+    this.shutterClosed.setTransforms(
+      this.shutterClosedParts,
+      closedTransforms,
+    );
+
+    const pruneBefore = now - 3_000;
+    for (const [id, state] of this.doors) {
+      if (state.seenAt < pruneBefore) this.doors.delete(id);
+    }
+    for (const [id, state] of this.windows) {
+      if (state.seenAt < pruneBefore) this.windows.delete(id);
+    }
+  }
+}
+
 export const NativeWorldRenderer = memo(function NativeWorldRenderer({
   world,
   input,
@@ -2368,6 +3814,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const performanceRef = useRef<HTMLDivElement>(null);
   const positionRef = useRef<HTMLDivElement>(null);
+  const hoverRef = useRef<HTMLDivElement>(null);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
 
@@ -2381,13 +3828,15 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     let resizeObserver: ResizeObserver | null = null;
     let cleanupInput: (() => void) | null = null;
     let actorManager: NativeActorManager | null = null;
+    let dynamicSceneManager: NativeDynamicSceneManager | null = null;
+    let openingAnimationManager: NativeOpeningAnimationManager | null = null;
     let loadedCharacterAssets: NativeCharacterAssets | null = null;
     let loadedCreatureAssets: NativeCreatureAssets | null = null;
     let loadedMedievalAssets: NativeMedievalAssets | null = null;
     const disposables: Array<{ dispose(): void }> = [];
 
     console.info(
-      "NATIVE WORLD V25 active · authored medieval visuals · raw Three.js",
+      "NATIVE WORLD V28 active · damage atlas · richer VFX/hover",
     );
 
     const bootstrap = async () => {
@@ -2452,6 +3901,85 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       const roofAlongXGeometry = createUnitGabledRoofGeometry(false);
       const doorKnobGeometry = new THREE.SphereGeometry(0.5, 10, 8);
 
+      const groundItemGeometry = new THREE.OctahedronGeometry(0.18, 0);
+      const corpseGeometry = new THREE.CylinderGeometry(
+        0.34,
+        0.34,
+        0.05,
+        14,
+      );
+      const lootRingGeometry = new THREE.RingGeometry(0.39, 0.47, 28);
+      lootRingGeometry.rotateX(-Math.PI / 2);
+
+      const resourceRockGeometry = new THREE.DodecahedronGeometry(0.38, 0);
+      const resourceCopperGeometry = new THREE.OctahedronGeometry(0.2, 0);
+
+      const combatBurstGeometry = new THREE.IcosahedronGeometry(0.25, 1);
+      const combatRingGeometry = new THREE.RingGeometry(0.16, 0.23, 24);
+      combatRingGeometry.rotateX(-Math.PI / 2);
+      const areaWarningGeometry = new THREE.RingGeometry(0.86, 1, 48);
+      areaWarningGeometry.rotateX(-Math.PI / 2);
+
+      const keepTowerGeometry = new THREE.CylinderGeometry(
+        0.62,
+        0.68,
+        KEEP_WALL_HEIGHT + 0.7,
+        12,
+      );
+      const keepTowerCapGeometry = new THREE.ConeGeometry(
+        0.82,
+        1.2,
+        12,
+      );
+
+      const groundEquipmentGeometry = new THREE.BoxGeometry(1, 1, 1);
+      const groundConsumableGeometry = new THREE.CylinderGeometry(
+        0.105,
+        0.14,
+        0.36,
+        9,
+      );
+      const groundRuneGeometry = new THREE.CylinderGeometry(
+        0.2,
+        0.2,
+        0.055,
+        12,
+      );
+      const groundCoinGeometry = new THREE.CylinderGeometry(
+        0.17,
+        0.17,
+        0.055,
+        14,
+      );
+
+      const resourceWoodGeometry = new THREE.CylinderGeometry(
+        0.22,
+        0.3,
+        0.72,
+        9,
+      );
+      const resourceHerbGeometry = new THREE.ConeGeometry(
+        0.34,
+        0.62,
+        7,
+      );
+      const resourceWaterGeometry = new THREE.RingGeometry(
+        0.28,
+        0.42,
+        28,
+      );
+      resourceWaterGeometry.rotateX(-Math.PI / 2);
+
+      const spellFireGeometry = new THREE.ConeGeometry(0.3, 0.74, 8);
+      const spellPoisonGeometry = new THREE.IcosahedronGeometry(0.31, 1);
+      const spellIceGeometry = new THREE.OctahedronGeometry(0.38, 1);
+      const spellArcaneGeometry = new THREE.TorusKnotGeometry(
+        0.24,
+        0.065,
+        32,
+        6,
+      );
+
       disposables.push(
         box,
         bridgePostGeometry,
@@ -2468,6 +3996,27 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         roofAlongZGeometry,
         roofAlongXGeometry,
         doorKnobGeometry,
+        groundItemGeometry,
+        corpseGeometry,
+        lootRingGeometry,
+        resourceRockGeometry,
+        resourceCopperGeometry,
+        combatBurstGeometry,
+        combatRingGeometry,
+        areaWarningGeometry,
+        keepTowerGeometry,
+        keepTowerCapGeometry,
+        groundEquipmentGeometry,
+        groundConsumableGeometry,
+        groundRuneGeometry,
+        groundCoinGeometry,
+        resourceWoodGeometry,
+        resourceHerbGeometry,
+        resourceWaterGeometry,
+        spellFireGeometry,
+        spellPoisonGeometry,
+        spellIceGeometry,
+        spellArcaneGeometry,
       );
 
       const materials = {
@@ -2515,6 +4064,16 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           roughness: 0.91,
           side: THREE.DoubleSide,
         }),
+        keepDetail: materialWithTexture(
+          textures.castleStone,
+          "#69736f",
+          0.98,
+        ),
+        keepCap: new THREE.MeshStandardMaterial({
+          map: textures.roofTiles,
+          color: "#3f4947",
+          roughness: 0.93,
+        }),
         chimneyHouse: new THREE.MeshStandardMaterial({ color: "#704938", roughness: 1 }),
         chimneyKeep: new THREE.MeshStandardMaterial({ color: "#626b68", roughness: 1 }),
         chimneyCap: new THREE.MeshStandardMaterial({ color: "#3c3731", roughness: 1 }),
@@ -2555,6 +4114,139 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           color: "#a9685f",
           roughness: 0.9,
         }),
+
+        groundItem: new THREE.MeshStandardMaterial({
+          color: "#d3a84f",
+          roughness: 0.8,
+        }),
+        groundEquipment: new THREE.MeshStandardMaterial({
+          color: "#9b8871",
+          metalness: 0.32,
+          roughness: 0.54,
+        }),
+        groundConsumable: new THREE.MeshStandardMaterial({
+          color: "#78a6b8",
+          emissive: "#18343e",
+          emissiveIntensity: 0.14,
+          roughness: 0.36,
+        }),
+        groundRune: new THREE.MeshStandardMaterial({
+          color: "#8c75b6",
+          emissive: "#332357",
+          emissiveIntensity: 0.46,
+          roughness: 0.72,
+        }),
+        groundCoin: new THREE.MeshStandardMaterial({
+          color: "#d2a43e",
+          metalness: 0.72,
+          roughness: 0.3,
+        }),
+        corpse: new THREE.MeshStandardMaterial({
+          color: "#6d3029",
+          roughness: 0.9,
+        }),
+        lootRing: new THREE.MeshBasicMaterial({
+          color: "#f0bc55",
+          transparent: true,
+          opacity: 0.72,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+        resourceAvailable: new THREE.MeshStandardMaterial({
+          color: "#5f6864",
+          roughness: 0.96,
+        }),
+        resourceDepleted: new THREE.MeshStandardMaterial({
+          color: "#383f3c",
+          roughness: 1,
+        }),
+        resourceCopper: new THREE.MeshStandardMaterial({
+          color: "#b86b3c",
+          emissive: "#5c2413",
+          emissiveIntensity: 0.34,
+          metalness: 0.28,
+          roughness: 0.58,
+        }),
+        resourceWood: new THREE.MeshStandardMaterial({
+          color: "#79502f",
+          roughness: 0.96,
+        }),
+        resourceHerb: new THREE.MeshStandardMaterial({
+          color: "#4e8a50",
+          emissive: "#18351d",
+          emissiveIntensity: 0.1,
+          roughness: 0.92,
+        }),
+        resourceWater: new THREE.MeshBasicMaterial({
+          color: "#62b9cf",
+          transparent: true,
+          opacity: 0.7,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+        combatIncoming: new THREE.MeshBasicMaterial({
+          color: "#ff4e46",
+          transparent: true,
+          opacity: 0.68,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+        combatOutgoing: new THREE.MeshBasicMaterial({
+          color: "#ffd268",
+          transparent: true,
+          opacity: 0.68,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+        combatOther: new THREE.MeshBasicMaterial({
+          color: "#f18a56",
+          transparent: true,
+          opacity: 0.62,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+        combatRing: new THREE.MeshBasicMaterial({
+          color: "#ffd46e",
+          transparent: true,
+          opacity: 0.48,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+        combatFire: new THREE.MeshBasicMaterial({
+          color: "#ff7a32",
+          transparent: true,
+          opacity: 0.8,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+        combatPoison: new THREE.MeshBasicMaterial({
+          color: "#6bd15f",
+          transparent: true,
+          opacity: 0.76,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+        combatIce: new THREE.MeshBasicMaterial({
+          color: "#78d9f5",
+          transparent: true,
+          opacity: 0.8,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+        combatArcane: new THREE.MeshBasicMaterial({
+          color: "#bd86ff",
+          transparent: true,
+          opacity: 0.8,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+        areaWarning: new THREE.MeshBasicMaterial({
+          color: "#ff4d43",
+          transparent: true,
+          opacity: 0.44,
+          depthWrite: false,
+          toneMapped: false,
+        }),
       };
       disposables.push(...Object.values(materials));
 
@@ -2590,6 +4282,17 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         houseRoofsAlongX: new NativeInstancedLayer(roofAlongXGeometry, materials.houseRoof, 2048),
         keepRoofsAlongZ: new NativeInstancedLayer(roofAlongZGeometry, materials.keepRoof, 1024),
         keepRoofsAlongX: new NativeInstancedLayer(roofAlongXGeometry, materials.keepRoof, 1024),
+        keepMerlons: new NativeInstancedLayer(box, materials.keepDetail, 4096),
+        keepCornerTowers: new NativeInstancedLayer(
+          keepTowerGeometry,
+          materials.keepDetail,
+          512,
+        ),
+        keepTowerCaps: new NativeInstancedLayer(
+          keepTowerCapGeometry,
+          materials.keepCap,
+          512,
+        ),
         chimneys: new NativeInstancedLayer(box, materials.chimneyHouse, 2048),
         chimneyCaps: new NativeInstancedLayer(box, materials.chimneyCap, 2048),
         signArms: new NativeInstancedLayer(box, materials.signDark, 2048),
@@ -2634,9 +4337,176 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           materials.creature,
           512,
         ),
+
+        groundItems: new NativeInstancedLayer(
+          groundItemGeometry,
+          materials.groundItem,
+          512,
+          false,
+          true,
+        ),
+        groundEquipment: new NativeInstancedLayer(
+          groundEquipmentGeometry,
+          materials.groundEquipment,
+          512,
+          false,
+          true,
+        ),
+        groundConsumables: new NativeInstancedLayer(
+          groundConsumableGeometry,
+          materials.groundConsumable,
+          512,
+          false,
+          true,
+        ),
+        groundRunes: new NativeInstancedLayer(
+          groundRuneGeometry,
+          materials.groundRune,
+          512,
+          false,
+          true,
+        ),
+        groundCoins: new NativeInstancedLayer(
+          groundCoinGeometry,
+          materials.groundCoin,
+          512,
+          false,
+          true,
+        ),
+        corpses: new NativeInstancedLayer(
+          corpseGeometry,
+          materials.corpse,
+          256,
+          false,
+          true,
+        ),
+        lootRings: new NativeInstancedLayer(
+          lootRingGeometry,
+          materials.lootRing,
+          512,
+          false,
+          false,
+        ),
+        resourceAvailable: new NativeInstancedLayer(
+          resourceRockGeometry,
+          materials.resourceAvailable,
+          512,
+          false,
+          true,
+        ),
+        resourceDepleted: new NativeInstancedLayer(
+          resourceRockGeometry,
+          materials.resourceDepleted,
+          512,
+          false,
+          true,
+        ),
+        resourceCopper: new NativeInstancedLayer(
+          resourceCopperGeometry,
+          materials.resourceCopper,
+          512,
+          false,
+          true,
+        ),
+        resourceWood: new NativeInstancedLayer(
+          resourceWoodGeometry,
+          materials.resourceWood,
+          512,
+          false,
+          true,
+        ),
+        resourceHerb: new NativeInstancedLayer(
+          resourceHerbGeometry,
+          materials.resourceHerb,
+          512,
+          false,
+          true,
+        ),
+        resourceWater: new NativeInstancedLayer(
+          resourceWaterGeometry,
+          materials.resourceWater,
+          512,
+          false,
+          false,
+        ),
+        combatIncoming: new NativeInstancedLayer(
+          combatBurstGeometry,
+          materials.combatIncoming,
+          32,
+          false,
+          false,
+        ),
+        combatOutgoing: new NativeInstancedLayer(
+          combatBurstGeometry,
+          materials.combatOutgoing,
+          32,
+          false,
+          false,
+        ),
+        combatOther: new NativeInstancedLayer(
+          combatBurstGeometry,
+          materials.combatOther,
+          32,
+          false,
+          false,
+        ),
+        combatRings: new NativeInstancedLayer(
+          combatRingGeometry,
+          materials.combatRing,
+          64,
+          false,
+          false,
+        ),
+        combatFire: new NativeInstancedLayer(
+          spellFireGeometry,
+          materials.combatFire,
+          32,
+          false,
+          false,
+        ),
+        combatPoison: new NativeInstancedLayer(
+          spellPoisonGeometry,
+          materials.combatPoison,
+          32,
+          false,
+          false,
+        ),
+        combatIce: new NativeInstancedLayer(
+          spellIceGeometry,
+          materials.combatIce,
+          32,
+          false,
+          false,
+        ),
+        combatArcane: new NativeInstancedLayer(
+          spellArcaneGeometry,
+          materials.combatArcane,
+          32,
+          false,
+          false,
+        ),
+        areaWarnings: new NativeInstancedLayer(
+          areaWarningGeometry,
+          materials.areaWarning,
+          20,
+          false,
+          false,
+        ),
       };
 
       for (const layer of Object.values(layers)) scene.add(layer.mesh);
+
+      layers.lootRings.mesh.renderOrder = 17;
+      layers.combatIncoming.mesh.renderOrder = 18;
+      layers.combatOutgoing.mesh.renderOrder = 18;
+      layers.combatOther.mesh.renderOrder = 18;
+      layers.combatRings.mesh.renderOrder = 17;
+      layers.combatFire.mesh.renderOrder = 19;
+      layers.combatPoison.mesh.renderOrder = 19;
+      layers.combatIce.mesh.renderOrder = 19;
+      layers.combatArcane.mesh.renderOrder = 19;
+      layers.resourceWater.mesh.renderOrder = 14;
+      layers.areaWarnings.mesh.renderOrder = 16;
 
       const medievalLayers = {
         houseWalls: new NativeGltfInstancedSet(
@@ -2656,12 +4526,59 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         for (const mesh of set.meshes) scene.add(mesh);
       }
 
+      openingAnimationManager = new NativeOpeningAnimationManager(
+        layers.doorLeaves,
+        layers.doorKnobs,
+        medievalLayers.shuttersOpen,
+        medievalLayers.shuttersClosed,
+        medievalAssets.shutterOpenParts,
+        medievalAssets.shutterClosedParts,
+      );
+      const activeOpeningAnimationManager = openingAnimationManager;
+
       actorManager = new NativeActorManager(
         scene,
         characterAssets,
         castleRatAssets,
       );
       const activeActorManager = actorManager;
+
+      const dynamicLightsEnabled =
+        new URLSearchParams(window.location.search).get("lights") !== "off";
+      dynamicSceneManager = new NativeDynamicSceneManager(
+        scene,
+        {
+          groundItems: layers.groundItems,
+          groundEquipment: layers.groundEquipment,
+          groundConsumables: layers.groundConsumables,
+          groundRunes: layers.groundRunes,
+          groundCoins: layers.groundCoins,
+          corpses: layers.corpses,
+          lootRings: layers.lootRings,
+          resourceAvailable: layers.resourceAvailable,
+          resourceDepleted: layers.resourceDepleted,
+          resourceCopper: layers.resourceCopper,
+          resourceWood: layers.resourceWood,
+          resourceHerb: layers.resourceHerb,
+          resourceWater: layers.resourceWater,
+          combatIncoming: layers.combatIncoming,
+          combatOutgoing: layers.combatOutgoing,
+          combatOther: layers.combatOther,
+          combatRings: layers.combatRings,
+          combatFire: layers.combatFire,
+          combatPoison: layers.combatPoison,
+          combatIce: layers.combatIce,
+          combatArcane: layers.combatArcane,
+          areaWarnings: layers.areaWarnings,
+        },
+        camera,
+        dynamicLightsEnabled,
+      );
+      const activeDynamicSceneManager = dynamicSceneManager;
+
+      console.info(
+        `NATIVE V26 dynamic lights: ${dynamicLightsEnabled ? "enabled" : "disabled"}`,
+      );
 
       let lastFrameAt = performance.now();
       let warmupUntil = lastFrameAt + 1_500;
@@ -2778,6 +4695,9 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         stage("house roofs x", () => layers.houseRoofsAlongX.setTransforms(snapshot.houseRoofsAlongX));
         stage("keep roofs z", () => layers.keepRoofsAlongZ.setTransforms(snapshot.keepRoofsAlongZ));
         stage("keep roofs x", () => layers.keepRoofsAlongX.setTransforms(snapshot.keepRoofsAlongX));
+        stage("keep merlons", () => layers.keepMerlons.setTransforms(snapshot.keepMerlons));
+        stage("keep corner towers", () => layers.keepCornerTowers.setTransforms(snapshot.keepCornerTowers));
+        stage("keep tower caps", () => layers.keepTowerCaps.setTransforms(snapshot.keepTowerCaps));
         stage("chimneys", () => layers.chimneys.setTransforms(snapshot.chimneys));
         stage("chimney caps", () => layers.chimneyCaps.setTransforms(snapshot.chimneyCaps));
         stage("sign arms", () => layers.signArms.setTransforms(snapshot.signArms));
@@ -2789,22 +4709,10 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         stage("door frame vertical", () => layers.doorFramesVertical.setTransforms(snapshot.doorFramesVertical));
         stage("door frame horizontal", () => layers.doorFramesHorizontal.setTransforms(snapshot.doorFramesHorizontal));
         stage("door thresholds", () => layers.doorThresholds.setTransforms(snapshot.doorThresholds));
-        stage("door leaves", () => layers.doorLeaves.setTransforms(snapshot.doorLeaves));
-        stage("door knobs", () => layers.doorKnobs.setTransforms(snapshot.doorKnobs));
-
         stage("window facade sides", () => layers.windowFacadeSides.setTransforms(snapshot.windowFacadeSides));
         stage("window facade lower", () => layers.windowFacadeLower.setTransforms(snapshot.windowFacadeLower));
         stage("window facade tops", () => layers.windowFacadeTops.setTransforms(snapshot.windowFacadeTops));
         stage("window frames", () => layers.windowFramesHorizontal.setTransforms(snapshot.windowFramesHorizontal));
-        stage("window shutters open", () => medievalLayers.shuttersOpen.setTransforms(
-          medievalAssets.shutterOpenParts,
-          snapshot.windowShuttersOpen,
-        ));
-        stage("window shutters closed", () => medievalLayers.shuttersClosed.setTransforms(
-          medievalAssets.shutterClosedParts,
-          snapshot.windowShuttersClosed,
-        ));
-
         stage("tree trunks", () => layers.treeTrunks.setTransforms(snapshot.treeTrunks));
         stage("forest lower", () => layers.forestLower.setTransforms(snapshot.forestLower));
         stage("forest upper", () => layers.forestUpper.setTransforms(snapshot.forestUpper));
@@ -2866,12 +4774,14 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       );
       const interactionPoint = new THREE.Vector3();
 
-      const interactAtPointer = (event: PointerEvent | MouseEvent) => {
+      const pointerTile = (
+        event: PointerEvent | MouseEvent,
+      ): Position | null => {
         const localPlayer = world.localPlayerId
           ? world.players.get(world.localPlayerId)
           : undefined;
         const map = world.map;
-        if (!localPlayer || !map) return;
+        if (!localPlayer || !map) return null;
 
         const rect = canvas.getBoundingClientRect();
         const ndc = new THREE.Vector2(
@@ -2880,9 +4790,9 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         );
         raycaster.setFromCamera(ndc, camera);
         if (!raycaster.ray.intersectPlane(interactionPlane, interactionPoint))
-          return;
+          return null;
 
-        input.interactAt({
+        return {
           x: Math.max(
             0,
             Math.min(map.width - 1, Math.floor(interactionPoint.x)),
@@ -2892,7 +4802,94 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
             Math.min(map.height - 1, Math.floor(interactionPoint.z)),
           ),
           z: localPlayer.position.z,
-        });
+        };
+      };
+
+      const interactAtPointer = (event: PointerEvent | MouseEvent) => {
+        const position = pointerTile(event);
+        if (position) input.interactAt(position);
+      };
+
+      const hideHover = () => {
+        activeDynamicSceneManager.setHover(null, null);
+        canvas.style.cursor = "";
+        if (hoverRef.current) hoverRef.current.style.display = "none";
+      };
+
+      const onPointerMove = (event: PointerEvent) => {
+        const position = pointerTile(event);
+        if (!position) {
+          hideHover();
+          return;
+        }
+
+        const sameTile = (entry: Position) =>
+          entry.x === position.x
+          && entry.y === position.y
+          && entry.z === position.z;
+
+        const groundItem = world.groundItems.find((entry) =>
+          sameTile(entry.position)
+        );
+        if (groundItem) {
+          const definition = world.itemDefinitions.get(
+            groundItem.item.definitionId,
+          );
+          const label = groundItem.contents.length > 0
+            ? `${groundItem.contents.length} loot ${
+                groundItem.contents.length === 1 ? "item" : "items"
+              }`
+            : definition?.name ?? groundItem.item.definitionId;
+
+          activeDynamicSceneManager.setHover(position, "loot");
+          canvas.style.cursor = "pointer";
+          if (hoverRef.current) {
+            hoverRef.current.textContent = label;
+            hoverRef.current.style.display = "block";
+            hoverRef.current.style.left = `${event.clientX + 14}px`;
+            hoverRef.current.style.top = `${event.clientY + 14}px`;
+          }
+          return;
+        }
+
+        const resource = [...world.resourceNodes.values()].find((entry) =>
+          sameTile(entry.position)
+        );
+        if (resource) {
+          const name = resource.kind
+            .replaceAll("_", " ")
+            .replace(/\w/g, (character) => character.toUpperCase());
+          activeDynamicSceneManager.setHover(position, "resource");
+          canvas.style.cursor = resource.available ? "pointer" : "";
+          if (hoverRef.current) {
+            hoverRef.current.textContent = resource.available
+              ? name
+              : `${name} · depleted`;
+            hoverRef.current.style.display = "block";
+            hoverRef.current.style.left = `${event.clientX + 14}px`;
+            hoverRef.current.style.top = `${event.clientY + 14}px`;
+          }
+          return;
+        }
+
+        const npc = [...world.npcs.values()].find((entry) =>
+          sameTile(entry.position)
+        );
+        if (npc) {
+          activeDynamicSceneManager.setHover(position, "npc");
+          canvas.style.cursor = "pointer";
+          if (hoverRef.current) {
+            hoverRef.current.textContent = npc.title
+              ? `${npc.name} · ${npc.title}`
+              : npc.name;
+            hoverRef.current.style.display = "block";
+            hoverRef.current.style.left = `${event.clientX + 14}px`;
+            hoverRef.current.style.top = `${event.clientY + 14}px`;
+          }
+          return;
+        }
+
+        hideHover();
       };
 
       const onPointerDown = (event: PointerEvent) => {
@@ -2905,9 +4902,14 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       };
 
       canvas.addEventListener("pointerdown", onPointerDown);
+      canvas.addEventListener("pointermove", onPointerMove);
+      canvas.addEventListener("pointerleave", hideHover);
       canvas.addEventListener("contextmenu", onContextMenu);
       cleanupInput = () => {
+        hideHover();
         canvas.removeEventListener("pointerdown", onPointerDown);
+        canvas.removeEventListener("pointermove", onPointerMove);
+        canvas.removeEventListener("pointerleave", hideHover);
         canvas.removeEventListener("contextmenu", onContextMenu);
       };
 
@@ -2918,17 +4920,36 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         ? world.players.get(world.localPlayerId)
         : undefined;
       if (initialLocal) {
+        const initialNow = performance.now();
         activeActorManager.sync(
           world,
           initialLocal.position.z,
           0,
-          performance.now(),
+          initialNow,
           camera,
           layers.creatures,
         );
+        if (world.map) {
+          activeOpeningAnimationManager.update(
+            world.map,
+            initialLocal.position.z,
+            initialLocal.position,
+            initialNow,
+          );
+          activeDynamicSceneManager.update(
+            world,
+            world.map,
+            initialLocal.position.z,
+            initialLocal.position,
+            activeActorManager.playerVisualPosition(world.localPlayerId),
+            activeActorManager,
+            initialNow,
+          );
+        }
       }
 
-      // Compile every world + actor material family while loading is still up.
+      // Compile every world + actor + dynamic-light material family while the
+      // loading overlay is still up.
       nextRenderer.compile(scene, camera);
 
       const render = (now: number) => {
@@ -2988,6 +5009,23 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           const cameraX = visualLocal?.x ?? local.position.x + 0.5;
           const cameraZ = visualLocal?.z ?? local.position.y + 0.5;
 
+          activeOpeningAnimationManager.update(
+            map,
+            floor,
+            local.position,
+            now,
+          );
+
+          activeDynamicSceneManager.update(
+            world,
+            map,
+            floor,
+            local.position,
+            visualLocal,
+            activeActorManager,
+            now,
+          );
+
           camera.position.set(
             cameraX,
             NATIVE_CAMERA_HEIGHT,
@@ -3006,7 +5044,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
 
           if (positionRef.current) {
             positionRef.current.textContent =
-              `NATIVE V25 · x ${local.position.x} · y ${local.position.y} · z ${floor}`;
+              `NATIVE V28 · x ${local.position.x} · y ${local.position.y} · z ${floor}`;
           }
         }
 
@@ -3059,7 +5097,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     };
 
     void bootstrap().catch((error) => {
-      console.error("Native V25 renderer bootstrap failed", error);
+      console.error("Native V28 renderer bootstrap failed", error);
     });
 
     return () => {
@@ -3067,6 +5105,11 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       window.cancelAnimationFrame(animationFrame);
       resizeObserver?.disconnect();
       cleanupInput?.();
+
+      openingAnimationManager = null;
+
+      dynamicSceneManager?.dispose();
+      dynamicSceneManager = null;
 
       actorManager?.dispose();
       actorManager = null;
@@ -3096,13 +5139,23 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       <canvas
         ref={canvasRef}
         className="three-world"
-        data-native-world-renderer="v25"
+        data-native-world-renderer="v28"
         style={{ width: "100%", height: "100%", display: "block" }}
+      />
+      <div
+        ref={hoverRef}
+        className="ground-loot-tooltip"
+        style={{
+          display: "none",
+          position: "fixed",
+          pointerEvents: "none",
+          zIndex: 50,
+        }}
       />
       {showDebug && (
         <div className="debug-meter" aria-label="Native renderer performance">
           <div ref={positionRef} className="position-meter">
-            NATIVE V25 · x -- · y -- · z --
+            NATIVE V28 · x -- · y -- · z --
           </div>
           <div ref={performanceRef} className="fps-meter">
             Native renderer loading world + actors…
