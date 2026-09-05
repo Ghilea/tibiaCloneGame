@@ -129,6 +129,119 @@ export function ThreeWorld({ world, input, onReady, showDebug = true }: ThreeWor
   );
 }
 
+// TIBIAGAME_STREAMING_FIX_V18
+type WarmupRenderer = THREE.WebGLRenderer & {
+  compileAsync?: (
+    scene: THREE.Object3D,
+    camera: THREE.Camera,
+  ) => Promise<unknown>;
+};
+
+function retainedStaticSceneRoots(scene: THREE.Object3D) {
+  const roots: THREE.Object3D[] = [];
+  scene.traverse((object) => {
+    const data = object.userData;
+    if (
+      typeof data?.streamFloor === "number"
+      && typeof data?.streamChunkX === "number"
+      && typeof data?.streamChunkY === "number"
+    ) {
+      roots.push(object);
+    }
+  });
+  return roots;
+}
+
+function withRetainedStaticRootsVisible<T>(
+  scene: THREE.Object3D,
+  work: () => T,
+) {
+  const roots = retainedStaticSceneRoots(scene);
+  const visibility = roots.map((root) => root.visible);
+  roots.forEach((root) => {
+    root.visible = true;
+  });
+
+  try {
+    return work();
+  } finally {
+    roots.forEach((root, index) => {
+      root.visible = visibility[index];
+    });
+  }
+}
+
+function initializeWarmupTextures(
+  renderer: THREE.WebGLRenderer,
+  scene: THREE.Object3D,
+) {
+  const seen = new Set<THREE.Texture>();
+  const textureSlots = [
+    "map",
+    "alphaMap",
+    "aoMap",
+    "bumpMap",
+    "displacementMap",
+    "emissiveMap",
+    "envMap",
+    "lightMap",
+    "metalnessMap",
+    "normalMap",
+    "roughnessMap",
+  ] as const;
+
+  scene.traverseVisible((object) => {
+    const materialValue = (object as THREE.Mesh).material;
+    const materials = Array.isArray(materialValue)
+      ? materialValue
+      : materialValue
+        ? [materialValue]
+        : [];
+
+    for (const material of materials) {
+      const record = material as unknown as Record<string, unknown>;
+      for (const slot of textureSlots) {
+        const texture = record[slot];
+        if (!(texture instanceof THREE.Texture) || seen.has(texture)) continue;
+        seen.add(texture);
+        renderer.initTexture(texture);
+      }
+    }
+  });
+}
+
+function compileSceneForWarmup(
+  renderer: WarmupRenderer,
+  scene: THREE.Object3D,
+  camera: THREE.Camera,
+  initializeTextures: boolean,
+) {
+  // TIBIAGAME_STREAMING_FIX_V18_1
+  // Three r185's compileAsync can continue checking material readiness after
+  // this streaming scene has changed. That produced:
+  //   Cannot read properties of undefined (reading 'isReady')
+  //
+  // Initial warmup happens behind the loading screen, so prefer the synchronous
+  // WebGLRenderer.compile() path. It completes while retained-root visibility
+  // is held stable and cannot outlive this function.
+  return Promise.resolve(withRetainedStaticRootsVisible(scene, () => {
+    if (initializeTextures) initializeWarmupTextures(renderer, scene);
+    renderer.compile(scene, camera);
+  }));
+}
+
+function StaticSceneWarmup({ revision: _revision }: { revision: string }) {
+  // TIBIAGAME_STREAMING_FIX_V18_1
+  // Disabled during gameplay.
+  //
+  // V18 scheduled compileAsync every time the retained chunk key set changed.
+  // Apart from the Three.js material-readiness crash, that work landed exactly
+  // around streaming boundaries and could itself create 100-250ms movement
+  // stalls. New-area optimization must be solved with shared/batched static
+  // resources, not by compiling the live mutable scene while the player walks.
+  return null;
+}
+
 function SceneReady({
   armed,
   onReady,
@@ -173,20 +286,22 @@ function SceneReady({
 
     const elapsed = performance.now() - armedAt.current;
 
-    // Wait until the initial 3x3 structure neighborhood has stopped creating
-    // GPU resources, then precompile the currently visible material programs
-    // while the loading screen is still covering the world.
+    // TIBIAGAME_STREAMING_FIX_V18
+    // The loading screen already hides initial construction. Use that time to
+    // compile BOTH the active floor and retained hidden stair-target floor
+    // chunks. Also push their already-loaded textures to the GPU now rather
+    // than on the first z-level transition.
     if (!compileStarted.current && stableFrames.current >= 18 && elapsed >= 600) {
       compileStarted.current = true;
-      const renderer = gl as THREE.WebGLRenderer & {
-        compileAsync?: (scene: THREE.Object3D, camera: THREE.Camera) => Promise<unknown>;
-      };
+      const renderer = gl as WarmupRenderer;
 
       try {
-        const result = renderer.compileAsync
-          ? renderer.compileAsync(scene, camera)
-          : Promise.resolve(renderer.compile(scene, camera));
-        void result
+        void compileSceneForWarmup(
+          renderer,
+          scene,
+          camera,
+          true,
+        )
           .catch(() => undefined)
           .then(() => {
             compileFinished.current = true;
@@ -201,9 +316,6 @@ function SceneReady({
       return;
     }
 
-    // Do not expose the world immediately after compilation either. Require a
-    // second stable window so late texture/geometry uploads remain hidden by
-    // the loading screen instead of visibly popping into the scene.
     if (compileFinished.current && stableFrames.current >= 24 && elapsed >= 1_100) {
       reported.current = true;
       onReadyRef.current?.();
@@ -644,6 +756,14 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
   );
   const staticSceneRevision = `${floor}:${staticChunkX}:${staticChunkY}:${activeStaticChunkCount}:${dynamicMapRevision}`;
 
+  // TIBIAGAME_STREAMING_FIX_V18
+  // Key-set revision catches hidden stair targets and rolling-cache swaps too,
+  // even when activeStaticChunkCount happens to remain unchanged.
+  const staticGpuWarmupRevision = `${floor}:${dynamicMapRevision}:${retainedStaticChunks
+    .map((entry) => entry.key)
+    .sort()
+    .join("|")}`;
+
   // TIBIAGAME_STREAMING_FIX_V14
   // Keep the loading screen until every retained structure chunk that can
   // intersect the initial 3x3 neighborhood has been created.
@@ -686,7 +806,6 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
   const playerLight = playerLightProfile(world.inventory, world.itemDefinitions);
   const onGround = useCallback((event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
-    if (event.button === 2)
     input.interactAt({
       x: Math.max(0, Math.min(map.width - 1, worldToTile(event.point.x))),
       y: Math.max(0, Math.min(map.height - 1, worldToTile(event.point.z))),
@@ -699,6 +818,7 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
       <Atmosphere torches={region.map.torches} local={local?.position} visualTarget={localVisualPosition} playerLight={playerLight} />
       <FollowCamera target={local?.position} visualTarget={localVisualPosition} mapWidth={map.width} mapHeight={map.height} />
       <SceneReady armed={initialWorldReady} onReady={onReady} />
+      <StaticSceneWarmup revision={staticGpuWarmupRevision} />
       {/* TIBIAGAME_STREAMING_FIX_V11
           Ground is immediate and independent from background structure chunks. */}
       {terrainRegion && <Terrain
@@ -1002,30 +1122,43 @@ function InstancedTiles({
   castShadow?: boolean;
   texture?: THREE.Texture;
 }) {
-  // TIBIAGAME_STREAMING_FIX_V17
-  // Keep the InstancedMesh constructor args constant across terrain-window
-  // handoffs. V14 used positions.length as the constructor count, so R3F had
-  // to reconstruct the mesh whenever a road/floor/material batch changed size.
-  //
-  // The matrix attribute may still be replaced atomically in the same commit,
-  // but geometry/material/InstancedMesh objects stay alive.
+  // TIBIAGAME_STREAMING_FIX_V18
+  // V17 kept the InstancedMesh itself stable, but still replaced the complete
+  // instanceMatrix BufferAttribute whenever a streamed terrain slice changed.
+  // Keep one fixed GPU buffer for the component lifetime and only update its
+  // used matrix range.
   const instanceMatrix = useMemo(() => {
-    const data = new Float32Array(positions.length * 16);
-    const matrix = new THREE.Matrix4();
-    positions.forEach((tile, index) => {
-      matrix.makeTranslation(tile.x + 0.5, y, tile.y + 0.5);
-      matrix.toArray(data, index * 16);
-    });
-    const attribute = new THREE.InstancedBufferAttribute(data, 16);
+    const attribute = new THREE.InstancedBufferAttribute(
+      new Float32Array(TERRAIN_INSTANCE_CAPACITY * 16),
+      16,
+    );
     attribute.setUsage(THREE.DynamicDrawUsage);
     return attribute;
-  }, [positions, y]);
+  }, []);
 
-  if (!positions.length) return null;
+  const visibleCount = Math.min(positions.length, TERRAIN_INSTANCE_CAPACITY);
+
+  useMemo(() => {
+    const data = instanceMatrix.array as Float32Array;
+    const matrix = new THREE.Matrix4();
+
+    for (let index = 0; index < visibleCount; index += 1) {
+      const tile = positions[index];
+      matrix.makeTranslation(tile.x + 0.5, y, tile.y + 0.5);
+      matrix.toArray(data, index * 16);
+    }
+
+    instanceMatrix.clearUpdateRanges();
+    if (visibleCount > 0) {
+      instanceMatrix.addUpdateRange(0, visibleCount * 16);
+      instanceMatrix.needsUpdate = true;
+    }
+  }, [instanceMatrix, positions, visibleCount, y]);
+
   return (
     <instancedMesh
       args={[undefined, undefined, TERRAIN_INSTANCE_CAPACITY]}
-      count={positions.length}
+      count={visibleCount}
       castShadow={castShadow}
       receiveShadow
       frustumCulled={false}
@@ -1141,30 +1274,43 @@ function WaterTiles({ positions }: { positions: readonly Position[] }) {
     opacity: 0.86,
   }), [waterTexture]);
 
-  // TIBIAGAME_STREAMING_FIX_V17
-  // Same persistent-capacity strategy as InstancedTiles. Disabling mesh-level
-  // frustum culling is intentional: the whole terrain window is already local
-  // to the player, while stale InstancedMesh bounds during a matrix swap can
-  // hide an otherwise valid water/terrain batch for a frame.
+  // TIBIAGAME_STREAMING_FIX_V18
+  // Keep the water instance attribute alive across terrain-window updates too.
   const instanceMatrix = useMemo(() => {
-    const data = new Float32Array(positions.length * 16);
+    const attribute = new THREE.InstancedBufferAttribute(
+      new Float32Array(TERRAIN_INSTANCE_CAPACITY * 16),
+      16,
+    );
+    attribute.setUsage(THREE.DynamicDrawUsage);
+    return attribute;
+  }, []);
+
+  const visibleCount = Math.min(positions.length, TERRAIN_INSTANCE_CAPACITY);
+
+  useMemo(() => {
+    const data = instanceMatrix.array as Float32Array;
     const matrix = new THREE.Matrix4();
     const quaternion = new THREE.Quaternion().setFromEuler(
       new THREE.Euler(-Math.PI / 2, 0, 0),
     );
     const scale = new THREE.Vector3(1.02, 1.02, 1);
-    positions.forEach((tile, index) => {
+
+    for (let index = 0; index < visibleCount; index += 1) {
+      const tile = positions[index];
       matrix.compose(
         new THREE.Vector3(tile.x + 0.5, 0.015, tile.y + 0.5),
         quaternion,
         scale,
       );
       matrix.toArray(data, index * 16);
-    });
-    const attribute = new THREE.InstancedBufferAttribute(data, 16);
-    attribute.setUsage(THREE.DynamicDrawUsage);
-    return attribute;
-  }, [positions]);
+    }
+
+    instanceMatrix.clearUpdateRanges();
+    if (visibleCount > 0) {
+      instanceMatrix.addUpdateRange(0, visibleCount * 16);
+      instanceMatrix.needsUpdate = true;
+    }
+  }, [instanceMatrix, positions, visibleCount]);
 
   useEffect(() => () => material.dispose(), [material]);
   useFrame(({ clock }) => {
@@ -1175,11 +1321,10 @@ function WaterTiles({ positions }: { positions: readonly Position[] }) {
     waterTexture.offset.set(clock.elapsedTime * 0.032, clock.elapsedTime * 0.019);
   });
 
-  if (!positions.length) return null;
   return (
     <instancedMesh
       args={[undefined, undefined, TERRAIN_INSTANCE_CAPACITY]}
-      count={positions.length}
+      count={visibleCount}
       receiveShadow
       frustumCulled={false}
     >
