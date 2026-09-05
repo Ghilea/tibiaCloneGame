@@ -73,9 +73,15 @@ const TERRAIN_INSTANCE_CAPACITY = 4608;
 const RETAINED_STATIC_CHUNK_SIZE = 24;
 // TIBIAGAME_STREAMING_FIX_V11
 // TIBIAGAME_STREAMING_FIX_V20
-// 9 current chunks + up to 6 frontier chunks + 2 stair targets.
-const RETAINED_STATIC_CACHE_LIMIT = 17;
-const RETAINED_STATIC_HARD_LIMIT = 18;
+// TIBIAGAME_STREAMING_FIX_V21
+// A permanent 3x3 toroidal slot ring owns the current floor. World chunk keys
+// never become React keys during movement. Two hidden permanent slots are kept
+// for actual stair-target prewarm.
+const RETAINED_STATIC_RING_SIDE = 3;
+const RETAINED_STATIC_RING_SLOT_COUNT = RETAINED_STATIC_RING_SIDE ** 2;
+const RETAINED_STATIC_STAIR_SLOT_COUNT = 2;
+const RETAINED_STATIC_SLOT_COUNT =
+  RETAINED_STATIC_RING_SLOT_COUNT + RETAINED_STATIC_STAIR_SLOT_COUNT;
 const RETAINED_STATIC_CHUNK_HYSTERESIS = 4;
 // TIBIAGAME_STREAMING_FIX_V8: superseded by authoritative completeness.
  // TIBIAGAME_STREAMING_FIX_V9: immutable retained chunks require full coverage.
@@ -556,8 +562,13 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
 
   const staticChunkX = retainedAnchorRef.current.chunkX;
   const staticChunkY = retainedAnchorRef.current.chunkY;
-  const [retainedStaticChunks, setRetainedStaticChunks] = useState<RetainedStaticChunkData[]>([]);
-  const retainedStaticKeys = useRef(new Set<string>());
+  // TIBIAGAME_STREAMING_FIX_V21
+  const [retainedStaticSlots, setRetainedStaticSlots] = useState<
+    Array<RetainedStaticChunkData | null>
+  >(() => Array.from({ length: RETAINED_STATIC_SLOT_COUNT }, () => null));
+  const retainedStaticSlotKeys = useRef<Array<string | null>>(
+    Array.from({ length: RETAINED_STATIC_SLOT_COUNT }, () => null),
+  );
 
   useEffect(() => {
     const sourceAtStart = latestMapRef.current;
@@ -567,28 +578,25 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
     let idleHandle: number | null = null;
     let timeoutHandle: number | null = null;
 
-    // TIBIAGAME_STREAMING_FIX_V11
-    // Only the actually needed 3x3 structure neighborhood is retained.
-    // Terrain no longer depends on this scheduler.
     const visibleOffsets: readonly [number, number][] = [
       [0, 0],
       [1, 0], [-1, 0], [0, 1], [0, -1],
       [1, 1], [1, -1], [-1, 1], [-1, -1],
     ];
 
-    const currentFloorSpecs = visibleOffsets.map(([dx, dy]) => ({
-      floor,
-      chunkX: staticChunkX + dx,
-      chunkY: staticChunkY + dy,
-    }));
+    const currentFloorSpecs = visibleOffsets.map(([dx, dy]) => {
+      const chunkX = staticChunkX + dx;
+      const chunkY = staticChunkY + dy;
+      return {
+        floor,
+        chunkX,
+        chunkY,
+        slotIndex: retainedStaticRingSlotIndex(chunkX, chunkY),
+      };
+    });
 
-    // TIBIAGAME_STREAMING_FIX_V20_3
-    // Production trace showed that whole React/R3F chunk mounts scheduled from
-    // requestIdleCallback become the hitch themselves. Runtime frontier mounts
-    // are disabled; normal 3x3 + stair-target loading remains.
-    // TIBIAGAME_STREAMING_FIX_V7
-    // Network/CPU streaming still preloads adjacent floors. GPU prewarm is
-    // limited to actual stair destinations inside the current 3x3 vicinity.
+    // Keep the existing targeted stair prewarm, but put it in two stable hidden
+    // slot components instead of adding keyed chunk subtrees.
     const stairTargetSpecs = sourceAtStart.stairs
       .flatMap((stair) => {
         const currentEndpoint = stair.from.z === floor
@@ -602,6 +610,7 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
         const endpointChunkY = Math.floor(
           currentEndpoint.y / RETAINED_STATIC_CHUNK_SIZE,
         );
+
         if (
           Math.abs(endpointChunkX - staticChunkX) > 1
           || Math.abs(endpointChunkY - staticChunkY) > 1
@@ -610,8 +619,12 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
         const targetEndpoint = stair.from.z === floor ? stair.to : stair.from;
         return [{
           floor: targetEndpoint.z,
-          chunkX: Math.floor(targetEndpoint.x / RETAINED_STATIC_CHUNK_SIZE),
-          chunkY: Math.floor(targetEndpoint.y / RETAINED_STATIC_CHUNK_SIZE),
+          chunkX: Math.floor(
+            targetEndpoint.x / RETAINED_STATIC_CHUNK_SIZE,
+          ),
+          chunkY: Math.floor(
+            targetEndpoint.y / RETAINED_STATIC_CHUNK_SIZE,
+          ),
         }];
       })
       .filter((spec, index, all) =>
@@ -621,79 +634,81 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
           && candidate.chunkY === spec.chunkY
         ) === index
       )
-      .slice(0, 2);
+      .slice(0, RETAINED_STATIC_STAIR_SLOT_COUNT)
+      .map((spec, index) => ({
+        ...spec,
+        slotIndex: RETAINED_STATIC_RING_SLOT_COUNT + index,
+      }));
 
-    const addChunk = (spec: { floor: number; chunkX: number; chunkY: number }) => {
+    type SlotSpec = {
+      floor: number;
+      chunkX: number;
+      chunkY: number;
+      slotIndex: number;
+    };
+
+    const assignChunkToSlot = (spec: SlotSpec) => {
       if (cancelled) return;
-      const key = retainedStaticChunkKey(spec.floor, spec.chunkX, spec.chunkY);
-      if (retainedStaticKeys.current.has(key)) return;
 
-      const source = latestMapRef.current;
-      const center = world.streamRegionCenter;
-      if (!source || !retainedChunkFullyCovered(
+      const key = retainedStaticChunkKey(
         spec.floor,
         spec.chunkX,
         spec.chunkY,
-        center,
-        world.streamRegionRadius,
-        world.streamRegionFloorRadius,
-        source,
-      )) return;
+      );
+      if (retainedStaticSlotKeys.current[spec.slotIndex] === key) return;
 
+      const source = latestMapRef.current;
+      const center = world.streamRegionCenter;
+      if (
+        !source
+        || !retainedChunkFullyCovered(
+          spec.floor,
+          spec.chunkX,
+          spec.chunkY,
+          center,
+          world.streamRegionRadius,
+          world.streamRegionFloorRadius,
+          source,
+        )
+      ) return;
+
+      const startedAt = performance.now();
       const chunk = createRetainedStaticChunk(
         source,
         spec.floor,
         spec.chunkX,
         spec.chunkY,
       );
-      retainedStaticKeys.current.add(key);
+      const slicedMs = performance.now() - startedAt;
+      if (slicedMs > 4) {
+        console.info(
+          `retained slot slice: ${slicedMs.toFixed(1)}ms · slot ${spec.slotIndex} · chunk ${key}`,
+        );
+      }
+
+      retainedStaticSlotKeys.current[spec.slotIndex] = key;
 
       startTransition(() => {
-        setRetainedStaticChunks((previous) => {
-          const next = [...previous, chunk];
-          if (next.length <= RETAINED_STATIC_HARD_LIMIT) return next;
-
-          let removableIndex = -1;
-          let bestScore = -1;
-          next.forEach((entry, index) => {
-            if (
-              entry.floor === floor
-              && Math.abs(entry.chunkX - staticChunkX) <= 1
-              && Math.abs(entry.chunkY - staticChunkY) <= 1
-            ) return;
-            const floorPenalty = entry.floor === floor ? 0 : 8;
-            const score = floorPenalty
-              + Math.abs(entry.chunkX - staticChunkX)
-              + Math.abs(entry.chunkY - staticChunkY);
-            if (score > bestScore) {
-              bestScore = score;
-              removableIndex = index;
-            }
-          });
-          if (removableIndex < 0) return next;
-
-          const [removed] = next.splice(removableIndex, 1);
-          retainedStaticKeys.current.delete(removed.key);
+        setRetainedStaticSlots((previous) => {
+          if (previous[spec.slotIndex]?.key === key) return previous;
+          const next = [...previous];
+          next[spec.slotIndex] = chunk;
           return next;
         });
       });
     };
 
-    // Login or a completely new floor: mount only the center immediately.
-    const centerSpec = currentFloorSpecs[0];
-    const centerKey = retainedStaticChunkKey(
-      centerSpec.floor,
-      centerSpec.chunkX,
-      centerSpec.chunkY,
-    );
-    if (!retainedStaticKeys.current.has(centerKey)) addChunk(centerSpec);
+    // The center should already be a former neighbor after ordinary movement,
+    // so this is normally a no-op. It is immediate only for login/new floor.
+    assignChunkToSlot(currentFloorSpecs[0]);
 
-    const pending = [
+    const pending: SlotSpec[] = [
       ...currentFloorSpecs.slice(1),
       ...stairTargetSpecs,
-    ].filter((spec) => !retainedStaticKeys.current.has(
-      retainedStaticChunkKey(spec.floor, spec.chunkX, spec.chunkY),
-    ));
+    ].filter((spec) =>
+      retainedStaticSlotKeys.current[spec.slotIndex]
+      !== retainedStaticChunkKey(spec.floor, spec.chunkX, spec.chunkY)
+    );
 
     let cursor = 0;
 
@@ -704,7 +719,8 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
         return;
       }
 
-      addChunk(pending[cursor++]);
+      assignChunkToSlot(pending[cursor]);
+      cursor += 1;
       schedule();
     };
 
@@ -715,6 +731,7 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
           callback: (deadline: { timeRemaining(): number }) => void,
         ) => number;
       };
+
       if (idleWindow.requestIdleCallback) {
         idleHandle = idleWindow.requestIdleCallback(pump);
       } else {
@@ -729,97 +746,49 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
       const idleWindow = window as Window & {
         cancelIdleCallback?: (handle: number) => void;
       };
-      if (idleHandle !== null && idleWindow.cancelIdleCallback) {
-        idleWindow.cancelIdleCallback(idleHandle);
-      }
-      if (timeoutHandle !== null) window.clearTimeout(timeoutHandle);
-    };
-  }, [floor, staticChunkX, staticChunkY, immediateStreamRegionRevision]);
-
-  // TIBIAGAME_STREAMING_FIX_V16
-  // Retire old GPU chunks while moving, but only in browser idle time. The old
-  // 650ms stationary timer let retained geometry accumulate for a whole walk.
-  useEffect(() => {
-    if (!local || retainedStaticChunks.length <= RETAINED_STATIC_CACHE_LIMIT) return;
-
-    let cancelled = false;
-    let idleHandle: number | null = null;
-    let timeoutHandle: number | null = null;
-
-    const retireOne = () => {
-      if (cancelled) return;
-      startTransition(() => {
-        setRetainedStaticChunks((previous) => {
-          if (previous.length <= RETAINED_STATIC_CACHE_LIMIT) return previous;
-
-          let removableIndex = -1;
-          let bestScore = -1;
-          previous.forEach((entry, index) => {
-            if (
-              entry.floor === floor
-              && Math.abs(entry.chunkX - staticChunkX) <= 1
-              && Math.abs(entry.chunkY - staticChunkY) <= 1
-            ) return;
-
-            const floorPenalty = entry.floor === floor ? 0 : 8;
-            const score = floorPenalty
-              + Math.abs(entry.chunkX - staticChunkX)
-              + Math.abs(entry.chunkY - staticChunkY);
-            if (score > bestScore) {
-              bestScore = score;
-              removableIndex = index;
-            }
-          });
-
-          if (removableIndex < 0) return previous;
-          const next = [...previous];
-          const [removed] = next.splice(removableIndex, 1);
-          retainedStaticKeys.current.delete(removed.key);
-          return next;
-        });
-      });
-    };
-
-    const idleWindow = window as typeof window & {
-      requestIdleCallback?: (
-        callback: (deadline: { didTimeout: boolean; timeRemaining: () => number }) => void,
-      ) => number;
-      cancelIdleCallback?: (handle: number) => void;
-    };
-
-    if (idleWindow.requestIdleCallback) {
-      idleHandle = idleWindow.requestIdleCallback(() => retireOne());
-    } else {
-      timeoutHandle = window.setTimeout(retireOne, 48);
-    }
-
-    return () => {
-      cancelled = true;
       if (idleHandle !== null) idleWindow.cancelIdleCallback?.(idleHandle);
       if (timeoutHandle !== null) window.clearTimeout(timeoutHandle);
     };
   }, [
     floor,
-    retainedStaticChunks.length,
     staticChunkX,
     staticChunkY,
+    immediateStreamRegionRevision,
   ]);
 
-  // Door/window state is genuinely dynamic. Refresh only the local 3x3 on
-  // those rare mutations; ordinary world_region packets never replace chunks.
+  // Door/window state is genuinely dynamic. Refresh the existing slot payloads
+  // in place; never replace the slot component identity.
   useEffect(() => {
     if (!dynamicMapRevision) return;
     const source = latestMapRef.current;
     if (!source) return;
-    setRetainedStaticChunks((previous) => previous.map((entry) => {
-      if (
-        entry.floor !== floor
-        || Math.abs(entry.chunkX - staticChunkX) > 1
-        || Math.abs(entry.chunkY - staticChunkY) > 1
-      ) return entry;
-      return createRetainedStaticChunk(source, entry.floor, entry.chunkX, entry.chunkY);
-    }));
+
+    startTransition(() => {
+      setRetainedStaticSlots((previous) => previous.map((entry, slotIndex) => {
+        if (!entry) return entry;
+        if (slotIndex >= RETAINED_STATIC_RING_SLOT_COUNT) return entry;
+        if (
+          entry.floor !== floor
+          || Math.abs(entry.chunkX - staticChunkX) > 1
+          || Math.abs(entry.chunkY - staticChunkY) > 1
+        ) return entry;
+
+        return createRetainedStaticChunk(
+          source,
+          entry.floor,
+          entry.chunkX,
+          entry.chunkY,
+        );
+      }));
+    });
   }, [dynamicMapRevision, floor, staticChunkX, staticChunkY]);
+
+  const retainedStaticChunks = useMemo(
+    () => retainedStaticSlots.filter(
+      (entry): entry is RetainedStaticChunkData => entry !== null,
+    ),
+    [retainedStaticSlots],
+  );
 
   const activeStaticChunkCount = retainedStaticChunks.reduce(
     (count, entry) => count + (entry.floor === floor ? 1 : 0),
@@ -898,11 +867,12 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
         bounds={terrainRegion.bounds}
         onGround={onGround}
       />}
-      {/* TIBIAGAME_STREAMING_FIX_V20_2: retained chunks do not receive onGround. */}
-      {retainedStaticChunks.map((chunk) => (
+      {/* TIBIAGAME_STREAMING_FIX_V21: fixed world-slot identities. */}
+      {retainedStaticSlots.map((chunk, slotIndex) => (
         <RetainedStaticChunk
-          key={chunk.key}
+          key={`retained-slot-${slotIndex}`}
           chunk={chunk}
+          prewarmOnly={slotIndex >= RETAINED_STATIC_RING_SLOT_COUNT}
           activeFloor={floor}
           input={input}
           world={world}
@@ -1032,8 +1002,22 @@ function retainedStaticChunkKey(floor: number, chunkX: number, chunkY: number) {
   return `${floor}:${chunkX}:${chunkY}`;
 }
 
+// TIBIAGAME_STREAMING_FIX_V21
+function retainedStaticRingSlotIndex(chunkX: number, chunkY: number) {
+  const x = (
+    (chunkX % RETAINED_STATIC_RING_SIDE)
+    + RETAINED_STATIC_RING_SIDE
+  ) % RETAINED_STATIC_RING_SIDE;
+  const y = (
+    (chunkY % RETAINED_STATIC_RING_SIDE)
+    + RETAINED_STATIC_RING_SIDE
+  ) % RETAINED_STATIC_RING_SIDE;
+  return y * RETAINED_STATIC_RING_SIDE + x;
+}
+
 const RetainedStaticChunk = memo(function RetainedStaticChunk({
   chunk,
+  prewarmOnly,
   activeFloor,
   input,
   world,
@@ -1041,7 +1025,8 @@ const RetainedStaticChunk = memo(function RetainedStaticChunk({
   indoorBuildingId,
   onHover,
 }: {
-  chunk: RetainedStaticChunkData;
+  chunk: RetainedStaticChunkData | null;
+  prewarmOnly: boolean;
   activeFloor: number;
   input: InputController;
   world: WorldState;
@@ -1049,27 +1034,39 @@ const RetainedStaticChunk = memo(function RetainedStaticChunk({
   indoorBuildingId: string | null;
   onHover: (hover: { label: string; x: number; y: number } | null) => void;
 }) {
+  // TIBIAGAME_STREAMING_FIX_V21
+  // This wrapper is keyed by a permanent ring slot, never by chunk.key.
   return (
     <group
-      visible={chunk.floor === activeFloor}
+      visible={Boolean(
+        chunk
+        && !prewarmOnly
+        && chunk.floor === activeFloor
+      )}
       userData={{
-        streamFloor: chunk.floor,
-        streamChunkX: chunk.chunkX,
-        streamChunkY: chunk.chunkY,
+        streamFloor: chunk?.floor ?? -999,
+        streamChunkX: chunk?.chunkX ?? -999,
+        streamChunkY: chunk?.chunkY ?? -999,
       }}
     >
-      <Suspense fallback={null}>
-        <Structures
-          map={chunk.map}
-          castleWallContext={chunk.castleWallContext}
-          input={input}
-          world={world}
-          discoveryRevision={discoveryRevision}
-          floor={chunk.floor}
-          indoorBuildingId={chunk.floor === activeFloor ? indoorBuildingId : null}
-          onHover={onHover}
-        />
-      </Suspense>
+      {chunk && (
+        <Suspense fallback={null}>
+          <Structures
+            map={chunk.map}
+            castleWallContext={chunk.castleWallContext}
+            input={input}
+            world={world}
+            discoveryRevision={discoveryRevision}
+            floor={chunk.floor}
+            indoorBuildingId={
+              !prewarmOnly && chunk.floor === activeFloor
+                ? indoorBuildingId
+                : null
+            }
+            onHover={onHover}
+          />
+        </Suspense>
+      )}
     </group>
   );
 });
@@ -1425,14 +1422,8 @@ function usePersistentBridgeMaterials(texture: THREE.Texture) {
   }, [texture]);
 }
 
-// TIBIAGAME_STREAMING_FIX_V20_3
-function retainedInstanceCapacity(count: number, maximum: number) {
-  if (count <= 1) return 1;
-  let value = 1;
-  while (value < count && value < maximum) value *= 2;
-  return Math.min(value, maximum);
-}
-
+// TIBIAGAME_STREAMING_FIX_V21
+// Fixed slot lifetime: allocate each instance buffer once and reuse it.
 function persistentInstanceMatrix(
   position: readonly number[],
   rotation: readonly number[] = [0, 0, 0],
@@ -1464,16 +1455,11 @@ function PersistentStaticInstances({
   receiveShadow?: boolean;
   userData?: Record<string, unknown>;
 }) {
-  const allocationCapacity = retainedInstanceCapacity(
-    matrices.length,
-    capacity,
-  );
-
   const mesh = useMemo(() => {
     const instance = new THREE.InstancedMesh(
       geometry,
       material,
-      allocationCapacity,
+      capacity,
     );
     instance.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     instance.castShadow = castShadow;
@@ -1482,14 +1468,14 @@ function PersistentStaticInstances({
     if (userData) Object.assign(instance.userData, userData);
     return instance;
   }, [
-    allocationCapacity,
+    capacity,
     castShadow,
     geometry,
     material,
     receiveShadow,
   ]);
 
-  const count = Math.min(matrices.length, allocationCapacity);
+  const count = Math.min(matrices.length, capacity);
 
   useMemo(() => {
     const target = mesh.instanceMatrix.array as Float32Array;
@@ -1984,24 +1970,38 @@ function PooledStaticBatchMesh({
 }: {
   batch: PooledStaticBatch;
 }) {
+  // TIBIAGAME_STREAMING_FIX_V21
   const mesh = useMemo(() => {
-    const count = batch.matrices.length / 16;
     const instance = new THREE.InstancedMesh(
       batch.geometry,
       batch.material,
-      count,
+      2048,
     );
     instance.castShadow = true;
     instance.receiveShadow = true;
-    // TIBIAGAME_STREAMING_FIX_V20
-    // These chunks are already spatially bounded around the player. Avoid an
-    // O(instance-count) bounding-sphere build every time an idle chunk mounts.
     instance.frustumCulled = false;
-    instance.instanceMatrix.setUsage(THREE.StaticDrawUsage);
-    instance.instanceMatrix.array.set(batch.matrices);
-    instance.instanceMatrix.needsUpdate = true;
+    instance.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     return instance;
-  }, [batch]);
+  }, [batch.geometry, batch.material]);
+
+  const count = Math.min(
+    Math.floor(batch.matrices.length / 16),
+    2048,
+  );
+
+  useMemo(() => {
+    const target = mesh.instanceMatrix.array as Float32Array;
+    const scalarCount = count * 16;
+    for (let index = 0; index < scalarCount; index += 1) {
+      target[index] = batch.matrices[index];
+    }
+    mesh.count = count;
+    mesh.instanceMatrix.clearUpdateRanges();
+    if (count > 0) {
+      mesh.instanceMatrix.addUpdateRange(0, scalarCount);
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+  }, [batch.matrices, count, mesh]);
 
   return <primitive object={mesh} dispose={null} />;
 }

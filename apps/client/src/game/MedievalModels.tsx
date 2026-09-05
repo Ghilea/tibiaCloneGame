@@ -46,32 +46,139 @@ export function HousePlinth({ position, size }: { position: [number, number, num
 }
 
 // TIBIAGAME_STREAMING_FIX_V6
-export function InstancedHousePlinths({ segments }: { segments: readonly { position: [number, number, number]; size: [number, number, number] }[] }) {
-  const texture = useLoader(THREE.TextureLoader, "/assets/world/aldoria-castle-stone-v2.png");
-  const horizontal = useMemo(() => segments.filter((segment) => segment.size[0] > segment.size[2]), [segments]);
-  const vertical = useMemo(() => segments.filter((segment) => segment.size[0] <= segment.size[2]), [segments]);
-  const horizontalMesh = useRef<THREE.InstancedMesh>(null);
-  const verticalMesh = useRef<THREE.InstancedMesh>(null);
+// TIBIAGAME_STREAMING_FIX_V21
+const HOUSE_PLINTH_INSTANCE_CAPACITY = 2048;
+const sharedHousePlinthHorizontalGeometry =
+  new THREE.BoxGeometry(1.04, 0.54, 0.24);
+const sharedHousePlinthVerticalGeometry =
+  new THREE.BoxGeometry(0.24, 0.54, 1.04);
+const sharedHousePlinthMaterials =
+  new WeakMap<THREE.Texture, THREE.MeshStandardMaterial>();
+
+export function InstancedHousePlinths({
+  segments,
+}: {
+  segments: readonly {
+    position: [number, number, number];
+    size: [number, number, number];
+  }[];
+}) {
+  const texture = useLoader(
+    THREE.TextureLoader,
+    "/assets/world/aldoria-castle-stone-v2.png",
+  );
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.colorSpace = THREE.SRGBColorSpace;
-  useEffect(() => {
+
+  const material = useMemo(() => {
+    const cached = sharedHousePlinthMaterials.get(texture);
+    if (cached) return cached;
+    const next = new THREE.MeshStandardMaterial({
+      map: texture,
+      color: "#9fa29a",
+      roughness: 0.98,
+    });
+    sharedHousePlinthMaterials.set(texture, next);
+    return next;
+  }, [texture]);
+
+  const horizontalMesh = useMemo(() => {
+    const mesh = new THREE.InstancedMesh(
+      sharedHousePlinthHorizontalGeometry,
+      material,
+      HOUSE_PLINTH_INSTANCE_CAPACITY,
+    );
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    return mesh;
+  }, [material]);
+
+  const verticalMesh = useMemo(() => {
+    const mesh = new THREE.InstancedMesh(
+      sharedHousePlinthVerticalGeometry,
+      material,
+      HOUSE_PLINTH_INSTANCE_CAPACITY,
+    );
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    return mesh;
+  }, [material]);
+
+  const horizontal = useMemo(
+    () => segments.filter((segment) => segment.size[0] > segment.size[2]),
+    [segments],
+  );
+  const vertical = useMemo(
+    () => segments.filter((segment) => segment.size[0] <= segment.size[2]),
+    [segments],
+  );
+
+  useMemo(() => {
     const matrix = new THREE.Matrix4();
-    horizontal.forEach((segment, index) => {
-      if (!horizontalMesh.current) return;
-      matrix.makeTranslation(segment.position[0], 0.27, segment.position[2]);
-      horizontalMesh.current.setMatrixAt(index, matrix); horizontalMesh.current.instanceMatrix.needsUpdate = true;
-    });
-    vertical.forEach((segment, index) => {
-      if (!verticalMesh.current) return;
-      matrix.makeTranslation(segment.position[0], 0.27, segment.position[2]);
-      verticalMesh.current.setMatrixAt(index, matrix); verticalMesh.current.instanceMatrix.needsUpdate = true;
-    });
-    [horizontalMesh.current, verticalMesh.current].forEach((mesh) => mesh?.computeBoundingSphere());
-  }, [horizontal, vertical]);
-  return <>
-    {horizontal.length > 0 && <instancedMesh ref={horizontalMesh} args={[undefined, undefined, horizontal.length]} castShadow receiveShadow><boxGeometry args={[1.04, 0.54, 0.24]} /><meshStandardMaterial map={texture} color="#9fa29a" roughness={0.98} /></instancedMesh>}
-    {vertical.length > 0 && <instancedMesh ref={verticalMesh} args={[undefined, undefined, vertical.length]} castShadow receiveShadow><boxGeometry args={[0.24, 0.54, 1.04]} /><meshStandardMaterial map={texture} color="#9fa29a" roughness={0.98} /></instancedMesh>}
-  </>;
+
+    const horizontalCount = Math.min(
+      horizontal.length,
+      HOUSE_PLINTH_INSTANCE_CAPACITY,
+    );
+    for (let index = 0; index < horizontalCount; index += 1) {
+      const segment = horizontal[index];
+      matrix.makeTranslation(
+        segment.position[0],
+        0.27,
+        segment.position[2],
+      );
+      matrix.toArray(
+        horizontalMesh.instanceMatrix.array as Float32Array,
+        index * 16,
+      );
+    }
+    horizontalMesh.count = horizontalCount;
+    horizontalMesh.instanceMatrix.clearUpdateRanges();
+    if (horizontalCount > 0) {
+      horizontalMesh.instanceMatrix.addUpdateRange(
+        0,
+        horizontalCount * 16,
+      );
+      horizontalMesh.instanceMatrix.needsUpdate = true;
+    }
+
+    const verticalCount = Math.min(
+      vertical.length,
+      HOUSE_PLINTH_INSTANCE_CAPACITY,
+    );
+    for (let index = 0; index < verticalCount; index += 1) {
+      const segment = vertical[index];
+      matrix.makeTranslation(
+        segment.position[0],
+        0.27,
+        segment.position[2],
+      );
+      matrix.toArray(
+        verticalMesh.instanceMatrix.array as Float32Array,
+        index * 16,
+      );
+    }
+    verticalMesh.count = verticalCount;
+    verticalMesh.instanceMatrix.clearUpdateRanges();
+    if (verticalCount > 0) {
+      verticalMesh.instanceMatrix.addUpdateRange(
+        0,
+        verticalCount * 16,
+      );
+      verticalMesh.instanceMatrix.needsUpdate = true;
+    }
+  }, [horizontal, horizontalMesh, vertical, verticalMesh]);
+
+  return (
+    <>
+      <primitive object={horizontalMesh} dispose={null} />
+      <primitive object={verticalMesh} dispose={null} />
+    </>
+  );
 }
 
 export function HouseDoorway({
