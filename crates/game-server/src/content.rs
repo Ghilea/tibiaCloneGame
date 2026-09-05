@@ -86,10 +86,9 @@ impl ContentCatalog {
             {
                 bail!("invalid item capabilities: {}", definition.id);
             }
-            if definition
-                .defense
-                .is_some_and(|defense| defense == 0 || defense > 40 || definition.equipment_slot.is_none())
-            {
+            if definition.defense.is_some_and(|defense| {
+                defense == 0 || defense > 40 || definition.equipment_slot.is_none()
+            }) {
                 bail!("invalid item defense: {}", definition.id);
             }
             if definition.combat_effect.as_ref().is_some_and(|effect| {

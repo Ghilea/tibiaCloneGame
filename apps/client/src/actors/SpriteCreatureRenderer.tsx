@@ -24,10 +24,28 @@ export function SpriteCreatureRenderer(props: SpriteCreatureRendererProps) {
   const [loaded, setLoaded] = useState<LoadedCreature | null>(null);
   useEffect(() => {
     let cancelled = false;
-    void creatureAssetManager.load(props.definitionId).then(async (definition) => {
+    // TIBIAGAME_STREAMING_FIX_V5
+    // Never decode every atlas at once. Make the creature visible after idle
+    // is ready, then warm remaining animations one-at-a-time in idle windows.
+    void (async () => {
+      const definition = await creatureAssetManager.load(props.definitionId);
       const names = REQUIRED_ANIMATIONS.filter((name) => definition.animations[name]);
-      const pairs = await Promise.all(names.map(async (name) => [name, await creatureAssetManager.loadAnimation(definition.id, definition.animations[name])] as const));
-      if (!cancelled) setLoaded({ definition, atlases: new Map(pairs) });
+      const atlases = new Map<string, CreatureAtlasPair>();
+
+      for (let index = 0; index < names.length; index += 1) {
+        if (index > 0) await waitForAssetIdle();
+        if (cancelled) return;
+        const name = names[index];
+        const pair = await creatureAssetManager.loadAnimation(
+          definition.id,
+          definition.animations[name],
+        );
+        if (cancelled) return;
+        atlases.set(name, pair);
+        setLoaded({ definition, atlases: new Map(atlases) });
+      }
+    })().catch((error) => {
+      console.warn(`sprite creature load failed: ${props.definitionId}`, error);
     });
     return () => { cancelled = true; };
   }, [props.definitionId]);
@@ -78,7 +96,13 @@ function LoadedSpriteCreature({ loaded, motion, state, health, immune = false, o
     camera.getWorldQuaternion(cameraQuaternion);
     actor.parent?.getWorldQuaternion(parentQuaternion);
     actor.quaternion.copy(parentQuaternion).invert().multiply(cameraQuaternion);
-    const desired = dead.current ? "death" : requestedOneShot.current ? requestedOneShot.current : motion.current.moving ? "walk" : "idle";
+    const requested = dead.current ? "death" : requestedOneShot.current ? requestedOneShot.current : motion.current.moving ? "walk" : "idle";
+    // TIBIAGAME_STREAMING_FIX_V5
+    // Optional atlases arrive incrementally. Until then use walk/idle instead
+    // of stalling or throwing.
+    const desired = atlases.has(requested)
+      ? requested
+      : motion.current.moving && atlases.has("walk") ? "walk" : "idle";
     controller.play(desired);
     for (const event of controller.update(delta)) onAnimationEvent?.(event.event);
     if (controller.isFinished && controller.currentAnimation !== "death") requestedOneShot.current = null;
@@ -90,9 +114,14 @@ function LoadedSpriteCreature({ loaded, motion, state, health, immune = false, o
     if (animationChanged) {
       const atlas = atlases.get(animationName);
       if (!atlas) throw new Error(`${definition.id}: atlas for ${animationName} was not loaded`);
+      const shaderShapeChanged = Boolean(material.normalMap) !== Boolean(atlas.normal);
       material.map = atlas.albedo;
       material.normalMap = atlas.normal;
-      material.needsUpdate = true;
+      // TIBIAGAME_STREAMING_FIX_V5
+      // Swapping one non-null map/normalMap for another only changes uniforms.
+      // needsUpdate recompiles the shader and was causing animation-transition
+      // stalls for every individual creature material.
+      if (shaderShapeChanged) material.needsUpdate = true;
       lastAnimation.current = animationName;
     }
     if (frame !== lastFrame.current || facing !== lastFacing.current || animationChanged) {
@@ -127,4 +156,16 @@ export function applyFrame(geometry: THREE.PlaneGeometry, animation: CreatureAni
   const uv = geometry.attributes.uv as THREE.BufferAttribute;
   uv.setXY(0, u0, vTop); uv.setXY(1, u1, vTop); uv.setXY(2, u0, vBottom); uv.setXY(3, u1, vBottom);
   uv.needsUpdate = true;
+}
+
+
+// TIBIAGAME_STREAMING_FIX_V5
+function waitForAssetIdle(): Promise<void> {
+  return new Promise((resolve) => {
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void) => number;
+    };
+    if (idleWindow.requestIdleCallback) idleWindow.requestIdleCallback(resolve);
+    else window.setTimeout(resolve, 32);
+  });
 }

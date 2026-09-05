@@ -56,6 +56,14 @@ export class WorldState {
   ping = 0;
   revision = 0;
   visualRevision = 0;
+  // TIBIAGAME_STREAMING_FIX_V2
+  // Do not use MapView object identity as a static-scene revision. Region
+  // packets are cache fills; only real structure-state changes need a rebuild.
+  dynamicMapRevision = 0;
+  // TIBIAGAME_STREAMING_FIX_V4
+  // Advances whenever a fresh streamed MapView is installed. ThreeWorld uses
+  // this as a deferred data-freshness signal, separate from movement.
+  streamRegionRevision = 0;
   localCorrectionRevision = 0;
   private listeners = new Set<WorldListener>();
   private visualListeners = new Set<WorldListener>();
@@ -152,6 +160,8 @@ export class WorldState {
         this.playerContext = null;
         this.activeNpcId = null;
         this.map = message.map;
+        this.dynamicMapRevision += 1;
+        this.streamRegionRevision += 1;
         this.rebuildMapIndexes();
         this.itemDefinitions.clear();
         for (const definition of message.item_definitions) this.itemDefinitions.set(definition.id, definition);
@@ -186,6 +196,7 @@ export class WorldState {
         break;
       case "world_region":
         this.map = message.map;
+        this.streamRegionRevision += 1;
         this.rebuildMapIndexes();
         this.groundItems = message.ground_items;
         this.creatures.clear();
@@ -249,12 +260,16 @@ export class WorldState {
         if (this.map) {
           this.map = { ...this.map, doors: this.map.doors.map((door) => door.id === message.door.id ? message.door : door) };
           this.doorsByTile.set(positionKey(message.door.position), message.door);
+          this.dynamicMapRevision += 1;
+          notification = "visual";
         }
         break;
       case "window_changed":
         if (this.map) {
           this.map = { ...this.map, windows: this.map.windows.map((window) => window.id === message.window.id ? message.window : window) };
           this.windowsByTile.set(positionKey(message.window.position), message.window);
+          this.dynamicMapRevision += 1;
+          notification = "visual";
         }
         break;
       case "spoken":

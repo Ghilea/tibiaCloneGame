@@ -443,7 +443,15 @@ impl WorldMap {
         if view.terrain_materials.iter().any(|entry| {
             !matches!(
                 entry.material.as_str(),
-                "packed_earth" | "moss_stone" | "sandstone" | "mud" | "gravel" | "crypt_stone" | "wood_planks" | "marsh_grass" | "ash_soil"
+                "packed_earth"
+                    | "moss_stone"
+                    | "sandstone"
+                    | "mud"
+                    | "gravel"
+                    | "crypt_stone"
+                    | "wood_planks"
+                    | "marsh_grass"
+                    | "ash_soil"
             )
         }) {
             bail!("terrain material is not supported by this server build");
@@ -908,18 +916,15 @@ impl WorldMap {
     }
 
     fn stair_destination(&self, position: Position) -> Option<Position> {
-        self.view
-            .stairs
-            .iter()
-            .find_map(|stairs| {
-                if stairs.from == position {
-                    Some(stairs.to)
-                } else if stairs.to == position {
-                    Some(stairs.from)
-                } else {
-                    None
-                }
-            })
+        self.view.stairs.iter().find_map(|stairs| {
+            if stairs.from == position {
+                Some(stairs.to)
+            } else if stairs.to == position {
+                Some(stairs.from)
+            } else {
+                None
+            }
+        })
     }
 
     fn first_safe_base_tile(&self) -> Option<Position> {
@@ -1693,9 +1698,9 @@ impl World {
             for cell_x in min_cell_x..=max_cell_x {
                 if let Some(players) = self.player_index.get(&(center.z, cell_x, cell_y)) {
                     nearby.extend(players.iter().copied().filter(|id| {
-                        self.players
-                            .get(id)
-                            .is_some_and(|player| position_in_region(player.view.position, center, radius))
+                        self.players.get(id).is_some_and(|player| {
+                            position_in_region(player.view.position, center, radius)
+                        })
                     }));
                 }
             }
@@ -1704,7 +1709,9 @@ impl World {
     }
 
     fn add_to_player_index(&mut self, id: EntityId) {
-        let Some(player) = self.players.get(&id) else { return; };
+        let Some(player) = self.players.get(&id) else {
+            return;
+        };
         self.player_index
             .entry(player_index_cell(player.view.position))
             .or_default()
@@ -2104,38 +2111,78 @@ impl World {
         if quantity == 0 {
             return Err("invalid_sale_quantity");
         }
-        if self.trades.values().any(|trade| trade.player_a == player_id || trade.player_b == player_id) {
+        if self
+            .trades
+            .values()
+            .any(|trade| trade.player_a == player_id || trade.player_b == player_id)
+        {
             return Err("cannot_shop_while_trading");
         }
-        let npc = self.npcs.iter().find(|npc| npc.id == npc_id && npc.service == "shop").ok_or("npc_not_found")?;
+        let npc = self
+            .npcs
+            .iter()
+            .find(|npc| npc.id == npc_id && npc.service == "shop")
+            .ok_or("npc_not_found")?;
         let player = self.players.get(&player_id).ok_or("unknown_player")?;
         if !within_interaction_reach(player.view.position, npc.position) {
             return Err("npc_out_of_reach");
         }
-        let item = player.inventory.iter().find(|item| item.instance_id == instance_id).ok_or("sale_item_not_found")?;
-        if item.definition_id == "gold_coin" || item.equipped_slot.is_some()
-            || self.players.get(&player_id).is_some_and(|player| player.inventory.iter().any(|child| child.container_id == Some(instance_id)))
+        let item = player
+            .inventory
+            .iter()
+            .find(|item| item.instance_id == instance_id)
+            .ok_or("sale_item_not_found")?;
+        if item.definition_id == "gold_coin"
+            || item.equipped_slot.is_some()
+            || self.players.get(&player_id).is_some_and(|player| {
+                player
+                    .inventory
+                    .iter()
+                    .any(|child| child.container_id == Some(instance_id))
+            })
         {
             return Err("item_not_sellable");
         }
         if quantity > item.quantity {
             return Err("invalid_sale_quantity");
         }
-        let definition = self.content.item(&item.definition_id).cloned().ok_or("sale_item_not_found")?;
-        let unit_price = npc.offers.iter().find(|offer| offer.item_definition_id == item.definition_id)
+        let definition = self
+            .content
+            .item(&item.definition_id)
+            .cloned()
+            .ok_or("sale_item_not_found")?;
+        let unit_price = npc
+            .offers
+            .iter()
+            .find(|offer| offer.item_definition_id == item.definition_id)
             .map(|offer| u32::from(offer.price) / 2)
             .unwrap_or_else(|| (definition.weight.ceil() as u32).max(1));
         let total = unit_price.saturating_mul(u32::from(quantity)).max(1);
         let mut inventory = player.inventory.clone();
-        let item_index = inventory.iter().position(|entry| entry.instance_id == instance_id).expect("item was checked");
+        let item_index = inventory
+            .iter()
+            .position(|entry| entry.instance_id == instance_id)
+            .expect("item was checked");
         if inventory[item_index].quantity == quantity {
             inventory.remove(item_index);
         } else {
             inventory[item_index].quantity -= quantity;
         }
-        let gold_definition = self.content.item("gold_coin").cloned().ok_or("sale_price_unavailable")?;
-        add_crafted_output(&mut inventory, &gold_definition, total.min(u32::from(u16::MAX)) as u16, (None, None));
-        self.players.get_mut(&player_id).expect("player was checked").inventory = inventory;
+        let gold_definition = self
+            .content
+            .item("gold_coin")
+            .cloned()
+            .ok_or("sale_price_unavailable")?;
+        add_crafted_output(
+            &mut inventory,
+            &gold_definition,
+            total.min(u32::from(u16::MAX)) as u16,
+            (None, None),
+        );
+        self.players
+            .get_mut(&player_id)
+            .expect("player was checked")
+            .inventory = inventory;
         Ok(())
     }
 
@@ -2744,9 +2791,10 @@ impl World {
             _ => None,
         };
         if let Some(required_tool_slot) = required_tool_slot
-            && !player.inventory.iter().any(|item| {
-                item.equipped_slot.as_deref() == Some(required_tool_slot)
-            })
+            && !player
+                .inventory
+                .iter()
+                .any(|item| item.equipped_slot.as_deref() == Some(required_tool_slot))
         {
             return Err("crafting_tool_required");
         }
@@ -3219,7 +3267,9 @@ impl World {
 
         // A staircase can be selected once from each endpoint floor.
         let mut stair_ids = HashSet::new();
-        merged.stairs.retain(|stairs| stair_ids.insert(stairs.id.clone()));
+        merged
+            .stairs
+            .retain(|stairs| stair_ids.insert(stairs.id.clone()));
         merged
     }
 
@@ -3273,12 +3323,7 @@ impl World {
         self.resource_nodes
             .iter()
             .filter(|node| {
-                position_in_region_floors(
-                    node.document.position,
-                    center,
-                    radius,
-                    floor_radius,
-                )
+                position_in_region_floors(node.document.position, center, radius, floor_radius)
             })
             .map(ResourceNode::view)
             .collect()
@@ -3307,7 +3352,12 @@ impl World {
             hash ^= u32::from(byte);
             hash = hash.wrapping_mul(16_777_619);
         }
-        let total = self.map.view.width.saturating_mul(self.map.view.height).max(1);
+        let total = self
+            .map
+            .view
+            .width
+            .saturating_mul(self.map.view.height)
+            .max(1);
         let start = (hash as i64).rem_euclid(i64::from(total)) as i32;
         for offset in 0..total {
             let index = (start + offset) % total;
@@ -3586,14 +3636,16 @@ impl World {
                 let main_hand_is_two_handed = player.inventory.iter().any(|item| {
                     item.instance_id != instance_id
                         && item.equipped_slot.as_deref() == Some("weapon")
-                        && self.content.item(&item.definition_id).is_some_and(|definition| {
-                            definition.distance_weapon.is_some()
-                        })
+                        && self
+                            .content
+                            .item(&item.definition_id)
+                            .is_some_and(|definition| definition.distance_weapon.is_some())
                 });
                 if slot == "offhand" && main_hand_is_two_handed {
                     return Err("two_handed_weapon_equipped");
                 }
-                if slot == "weapon" && definition.distance_weapon.is_some()
+                if slot == "weapon"
+                    && definition.distance_weapon.is_some()
                     && player.inventory.iter().any(|item| {
                         item.instance_id != instance_id
                             && item.equipped_slot.as_deref() == Some("offhand")
@@ -3737,8 +3789,14 @@ impl World {
             .as_ref()
             .and_then(|definition| definition.distance_weapon.clone());
         let dual_wielding = distance_weapon.is_none()
-            && mainhand_definition.as_ref().and_then(|definition| definition.attack).is_some()
-            && offhand_definition.as_ref().and_then(|definition| definition.attack).is_some();
+            && mainhand_definition
+                .as_ref()
+                .and_then(|definition| definition.attack)
+                .is_some()
+            && offhand_definition
+                .as_ref()
+                .and_then(|definition| definition.attack)
+                .is_some();
         let melee_cooldown = if dual_wielding {
             DUAL_WIELD_ATTACK_COOLDOWN
         } else {
@@ -3798,11 +3856,19 @@ impl World {
                 )
             } else {
                 let weapon_attack = match (
-                    mainhand_definition.as_ref().and_then(|definition| definition.attack),
-                    offhand_definition.as_ref().and_then(|definition| definition.attack),
+                    mainhand_definition
+                        .as_ref()
+                        .and_then(|definition| definition.attack),
+                    offhand_definition
+                        .as_ref()
+                        .and_then(|definition| definition.attack),
                 ) {
                     (Some(main), Some(offhand)) => {
-                        if player.view.sword_tries % 2 == 0 { main } else { offhand }
+                        if player.view.sword_tries % 2 == 0 {
+                            main
+                        } else {
+                            offhand
+                        }
                     }
                     (Some(main), None) => main,
                     (None, Some(offhand)) => offhand,
@@ -3819,12 +3885,8 @@ impl World {
             }
         };
         let mut events = self.damage_creature(player_id, target_id, damage)?;
-        let (effect_id, cooldown_ms) = projectile.unwrap_or_else(|| {
-            (
-                "melee_hit".to_owned(),
-                melee_cooldown.as_millis() as u64,
-            )
-        });
+        let (effect_id, cooldown_ms) = projectile
+            .unwrap_or_else(|| ("melee_hit".to_owned(), melee_cooldown.as_millis() as u64));
         events.insert(
             0,
             WorldEvent::CombatEffect {
@@ -4198,7 +4260,8 @@ impl World {
                 creature.pending_attack = None;
                 creature.last_attack = now;
                 for victim_id in victims {
-                    let damage = self.apply_creature_damage(creature_id, victim_id, damage, &mut events);
+                    let damage =
+                        self.apply_creature_damage(creature_id, victim_id, damage, &mut events);
                     events.push(WorldEvent::CombatEffect {
                         source_id: creature_id,
                         target_id: victim_id,
@@ -4320,7 +4383,8 @@ impl World {
                             .get_mut(&creature_id)
                             .expect("creature exists")
                             .last_attack = now;
-                        let damage = self.apply_creature_damage(creature_id, target_id, damage, &mut events);
+                        let damage =
+                            self.apply_creature_damage(creature_id, target_id, damage, &mut events);
                         events.push(WorldEvent::CombatEffect {
                             source_id: creature_id,
                             target_id,
@@ -4916,8 +4980,7 @@ fn position_in_region_floors(
     radius: i32,
     floor_radius: i16,
 ) -> bool {
-    (i32::from(position.z) - i32::from(center.z)).abs()
-        <= i32::from(floor_radius.max(0))
+    (i32::from(position.z) - i32::from(center.z)).abs() <= i32::from(floor_radius.max(0))
         && (position.x - center.x).abs() <= radius
         && (position.y - center.y).abs() <= radius
 }
@@ -5917,7 +5980,12 @@ mod tests {
         let id = Uuid::new_v4();
         let mut player = test_player(id, 100.0);
         equip_test_backpack(&mut player);
-        let backpack_id = player.inventory.iter().find(|item| item.equipped_slot.as_deref() == Some("backpack")).unwrap().instance_id;
+        let backpack_id = player
+            .inventory
+            .iter()
+            .find(|item| item.equipped_slot.as_deref() == Some("backpack"))
+            .unwrap()
+            .instance_id;
         let mut arrows = instance("rough_arrow");
         arrows.quantity = 10;
         arrows.container_id = Some(backpack_id);
@@ -5926,11 +5994,27 @@ mod tests {
         let mut world = World::new(combat_catalog(), vec![]);
         world.insert_player(player);
 
-        world.sell_to_npc(id, "mara_quartermaster", arrow_id, 5).unwrap();
+        world
+            .sell_to_npc(id, "mara_quartermaster", arrow_id, 5)
+            .unwrap();
 
         let inventory = &world.player(id).unwrap().inventory;
-        assert_eq!(inventory.iter().find(|item| item.instance_id == arrow_id).unwrap().quantity, 5);
-        assert_eq!(inventory.iter().filter(|item| item.definition_id == "gold_coin").map(|item| item.quantity).sum::<u16>(), 5);
+        assert_eq!(
+            inventory
+                .iter()
+                .find(|item| item.instance_id == arrow_id)
+                .unwrap()
+                .quantity,
+            5
+        );
+        assert_eq!(
+            inventory
+                .iter()
+                .filter(|item| item.definition_id == "gold_coin")
+                .map(|item| item.quantity)
+                .sum::<u16>(),
+            5
+        );
     }
 
     #[test]

@@ -359,3 +359,11 @@ export function HangingSign({ building, wallHeight }: { building: BuildingView; 
     </group>
   );
 }
+
+
+// TIBIAGAME_STREAMING_FIX_V5
+[
+  "/assets/world/aldoria-castle-stone-v2.png",
+  "/assets/world/aldoria-timber-plaster-v1.png",
+  "/assets/world/aldoria-roof-tiles-v1.png",
+].forEach((assetPath) => useLoader.preload(THREE.TextureLoader, assetPath));

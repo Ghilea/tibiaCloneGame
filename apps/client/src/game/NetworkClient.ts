@@ -213,7 +213,7 @@ export class NetworkClient {
     };
 
     this.worldRegionIdleHandle = idleWindow.requestIdleCallback
-      ? idleWindow.requestIdleCallback(apply, { timeout: 500 })
+      ? idleWindow.requestIdleCallback(apply, { timeout: 1200 })
       : window.setTimeout(apply, 0);
   }
 

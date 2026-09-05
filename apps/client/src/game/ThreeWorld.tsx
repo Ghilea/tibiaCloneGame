@@ -42,13 +42,17 @@ const CAMERA_TOPDOWN_OFFSET = 9;
 const GROUND_ACTOR_Y = 0.05;
 // The bridge top is y=0.16. Keep the same clearance actors have above normal terrain.
 const BRIDGE_ACTOR_Y = 0.23;
-// The server already streams a radius-48 region. Rebuilding the entire static
-// Three.js scene every 16 walked tiles caused a visible main-thread/GPU hitch.
-// Keep the static scene close to the camera. A 64 + 12 + 12 tile region is
-// comfortably larger than the viewport and avoids rebuilding the static
-// Three.js scene whenever the player crosses a small chunk boundary.
-const RENDER_CHUNK_SIZE = 128;
-const RENDER_PADDING = 12;
+// TIBIAGAME_STREAMING_FIX_V2
+// The network cache is radius 48, but the GPU does not need to own that whole
+// payload at once. A 24-tile chunk with 8 tiles of padding is a 40x40 local
+// static scene: comfortably larger than the camera while dramatically cheaper
+// to construct than the previous worst-case 152x152 scene.
+// TIBIAGAME_STREAMING_FIX_V3_1
+// TIBIAGAME_STREAMING_FIX_V4
+// Align renderer boundaries with the server's 32-tile spatial chunks. The
+// 8-tile safety padding keeps the camera covered without rebuilding 68x68.
+const RENDER_CHUNK_SIZE = 32;
+const RENDER_PADDING = 8;
 
 type ThreeWorldProps = {
   world: WorldState;
@@ -109,11 +113,23 @@ function SceneReady({ onReady }: { onReady?: () => void }) {
   return null;
 }
 
-function StaticShadowMap({ revision }: { revision: MapView }) {
+function StaticShadowMap({
+  revision,
+  movementKey,
+}: {
+  revision: MapView;
+  movementKey: string;
+}) {
   const { gl } = useThree();
-  useLayoutEffect(() => {
-    gl.shadowMap.needsUpdate = true;
-  }, [gl, revision]);
+  useEffect(() => {
+    // TIBIAGAME_STREAMING_FIX_V3_1
+    // A tile movement changes movementKey and cancels this timer. The static
+    // shadow map is refreshed only after movement has been quiet for 450 ms.
+    const handle = window.setTimeout(() => {
+      gl.shadowMap.needsUpdate = true;
+    }, 450);
+    return () => window.clearTimeout(handle);
+  }, [gl, revision, movementKey]);
   return null;
 }
 
@@ -122,21 +138,51 @@ function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHov
   const visualSnapshot = useCallback(() => world.visualRevision, [world]);
   useSyncExternalStore(subscribeVisual, visualSnapshot);
   const map = world.map;
-  // Region payloads replace MapView in one network message. Keep actor/input
-  // updates urgent, but let React prepare the large static Three.js diff as
-  // interruptible background work instead of blocking a movement frame.
-  const renderMap = useDeferredValue(map);
   const local = world.localPlayerId ? world.players.get(world.localPlayerId) : undefined;
   const localVisualPosition = useRef(new THREE.Vector3(Number.NaN, 0.05, Number.NaN));
   const floor = local?.position.z ?? map?.floor ?? 0;
 
-  if (!map || !renderMap) return null;
+  // Network regions are cache fills, not render-scene revisions. Keep the most
+  // recently delivered payload hot, but do not make its object identity a
+  // useMemo dependency. When the player reaches a new render chunk/floor we
+  // consume the latest already-prefetched payload.
+  // TIBIAGAME_STREAMING_FIX_V4
+  const latestMapRef = useRef<MapView | null>(map);
+  if (map) latestMapRef.current = map;
+  const mapReady = map ? 1 : 0;
   const chunkX = Math.floor((local?.position.x ?? 0) / RENDER_CHUNK_SIZE);
   const chunkY = Math.floor((local?.position.y ?? 0) / RENDER_CHUNK_SIZE);
-  const region = useMemo(
-    () => createRenderRegion(renderMap, floor, chunkX, chunkY),
-    [renderMap, floor, chunkX, chunkY],
-  );
+
+  // Do not defer chunk coordinates. Under continuous movement React can keep a
+  // deferred chunk behind the player, which is exactly how the minimap could
+  // show the new region while the rendered world stayed old.
+  const dynamicMapRevision = world.dynamicMapRevision;
+  const streamRegionRevision = useDeferredValue(world.streamRegionRevision);
+  const region = useMemo(() => {
+    void dynamicMapRevision;
+    void streamRegionRevision;
+    const source = mapReady ? latestMapRef.current : null;
+    if (!source) return null;
+
+    const startedAt = performance.now();
+    const next = createRenderRegion(source, floor, chunkX, chunkY);
+    const elapsedMs = performance.now() - startedAt;
+    if (elapsedMs > 6) {
+      console.info(
+        `static region slice: ${elapsedMs.toFixed(1)}ms · chunk ${chunkX}:${chunkY} · z ${floor}`,
+      );
+    }
+    return next;
+  }, [
+    mapReady,
+    floor,
+    chunkX,
+    chunkY,
+    dynamicMapRevision,
+    streamRegionRevision,
+  ]);
+
+  if (!map || !region) return null;
   const bridgeTiles = useMemo(() => new Set(region.map.bridges.map(tileKey)), [region.map.bridges]);
   const actorGroundY = (position: Position) => bridgeTiles.has(tileKey(position)) ? BRIDGE_ACTOR_Y : GROUND_ACTOR_Y;
   const indoorBuildingId = local
@@ -162,8 +208,16 @@ function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHov
       <Atmosphere torches={region.map.torches} local={local?.position} visualTarget={localVisualPosition} playerLight={playerLight} />
       <FollowCamera target={local?.position} visualTarget={localVisualPosition} mapWidth={map.width} mapHeight={map.height} />
       <Terrain map={region.map} floor={floor} bounds={region.bounds} onGround={onGround} />
-      <Structures map={region.map} input={input} world={world} discoveryRevision={world.worldObjectCallout?.key ?? 0} floor={floor} indoorBuildingId={indoorBuildingId} onHover={onLootHover} />
-      <StaticShadowMap revision={region.map} />
+      {/* TIBIAGAME_STREAMING_FIX_V5
+          Late structure assets may suspend locally, but must never blank the
+          terrain, player or entire streamed world. */}
+      <Suspense fallback={null}>
+        <Structures map={region.map} input={input} world={world} discoveryRevision={world.worldObjectCallout?.key ?? 0} floor={floor} indoorBuildingId={indoorBuildingId} onHover={onLootHover} />
+      </Suspense>
+      <StaticShadowMap
+        revision={region.map}
+        movementKey={local ? `${local.position.x}:${local.position.y}:${local.position.z}` : "none"}
+      />
       <OcclusionController target={local?.position} visualTarget={localVisualPosition} sceneRevision={region.map} />
       {players.map((player) => (
         <PlayerActor
@@ -1017,7 +1071,7 @@ const PlayerActor = memo(function PlayerActor({ player, local, visualPosition, c
     <SmoothActor id={player.id} position={player.position} groundY={groundY} visualPosition={visualPosition} moving={moving} correctionRevision={correctionRevision}>
       <group onPointerDown={(event) => event.stopPropagation()} onClick={onClick} onContextMenu={onContextMenu}>
         <SelectionRing active={selected || local} color={local ? "#65b9e8" : "#e2be65"} />
-        <AnimatedCharacter kind={kind} position={player.position} moving={moving} />
+        <Suspense fallback={null}><AnimatedCharacter kind={kind} position={player.position} moving={moving} /></Suspense>
       </group>
     </SmoothActor>
   );
@@ -1065,7 +1119,7 @@ const NpcActor = memo(function NpcActor({ npc, groundY, playerPosition, onClick,
       setCallout(null);
     }
   });
-  return <SmoothActor id={npc.id} position={npc.position} groundY={groundY} moving={moving}><group onPointerDown={(event) => event.stopPropagation()} onClick={onClick} onContextMenu={onContextMenu}><SelectionRing active color="#d6b65e" /><group ref={presence} rotation={[0, homeFacing, 0]}><AnimatedCharacter kind={kind} position={npc.position} moving={moving} /></group><mesh position={[0, 2.55, 0]}><octahedronGeometry args={[0.11]} /><meshStandardMaterial color="#e7c45f" emissive="#b17f23" emissiveIntensity={1.3} /></mesh>{callout && <SpeechBubble text={callout} />}</group></SmoothActor>;
+  return <SmoothActor id={npc.id} position={npc.position} groundY={groundY} moving={moving}><group onPointerDown={(event) => event.stopPropagation()} onClick={onClick} onContextMenu={onContextMenu}><SelectionRing active color="#d6b65e" /><group ref={presence} rotation={[0, homeFacing, 0]}><Suspense fallback={null}><AnimatedCharacter kind={kind} position={npc.position} moving={moving} /></Suspense></group><mesh position={[0, 2.55, 0]}><octahedronGeometry args={[0.11]} /><meshStandardMaterial color="#e7c45f" emissive="#b17f23" emissiveIntensity={1.3} /></mesh>{callout && <SpeechBubble text={callout} />}</group></SmoothActor>;
 }, (previous, next) => previous.npc === next.npc && previous.groundY === next.groundY && previous.playerPosition === next.playerPosition);
 
 type CreatureActorProps = { creature: CreatureView; groundY: number; selected: boolean; onClick: ActorClick; onContextMenu: ActorClick };
@@ -1332,30 +1386,71 @@ function FollowCamera({ target, visualTarget, mapWidth, mapHeight }: { target?: 
 function OcclusionController({ target, visualTarget, sceneRevision }: { target?: Position; visualTarget: MutableRefObject<THREE.Vector3>; sceneRevision: MapView }) {
   const { camera, scene } = useThree();
   const ray = useMemo(() => new THREE.Ray(), []);
-  const faded = useRef(new Map<THREE.Material, { opacity: number; depthWrite: boolean }>());
+  // TIBIAGAME_STREAMING_FIX_V5
+  // Visibility toggling avoids changing material shader defines at runtime.
+  const hiddenOccluders = useRef(new Map<THREE.Object3D, boolean>());
   const lastCheckAt = useRef(0);
   const lastCheckedTarget = useMemo(() => new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN), []);
   const targetPoint = useMemo(() => new THREE.Vector3(), []);
   const direction = useMemo(() => new THREE.Vector3(), []);
   const intersection = useMemo(() => new THREE.Vector3(), []);
-  const next = useMemo(() => new Set<THREE.Material>(), []);
+  const nextHiddenOccluders = useMemo(() => new Set<THREE.Object3D>(), []);
   const occluders = useRef<OccluderIndex>({ all: [], buckets: new Map() });
-  useLayoutEffect(() => {
-    // Compile occluders for transparency while a streamed region is being
-    // prepared. Switching material defines only when the player reaches a
-    // wall causes a visible one-frame hitch on many GPUs.
-    occluders.current = collectOccluderBounds(scene);
-    lastCheckedTarget.set(Number.NaN, Number.NaN, Number.NaN);
-    for (const { root } of occluders.current.all) root.traverse((node) => {
-      if (!(node instanceof THREE.Mesh)) return;
-      const materials = Array.isArray(node.material) ? node.material : [node.material];
-      for (const material of materials) {
-        if (material.userData.occlusionPrepared) continue;
-        material.userData.occlusionPrepared = true;
-        material.transparent = true;
-        material.needsUpdate = true;
+  useEffect(() => {
+    // TIBIAGAME_STREAMING_FIX_V4
+    // Building Box3 bounds for a whole streamed scene inside useLayoutEffect
+    // blocked paint and produced large max-ms spikes. Build the replacement
+    // index in small frame-budgeted slices instead.
+    let cancelled = false;
+    let frame: number | null = null;
+    let workMs = 0;
+    const roots: THREE.Object3D[] = [];
+
+    const visit = (node: THREE.Object3D) => {
+      if (node.userData.occluder) {
+        roots.push(node);
+        return;
       }
-    });
+      node.children.forEach(visit);
+    };
+    scene.children.forEach(visit);
+
+    const indexed: OccluderBounds[] = [];
+    let cursor = 0;
+    const step = () => {
+      if (cancelled) return;
+      const sliceStarted = performance.now();
+
+      while (cursor < roots.length && performance.now() - sliceStarted < 2.5) {
+        const root = roots[cursor++];
+        const bounds = new THREE.Box3().setFromObject(root);
+        if (!bounds.isEmpty()) indexed.push({ root, bounds });
+
+        // TIBIAGAME_STREAMING_FIX_V5
+        // Do not mutate transparent/needsUpdate here. That mutation changes
+        // WebGL shader defines and can block a later frame during compilation.
+      }
+
+      workMs += performance.now() - sliceStarted;
+      if (cursor < roots.length) {
+        frame = window.requestAnimationFrame(step);
+        return;
+      }
+
+      occluders.current = indexOccluderBounds(indexed);
+      lastCheckedTarget.set(Number.NaN, Number.NaN, Number.NaN);
+      if (workMs > 6) {
+        console.info(
+          `occlusion index work: ${workMs.toFixed(1)}ms across frames · ${indexed.length} roots`,
+        );
+      }
+    };
+
+    frame = window.requestAnimationFrame(step);
+    return () => {
+      cancelled = true;
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
   }, [scene, sceneRevision]);
   useFrame(({ clock }) => {
     if (!target || clock.elapsedTime - lastCheckAt.current < 0.15) return;
@@ -1377,37 +1472,25 @@ function OcclusionController({ target, visualTarget, sceneRevision }: { target?:
       const hit = ray.intersectBox(bounds, intersection);
       if (hit && hit.distanceTo(camera.position) < targetDistance) roots.add(root);
     }
-    next.clear();
-    for (const root of roots) root.traverse((node) => {
-      if (!(node instanceof THREE.Mesh)) return;
-      const materials = Array.isArray(node.material) ? node.material : [node.material];
-      for (const material of materials) {
-        next.add(material);
-        if (!faded.current.has(material)) {
-          faded.current.set(material, {
-            opacity: material.opacity,
-            depthWrite: material.depthWrite,
-          });
-        }
-        material.userData.occlusionOpacity = 0.28;
-        material.opacity = Math.min(material.opacity, 0.28);
-        material.depthWrite = false;
+    nextHiddenOccluders.clear();
+    for (const root of roots) {
+      nextHiddenOccluders.add(root);
+      if (!hiddenOccluders.current.has(root)) {
+        hiddenOccluders.current.set(root, root.visible);
+        root.visible = false;
       }
-    });
-    for (const [material, original] of faded.current) {
-      if (next.has(material)) continue;
-      delete material.userData.occlusionOpacity;
-      material.opacity = original.opacity;
-      material.depthWrite = original.depthWrite;
-      faded.current.delete(material);
+    }
+    for (const [root, originalVisible] of hiddenOccluders.current) {
+      if (nextHiddenOccluders.has(root)) continue;
+      root.visible = originalVisible;
+      hiddenOccluders.current.delete(root);
     }
   });
   useEffect(() => () => {
-    for (const [material, original] of faded.current) {
-      delete material.userData.occlusionOpacity;
-      material.opacity = original.opacity;
-      material.depthWrite = original.depthWrite;
+    for (const [root, originalVisible] of hiddenOccluders.current) {
+      root.visible = originalVisible;
     }
+    hiddenOccluders.current.clear();
   }, []);
   return null;
 }
@@ -1416,17 +1499,7 @@ type OccluderBounds = { root: THREE.Object3D; bounds: THREE.Box3 };
 type OccluderIndex = { all: OccluderBounds[]; buckets: Map<string, OccluderBounds[]> };
 const OCCLUDER_BUCKET_SIZE = 8;
 
-function collectOccluderBounds(scene: THREE.Scene): OccluderIndex {
-  const roots: OccluderBounds[] = [];
-  const visit = (node: THREE.Object3D) => {
-    if (node.userData.occluder) {
-      const bounds = new THREE.Box3().setFromObject(node);
-      if (!bounds.isEmpty()) roots.push({ root: node, bounds });
-      return;
-    }
-    node.children.forEach(visit);
-  };
-  scene.children.forEach(visit);
+function indexOccluderBounds(roots: OccluderBounds[]): OccluderIndex {
   const buckets = new Map<string, OccluderBounds[]>();
   for (const entry of roots) {
     const minX = Math.floor(entry.bounds.min.x / OCCLUDER_BUCKET_SIZE);
@@ -1533,6 +1606,14 @@ function ClientPerformanceMonitor({ label, positionLabel, world }: {
       return;
     }
     const frameMs = delta * 1_000;
+    // TIBIAGAME_STREAMING_FIX_V5
+    if (frameMs >= 80) {
+      const player = world.localPlayerId ? world.players.get(world.localPlayerId) : undefined;
+      const programs = (gl.info as unknown as { programs?: unknown[] }).programs?.length ?? -1;
+      console.warn(
+        `LONG FRAME ${frameMs.toFixed(1)}ms · pos ${player ? `${player.position.x}:${player.position.y}:${player.position.z}` : "unknown"} · calls ${gl.info.render.calls} · tris ${gl.info.render.triangles} · programs ${programs} · textures ${gl.info.memory.textures} · geometries ${gl.info.memory.geometries}`,
+      );
+    }
     const current = sample.current;
     current.elapsed += delta;
     current.frames += 1;

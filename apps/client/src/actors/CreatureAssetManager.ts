@@ -29,17 +29,27 @@ export class CreatureAssetManager {
     const key = `${root}${animation.albedo}|${animation.normal ?? ""}`;
     const cached = this.atlases.get(key);
     if (cached) return cached;
-    const loading = Promise.all([
-      this.loadTexture(`${root}${animation.albedo}`, true),
-      animation.normal ? this.loadTexture(`${root}${animation.normal}`, false) : Promise.resolve(null),
-    ]).then(([albedo, normal]) => ({ albedo, normal }));
+    const loading = (async () => {
+      // TIBIAGAME_STREAMING_FIX_V5
+      // Avoid decoding a large albedo and normal WebP at exactly the same time.
+      const albedo = await this.loadTexture(`${root}${animation.albedo}`, true);
+      const normal = animation.normal
+        ? await this.loadTexture(`${root}${animation.normal}`, false)
+        : null;
+      return { albedo, normal };
+    })();
     this.atlases.set(key, loading);
     return loading;
   }
 
   async preload(id: string): Promise<void> {
     const definition = await this.load(id);
-    await Promise.all(Object.values(definition.animations).map((animation) => this.loadAnimation(id, animation)));
+    // TIBIAGAME_STREAMING_FIX_V5
+    // Decode/upload at most one animation atlas pair per idle window.
+    for (const animation of Object.values(definition.animations)) {
+      await waitForTextureIdle();
+      await this.loadAnimation(id, animation);
+    }
   }
 
   /** Dispose the app-lifetime cache when the entire Three.js world is torn down. */
@@ -81,6 +91,21 @@ if (typeof window !== "undefined") {
       console.warn("sprite creature preload failed", error);
     });
   };
-  if (idleWindow.requestIdleCallback) idleWindow.requestIdleCallback(preload, { timeout: 1_500 });
-  else window.setTimeout(preload, 0);
+  // TIBIAGAME_STREAMING_FIX_V5
+  // No timeout: a timeout forces heavy WebP decode even during active movement.
+  if (idleWindow.requestIdleCallback) idleWindow.requestIdleCallback(preload);
+  else window.setTimeout(preload, 64);
+}
+
+
+// TIBIAGAME_STREAMING_FIX_V5
+function waitForTextureIdle(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  return new Promise((resolve) => {
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void) => number;
+    };
+    if (idleWindow.requestIdleCallback) idleWindow.requestIdleCallback(resolve);
+    else window.setTimeout(resolve, 32);
+  });
 }

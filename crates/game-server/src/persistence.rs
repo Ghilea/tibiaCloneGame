@@ -363,12 +363,20 @@ impl Database {
             .collect())
     }
 
-    pub async fn load_discoveries(&self, character_id: EntityId) -> Result<Vec<String>, sqlx::Error> {
+    pub async fn load_discoveries(
+        &self,
+        character_id: EntityId,
+    ) -> Result<Vec<String>, sqlx::Error> {
         sqlx::query_scalar("SELECT discovery_id FROM character_discoveries WHERE character_id = $1 ORDER BY discovery_id")
             .bind(character_id).fetch_all(&self.pool).await
     }
 
-    pub async fn persist_discovery_and_inventory(&self, character_id: EntityId, discovery_id: &str, inventory: &[ItemInstance]) -> Result<(), sqlx::Error> {
+    pub async fn persist_discovery_and_inventory(
+        &self,
+        character_id: EntityId,
+        discovery_id: &str,
+        inventory: &[ItemInstance],
+    ) -> Result<(), sqlx::Error> {
         let mut transaction = self.pool.begin().await?;
         clear_inventory(&mut transaction, character_id).await?;
         insert_inventory(&mut transaction, character_id, inventory).await?;

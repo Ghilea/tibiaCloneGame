@@ -5,13 +5,12 @@ mod world;
 
 use std::{
     collections::HashSet,
-    env,
-    fs,
+    env, fs,
     path::Path as FsPath,
     process::Command,
     sync::Arc,
     sync::RwLock as StdRwLock,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
     time::{Duration, Instant, UNIX_EPOCH},
 };
 
@@ -73,25 +72,50 @@ struct EventBus {
 
 impl EventBus {
     fn new() -> Self {
-        Self { players: StdRwLock::new(std::collections::HashMap::new()) }
+        Self {
+            players: StdRwLock::new(std::collections::HashMap::new()),
+        }
     }
 
-    fn register(&self, player_id: Uuid) -> (mpsc::Receiver<ServerEvent>, mpsc::Receiver<ServerEvent>, watch::Receiver<Option<ServerEvent>>) {
+    fn register(
+        &self,
+        player_id: Uuid,
+    ) -> (
+        mpsc::Receiver<ServerEvent>,
+        mpsc::Receiver<ServerEvent>,
+        watch::Receiver<Option<ServerEvent>>,
+    ) {
         let (control_tx, control_rx) = mpsc::channel(256);
         let (updates_tx, updates_rx) = mpsc::channel(4096);
         let (movement_tx, movement_rx) = watch::channel(None);
-        self.players.write().expect("event bus lock").insert(player_id, PlayerEventChannels { control: control_tx, updates: updates_tx, movement: movement_tx });
+        self.players.write().expect("event bus lock").insert(
+            player_id,
+            PlayerEventChannels {
+                control: control_tx,
+                updates: updates_tx,
+                movement: movement_tx,
+            },
+        );
         (control_rx, updates_rx, movement_rx)
     }
 
     fn unregister(&self, player_id: Uuid) {
-        self.players.write().expect("event bus lock").remove(&player_id);
+        self.players
+            .write()
+            .expect("event bus lock")
+            .remove(&player_id);
     }
 
     fn send(&self, recipient: Uuid, event: ServerEvent, control: bool) {
         let players = self.players.read().expect("event bus lock");
-        let Some(channels) = players.get(&recipient) else { return; };
-        let sender = if control { &channels.control } else { &channels.updates };
+        let Some(channels) = players.get(&recipient) else {
+            return;
+        };
+        let sender = if control {
+            &channels.control
+        } else {
+            &channels.updates
+        };
         let _ = sender.try_send(event);
     }
 
@@ -120,7 +144,11 @@ impl AppState {
     }
 
     async fn broadcast_near(&self, center: Position, message: ServerMessage) {
-        let recipients = self.world.read().await.player_ids_near(center, WORLD_REGION_RADIUS);
+        let recipients = self
+            .world
+            .read()
+            .await
+            .player_ids_near(center, WORLD_REGION_RADIUS);
         for recipient in recipients {
             self.publish_update(recipient, message.clone());
         }
@@ -187,7 +215,12 @@ impl AppState {
         self.publish_with_priority(Some(recipient), message, false);
     }
 
-    fn publish_with_priority(&self, recipient: Option<Uuid>, message: ServerMessage, control: bool) {
+    fn publish_with_priority(
+        &self,
+        recipient: Option<Uuid>,
+        message: ServerMessage,
+        control: bool,
+    ) {
         match serde_json::to_string(&message) {
             Ok(text) => {
                 let event = ServerEvent { text: text.into() };
@@ -313,7 +346,11 @@ fn world_files_snapshot() -> Vec<(String, u64, u128)> {
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_nanos();
-            Some((path.to_string_lossy().into_owned(), metadata.len(), modified))
+            Some((
+                path.to_string_lossy().into_owned(),
+                metadata.len(),
+                modified,
+            ))
         })
         .collect::<Vec<_>>();
     snapshot.sort();
@@ -697,7 +734,14 @@ async fn session(mut socket: WebSocket, state: AppState) {
                 Ok(discoveries) => discoveries.into_iter().collect(),
                 Err(error) => {
                     warn!(%id, %error, "failed to load discoveries");
-                    send(&mut socket, &ServerMessage::Error { code: "discoveries_load_failed".into(), message: "Your discoveries could not be loaded".into() }).await;
+                    send(
+                        &mut socket,
+                        &ServerMessage::Error {
+                            code: "discoveries_load_failed".into(),
+                            message: "Your discoveries could not be loaded".into(),
+                        },
+                    )
+                    .await;
                     return;
                 }
             },
@@ -755,21 +799,13 @@ async fn session(mut socket: WebSocket, state: AppState) {
                 WORLD_REGION_RADIUS,
                 WORLD_REGION_FLOOR_RADIUS,
             ),
-            world.npc_views_near_floors(
-                position,
-                WORLD_REGION_RADIUS,
-                WORLD_REGION_FLOOR_RADIUS,
-            ),
+            world.npc_views_near_floors(position, WORLD_REGION_RADIUS, WORLD_REGION_FLOOR_RADIUS),
             world.resource_nodes_near_floors(
                 position,
                 WORLD_REGION_RADIUS,
                 WORLD_REGION_FLOOR_RADIUS,
             ),
-            world.map_view_near_floors(
-                position,
-                WORLD_REGION_RADIUS,
-                WORLD_REGION_FLOOR_RADIUS,
-            ),
+            world.map_view_near_floors(position, WORLD_REGION_RADIUS, WORLD_REGION_FLOOR_RADIUS),
         )
     };
     info!(%id, %name, %client_version, "player connected");
@@ -801,10 +837,19 @@ async fn session(mut socket: WebSocket, state: AppState) {
         },
     )
     .await;
-    state.broadcast_near(position, ServerMessage::PlayerJoined {
-        player: player.view.clone(),
-    }).await;
+    state
+        .broadcast_near(
+            position,
+            ServerMessage::PlayerJoined {
+                player: player.view.clone(),
+            },
+        )
+        .await;
     let mut streamed_region_center = position;
+    // TIBIAGAME_STREAMING_FIX_V2
+    // Region construction is speculative prefetch work. It must never sit on
+    // the MoveRequest critical path or fight the stair-transition frame.
+    let region_stream_generation = Arc::new(AtomicU64::new(0));
 
     let (mut outgoing, mut incoming) = socket.split();
     let writer = tokio::spawn(async move {
@@ -854,41 +899,64 @@ async fn session(mut socket: WebSocket, state: AppState) {
                             .await;
 
                         if refresh_world_region {
-                            let world = state.world.read().await;
-                            let message = world
-                                .requires_region_streaming(WORLD_REGION_RADIUS)
-                                .then(|| ServerMessage::WorldRegion {
-                                    map: Box::new(world.map_view_near_floors(
-                                        position,
-                                        WORLD_REGION_RADIUS,
-                                        WORLD_REGION_FLOOR_RADIUS,
-                                    )),
-                                    ground_items: world.ground_items_near_floors(
-                                        position,
-                                        WORLD_REGION_RADIUS,
-                                        WORLD_REGION_FLOOR_RADIUS,
-                                    ),
-                                    creatures: world.creature_views_near_floors(
-                                        position,
-                                        WORLD_REGION_RADIUS,
-                                        WORLD_REGION_FLOOR_RADIUS,
-                                    ),
-                                    npcs: world.npc_views_near_floors(
-                                        position,
-                                        WORLD_REGION_RADIUS,
-                                        WORLD_REGION_FLOOR_RADIUS,
-                                    ),
-                                    resource_nodes: world.resource_nodes_near_floors(
-                                        position,
-                                        WORLD_REGION_RADIUS,
-                                        WORLD_REGION_FLOOR_RADIUS,
-                                    ),
-                                });
-                            drop(world);
-                            if let Some(message) = message {
-                                state.publish_update(id, message);
-                            }
+                            // Move immediately using the region/floors already in
+                            // memory. Build the replacement region later on a
+                            // separate task. 100 ms separates CPU/serialization
+                            // work from the movement/stair frame, while the
+                            // radius-48 payload still leaves a large safety margin.
                             streamed_region_center = position;
+                            let region_state = state.clone();
+                            let generation_counter = Arc::clone(&region_stream_generation);
+                            let generation = generation_counter.fetch_add(1, Ordering::AcqRel) + 1;
+                            tokio::spawn(async move {
+                                tokio::time::sleep(Duration::from_millis(100)).await;
+                                if generation_counter.load(Ordering::Acquire) != generation {
+                                    return;
+                                }
+
+                                let message = {
+                                    let world = region_state.world.read().await;
+                                    world.requires_region_streaming(WORLD_REGION_RADIUS).then(
+                                        || ServerMessage::WorldRegion {
+                                            map: Box::new(world.map_view_near_floors(
+                                                position,
+                                                WORLD_REGION_RADIUS,
+                                                WORLD_REGION_FLOOR_RADIUS,
+                                            )),
+                                            ground_items: world.ground_items_near_floors(
+                                                position,
+                                                WORLD_REGION_RADIUS,
+                                                WORLD_REGION_FLOOR_RADIUS,
+                                            ),
+                                            creatures: world.creature_views_near_floors(
+                                                position,
+                                                WORLD_REGION_RADIUS,
+                                                WORLD_REGION_FLOOR_RADIUS,
+                                            ),
+                                            npcs: world.npc_views_near_floors(
+                                                position,
+                                                WORLD_REGION_RADIUS,
+                                                WORLD_REGION_FLOOR_RADIUS,
+                                            ),
+                                            resource_nodes: world.resource_nodes_near_floors(
+                                                position,
+                                                WORLD_REGION_RADIUS,
+                                                WORLD_REGION_FLOOR_RADIUS,
+                                            ),
+                                        },
+                                    )
+                                };
+
+                                // A newer requested center supersedes this job.
+                                // This prevents an older async region from arriving
+                                // after a newer one and moving the client cache back.
+                                if generation_counter.load(Ordering::Acquire) != generation {
+                                    return;
+                                }
+                                if let Some(message) = message {
+                                    region_state.publish_update(id, message);
+                                }
+                            });
                         }
                     }
                     Err(reason) => {
@@ -1602,24 +1670,53 @@ async fn buy_from_npc(
     );
 }
 
-async fn sell_to_npc(state: &AppState, player_id: Uuid, npc_id: &str, instance_id: Uuid, quantity: u16) {
+async fn sell_to_npc(
+    state: &AppState,
+    player_id: Uuid,
+    npc_id: &str,
+    instance_id: Uuid,
+    quantity: u16,
+) {
     let mut world = state.world.write().await;
     let backup = world.clone();
     if let Err(reason) = world.sell_to_npc(player_id, npc_id, instance_id, quantity) {
-        state.private(player_id, ServerMessage::Error { code: reason.into(), message: shop_error_message(reason).into() });
+        state.private(
+            player_id,
+            ServerMessage::Error {
+                code: reason.into(),
+                message: shop_error_message(reason).into(),
+            },
+        );
         return;
     }
-    let (inventory, inventory_weight, max_capacity) = world.inventory_state(player_id).expect("active player");
+    let (inventory, inventory_weight, max_capacity) =
+        world.inventory_state(player_id).expect("active player");
     if let Some(database) = &state.database
-        && let Err(error) = database.persist_item_state(player_id, &inventory, world.ground_items()).await
+        && let Err(error) = database
+            .persist_item_state(player_id, &inventory, world.ground_items())
+            .await
     {
         *world = backup;
         warn!(%player_id, %error, "NPC sale transaction rolled back");
-        state.private(player_id, ServerMessage::Error { code: "shop_transaction_failed".into(), message: "The sale could not be saved".into() });
+        state.private(
+            player_id,
+            ServerMessage::Error {
+                code: "shop_transaction_failed".into(),
+                message: "The sale could not be saved".into(),
+            },
+        );
         return;
     }
     drop(world);
-    state.private(player_id, ServerMessage::InventoryChanged { player_id, inventory, inventory_weight, max_capacity });
+    state.private(
+        player_id,
+        ServerMessage::InventoryChanged {
+            player_id,
+            inventory,
+            inventory_weight,
+            max_capacity,
+        },
+    );
 }
 
 fn shop_error_message(code: &str) -> &'static str {
@@ -1834,49 +1931,83 @@ async fn inspect_world_object(state: &AppState, player_id: Uuid, object_id: &str
         match world.can_inspect_world_object(player_id, object_id) {
             Ok(Some(text)) => text,
             Ok(None) => {
-                state.private(player_id, ServerMessage::Error {
-                    code: "already_discovered".into(),
-                    message: "You have already studied this clue.".into(),
-                });
+                state.private(
+                    player_id,
+                    ServerMessage::Error {
+                        code: "already_discovered".into(),
+                        message: "You have already studied this clue.".into(),
+                    },
+                );
                 return;
             }
             Err(reason) => {
-                state.private(player_id, ServerMessage::Error {
-                    code: reason.into(),
-                    message: "There is nothing more to learn from that here.".into(),
-                });
+                state.private(
+                    player_id,
+                    ServerMessage::Error {
+                        code: reason.into(),
+                        message: "There is nothing more to learn from that here.".into(),
+                    },
+                );
                 return;
             }
         }
     };
     let mut world = state.world.write().await;
     let backup = world.clone();
-    let (newly_discovered, inventory_changed) = match world.record_world_object_discovery(player_id, object_id) {
-        Ok(result) => result,
-        Err(reason) => {
-            state.private(player_id, ServerMessage::Error { code: reason.into(), message: "You cannot carry what you found.".into() });
-            return;
-        }
-    };
-    let (inventory, inventory_weight, max_capacity) = world.inventory_state(player_id).expect("active player");
+    let (newly_discovered, inventory_changed) =
+        match world.record_world_object_discovery(player_id, object_id) {
+            Ok(result) => result,
+            Err(reason) => {
+                state.private(
+                    player_id,
+                    ServerMessage::Error {
+                        code: reason.into(),
+                        message: "You cannot carry what you found.".into(),
+                    },
+                );
+                return;
+            }
+        };
+    let (inventory, inventory_weight, max_capacity) =
+        world.inventory_state(player_id).expect("active player");
     if let Some(database) = &state.database
-        && let Err(error) = database.persist_discovery_and_inventory(player_id, object_id, &inventory).await
+        && let Err(error) = database
+            .persist_discovery_and_inventory(player_id, object_id, &inventory)
+            .await
     {
         *world = backup;
         warn!(%player_id, %object_id, %error, "could not save discovery");
-        state.private(player_id, ServerMessage::Error { code: "discovery_save_failed".into(), message: "What you noticed slips from memory; try again.".into() });
+        state.private(
+            player_id,
+            ServerMessage::Error {
+                code: "discovery_save_failed".into(),
+                message: "What you noticed slips from memory; try again.".into(),
+            },
+        );
         return;
     }
     drop(world);
     if inventory_changed {
-        state.private(player_id, ServerMessage::InventoryChanged { player_id, inventory, inventory_weight, max_capacity });
+        state.private(
+            player_id,
+            ServerMessage::InventoryChanged {
+                player_id,
+                inventory,
+                inventory_weight,
+                max_capacity,
+            },
+        );
     }
-    state.private(player_id, ServerMessage::DiscoveryChanged {
+    state.private(
         player_id,
-        discovery_id: object_id.into(),
-        text: text.into(),
-        reward_item_definition_id: (newly_discovered && object_id == "mire_eastward_slick").then(|| "bog_ichor".into()),
-    });
+        ServerMessage::DiscoveryChanged {
+            player_id,
+            discovery_id: object_id.into(),
+            text: text.into(),
+            reward_item_definition_id: (newly_discovered && object_id == "mire_eastward_slick")
+                .then(|| "bog_ichor".into()),
+        },
+    );
 }
 
 fn mining_error_message(code: &str) -> &'static str {
@@ -2162,7 +2293,9 @@ async fn send_crafting_update(state: &AppState, update: world::CraftingUpdate) {
 fn crafting_error_message(code: &str) -> &'static str {
     match code {
         "cannot_craft_while_trading" => "Finish or cancel your trade before crafting",
-        "crafting_skill_not_selected" => "Choose the matching secondary profession before crafting this recipe",
+        "crafting_skill_not_selected" => {
+            "Choose the matching secondary profession before crafting this recipe"
+        }
         "crafting_tool_required" => "Equip the matching profession tool before crafting",
         "crafting_skill_too_low" => "Your matching crafting skill is too low",
         "missing_craft_material" => "You do not have enough crafting materials",
@@ -2361,12 +2494,15 @@ async fn dispatch_world_events(state: &AppState, events: Vec<WorldEvent>) {
                     max_capacity,
                 });
                 if let Some((inventory, inventory_weight, max_capacity)) = inventory_state {
-                    state.private(player.id, ServerMessage::InventoryChanged {
-                        player_id: player.id,
-                        inventory,
-                        inventory_weight,
-                        max_capacity,
-                    });
+                    state.private(
+                        player.id,
+                        ServerMessage::InventoryChanged {
+                            player_id: player.id,
+                            inventory,
+                            inventory_weight,
+                            max_capacity,
+                        },
+                    );
                 }
             }
             WorldEvent::PlayerDied {
