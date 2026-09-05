@@ -1,5 +1,5 @@
 import { useLoader } from "@react-three/fiber";
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { BuildingView, WindowView } from "../protocol";
@@ -50,6 +50,7 @@ type HouseWallInstance = { position: [number, number, number]; size: [number, nu
 /** Batches only the unchanged, solid facade model. Its timber trim is authored
  * on local -Z, so this intentionally retains the source model's original
  * orientation rather than using the door/window facing transform. */
+// TIBIAGAME_STREAMING_FIX_V6
 export function InstancedMedievalHouseWalls({ segments }: { segments: readonly HouseWallInstance[] }) {
   const gltf = useLoader(GLTFLoader, MEDIEVAL_VILLAGE_ASSET);
   const parts = useMemo(() => {
@@ -67,7 +68,7 @@ export function InstancedMedievalHouseWalls({ segments }: { segments: readonly H
     return next;
   }, [gltf.scenes]);
   const meshes = useRef<(THREE.InstancedMesh | null)[]>([]);
-  useLayoutEffect(() => {
+  useEffect(() => {
     const wallMatrix = new THREE.Matrix4(); const translation = new THREE.Vector3(); const scale = new THREE.Vector3(); const matrix = new THREE.Matrix4();
     segments.forEach((segment, instanceIndex) => {
       const horizontal = segment.size[0] > segment.size[2];

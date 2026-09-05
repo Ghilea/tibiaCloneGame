@@ -54,6 +54,10 @@ const BRIDGE_ACTOR_Y = 0.23;
 const RENDER_CHUNK_SIZE = 32;
 const RENDER_PADDING = 8;
 
+// TIBIAGAME_STREAMING_FIX_V6
+const RETAINED_STATIC_CHUNK_SIZE = 24;
+const RETAINED_STATIC_CACHE_LIMIT = 72;
+
 type ThreeWorldProps = {
   world: WorldState;
   input: InputController;
@@ -71,18 +75,20 @@ export function ThreeWorld({ world, input, onReady, showDebug = true }: ThreeWor
         className="three-world"
         onContextMenu={(event) => event.preventDefault()}
         orthographic
-        shadows
+        // TIBIAGAME_STREAMING_FIX_V6
+        // Dynamic lighting remains enabled. Real-time shadow maps are disabled
+        // because rebuilding shadow programs for streamed geometry caused
+        // multi-hundred-ms stalls.
+        shadows={false}
         dpr={[1, 1.6]}
         camera={{ near: 0.1, far: 180, position: [0, CAMERA_HEIGHT, CAMERA_TOPDOWN_OFFSET], zoom: CAMERA_ZOOM }}
         gl={{ antialias: true, powerPreference: "high-performance" }}
         onCreated={({ gl }) => {
           gl.outputColorSpace = THREE.SRGBColorSpace;
-          gl.shadowMap.enabled = true;
-          gl.shadowMap.type = THREE.PCFShadowMap;
-          // The environment is static. Avoid drawing every wall and tree a
-          // second time on every frame just to reproduce the same shadow map.
+          // TIBIAGAME_STREAMING_FIX_V6
+          // Keep Three.js lights, but do not run a second shadow render pass.
+          gl.shadowMap.enabled = false;
           gl.shadowMap.autoUpdate = false;
-          gl.shadowMap.needsUpdate = true;
           gl.setClearColor(0x0b1210);
         }}
       >
@@ -110,26 +116,6 @@ function SceneReady({ onReady }: { onReady?: () => void }) {
     reported.current = true;
     onReady?.();
   });
-  return null;
-}
-
-function StaticShadowMap({
-  revision,
-  movementKey,
-}: {
-  revision: MapView;
-  movementKey: string;
-}) {
-  const { gl } = useThree();
-  useEffect(() => {
-    // TIBIAGAME_STREAMING_FIX_V3_1
-    // A tile movement changes movementKey and cancels this timer. The static
-    // shadow map is refreshed only after movement has been quiet for 450 ms.
-    const handle = window.setTimeout(() => {
-      gl.shadowMap.needsUpdate = true;
-    }, 450);
-    return () => window.clearTimeout(handle);
-  }, [gl, revision, movementKey]);
   return null;
 }
 
@@ -182,6 +168,147 @@ function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHov
     streamRegionRevision,
   ]);
 
+  // TIBIAGAME_STREAMING_FIX_V6
+  const staticChunkX = Math.floor((local?.position.x ?? 0) / RETAINED_STATIC_CHUNK_SIZE);
+  const staticChunkY = Math.floor((local?.position.y ?? 0) / RETAINED_STATIC_CHUNK_SIZE);
+  const [retainedStaticChunks, setRetainedStaticChunks] = useState<RetainedStaticChunkData[]>([]);
+  const retainedStaticKeys = useRef(new Set<string>());
+
+  useEffect(() => {
+    const sourceAtStart = latestMapRef.current;
+    if (!sourceAtStart || !local) return;
+
+    let cancelled = false;
+    let frameHandle: number | null = null;
+    let idleHandle: number | null = null;
+    let timeoutHandle: number | null = null;
+
+    const offsets: readonly [number, number][] = [
+      [0, 0],
+      [1, 0], [-1, 0], [0, 1], [0, -1],
+      [1, 1], [1, -1], [-1, 1], [-1, -1],
+    ];
+
+    const visibleSpecs = offsets.map(([dx, dy]) => ({
+      floor,
+      chunkX: staticChunkX + dx,
+      chunkY: staticChunkY + dy,
+    }));
+
+    const hiddenSpecs = [floor - 1, floor + 1].flatMap((prefetchFloor) =>
+      offsets.map(([dx, dy]) => ({
+        floor: prefetchFloor,
+        chunkX: staticChunkX + dx,
+        chunkY: staticChunkY + dy,
+      })),
+    );
+
+    const addChunk = (spec: { floor: number; chunkX: number; chunkY: number }) => {
+      if (cancelled) return;
+      const key = retainedStaticChunkKey(spec.floor, spec.chunkX, spec.chunkY);
+      if (retainedStaticKeys.current.has(key)) return;
+
+      // Always consume the newest streamed map available at the moment this
+      // chunk is built. Existing chunks are intentionally left untouched.
+      const source = latestMapRef.current;
+      if (!source) return;
+      const chunk = createRetainedStaticChunk(source, spec.floor, spec.chunkX, spec.chunkY);
+      retainedStaticKeys.current.add(key);
+
+      setRetainedStaticChunks((previous) => {
+        const next = [...previous, chunk];
+        if (next.length <= RETAINED_STATIC_CACHE_LIMIT) return next;
+
+        // FIFO eviction is deliberately conservative and happens one chunk at
+        // a time only after the cache is large. Never evict the current 3x3.
+        const removableIndex = next.findIndex((entry) =>
+          entry.floor !== floor
+          || Math.abs(entry.chunkX - staticChunkX) > 1
+          || Math.abs(entry.chunkY - staticChunkY) > 1
+        );
+        if (removableIndex < 0) return next;
+        const [removed] = next.splice(removableIndex, 1);
+        retainedStaticKeys.current.delete(removed.key);
+        return next;
+      });
+    };
+
+    let visibleIndex = 0;
+    const pumpVisible = () => {
+      if (cancelled) return;
+      while (visibleIndex < visibleSpecs.length) {
+        const spec = visibleSpecs[visibleIndex++];
+        const key = retainedStaticChunkKey(spec.floor, spec.chunkX, spec.chunkY);
+        if (retainedStaticKeys.current.has(key)) continue;
+        addChunk(spec);
+        frameHandle = window.requestAnimationFrame(pumpVisible);
+        return;
+      }
+      scheduleHidden();
+    };
+
+    let hiddenIndex = 0;
+    const pumpHidden = () => {
+      if (cancelled) return;
+      while (hiddenIndex < hiddenSpecs.length) {
+        const spec = hiddenSpecs[hiddenIndex++];
+        const key = retainedStaticChunkKey(spec.floor, spec.chunkX, spec.chunkY);
+        if (retainedStaticKeys.current.has(key)) continue;
+        addChunk(spec);
+        scheduleHidden();
+        return;
+      }
+    };
+
+    const scheduleHidden = () => {
+      if (cancelled || hiddenIndex >= hiddenSpecs.length) return;
+      const idleWindow = window as Window & {
+        requestIdleCallback?: (callback: () => void) => number;
+      };
+      if (idleWindow.requestIdleCallback) {
+        idleHandle = idleWindow.requestIdleCallback(pumpHidden);
+      } else {
+        timeoutHandle = window.setTimeout(pumpHidden, 48);
+      }
+    };
+
+    pumpVisible();
+
+    return () => {
+      cancelled = true;
+      if (frameHandle !== null) window.cancelAnimationFrame(frameHandle);
+      const idleWindow = window as Window & {
+        cancelIdleCallback?: (handle: number) => void;
+      };
+      if (idleHandle !== null && idleWindow.cancelIdleCallback) {
+        idleWindow.cancelIdleCallback(idleHandle);
+      }
+      if (timeoutHandle !== null) window.clearTimeout(timeoutHandle);
+    };
+  }, [floor, staticChunkX, staticChunkY, streamRegionRevision]);
+
+  // Door/window state is genuinely dynamic. Refresh only the local 3x3 on
+  // those rare mutations; ordinary world_region packets never replace chunks.
+  useEffect(() => {
+    if (!dynamicMapRevision) return;
+    const source = latestMapRef.current;
+    if (!source) return;
+    setRetainedStaticChunks((previous) => previous.map((entry) => {
+      if (
+        entry.floor !== floor
+        || Math.abs(entry.chunkX - staticChunkX) > 1
+        || Math.abs(entry.chunkY - staticChunkY) > 1
+      ) return entry;
+      return createRetainedStaticChunk(source, entry.floor, entry.chunkX, entry.chunkY);
+    }));
+  }, [dynamicMapRevision, floor, staticChunkX, staticChunkY]);
+
+  const activeStaticChunkCount = retainedStaticChunks.reduce(
+    (count, entry) => count + (entry.floor === floor ? 1 : 0),
+    0,
+  );
+  const staticSceneRevision = `${floor}:${staticChunkX}:${staticChunkY}:${activeStaticChunkCount}:${dynamicMapRevision}`;
+
   if (!map || !region) return null;
   const bridgeTiles = useMemo(() => new Set(region.map.bridges.map(tileKey)), [region.map.bridges]);
   const actorGroundY = (position: Position) => bridgeTiles.has(tileKey(position)) ? BRIDGE_ACTOR_Y : GROUND_ACTOR_Y;
@@ -207,18 +334,27 @@ function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHov
     <>
       <Atmosphere torches={region.map.torches} local={local?.position} visualTarget={localVisualPosition} playerLight={playerLight} />
       <FollowCamera target={local?.position} visualTarget={localVisualPosition} mapWidth={map.width} mapHeight={map.height} />
-      <Terrain map={region.map} floor={floor} bounds={region.bounds} onGround={onGround} />
-      {/* TIBIAGAME_STREAMING_FIX_V5
-          Late structure assets may suspend locally, but must never blank the
-          terrain, player or entire streamed world. */}
-      <Suspense fallback={null}>
-        <Structures map={region.map} input={input} world={world} discoveryRevision={world.worldObjectCallout?.key ?? 0} floor={floor} indoorBuildingId={indoorBuildingId} onHover={onLootHover} />
-      </Suspense>
-      <StaticShadowMap
-        revision={region.map}
-        movementKey={local ? `${local.position.x}:${local.position.y}:${local.position.z}` : "none"}
+      {retainedStaticChunks.map((chunk) => (
+        <RetainedStaticChunk
+          key={chunk.key}
+          chunk={chunk}
+          activeFloor={floor}
+          input={input}
+          world={world}
+          discoveryRevision={world.worldObjectCallout?.key ?? 0}
+          indoorBuildingId={indoorBuildingId}
+          onHover={onLootHover}
+          onGround={onGround}
+        />
+      ))}
+      <OcclusionController
+        target={local?.position}
+        visualTarget={localVisualPosition}
+        sceneRevision={staticSceneRevision}
+        floor={floor}
+        chunkX={staticChunkX}
+        chunkY={staticChunkY}
       />
-      <OcclusionController target={local?.position} visualTarget={localVisualPosition} sceneRevision={region.map} />
       {players.map((player) => (
         <PlayerActor
           key={player.id}
@@ -316,6 +452,68 @@ function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHov
     </>
   );
 }
+
+type RetainedStaticChunkData = {
+  key: string;
+  floor: number;
+  chunkX: number;
+  chunkY: number;
+  map: MapView;
+  bounds: RenderBounds;
+};
+
+function retainedStaticChunkKey(floor: number, chunkX: number, chunkY: number) {
+  return `${floor}:${chunkX}:${chunkY}`;
+}
+
+const RetainedStaticChunk = memo(function RetainedStaticChunk({
+  chunk,
+  activeFloor,
+  input,
+  world,
+  discoveryRevision,
+  indoorBuildingId,
+  onHover,
+  onGround,
+}: {
+  chunk: RetainedStaticChunkData;
+  activeFloor: number;
+  input: InputController;
+  world: WorldState;
+  discoveryRevision: number;
+  indoorBuildingId: string | null;
+  onHover: (hover: { label: string; x: number; y: number } | null) => void;
+  onGround: (event: ThreeEvent<PointerEvent>) => void;
+}) {
+  return (
+    <group
+      visible={chunk.floor === activeFloor}
+      userData={{
+        streamFloor: chunk.floor,
+        streamChunkX: chunk.chunkX,
+        streamChunkY: chunk.chunkY,
+      }}
+    >
+      <Terrain
+        map={chunk.map}
+        floor={chunk.floor}
+        bounds={chunk.bounds}
+        onGround={onGround}
+      />
+      <Suspense fallback={null}>
+        <Structures
+          map={chunk.map}
+          input={input}
+          world={world}
+          discoveryRevision={discoveryRevision}
+          floor={chunk.floor}
+          indoorBuildingId={chunk.floor === activeFloor ? indoorBuildingId : null}
+          onHover={onHover}
+        />
+      </Suspense>
+    </group>
+  );
+});
 
 const Terrain = memo(function Terrain({
   map,
@@ -589,20 +787,26 @@ function WaterTiles({ positions }: { positions: readonly Position[] }) {
   );
 }
 
+const worldTextureCloneCache = new Map<string, THREE.Texture>();
+
 function useWorldTexture(path: string, repeatX = 1, repeatY = 1) {
   const source = useLoader(THREE.TextureLoader, path);
   const { gl } = useThree();
-  const texture = useMemo(() => {
+  return useMemo(() => {
+    const anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy());
+    const key = `${path}|${repeatX.toFixed(3)}|${repeatY.toFixed(3)}|${anisotropy}`;
+    const cached = worldTextureCloneCache.get(key);
+    if (cached) return cached;
+
     const clone = source.clone();
     clone.wrapS = clone.wrapT = THREE.RepeatWrapping;
     clone.repeat.set(repeatX, repeatY);
     clone.colorSpace = THREE.SRGBColorSpace;
-    clone.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy());
+    clone.anisotropy = anisotropy;
     clone.needsUpdate = true;
+    worldTextureCloneCache.set(key, clone);
     return clone;
-  }, [gl, repeatX, repeatY, source]);
-  useEffect(() => () => texture.dispose(), [texture]);
-  return texture;
+  }, [gl, path, repeatX, repeatY, source]);
 }
 
 const Structures = memo(function Structures({ map, input, world, discoveryRevision, floor, indoorBuildingId, onHover }: { map: NonNullable<WorldState["map"]>; input: InputController; world: WorldState; discoveryRevision: number; floor: number; indoorBuildingId: string | null; onHover: (hover: { label: string; x: number; y: number } | null) => void }) {
@@ -1383,7 +1587,21 @@ function FollowCamera({ target, visualTarget, mapWidth, mapHeight }: { target?: 
   return null;
 }
 
-function OcclusionController({ target, visualTarget, sceneRevision }: { target?: Position; visualTarget: MutableRefObject<THREE.Vector3>; sceneRevision: MapView }) {
+function OcclusionController({
+  target,
+  visualTarget,
+  sceneRevision,
+  floor,
+  chunkX,
+  chunkY,
+}: {
+  target?: Position;
+  visualTarget: MutableRefObject<THREE.Vector3>;
+  sceneRevision: string;
+  floor: number;
+  chunkX: number;
+  chunkY: number;
+}) {
   const { camera, scene } = useThree();
   const ray = useMemo(() => new THREE.Ray(), []);
   // TIBIAGAME_STREAMING_FIX_V5
@@ -1407,6 +1625,18 @@ function OcclusionController({ target, visualTarget, sceneRevision }: { target?:
     const roots: THREE.Object3D[] = [];
 
     const visit = (node: THREE.Object3D) => {
+      const streamFloor = node.userData.streamFloor;
+      if (typeof streamFloor === "number" && streamFloor !== floor) return;
+      const streamChunkX = node.userData.streamChunkX;
+      const streamChunkY = node.userData.streamChunkY;
+      if (
+        typeof streamChunkX === "number"
+        && typeof streamChunkY === "number"
+        && (
+          Math.abs(streamChunkX - chunkX) > 1
+          || Math.abs(streamChunkY - chunkY) > 1
+        )
+      ) return;
       if (node.userData.occluder) {
         roots.push(node);
         return;
@@ -1451,7 +1681,7 @@ function OcclusionController({ target, visualTarget, sceneRevision }: { target?:
       cancelled = true;
       if (frame !== null) window.cancelAnimationFrame(frame);
     };
-  }, [scene, sceneRevision]);
+  }, [chunkX, chunkY, floor, scene, sceneRevision]);
   useFrame(({ clock }) => {
     if (!target || clock.elapsedTime - lastCheckAt.current < 0.15) return;
     const rendered = visualTarget.current;
@@ -1685,6 +1915,80 @@ type RenderBounds = {
   height: number;
   floor: number;
 };
+
+function createRetainedStaticChunk(
+  map: MapView,
+  floor: number,
+  chunkX: number,
+  chunkY: number,
+): RetainedStaticChunkData {
+  const minX = Math.max(0, chunkX * RETAINED_STATIC_CHUNK_SIZE);
+  const minY = Math.max(0, chunkY * RETAINED_STATIC_CHUNK_SIZE);
+  const maxX = Math.min(map.width, (chunkX + 1) * RETAINED_STATIC_CHUNK_SIZE);
+  const maxY = Math.min(map.height, (chunkY + 1) * RETAINED_STATIC_CHUNK_SIZE);
+  const bounds: RenderBounds = {
+    minX,
+    minY,
+    maxX,
+    maxY,
+    width: Math.max(1, maxX - minX),
+    height: Math.max(1, maxY - minY),
+    floor,
+  };
+
+  const positions = (entries: readonly Position[]) =>
+    entries.filter((entry) => insideRenderBounds(entry, bounds));
+
+  // A building is owned by the chunk containing its origin. It may extend
+  // across a chunk boundary, but is rendered exactly once.
+  const buildings = map.buildings.filter((building) =>
+    building.floor === floor
+    && building.x >= minX
+    && building.x < maxX
+    && building.y >= minY
+    && building.y < maxY
+  );
+  const belongsToOwnedBuilding = (position: Position) =>
+    buildings.some((building) => insideBuilding(position, building));
+
+  const chunkMap: MapView = {
+    ...map,
+    blocked: positions(map.blocked),
+    water: positions(map.water),
+    bridges: positions(map.bridges),
+    trees: positions(map.trees),
+    roads: positions(map.roads),
+    floors: positions(map.floors),
+    houseWalls: positions(map.houseWalls),
+    castleWalls: positions(map.castleWalls),
+    windows: map.windows.filter((entry) =>
+      insideRenderBounds(entry.position, bounds) || belongsToOwnedBuilding(entry.position)
+    ),
+    torches: positions(map.torches),
+    terrainMaterials: map.terrainMaterials.filter((entry) =>
+      insideRenderBounds(entry.position, bounds)
+    ),
+    objects: (map.objects ?? []).filter((entry) =>
+      insideRenderBounds(entry.position, bounds)
+    ),
+    buildings,
+    doors: map.doors.filter((entry) =>
+      insideRenderBounds(entry.position, bounds) || belongsToOwnedBuilding(entry.position)
+    ),
+    stairs: map.stairs.filter((entry) =>
+      insideRenderBounds(entry.from, bounds) || insideRenderBounds(entry.to, bounds)
+    ),
+  };
+
+  return {
+    key: retainedStaticChunkKey(floor, chunkX, chunkY),
+    floor,
+    chunkX,
+    chunkY,
+    map: chunkMap,
+    bounds,
+  };
+}
 
 function createRenderRegion(map: MapView, floor: number, chunkX: number, chunkY: number) {
   const minX = Math.max(0, chunkX * RENDER_CHUNK_SIZE - RENDER_PADDING);

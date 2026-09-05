@@ -1,5 +1,5 @@
 import { useFrame, useLoader } from "@react-three/fiber";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { BuildingView, WindowView } from "../protocol";
 import { HOUSE_DOOR_PLACEMENT, type DoorwayLayout, type FacadeOpeningLayout } from "./DoorwayLayout";
@@ -45,6 +45,7 @@ export function HousePlinth({ position, size }: { position: [number, number, num
   );
 }
 
+// TIBIAGAME_STREAMING_FIX_V6
 export function InstancedHousePlinths({ segments }: { segments: readonly { position: [number, number, number]; size: [number, number, number] }[] }) {
   const texture = useLoader(THREE.TextureLoader, "/assets/world/aldoria-castle-stone-v2.png");
   const horizontal = useMemo(() => segments.filter((segment) => segment.size[0] > segment.size[2]), [segments]);
@@ -53,7 +54,7 @@ export function InstancedHousePlinths({ segments }: { segments: readonly { posit
   const verticalMesh = useRef<THREE.InstancedMesh>(null);
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.colorSpace = THREE.SRGBColorSpace;
-  useLayoutEffect(() => {
+  useEffect(() => {
     const matrix = new THREE.Matrix4();
     horizontal.forEach((segment, index) => {
       if (!horizontalMesh.current) return;
