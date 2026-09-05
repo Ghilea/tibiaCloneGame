@@ -862020,15 +862020,6 @@
   ],
   "doors": [
     {
-      "id": "old_provision_cellar_door",
-      "position": {
-        "x": 64,
-        "y": 28,
-        "z": 7
-      },
-      "open": false
-    },
-    {
       "id": "rivercross_quartermaster_door",
       "position": {
         "x": 79,
@@ -862918,6 +862909,15 @@
         "z": 7
       },
       "open": false
+    },
+    {
+      "id": "door_7_64_28",
+      "position": {
+        "x": 64,
+        "y": 28,
+        "z": 7
+      },
+      "open": true
     }
   ],
   "stairs": [

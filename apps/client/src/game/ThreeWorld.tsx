@@ -1,5 +1,5 @@
 import { Canvas, type ThreeEvent, useFrame, useLoader, useThree } from "@react-three/fiber";
-import { memo, Suspense, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type MutableRefObject, type RefObject } from "react";
+import { memo, startTransition, Suspense, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type MutableRefObject, type RefObject } from "react";
 import * as THREE from "three";
 
 import type {
@@ -55,8 +55,13 @@ const RENDER_CHUNK_SIZE = 32;
 const RENDER_PADDING = 8;
 
 // TIBIAGAME_STREAMING_FIX_V6
+// TIBIAGAME_STREAMING_FIX_V7
 const RETAINED_STATIC_CHUNK_SIZE = 24;
-const RETAINED_STATIC_CACHE_LIMIT = 72;
+// TIBIAGAME_STREAMING_FIX_V11
+const RETAINED_STATIC_CACHE_LIMIT = 24;
+const RETAINED_STATIC_HARD_LIMIT = 40;
+// TIBIAGAME_STREAMING_FIX_V8: superseded by authoritative completeness.
+ // TIBIAGAME_STREAMING_FIX_V9: immutable retained chunks require full coverage.
 
 type ThreeWorldProps = {
   world: WorldState;
@@ -168,6 +173,50 @@ function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHov
     streamRegionRevision,
   ]);
 
+  // TIBIAGAME_STREAMING_FIX_V13
+  // Terrain is static world knowledge. A later sliding world_region is allowed
+  // to ADD newly discovered ground data, but it must never remove a road,
+  // floor, water tile or material tile that has already been observed.
+  //
+  // Cache by 32x32 render chunk (including createRenderRegion's padding), so
+  // region recenters cannot make previously visible terrain disappear.
+  const immediateStreamRegionRevision = world.streamRegionRevision;
+  const terrainRegionsRef = useRef(
+    new Map<string, ReturnType<typeof createRenderRegion>>(),
+  );
+  const terrainRegion = useMemo(() => {
+    void immediateStreamRegionRevision;
+    const source = mapReady ? latestMapRef.current : null;
+    if (!source) return null;
+
+    const key = `${floor}:${chunkX}:${chunkY}`;
+    const candidate = createRenderRegion(source, floor, chunkX, chunkY);
+    const previous = terrainRegionsRef.current.get(key);
+    const merged = previous
+      ? mergeTerrainRenderRegion(previous, candidate)
+      : candidate;
+
+    // Refresh insertion order when the active chunk is touched so FIFO cleanup
+    // favors terrain the player has not visited recently.
+    terrainRegionsRef.current.delete(key);
+    terrainRegionsRef.current.set(key, merged);
+
+    if (terrainRegionsRef.current.size > 24) {
+      const oldestKey = terrainRegionsRef.current.keys().next().value;
+      if (oldestKey && oldestKey !== key) {
+        terrainRegionsRef.current.delete(oldestKey);
+      }
+    }
+
+    return merged;
+  }, [
+    mapReady,
+    floor,
+    chunkX,
+    chunkY,
+    immediateStreamRegionRevision,
+  ]);
+
   // TIBIAGAME_STREAMING_FIX_V6
   const staticChunkX = Math.floor((local?.position.x ?? 0) / RETAINED_STATIC_CHUNK_SIZE);
   const staticChunkY = Math.floor((local?.position.y ?? 0) / RETAINED_STATIC_CHUNK_SIZE);
@@ -179,104 +228,164 @@ function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHov
     if (!sourceAtStart || !local) return;
 
     let cancelled = false;
-    let frameHandle: number | null = null;
     let idleHandle: number | null = null;
     let timeoutHandle: number | null = null;
 
-    const offsets: readonly [number, number][] = [
+    // TIBIAGAME_STREAMING_FIX_V11
+    // Only the actually needed 3x3 structure neighborhood is retained.
+    // Terrain no longer depends on this scheduler.
+    const visibleOffsets: readonly [number, number][] = [
       [0, 0],
       [1, 0], [-1, 0], [0, 1], [0, -1],
       [1, 1], [1, -1], [-1, 1], [-1, -1],
     ];
 
-    const visibleSpecs = offsets.map(([dx, dy]) => ({
+    const currentFloorSpecs = visibleOffsets.map(([dx, dy]) => ({
       floor,
       chunkX: staticChunkX + dx,
       chunkY: staticChunkY + dy,
     }));
 
-    const hiddenSpecs = [floor - 1, floor + 1].flatMap((prefetchFloor) =>
-      offsets.map(([dx, dy]) => ({
-        floor: prefetchFloor,
-        chunkX: staticChunkX + dx,
-        chunkY: staticChunkY + dy,
-      })),
-    );
+    // TIBIAGAME_STREAMING_FIX_V7
+    // Network/CPU streaming still preloads adjacent floors. GPU prewarm is
+    // limited to actual stair destinations inside the current 3x3 vicinity.
+    const stairTargetSpecs = sourceAtStart.stairs
+      .flatMap((stair) => {
+        const currentEndpoint = stair.from.z === floor
+          ? stair.from
+          : stair.to.z === floor ? stair.to : null;
+        if (!currentEndpoint) return [];
+
+        const endpointChunkX = Math.floor(
+          currentEndpoint.x / RETAINED_STATIC_CHUNK_SIZE,
+        );
+        const endpointChunkY = Math.floor(
+          currentEndpoint.y / RETAINED_STATIC_CHUNK_SIZE,
+        );
+        if (
+          Math.abs(endpointChunkX - staticChunkX) > 1
+          || Math.abs(endpointChunkY - staticChunkY) > 1
+        ) return [];
+
+        const targetEndpoint = stair.from.z === floor ? stair.to : stair.from;
+        return [{
+          floor: targetEndpoint.z,
+          chunkX: Math.floor(targetEndpoint.x / RETAINED_STATIC_CHUNK_SIZE),
+          chunkY: Math.floor(targetEndpoint.y / RETAINED_STATIC_CHUNK_SIZE),
+        }];
+      })
+      .filter((spec, index, all) =>
+        all.findIndex((candidate) =>
+          candidate.floor === spec.floor
+          && candidate.chunkX === spec.chunkX
+          && candidate.chunkY === spec.chunkY
+        ) === index
+      )
+      .slice(0, 2);
 
     const addChunk = (spec: { floor: number; chunkX: number; chunkY: number }) => {
       if (cancelled) return;
       const key = retainedStaticChunkKey(spec.floor, spec.chunkX, spec.chunkY);
       if (retainedStaticKeys.current.has(key)) return;
 
-      // Always consume the newest streamed map available at the moment this
-      // chunk is built. Existing chunks are intentionally left untouched.
       const source = latestMapRef.current;
-      if (!source) return;
-      const chunk = createRetainedStaticChunk(source, spec.floor, spec.chunkX, spec.chunkY);
+      const center = world.streamRegionCenter;
+      if (!source || !retainedChunkFullyCovered(
+        spec.floor,
+        spec.chunkX,
+        spec.chunkY,
+        center,
+        world.streamRegionRadius,
+        world.streamRegionFloorRadius,
+        source,
+      )) return;
+
+      const chunk = createRetainedStaticChunk(
+        source,
+        spec.floor,
+        spec.chunkX,
+        spec.chunkY,
+      );
       retainedStaticKeys.current.add(key);
 
-      setRetainedStaticChunks((previous) => {
-        const next = [...previous, chunk];
-        if (next.length <= RETAINED_STATIC_CACHE_LIMIT) return next;
+      startTransition(() => {
+        setRetainedStaticChunks((previous) => {
+          const next = [...previous, chunk];
+          if (next.length <= RETAINED_STATIC_HARD_LIMIT) return next;
 
-        // FIFO eviction is deliberately conservative and happens one chunk at
-        // a time only after the cache is large. Never evict the current 3x3.
-        const removableIndex = next.findIndex((entry) =>
-          entry.floor !== floor
-          || Math.abs(entry.chunkX - staticChunkX) > 1
-          || Math.abs(entry.chunkY - staticChunkY) > 1
-        );
-        if (removableIndex < 0) return next;
-        const [removed] = next.splice(removableIndex, 1);
-        retainedStaticKeys.current.delete(removed.key);
-        return next;
+          let removableIndex = -1;
+          let bestScore = -1;
+          next.forEach((entry, index) => {
+            if (
+              entry.floor === floor
+              && Math.abs(entry.chunkX - staticChunkX) <= 1
+              && Math.abs(entry.chunkY - staticChunkY) <= 1
+            ) return;
+            const floorPenalty = entry.floor === floor ? 0 : 8;
+            const score = floorPenalty
+              + Math.abs(entry.chunkX - staticChunkX)
+              + Math.abs(entry.chunkY - staticChunkY);
+            if (score > bestScore) {
+              bestScore = score;
+              removableIndex = index;
+            }
+          });
+          if (removableIndex < 0) return next;
+
+          const [removed] = next.splice(removableIndex, 1);
+          retainedStaticKeys.current.delete(removed.key);
+          return next;
+        });
       });
     };
 
-    let visibleIndex = 0;
-    const pumpVisible = () => {
-      if (cancelled) return;
-      while (visibleIndex < visibleSpecs.length) {
-        const spec = visibleSpecs[visibleIndex++];
-        const key = retainedStaticChunkKey(spec.floor, spec.chunkX, spec.chunkY);
-        if (retainedStaticKeys.current.has(key)) continue;
-        addChunk(spec);
-        frameHandle = window.requestAnimationFrame(pumpVisible);
+    // Login or a completely new floor: mount only the center immediately.
+    const centerSpec = currentFloorSpecs[0];
+    const centerKey = retainedStaticChunkKey(
+      centerSpec.floor,
+      centerSpec.chunkX,
+      centerSpec.chunkY,
+    );
+    if (!retainedStaticKeys.current.has(centerKey)) addChunk(centerSpec);
+
+    const pending = [
+      ...currentFloorSpecs.slice(1),
+      ...stairTargetSpecs,
+    ].filter((spec) => !retainedStaticKeys.current.has(
+      retainedStaticChunkKey(spec.floor, spec.chunkX, spec.chunkY),
+    ));
+
+    let cursor = 0;
+
+    const pump = (deadline?: { timeRemaining(): number }) => {
+      if (cancelled || cursor >= pending.length) return;
+      if (deadline && deadline.timeRemaining() < 5) {
+        schedule();
         return;
       }
-      scheduleHidden();
+
+      addChunk(pending[cursor++]);
+      schedule();
     };
 
-    let hiddenIndex = 0;
-    const pumpHidden = () => {
-      if (cancelled) return;
-      while (hiddenIndex < hiddenSpecs.length) {
-        const spec = hiddenSpecs[hiddenIndex++];
-        const key = retainedStaticChunkKey(spec.floor, spec.chunkX, spec.chunkY);
-        if (retainedStaticKeys.current.has(key)) continue;
-        addChunk(spec);
-        scheduleHidden();
-        return;
-      }
-    };
-
-    const scheduleHidden = () => {
-      if (cancelled || hiddenIndex >= hiddenSpecs.length) return;
+    const schedule = () => {
+      if (cancelled || cursor >= pending.length) return;
       const idleWindow = window as Window & {
-        requestIdleCallback?: (callback: () => void) => number;
+        requestIdleCallback?: (
+          callback: (deadline: { timeRemaining(): number }) => void,
+        ) => number;
       };
       if (idleWindow.requestIdleCallback) {
-        idleHandle = idleWindow.requestIdleCallback(pumpHidden);
+        idleHandle = idleWindow.requestIdleCallback(pump);
       } else {
-        timeoutHandle = window.setTimeout(pumpHidden, 48);
+        timeoutHandle = window.setTimeout(() => pump(), 64);
       }
     };
 
-    pumpVisible();
+    schedule();
 
     return () => {
       cancelled = true;
-      if (frameHandle !== null) window.cancelAnimationFrame(frameHandle);
       const idleWindow = window as Window & {
         cancelIdleCallback?: (handle: number) => void;
       };
@@ -285,7 +394,55 @@ function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHov
       }
       if (timeoutHandle !== null) window.clearTimeout(timeoutHandle);
     };
-  }, [floor, staticChunkX, staticChunkY, streamRegionRevision]);
+  }, [floor, staticChunkX, staticChunkY, immediateStreamRegionRevision]);
+
+  // V6 could evict an old chunk in the same React commit that mounted a new
+  // one. Release at most one old GPU chunk only after movement has been quiet.
+  useEffect(() => {
+    if (!local || retainedStaticChunks.length <= RETAINED_STATIC_CACHE_LIMIT) return;
+
+    const handle = window.setTimeout(() => {
+      startTransition(() => {
+        setRetainedStaticChunks((previous) => {
+          if (previous.length <= RETAINED_STATIC_CACHE_LIMIT) return previous;
+
+          let removableIndex = -1;
+          let bestScore = -1;
+          previous.forEach((entry, index) => {
+            if (
+              entry.floor === floor
+              && Math.abs(entry.chunkX - staticChunkX) <= 1
+              && Math.abs(entry.chunkY - staticChunkY) <= 1
+            ) return;
+
+            const floorPenalty = entry.floor === floor ? 0 : 8;
+            const score = floorPenalty
+              + Math.abs(entry.chunkX - staticChunkX)
+              + Math.abs(entry.chunkY - staticChunkY);
+            if (score > bestScore) {
+              bestScore = score;
+              removableIndex = index;
+            }
+          });
+
+          if (removableIndex < 0) return previous;
+          const next = [...previous];
+          const [removed] = next.splice(removableIndex, 1);
+          retainedStaticKeys.current.delete(removed.key);
+          return next;
+        });
+      });
+    }, 650);
+
+    return () => window.clearTimeout(handle);
+  }, [
+    floor,
+    local?.position.x,
+    local?.position.y,
+    retainedStaticChunks.length,
+    staticChunkX,
+    staticChunkY,
+  ]);
 
   // Door/window state is genuinely dynamic. Refresh only the local 3x3 on
   // those rare mutations; ordinary world_region packets never replace chunks.
@@ -334,6 +491,14 @@ function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHov
     <>
       <Atmosphere torches={region.map.torches} local={local?.position} visualTarget={localVisualPosition} playerLight={playerLight} />
       <FollowCamera target={local?.position} visualTarget={localVisualPosition} mapWidth={map.width} mapHeight={map.height} />
+      {/* TIBIAGAME_STREAMING_FIX_V11
+          Ground is immediate and independent from background structure chunks. */}
+      {terrainRegion && <Terrain
+        map={terrainRegion.map}
+        floor={floor}
+        bounds={terrainRegion.bounds}
+        onGround={onGround}
+      />}
       {retainedStaticChunks.map((chunk) => (
         <RetainedStaticChunk
           key={chunk.key}
@@ -460,6 +625,8 @@ type RetainedStaticChunkData = {
   chunkY: number;
   map: MapView;
   bounds: RenderBounds;
+  // TIBIAGAME_STREAMING_FIX_V9
+  castleWallContext: Position[];
 };
 
 function retainedStaticChunkKey(floor: number, chunkX: number, chunkY: number) {
@@ -474,7 +641,6 @@ const RetainedStaticChunk = memo(function RetainedStaticChunk({
   discoveryRevision,
   indoorBuildingId,
   onHover,
-  onGround,
 }: {
   chunk: RetainedStaticChunkData;
   activeFloor: number;
@@ -483,7 +649,6 @@ const RetainedStaticChunk = memo(function RetainedStaticChunk({
   discoveryRevision: number;
   indoorBuildingId: string | null;
   onHover: (hover: { label: string; x: number; y: number } | null) => void;
-  onGround: (event: ThreeEvent<PointerEvent>) => void;
 }) {
   return (
     <group
@@ -494,15 +659,10 @@ const RetainedStaticChunk = memo(function RetainedStaticChunk({
         streamChunkY: chunk.chunkY,
       }}
     >
-      <Terrain
-        map={chunk.map}
-        floor={chunk.floor}
-        bounds={chunk.bounds}
-        onGround={onGround}
-      />
       <Suspense fallback={null}>
         <Structures
           map={chunk.map}
+          castleWallContext={chunk.castleWallContext}
           input={input}
           world={world}
           discoveryRevision={discoveryRevision}
@@ -635,7 +795,7 @@ function InstancedTiles({
   texture?: THREE.Texture;
 }) {
   const mesh = useRef<THREE.InstancedMesh>(null);
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!mesh.current) return;
     const matrix = new THREE.Matrix4();
     positions.forEach((tile, index) => {
@@ -713,7 +873,7 @@ function InstancedBridgeRails({ segments, texture }: { segments: readonly { key:
   const horizontalMesh = useRef<THREE.InstancedMesh>(null);
   const verticalMesh = useRef<THREE.InstancedMesh>(null);
   const postMesh = useRef<THREE.InstancedMesh>(null);
-  useLayoutEffect(() => {
+  useEffect(() => {
     const matrix = new THREE.Matrix4();
     horizontal.forEach((segment, index) => {
       if (!horizontalMesh.current) return;
@@ -757,7 +917,7 @@ function WaterTiles({ positions }: { positions: readonly Position[] }) {
     transparent: true,
     opacity: 0.86,
   }), [waterTexture]);
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!mesh.current) return;
     const matrix = new THREE.Matrix4();
     positions.forEach((tile, index) => {
@@ -809,7 +969,7 @@ function useWorldTexture(path: string, repeatX = 1, repeatY = 1) {
   }, [gl, path, repeatX, repeatY, source]);
 }
 
-const Structures = memo(function Structures({ map, input, world, discoveryRevision, floor, indoorBuildingId, onHover }: { map: NonNullable<WorldState["map"]>; input: InputController; world: WorldState; discoveryRevision: number; floor: number; indoorBuildingId: string | null; onHover: (hover: { label: string; x: number; y: number } | null) => void }) {
+const Structures = memo(function Structures({ map, castleWallContext, input, world, discoveryRevision, floor, indoorBuildingId, onHover }: { map: NonNullable<WorldState["map"]>; castleWallContext: readonly Position[]; input: InputController; world: WorldState; discoveryRevision: number; floor: number; indoorBuildingId: string | null; onHover: (hover: { label: string; x: number; y: number } | null) => void }) {
   const buildings = useMemo(() => map.buildings.filter((entry) => entry.floor === floor), [floor, map.buildings]);
   return (
     <group>
@@ -817,12 +977,12 @@ const Structures = memo(function Structures({ map, input, world, discoveryRevisi
         <Building building={building} doors={map.doors} windows={map.windows} input={input} />
         <GabledRoof building={building} wallHeight={buildingWallHeight(building)} roofVisible={building.id !== indoorBuildingId} roofFade={building.id !== indoorBuildingId ? 1 : 0.08} />
       </group>)}
-      <StaticStructures map={map} input={input} world={world} discoveryRevision={discoveryRevision} floor={floor} buildings={buildings} onHover={onHover} />
+      <StaticStructures map={map} castleWallContext={castleWallContext} input={input} world={world} discoveryRevision={discoveryRevision} floor={floor} buildings={buildings} onHover={onHover} />
     </group>
   );
 });
 
-const StaticStructures = memo(function StaticStructures({ map, input, world, discoveryRevision: _discoveryRevision, floor, buildings, onHover }: { map: NonNullable<WorldState["map"]>; input: InputController; world: WorldState; discoveryRevision: number; floor: number; buildings: readonly BuildingView[]; onHover: (hover: { label: string; x: number; y: number } | null) => void }) {
+const StaticStructures = memo(function StaticStructures({ map, castleWallContext, input, world, discoveryRevision: _discoveryRevision, floor, buildings, onHover }: { map: NonNullable<WorldState["map"]>; castleWallContext: readonly Position[]; input: InputController; world: WorldState; discoveryRevision: number; floor: number; buildings: readonly BuildingView[]; onHover: (hover: { label: string; x: number; y: number } | null) => void }) {
   // The region slicer already guarantees that world objects are on `floor`.
   const visibleObjects = map.objects ?? [];
   const groupedObjects = useMemo(() => {
@@ -857,7 +1017,7 @@ const StaticStructures = memo(function StaticStructures({ map, input, world, dis
     ...groupedObjects.forestTrees,
   ], [floor, groupedObjects.forestTrees, map.trees]);
   return <>
-      <ConnectedWalls positions={map.castleWalls} castle />
+      <ConnectedWalls positions={map.castleWalls} contextPositions={castleWallContext} castle />
       <InstancedTiles positions={groupedObjects.dirtPaths} color="#8d6c49" height={0.055} y={0.045} />
       <InstancedTiles positions={groupedObjects.snowGround} color="#e6f0ee" height={0.055} y={0.045} />
       <InstancedTrees positions={forestTrees} variant="forest" />
@@ -1005,13 +1165,16 @@ function buildingWallHeight(building: BuildingView) {
   return building.kind === "keep" ? CASTLE_HEIGHT : WALL_HEIGHT;
 }
 
-function ConnectedWalls({ positions, castle }: { positions: readonly Position[]; castle: boolean }) {
+function ConnectedWalls({ positions, contextPositions = positions, castle }: { positions: readonly Position[]; contextPositions?: readonly Position[]; castle: boolean }) {
   const height = castle ? CASTLE_HEIGHT : WALL_HEIGHT;
   const castleTexture = useWorldTexture("/assets/world/aldoria-castle-stone-v2.png", 1.35, 1.35);
   const mesh = useRef<THREE.InstancedMesh>(null);
   const instances = useMemo(() => {
     if (positions.length === 0) return [];
-    const set = new Set(positions.map(tileKey));
+    // TIBIAGAME_STREAMING_FIX_V9
+    // Iterate/render only core positions, but resolve +x/+y connectivity from
+    // the one-tile context halo so connectors survive chunk boundaries.
+    const set = new Set(contextPositions.map(tileKey));
     const thickness = castle ? 0.28 : 0.18;
     const centerSize = castle ? 0.3 : 0.24;
     const connectorLength = Math.max(0.1, 1 - centerSize);
@@ -1047,9 +1210,9 @@ function ConnectedWalls({ positions, castle }: { positions: readonly Position[];
       }
     }
     return next;
-  }, [castle, height, positions]);
+  }, [castle, contextPositions, height, positions]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!mesh.current) return;
     const matrix = new THREE.Matrix4();
     const translation = new THREE.Vector3();
@@ -1169,7 +1332,7 @@ function InstancedTreeBatch({ positions, variant }: { positions: readonly Positi
   const upperCanopies = useRef<THREE.InstancedMesh>(null);
   const pine = variant !== "forest";
   const snowy = variant === "snowy";
-  useLayoutEffect(() => {
+  useEffect(() => {
     const matrix = new THREE.Matrix4(); const quaternion = new THREE.Quaternion(); const location = new THREE.Vector3(); const scale = pine ? new THREE.Vector3(1.04, 1.18, 1.04) : new THREE.Vector3(1.18, 1.22, 1.18);
     positions.forEach((position, index) => {
       location.set(position.x + 0.5, 0, position.y + 0.5);
@@ -1197,7 +1360,7 @@ function InstancedTreeBatch({ positions, variant }: { positions: readonly Positi
 function InstancedMountainWalls({ positions }: { positions: readonly Position[] }) {
   const bases = useRef<THREE.InstancedMesh>(null);
   const caps = useRef<THREE.InstancedMesh>(null);
-  useLayoutEffect(() => {
+  useEffect(() => {
     const matrix = new THREE.Matrix4();
     positions.forEach((position, index) => {
       matrix.makeTranslation(position.x + 0.5, 0.78, position.y + 0.5);
@@ -1220,7 +1383,7 @@ function InstancedMountainWalls({ positions }: { positions: readonly Position[] 
 
 function InstancedSimpleObjects({ positions, kind }: { positions: readonly Position[]; kind: "snow-bank" | "barrel" }) {
   const mesh = useRef<THREE.InstancedMesh>(null);
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!mesh.current) return;
     const matrix = new THREE.Matrix4();
     positions.forEach((position, index) => {
@@ -1241,7 +1404,7 @@ function InstancedTorches({ positions }: { positions: readonly Position[] }) {
   const posts = useRef<THREE.InstancedMesh>(null);
   const flames = useRef<THREE.InstancedMesh>(null);
   const flameMaterial = useRef<THREE.MeshStandardMaterial>(null);
-  useLayoutEffect(() => {
+  useEffect(() => {
     const matrix = new THREE.Matrix4(); const location = new THREE.Vector3(); const scale = new THREE.Vector3(1.15, 1.15, 1.15);
     positions.forEach((position, index) => {
       for (const [mesh, y] of [[posts.current, 0.62], [flames.current, 1.31]] as const) {
@@ -1588,12 +1751,12 @@ function FollowCamera({ target, visualTarget, mapWidth, mapHeight }: { target?: 
 }
 
 function OcclusionController({
-  target,
-  visualTarget,
-  sceneRevision,
-  floor,
-  chunkX,
-  chunkY,
+  target: _target,
+  visualTarget: _visualTarget,
+  sceneRevision: _sceneRevision,
+  floor: _floor,
+  chunkX: _chunkX,
+  chunkY: _chunkY,
 }: {
   target?: Position;
   visualTarget: MutableRefObject<THREE.Vector3>;
@@ -1602,162 +1765,18 @@ function OcclusionController({
   chunkX: number;
   chunkY: number;
 }) {
-  const { camera, scene } = useThree();
-  const ray = useMemo(() => new THREE.Ray(), []);
-  // TIBIAGAME_STREAMING_FIX_V5
-  // Visibility toggling avoids changing material shader defines at runtime.
-  const hiddenOccluders = useRef(new Map<THREE.Object3D, boolean>());
-  const lastCheckAt = useRef(0);
-  const lastCheckedTarget = useMemo(() => new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN), []);
-  const targetPoint = useMemo(() => new THREE.Vector3(), []);
-  const direction = useMemo(() => new THREE.Vector3(), []);
-  const intersection = useMemo(() => new THREE.Vector3(), []);
-  const nextHiddenOccluders = useMemo(() => new Set<THREE.Object3D>(), []);
-  const occluders = useRef<OccluderIndex>({ all: [], buckets: new Map() });
-  useEffect(() => {
-    // TIBIAGAME_STREAMING_FIX_V4
-    // Building Box3 bounds for a whole streamed scene inside useLayoutEffect
-    // blocked paint and produced large max-ms spikes. Build the replacement
-    // index in small frame-budgeted slices instead.
-    let cancelled = false;
-    let frame: number | null = null;
-    let workMs = 0;
-    const roots: THREE.Object3D[] = [];
-
-    const visit = (node: THREE.Object3D) => {
-      const streamFloor = node.userData.streamFloor;
-      if (typeof streamFloor === "number" && streamFloor !== floor) return;
-      const streamChunkX = node.userData.streamChunkX;
-      const streamChunkY = node.userData.streamChunkY;
-      if (
-        typeof streamChunkX === "number"
-        && typeof streamChunkY === "number"
-        && (
-          Math.abs(streamChunkX - chunkX) > 1
-          || Math.abs(streamChunkY - chunkY) > 1
-        )
-      ) return;
-      if (node.userData.occluder) {
-        roots.push(node);
-        return;
-      }
-      node.children.forEach(visit);
-    };
-    scene.children.forEach(visit);
-
-    const indexed: OccluderBounds[] = [];
-    let cursor = 0;
-    const step = () => {
-      if (cancelled) return;
-      const sliceStarted = performance.now();
-
-      while (cursor < roots.length && performance.now() - sliceStarted < 2.5) {
-        const root = roots[cursor++];
-        const bounds = new THREE.Box3().setFromObject(root);
-        if (!bounds.isEmpty()) indexed.push({ root, bounds });
-
-        // TIBIAGAME_STREAMING_FIX_V5
-        // Do not mutate transparent/needsUpdate here. That mutation changes
-        // WebGL shader defines and can block a later frame during compilation.
-      }
-
-      workMs += performance.now() - sliceStarted;
-      if (cursor < roots.length) {
-        frame = window.requestAnimationFrame(step);
-        return;
-      }
-
-      occluders.current = indexOccluderBounds(indexed);
-      lastCheckedTarget.set(Number.NaN, Number.NaN, Number.NaN);
-      if (workMs > 6) {
-        console.info(
-          `occlusion index work: ${workMs.toFixed(1)}ms across frames · ${indexed.length} roots`,
-        );
-      }
-    };
-
-    frame = window.requestAnimationFrame(step);
-    return () => {
-      cancelled = true;
-      if (frame !== null) window.cancelAnimationFrame(frame);
-    };
-  }, [chunkX, chunkY, floor, scene, sceneRevision]);
-  useFrame(({ clock }) => {
-    if (!target || clock.elapsedTime - lastCheckAt.current < 0.15) return;
-    const rendered = visualTarget.current;
-    const x = Number.isFinite(rendered.x) ? rendered.x : target.x + 0.5;
-    const z = Number.isFinite(rendered.z) ? rendered.z : target.y + 0.5;
-    targetPoint.set(x, 1.05, z);
-    // Camera and target are fixed while idle, so repeating the same broad
-    // raycast only steals time from rendering.
-    if (Number.isFinite(lastCheckedTarget.x) && lastCheckedTarget.distanceToSquared(targetPoint) < 0.0064) return;
-    lastCheckAt.current = clock.elapsedTime;
-    lastCheckedTarget.copy(targetPoint);
-
-    const roots = new Set<THREE.Object3D>();
-    direction.copy(targetPoint).sub(camera.position);
-    const targetDistance = Math.max(0, direction.length() - 0.35);
-    ray.set(camera.position, direction.normalize());
-    for (const { root, bounds } of nearbyOccluders(occluders.current, targetPoint)) {
-      const hit = ray.intersectBox(bounds, intersection);
-      if (hit && hit.distanceTo(camera.position) < targetDistance) roots.add(root);
-    }
-    nextHiddenOccluders.clear();
-    for (const root of roots) {
-      nextHiddenOccluders.add(root);
-      if (!hiddenOccluders.current.has(root)) {
-        hiddenOccluders.current.set(root, root.visible);
-        root.visible = false;
-      }
-    }
-    for (const [root, originalVisible] of hiddenOccluders.current) {
-      if (nextHiddenOccluders.has(root)) continue;
-      root.visible = originalVisible;
-      hiddenOccluders.current.delete(root);
-    }
-  });
-  useEffect(() => () => {
-    for (const [root, originalVisible] of hiddenOccluders.current) {
-      root.visible = originalVisible;
-    }
-    hiddenOccluders.current.clear();
-  }, []);
+  // TIBIAGAME_STREAMING_FIX_V11
+  // Disabled while the renderer is stabilized.
+  //
+  // V5's `visible = false` made loaded world geometry look missing.
+  // V10's attempt to prepare every occluder as transparent caused shader
+  // program count to explode (7 -> ~139 in the supplied trace) and produced
+  // severe stalls, especially across floors.
+  //
+  // The eventual fade implementation must use a small shared set of
+  // precompiled fade materials/shaders. It must not mutate every source
+  // material's `transparent` define at runtime.
   return null;
-}
-
-type OccluderBounds = { root: THREE.Object3D; bounds: THREE.Box3 };
-type OccluderIndex = { all: OccluderBounds[]; buckets: Map<string, OccluderBounds[]> };
-const OCCLUDER_BUCKET_SIZE = 8;
-
-function indexOccluderBounds(roots: OccluderBounds[]): OccluderIndex {
-  const buckets = new Map<string, OccluderBounds[]>();
-  for (const entry of roots) {
-    const minX = Math.floor(entry.bounds.min.x / OCCLUDER_BUCKET_SIZE);
-    const maxX = Math.floor(entry.bounds.max.x / OCCLUDER_BUCKET_SIZE);
-    const minZ = Math.floor(entry.bounds.min.z / OCCLUDER_BUCKET_SIZE);
-    const maxZ = Math.floor(entry.bounds.max.z / OCCLUDER_BUCKET_SIZE);
-    for (let x = minX; x <= maxX; x += 1) for (let z = minZ; z <= maxZ; z += 1) {
-      const key = `${x}:${z}`;
-      const bucket = buckets.get(key);
-      if (bucket) bucket.push(entry);
-      else buckets.set(key, [entry]);
-    }
-  }
-  return { all: roots, buckets };
-}
-
-function nearbyOccluders(index: OccluderIndex, target: THREE.Vector3): Set<OccluderBounds> {
-  const result = new Set<OccluderBounds>();
-  // The camera is nine tiles south of the target. Two tiles of side padding
-  // covers wide trees/walls while excluding the rest of the streamed region.
-  const minX = Math.floor((target.x - 2) / OCCLUDER_BUCKET_SIZE);
-  const maxX = Math.floor((target.x + 2) / OCCLUDER_BUCKET_SIZE);
-  const minZ = Math.floor((target.z - 2) / OCCLUDER_BUCKET_SIZE);
-  const maxZ = Math.floor((target.z + CAMERA_TOPDOWN_OFFSET + 2) / OCCLUDER_BUCKET_SIZE);
-  for (let x = minX; x <= maxX; x += 1) for (let z = minZ; z <= maxZ; z += 1) {
-    for (const entry of index.buckets.get(`${x}:${z}`) ?? []) result.add(entry);
-  }
-  return result;
 }
 
 function Atmosphere({ torches, local, visualTarget, playerLight }: { torches: readonly Position[]; local?: Position; visualTarget: MutableRefObject<THREE.Vector3>; playerLight: PlayerLightProfile }) {
@@ -1916,6 +1935,224 @@ type RenderBounds = {
   floor: number;
 };
 
+// TIBIAGAME_STREAMING_FIX_V9
+const RETAINED_STATIC_CONTEXT_MARGIN = 1;
+
+// TIBIAGAME_STREAMING_FIX_V13
+function mergeTerrainPositionLayer(
+  previous: readonly Position[],
+  incoming: readonly Position[],
+) {
+  if (incoming.length === 0) return previous;
+  const known = new Set(previous.map(tileKey));
+  let merged: Position[] | null = null;
+
+  for (const entry of incoming) {
+    const key = tileKey(entry);
+    if (known.has(key)) continue;
+    known.add(key);
+    if (!merged) merged = [...previous];
+    merged.push(entry);
+  }
+
+  return merged ?? previous;
+}
+
+function mergeTerrainMaterialLayer(
+  previous: MapView["terrainMaterials"],
+  incoming: MapView["terrainMaterials"],
+) {
+  if (incoming.length === 0) return previous;
+
+  const indexByPosition = new Map(
+    previous.map((entry, index) => [tileKey(entry.position), index]),
+  );
+  let merged: MapView["terrainMaterials"] | null = null;
+
+  for (const entry of incoming) {
+    const key = tileKey(entry.position);
+    const existingIndex = indexByPosition.get(key);
+
+    if (existingIndex === undefined) {
+      if (!merged) merged = [...previous];
+      indexByPosition.set(key, merged.length);
+      merged.push(entry);
+      continue;
+    }
+
+    const existing = (merged ?? previous)[existingIndex];
+    if (existing.material === entry.material) continue;
+
+    if (!merged) merged = [...previous];
+    merged[existingIndex] = entry;
+  }
+
+  return merged ?? previous;
+}
+
+function mergeTerrainObjectMaskLayer(
+  previous: MapView["objects"],
+  incoming: MapView["objects"],
+) {
+  if (incoming.length === 0) return previous;
+  const known = new Set(previous.map((entry) => entry.id));
+  let merged: MapView["objects"] | null = null;
+
+  for (const entry of incoming) {
+    if (known.has(entry.id)) continue;
+    known.add(entry.id);
+    if (!merged) merged = [...previous];
+    merged.push(entry);
+  }
+
+  return merged ?? previous;
+}
+
+function mergeTerrainRenderRegion(
+  previous: ReturnType<typeof createRenderRegion>,
+  incoming: ReturnType<typeof createRenderRegion>,
+) {
+  const blocked = mergeTerrainPositionLayer(
+    previous.map.blocked,
+    incoming.map.blocked,
+  );
+  const water = mergeTerrainPositionLayer(
+    previous.map.water,
+    incoming.map.water,
+  );
+  const bridges = mergeTerrainPositionLayer(
+    previous.map.bridges,
+    incoming.map.bridges,
+  );
+  const trees = mergeTerrainPositionLayer(
+    previous.map.trees,
+    incoming.map.trees,
+  );
+  const roads = mergeTerrainPositionLayer(
+    previous.map.roads,
+    incoming.map.roads,
+  );
+  const floors = mergeTerrainPositionLayer(
+    previous.map.floors,
+    incoming.map.floors,
+  );
+  const houseWalls = mergeTerrainPositionLayer(
+    previous.map.houseWalls,
+    incoming.map.houseWalls,
+  );
+  const castleWalls = mergeTerrainPositionLayer(
+    previous.map.castleWalls,
+    incoming.map.castleWalls,
+  );
+  const terrainMaterials = mergeTerrainMaterialLayer(
+    previous.map.terrainMaterials,
+    incoming.map.terrainMaterials,
+  );
+  const objects = mergeTerrainObjectMaskLayer(
+    previous.map.objects,
+    incoming.map.objects,
+  );
+
+  const unchanged =
+    blocked === previous.map.blocked
+    && water === previous.map.water
+    && bridges === previous.map.bridges
+    && trees === previous.map.trees
+    && roads === previous.map.roads
+    && floors === previous.map.floors
+    && houseWalls === previous.map.houseWalls
+    && castleWalls === previous.map.castleWalls
+    && terrainMaterials === previous.map.terrainMaterials
+    && objects === previous.map.objects;
+
+  if (unchanged) return previous;
+
+  return {
+    ...incoming,
+    map: {
+      ...incoming.map,
+      blocked,
+      water,
+      bridges,
+      trees,
+      roads,
+      floors,
+      houseWalls,
+      castleWalls,
+      terrainMaterials,
+      objects,
+    },
+  };
+}
+
+// TIBIAGAME_STREAMING_FIX_V12
+function renderBoundsFullyCovered(
+  bounds: RenderBounds,
+  floor: number,
+  center: Position | null,
+  radius: number,
+  floorRadius: number,
+  map: MapView,
+) {
+  if (!center || radius <= 0) return false;
+  if (Math.abs(floor - center.z) > floorRadius) return false;
+
+  const minTileX = Math.max(0, bounds.minX);
+  const minTileY = Math.max(0, bounds.minY);
+  const maxTileX = Math.min(map.width - 1, bounds.minX + bounds.width - 1);
+  const maxTileY = Math.min(map.height - 1, bounds.minY + bounds.height - 1);
+
+  const regionMinX = Math.max(0, center.x - radius);
+  const regionMinY = Math.max(0, center.y - radius);
+  const regionMaxX = Math.min(map.width - 1, center.x + radius);
+  const regionMaxY = Math.min(map.height - 1, center.y + radius);
+
+  return minTileX >= regionMinX
+    && minTileY >= regionMinY
+    && maxTileX <= regionMaxX
+    && maxTileY <= regionMaxY;
+}
+
+function retainedChunkFullyCovered(
+  floor: number,
+  chunkX: number,
+  chunkY: number,
+  center: Position | null,
+  radius: number,
+  floorRadius: number,
+  map: MapView,
+) {
+  if (!center || radius <= 0) return false;
+  if (Math.abs(floor - center.z) > floorRadius) return false;
+
+  const minTileX = Math.max(
+    0,
+    chunkX * RETAINED_STATIC_CHUNK_SIZE - RETAINED_STATIC_CONTEXT_MARGIN,
+  );
+  const minTileY = Math.max(
+    0,
+    chunkY * RETAINED_STATIC_CHUNK_SIZE - RETAINED_STATIC_CONTEXT_MARGIN,
+  );
+  const maxTileX = Math.min(
+    map.width - 1,
+    (chunkX + 1) * RETAINED_STATIC_CHUNK_SIZE - 1 + RETAINED_STATIC_CONTEXT_MARGIN,
+  );
+  const maxTileY = Math.min(
+    map.height - 1,
+    (chunkY + 1) * RETAINED_STATIC_CHUNK_SIZE - 1 + RETAINED_STATIC_CONTEXT_MARGIN,
+  );
+
+  const regionMinX = Math.max(0, center.x - radius);
+  const regionMinY = Math.max(0, center.y - radius);
+  const regionMaxX = Math.min(map.width - 1, center.x + radius);
+  const regionMaxY = Math.min(map.height - 1, center.y + radius);
+
+  return minTileX >= regionMinX
+    && minTileY >= regionMinY
+    && maxTileX <= regionMaxX
+    && maxTileY <= regionMaxY;
+}
+
 function createRetainedStaticChunk(
   map: MapView,
   floor: number,
@@ -1938,6 +2175,17 @@ function createRetainedStaticChunk(
 
   const positions = (entries: readonly Position[]) =>
     entries.filter((entry) => insideRenderBounds(entry, bounds));
+
+  // TIBIAGAME_STREAMING_FIX_V9
+  // Context is data-only. It is not rendered by this chunk; ConnectedWalls
+  // uses it only to detect neighbors across the core boundary.
+  const castleWallContext = map.castleWalls.filter((entry) =>
+    entry.z === floor
+    && entry.x >= Math.max(0, minX - RETAINED_STATIC_CONTEXT_MARGIN)
+    && entry.x < Math.min(map.width, maxX + RETAINED_STATIC_CONTEXT_MARGIN)
+    && entry.y >= Math.max(0, minY - RETAINED_STATIC_CONTEXT_MARGIN)
+    && entry.y < Math.min(map.height, maxY + RETAINED_STATIC_CONTEXT_MARGIN)
+  );
 
   // A building is owned by the chunk containing its origin. It may extend
   // across a chunk boundary, but is rendered exactly once.
@@ -1987,6 +2235,7 @@ function createRetainedStaticChunk(
     chunkY,
     map: chunkMap,
     bounds,
+    castleWallContext,
   };
 }
 

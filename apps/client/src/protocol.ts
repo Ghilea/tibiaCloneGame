@@ -1,4 +1,5 @@
-export const PROTOCOL_VERSION = 27;
+// TIBIAGAME_STREAMING_FIX_V9
+export const PROTOCOL_VERSION = 28;
 export const CLIENT_VERSION = "0.1.0";
 
 export type Position = { x: number; y: number; z: number };
@@ -99,8 +100,8 @@ export type ClientMessage =
   | { type: "cast_spell"; spell_id: string; target_id: string };
 
 export type ServerMessage =
-  | { type: "welcome"; protocol_version: number; player: PlayerView; players: PlayerView[]; map: MapView; item_definitions: ItemDefinition[]; rune_recipes: RuneRecipe[]; spells: SpellDefinition[]; learned_spell_ids: string[]; learned_recipe_ids: string[]; inventory: ItemInstance[]; depot: ItemInstance[]; inventory_weight: number; max_capacity: number; ground_items: GroundItem[]; creatures: CreatureView[]; npcs: NpcView[]; resource_nodes: ResourceNodeView[]; profession_skills: ProfessionSkillView[]; discovered_knowledge_ids: string[] }
-  | { type: "world_region"; map: MapView; ground_items: GroundItem[]; creatures: CreatureView[]; npcs: NpcView[]; resource_nodes: ResourceNodeView[] }
+  | { type: "welcome"; protocol_version: number; player: PlayerView; players: PlayerView[]; map: MapView; region_center: Position; region_radius: number; region_floor_radius: number; item_definitions: ItemDefinition[]; rune_recipes: RuneRecipe[]; spells: SpellDefinition[]; learned_spell_ids: string[]; learned_recipe_ids: string[]; inventory: ItemInstance[]; depot: ItemInstance[]; inventory_weight: number; max_capacity: number; ground_items: GroundItem[]; creatures: CreatureView[]; npcs: NpcView[]; resource_nodes: ResourceNodeView[]; profession_skills: ProfessionSkillView[]; discovered_knowledge_ids: string[] }
+  | { type: "world_region"; map: MapView; region_center: Position; region_radius: number; region_floor_radius: number; ground_items: GroundItem[]; creatures: CreatureView[]; npcs: NpcView[]; resource_nodes: ResourceNodeView[] }
   | { type: "player_joined"; player: PlayerView }
   | { type: "player_left"; player_id: string }
   | { type: "player_moved"; player_id: string; position: Position; sequence: number }

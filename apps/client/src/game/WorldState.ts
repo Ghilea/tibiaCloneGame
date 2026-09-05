@@ -64,6 +64,10 @@ export class WorldState {
   // Advances whenever a fresh streamed MapView is installed. ThreeWorld uses
   // this as a deferred data-freshness signal, separate from movement.
   streamRegionRevision = 0;
+  // TIBIAGAME_STREAMING_FIX_V9
+  streamRegionCenter: Position | null = null;
+  streamRegionRadius = 0;
+  streamRegionFloorRadius = 0;
   localCorrectionRevision = 0;
   private listeners = new Set<WorldListener>();
   private visualListeners = new Set<WorldListener>();
@@ -115,6 +119,9 @@ export class WorldState {
     this.incomingTrade = null;
     this.trade = null;
     this.pendingLocalMoves.clear();
+    this.streamRegionCenter = null;
+    this.streamRegionRadius = 0;
+    this.streamRegionFloorRadius = 0;
   }
 
   applyBatch(messages: readonly ServerMessage[]) {
@@ -161,6 +168,9 @@ export class WorldState {
         this.activeNpcId = null;
         this.map = message.map;
         this.dynamicMapRevision += 1;
+        this.streamRegionCenter = message.region_center;
+        this.streamRegionRadius = message.region_radius;
+        this.streamRegionFloorRadius = message.region_floor_radius;
         this.streamRegionRevision += 1;
         this.rebuildMapIndexes();
         this.itemDefinitions.clear();
@@ -196,6 +206,9 @@ export class WorldState {
         break;
       case "world_region":
         this.map = message.map;
+        this.streamRegionCenter = message.region_center;
+        this.streamRegionRadius = message.region_radius;
+        this.streamRegionFloorRadius = message.region_floor_radius;
         this.streamRegionRevision += 1;
         this.rebuildMapIndexes();
         this.groundItems = message.ground_items;

@@ -4,7 +4,8 @@ use game_types::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u16 = 27;
+// TIBIAGAME_STREAMING_FIX_V9
+pub const PROTOCOL_VERSION: u16 = 28;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -139,6 +140,10 @@ pub struct WelcomePayload {
     pub player: PlayerView,
     pub players: Vec<PlayerView>,
     pub map: Box<MapView>,
+    // TIBIAGAME_STREAMING_FIX_V9
+    pub region_center: Position,
+    pub region_radius: i32,
+    pub region_floor_radius: i16,
     pub item_definitions: Vec<ItemDefinition>,
     pub rune_recipes: Vec<RuneRecipe>,
     pub spells: Vec<SpellDefinition>,
@@ -165,6 +170,10 @@ pub enum ServerMessage {
     },
     WorldRegion {
         map: Box<MapView>,
+        // TIBIAGAME_STREAMING_FIX_V9
+        region_center: Position,
+        region_radius: i32,
+        region_floor_radius: i16,
         ground_items: Vec<GroundItem>,
         creatures: Vec<CreatureView>,
         npcs: Vec<NpcView>,

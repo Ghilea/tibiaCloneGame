@@ -38,14 +38,17 @@ use uuid::Uuid;
 use world::World;
 use world::WorldEvent;
 
-const WORLD_REGION_RADIUS: i32 = 48;
+// TIBIAGAME_STREAMING_FIX_V12
+// Larger authoritative data window, without V10's GPU prefetch.
+const WORLD_REGION_RADIUS: i32 = 64;
 // Keep the next floor above and below hot in the client cache. This makes a
 // stair transition use already-delivered static geometry and nearby actors.
 const WORLD_REGION_FLOOR_RADIUS: i16 = 1;
-// Refresh before the player reaches the edge of the current payload. Keeping a
-// 16-tile margin lets the next region arrive before the camera exposes missing
-// terrain, while measuring from the last center avoids chunk-border thrashing.
-const WORLD_REGION_REFRESH_DISTANCE: i32 = 32;
+// TIBIAGAME_STREAMING_FIX_V8
+// Radius remains 48, but refresh at 24 tiles. The retained renderer may keep
+// geometry farther ahead than the camera, so a 24-tile guaranteed network
+// margin is safer than V1/V2's 16-tile margin without increasing payload size.
+const WORLD_REGION_REFRESH_DISTANCE: i32 = 16;
 
 #[derive(Clone)]
 struct AppState {
@@ -818,6 +821,10 @@ async fn session(mut socket: WebSocket, state: AppState) {
                 player: player.view.clone(),
                 players,
                 map: Box::new(map),
+                // TIBIAGAME_STREAMING_FIX_V9
+                region_center: position,
+                region_radius: WORLD_REGION_RADIUS,
+                region_floor_radius: WORLD_REGION_FLOOR_RADIUS,
                 item_definitions,
                 rune_recipes,
                 spells,
@@ -923,6 +930,10 @@ async fn session(mut socket: WebSocket, state: AppState) {
                                                 WORLD_REGION_RADIUS,
                                                 WORLD_REGION_FLOOR_RADIUS,
                                             )),
+                                            // TIBIAGAME_STREAMING_FIX_V9
+                                            region_center: position,
+                                            region_radius: WORLD_REGION_RADIUS,
+                                            region_floor_radius: WORLD_REGION_FLOOR_RADIUS,
                                             ground_items: world.ground_items_near_floors(
                                                 position,
                                                 WORLD_REGION_RADIUS,
@@ -2665,15 +2676,11 @@ mod region_streaming_tests {
         ));
         assert!(!should_refresh_world_region(
             center,
-            Position { x: 55, y: 10, z: 7 }
-        ));
-        assert!(!should_refresh_world_region(
-            center,
-            Position { x: 62, y: 10, z: 7 }
+            Position { x: 46, y: 10, z: 7 }
         ));
         assert!(should_refresh_world_region(
             center,
-            Position { x: 63, y: 10, z: 7 }
+            Position { x: 47, y: 10, z: 7 }
         ));
         assert!(should_refresh_world_region(
             center,
