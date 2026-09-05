@@ -267,13 +267,45 @@ function CastleMasonry({ position, size }: { position: [number, number, number];
   );
 }
 
+// TIBIAGAME_STREAMING_FIX_V19
+// Roofs used to allocate a unique BufferGeometry plus two chimney geometries
+// for every building mount. Retained chunks churn those objects while moving.
+// Cache roof topology by footprint and reuse one unit box for all chimneys.
+const sharedRoofGeometryCache = new Map<string, THREE.BufferGeometry>();
+const sharedMedievalUnitBoxGeometry = new THREE.BoxGeometry(1, 1, 1);
+const sharedChimneyHouseMaterial = new THREE.MeshStandardMaterial({
+  color: "#704938",
+  roughness: 1,
+});
+const sharedChimneyKeepMaterial = new THREE.MeshStandardMaterial({
+  color: "#626b68",
+  roughness: 1,
+});
+const sharedChimneyCapMaterial = new THREE.MeshStandardMaterial({
+  color: "#3c3731",
+  roughness: 1,
+});
+
+function sharedRoofGeometry(width: number, depth: number) {
+  const key = `${width.toFixed(3)}:${depth.toFixed(3)}`;
+  const cached = sharedRoofGeometryCache.get(key);
+  if (cached) return cached;
+
+  const geometry = roofGeometry(width, depth);
+  sharedRoofGeometryCache.set(key, geometry);
+  return geometry;
+}
+
 export const GabledRoof = memo(function GabledRoof({ building, wallHeight, roofVisible = true, roofFade = 1 }: { building: BuildingView; wallHeight: number; roofVisible?: boolean; roofFade?: number }) {
-  const geometry = useMemo(() => roofGeometry(building.width + 0.7, building.height + 0.7), [building.width, building.height]);
+  // TIBIAGAME_STREAMING_FIX_V19
+  const geometry = useMemo(
+    () => sharedRoofGeometry(building.width + 0.7, building.height + 0.7),
+    [building.height, building.width],
+  );
   const texture = useLoader(THREE.TextureLoader, "/assets/world/aldoria-roof-tiles-v1.png");
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.colorSpace = THREE.SRGBColorSpace;
   const material = useRef<THREE.MeshStandardMaterial>(null);
-  useEffect(() => () => geometry.dispose(), [geometry]);
   useFrame((_, delta) => {
     if (!material.current) return;
     const occlusionOpacity = material.current.userData.occlusionOpacity as number | undefined;
@@ -328,8 +360,21 @@ function roofGeometry(width: number, depth: number) {
 function Chimney({ x, z, keep }: { x: number; z: number; keep: boolean }) {
   return (
     <group position={[x, 0.84, z]}>
-      <mesh><boxGeometry args={[0.37, 1.7, 0.37]} /><meshStandardMaterial color={keep ? "#626b68" : "#704938"} roughness={1} /></mesh>
-      <mesh position={[0, 0.89, 0]}><boxGeometry args={[0.48, 0.14, 0.48]} /><meshStandardMaterial color="#3c3731" roughness={1} /></mesh>
+      <mesh
+        geometry={sharedMedievalUnitBoxGeometry}
+        material={keep
+          ? sharedChimneyKeepMaterial
+          : sharedChimneyHouseMaterial}
+        scale={[0.37, 1.7, 0.37]}
+        castShadow
+      />
+      <mesh
+        geometry={sharedMedievalUnitBoxGeometry}
+        material={sharedChimneyCapMaterial}
+        position={[0, 0.89, 0]}
+        scale={[0.48, 0.14, 0.48]}
+        castShadow
+      />
     </group>
   );
 }

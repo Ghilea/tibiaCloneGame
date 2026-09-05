@@ -20,7 +20,7 @@ import { createActorMotionState, sampleActorMotion, type ActorMotionState } from
 import { AnimatedCharacter, type CharacterKind } from "./AnimatedCharacter";
 import { CreatureModel } from "./CreatureModels";
 import { CLIENT_STEP_MS, InputController } from "./InputController";
-import { GabledRoof, HangingSign, HouseDoorway, HouseWindowOpening, InstancedHousePlinths, InstancedHouseWalls, MedievalDoorWall, MedievalWall, ShutterWindow } from "./MedievalModels";
+import { GabledRoof, HouseDoorway, HouseWindowOpening, InstancedHousePlinths, InstancedHouseWalls, MedievalDoorWall, ShutterWindow } from "./MedievalModels";
 import { createHouseDoorwayLayout, createHouseWindowLayout } from "./DoorwayLayout";
 import { playerLightProfile, type PlayerLightProfile } from "./PlayerLight";
 import { WorldState, type CombatEffectView } from "./WorldState";
@@ -72,9 +72,12 @@ const TERRAIN_INSTANCE_CAPACITY = 4608;
 // TIBIAGAME_STREAMING_FIX_V7
 const RETAINED_STATIC_CHUNK_SIZE = 24;
 // TIBIAGAME_STREAMING_FIX_V11
-// TIBIAGAME_STREAMING_FIX_V16: compact rolling GPU cache.
-const RETAINED_STATIC_CACHE_LIMIT = 12;
+// TIBIAGAME_STREAMING_FIX_V20
+// 9 current chunks + up to 6 frontier chunks + 2 stair targets.
+const RETAINED_STATIC_CACHE_LIMIT = 17;
 const RETAINED_STATIC_HARD_LIMIT = 18;
+const RETAINED_STATIC_CHUNK_HYSTERESIS = 4;
+const RETAINED_STATIC_FRONTIER_DISTANCE = 10;
 // TIBIAGAME_STREAMING_FIX_V8: superseded by authoritative completeness.
  // TIBIAGAME_STREAMING_FIX_V9: immutable retained chunks require full coverage.
 
@@ -487,8 +490,73 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
   ]);
 
   // TIBIAGAME_STREAMING_FIX_V6
-  const staticChunkX = Math.floor((local?.position.x ?? 0) / RETAINED_STATIC_CHUNK_SIZE);
-  const staticChunkY = Math.floor((local?.position.y ?? 0) / RETAINED_STATIC_CHUNK_SIZE);
+  // TIBIAGAME_STREAMING_FIX_V20
+  // Retained structure ownership has its own hysteresis. Terrain already uses
+  // the same strategy at 32-tile boundaries.
+  const rawStaticChunkX = Math.floor(
+    (local?.position.x ?? 0) / RETAINED_STATIC_CHUNK_SIZE,
+  );
+  const rawStaticChunkY = Math.floor(
+    (local?.position.y ?? 0) / RETAINED_STATIC_CHUNK_SIZE,
+  );
+  const retainedAnchorRef = useRef({
+    floor,
+    chunkX: rawStaticChunkX,
+    chunkY: rawStaticChunkY,
+  });
+
+  {
+    const current = retainedAnchorRef.current;
+    const positionX = local?.position.x ?? 0;
+    const positionY = local?.position.y ?? 0;
+
+    if (current.floor !== floor) {
+      retainedAnchorRef.current = {
+        floor,
+        chunkX: rawStaticChunkX,
+        chunkY: rawStaticChunkY,
+      };
+    } else {
+      let nextChunkX = current.chunkX;
+      let nextChunkY = current.chunkY;
+
+      while (
+        positionX
+        < nextChunkX * RETAINED_STATIC_CHUNK_SIZE
+          - RETAINED_STATIC_CHUNK_HYSTERESIS
+      ) nextChunkX -= 1;
+      while (
+        positionX
+        >= (nextChunkX + 1) * RETAINED_STATIC_CHUNK_SIZE
+          + RETAINED_STATIC_CHUNK_HYSTERESIS
+      ) nextChunkX += 1;
+
+      while (
+        positionY
+        < nextChunkY * RETAINED_STATIC_CHUNK_SIZE
+          - RETAINED_STATIC_CHUNK_HYSTERESIS
+      ) nextChunkY -= 1;
+      while (
+        positionY
+        >= (nextChunkY + 1) * RETAINED_STATIC_CHUNK_SIZE
+          + RETAINED_STATIC_CHUNK_HYSTERESIS
+      ) nextChunkY += 1;
+
+      if (
+        nextChunkX !== current.chunkX
+        || nextChunkY !== current.chunkY
+      ) {
+        retainedAnchorRef.current = {
+          floor,
+          chunkX: nextChunkX,
+          chunkY: nextChunkY,
+        };
+      }
+    }
+  }
+
+  const staticChunkX = retainedAnchorRef.current.chunkX;
+  const staticChunkY = retainedAnchorRef.current.chunkY;
   const [retainedStaticChunks, setRetainedStaticChunks] = useState<RetainedStaticChunkData[]>([]);
   const retainedStaticKeys = useRef(new Set<string>());
 
@@ -514,6 +582,61 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
       chunkX: staticChunkX + dx,
       chunkY: staticChunkY + dy,
     }));
+
+    // TIBIAGAME_STREAMING_FIX_V20
+    // Prepare only the strip(s) the player is approaching. This is a narrow
+    // frontier, not a blanket 5x5 GPU prewarm.
+    const frontierSpecs: {
+      floor: number;
+      chunkX: number;
+      chunkY: number;
+    }[] = [];
+    const offsetX = local.position.x
+      - staticChunkX * RETAINED_STATIC_CHUNK_SIZE;
+    const offsetY = local.position.y
+      - staticChunkY * RETAINED_STATIC_CHUNK_SIZE;
+
+    const addVerticalFrontier = (chunkX: number) => {
+      for (let dy = -1; dy <= 1; dy += 1) {
+        frontierSpecs.push({
+          floor,
+          chunkX,
+          chunkY: staticChunkY + dy,
+        });
+      }
+    };
+    const addHorizontalFrontier = (chunkY: number) => {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        frontierSpecs.push({
+          floor,
+          chunkX: staticChunkX + dx,
+          chunkY,
+        });
+      }
+    };
+
+    if (
+      offsetX
+      >= RETAINED_STATIC_CHUNK_SIZE - RETAINED_STATIC_FRONTIER_DISTANCE
+    ) addVerticalFrontier(staticChunkX + 2);
+    if (offsetX <= RETAINED_STATIC_FRONTIER_DISTANCE) {
+      addVerticalFrontier(staticChunkX - 2);
+    }
+    if (
+      offsetY
+      >= RETAINED_STATIC_CHUNK_SIZE - RETAINED_STATIC_FRONTIER_DISTANCE
+    ) addHorizontalFrontier(staticChunkY + 2);
+    if (offsetY <= RETAINED_STATIC_FRONTIER_DISTANCE) {
+      addHorizontalFrontier(staticChunkY - 2);
+    }
+
+    const uniqueFrontierSpecs = frontierSpecs.filter((spec, index, all) =>
+      all.findIndex((candidate) =>
+        candidate.floor === spec.floor
+        && candidate.chunkX === spec.chunkX
+        && candidate.chunkY === spec.chunkY
+      ) === index
+    );
 
     // TIBIAGAME_STREAMING_FIX_V7
     // Network/CPU streaming still preloads adjacent floors. GPU prewarm is
@@ -619,6 +742,7 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
 
     const pending = [
       ...currentFloorSpecs.slice(1),
+      ...uniqueFrontierSpecs,
       ...stairTargetSpecs,
     ].filter((spec) => !retainedStaticKeys.current.has(
       retainedStaticChunkKey(spec.floor, spec.chunkX, spec.chunkY),
@@ -827,6 +951,7 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
         bounds={terrainRegion.bounds}
         onGround={onGround}
       />}
+      {/* TIBIAGAME_STREAMING_FIX_V20_2: retained chunks do not receive onGround. */}
       {retainedStaticChunks.map((chunk) => (
         <RetainedStaticChunk
           key={chunk.key}
@@ -837,7 +962,6 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
           discoveryRevision={world.worldObjectCallout?.key ?? 0}
           indoorBuildingId={indoorBuildingId}
           onHover={onLootHover}
-          onGround={onGround}
         />
       ))}
       <OcclusionController
@@ -1221,44 +1345,296 @@ function BridgeTiles({ positions, texture }: { positions: readonly Position[]; t
   );
 }
 
-function InstancedBridgeRails({ segments, texture }: { segments: readonly { key: string; position: [number, number, number]; size: [number, number, number] }[]; texture: THREE.Texture }) {
-  const horizontal = useMemo(() => segments.filter((segment) => segment.size[0] > segment.size[2]), [segments]);
-  const vertical = useMemo(() => segments.filter((segment) => segment.size[0] <= segment.size[2]), [segments]);
-  const posts = useMemo(() => segments.flatMap((segment) => segment.size[0] > segment.size[2]
-    ? [[segment.position[0] - 0.38, 0.48, segment.position[2]], [segment.position[0] + 0.38, 0.48, segment.position[2]]]
-    : [[segment.position[0], 0.48, segment.position[2] - 0.38], [segment.position[0], 0.48, segment.position[2] + 0.38]]) as [number, number, number][], [segments]);
-  const horizontalMesh = useRef<THREE.InstancedMesh>(null);
-  const verticalMesh = useRef<THREE.InstancedMesh>(null);
-  const postMesh = useRef<THREE.InstancedMesh>(null);
-  useEffect(() => {
-    const matrix = new THREE.Matrix4();
-    horizontal.forEach((segment, index) => {
-      if (!horizontalMesh.current) return;
+// TIBIAGAME_STREAMING_FIX_V20
+// Remaining static world categories use one immutable geometry/material family
+// for every retained chunk. Instance buffers stay allocated for the component
+// lifetime, so dynamic refreshes do not reconstruct WebGL objects.
+const PERSISTENT_CHUNK_INSTANCE_CAPACITY = 768;
+const PERSISTENT_WALL_INSTANCE_CAPACITY = 3072;
+const PERSISTENT_BRIDGE_INSTANCE_CAPACITY = 4096;
+
+const persistentStaticGeometry = {
+  box: new THREE.BoxGeometry(1, 1, 1),
+  bridgePost: new THREE.CylinderGeometry(0.07, 0.08, 0.78, 8),
+  treeTrunk: new THREE.CylinderGeometry(0.14, 0.2, 1.45, 8),
+  forestLower: new THREE.ConeGeometry(0.82, 1.75, 9),
+  forestUpper: new THREE.ConeGeometry(0.61, 1.35, 9),
+  pineLower: new THREE.ConeGeometry(0.72, 1.9, 7),
+  pineUpper: new THREE.ConeGeometry(0.52, 1.5, 7),
+  mountainCap: new THREE.DodecahedronGeometry(0.53, 0),
+  snowBank: new THREE.DodecahedronGeometry(0.55, 1),
+  barrel: new THREE.CylinderGeometry(0.24, 0.28, 0.56, 10),
+  torchPost: new THREE.CylinderGeometry(0.035, 0.055, 1.24, 7),
+  torchFlame: new THREE.ConeGeometry(0.13, 0.38, 9),
+} as const;
+
+const persistentStaticMaterial = {
+  houseConnectedWall: new THREE.MeshStandardMaterial({
+    color: "#aa987c",
+    roughness: 0.98,
+  }),
+  treeTrunk: new THREE.MeshStandardMaterial({
+    color: "#604128",
+    roughness: 1,
+  }),
+  forestLower: new THREE.MeshStandardMaterial({
+    color: "#315c38",
+    roughness: 0.95,
+  }),
+  forestUpper: new THREE.MeshStandardMaterial({
+    color: "#3b7043",
+    roughness: 0.95,
+  }),
+  pineLower: new THREE.MeshStandardMaterial({
+    color: "#285744",
+    roughness: 0.95,
+  }),
+  pineUpper: new THREE.MeshStandardMaterial({
+    color: "#346a50",
+    roughness: 0.95,
+  }),
+  snowyLower: new THREE.MeshStandardMaterial({
+    color: "#c5dadd",
+    roughness: 0.95,
+  }),
+  snowyUpper: new THREE.MeshStandardMaterial({
+    color: "#e0ebea",
+    roughness: 0.95,
+  }),
+  mountainBase: new THREE.MeshStandardMaterial({
+    color: "#59615d",
+    roughness: 0.98,
+  }),
+  mountainCap: new THREE.MeshStandardMaterial({
+    color: "#778078",
+    roughness: 0.98,
+  }),
+  snowBank: new THREE.MeshStandardMaterial({
+    color: "#c9dcdf",
+    roughness: 1,
+  }),
+  barrel: new THREE.MeshStandardMaterial({
+    color: "#9b5d2c",
+    roughness: 0.85,
+  }),
+  torchPost: new THREE.MeshStandardMaterial({
+    color: "#49301f",
+    roughness: 0.92,
+  }),
+  torchFlame: new THREE.MeshStandardMaterial({
+    color: "#ff8b32",
+    emissive: "#ff4d10",
+    emissiveIntensity: 3,
+    toneMapped: false,
+  }),
+} as const;
+
+const persistentCastleWallMaterials = new Map<string, THREE.MeshStandardMaterial>();
+const persistentBridgeMaterials = new Map<string, {
+  rail: THREE.MeshStandardMaterial;
+  post: THREE.MeshStandardMaterial;
+}>();
+
+function usePersistentConnectedWallMaterial(
+  castle: boolean,
+  texture: THREE.Texture,
+) {
+  return useMemo(() => {
+    if (!castle) return persistentStaticMaterial.houseConnectedWall;
+    const key = texture.uuid;
+    const cached = persistentCastleWallMaterials.get(key);
+    if (cached) return cached;
+
+    const material = new THREE.MeshStandardMaterial({
+      map: texture,
+      color: "#d0d0c5",
+      roughness: 0.98,
+    });
+    persistentCastleWallMaterials.set(key, material);
+    return material;
+  }, [castle, texture]);
+}
+
+function usePersistentBridgeMaterials(texture: THREE.Texture) {
+  return useMemo(() => {
+    const key = texture.uuid;
+    const cached = persistentBridgeMaterials.get(key);
+    if (cached) return cached;
+
+    const materials = {
+      rail: new THREE.MeshStandardMaterial({
+        map: texture,
+        color: "#725334",
+        roughness: 0.9,
+      }),
+      post: new THREE.MeshStandardMaterial({
+        map: texture,
+        color: "#684a2f",
+        roughness: 0.92,
+      }),
+    };
+    persistentBridgeMaterials.set(key, materials);
+    return materials;
+  }, [texture]);
+}
+
+function persistentInstanceMatrix(
+  position: readonly number[],
+  rotation: readonly number[] = [0, 0, 0],
+  scale: readonly number[] = [1, 1, 1],
+) {
+  return new THREE.Matrix4().compose(
+    new THREE.Vector3(position[0], position[1], position[2]),
+    new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(rotation[0], rotation[1], rotation[2]),
+    ),
+    new THREE.Vector3(scale[0], scale[1], scale[2]),
+  );
+}
+
+function PersistentStaticInstances({
+  geometry,
+  material,
+  matrices,
+  capacity,
+  castShadow = true,
+  receiveShadow = true,
+  userData,
+}: {
+  geometry: THREE.BufferGeometry;
+  material: THREE.Material;
+  matrices: readonly THREE.Matrix4[];
+  capacity: number;
+  castShadow?: boolean;
+  receiveShadow?: boolean;
+  userData?: Record<string, unknown>;
+}) {
+  const mesh = useMemo(() => {
+    const instance = new THREE.InstancedMesh(
+      geometry,
+      material,
+      capacity,
+    );
+    instance.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    instance.castShadow = castShadow;
+    instance.receiveShadow = receiveShadow;
+    instance.frustumCulled = false;
+    if (userData) Object.assign(instance.userData, userData);
+    return instance;
+  }, [
+    capacity,
+    castShadow,
+    geometry,
+    material,
+    receiveShadow,
+  ]);
+
+  const count = Math.min(matrices.length, capacity);
+
+  useMemo(() => {
+    const target = mesh.instanceMatrix.array as Float32Array;
+    for (let index = 0; index < count; index += 1) {
+      matrices[index].toArray(target, index * 16);
+    }
+    mesh.count = count;
+    mesh.instanceMatrix.clearUpdateRanges();
+    if (count > 0) {
+      mesh.instanceMatrix.addUpdateRange(0, count * 16);
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+  }, [count, matrices, mesh]);
+
+  return <primitive object={mesh} dispose={null} />;
+}
+
+function InstancedBridgeRails({
+  segments,
+  texture,
+}: {
+  segments: readonly {
+    key: string;
+    position: [number, number, number];
+    size: [number, number, number];
+  }[];
+  texture: THREE.Texture;
+}) {
+  // TIBIAGAME_STREAMING_FIX_V20
+  const materials = usePersistentBridgeMaterials(texture);
+  const { horizontal, vertical, posts } = useMemo(() => {
+    const horizontalMatrices: THREE.Matrix4[] = [];
+    const verticalMatrices: THREE.Matrix4[] = [];
+    const postMatrices: THREE.Matrix4[] = [];
+
+    for (const segment of segments) {
+      const horizontal = segment.size[0] > segment.size[2];
+      const target = horizontal ? horizontalMatrices : verticalMatrices;
       for (const y of [segment.position[1], segment.position[1] + 0.3]) {
-        matrix.makeTranslation(segment.position[0], y, segment.position[2]);
-        horizontalMesh.current.setMatrixAt(index * 2 + (y === segment.position[1] ? 0 : 1), matrix);
+        target.push(persistentInstanceMatrix(
+          [segment.position[0], y, segment.position[2]],
+          [0, 0, 0],
+          horizontal ? [0.9, 0.09, 0.09] : [0.09, 0.09, 0.9],
+        ));
       }
-      horizontalMesh.current.instanceMatrix.needsUpdate = true;
-    });
-    vertical.forEach((segment, index) => {
-      if (!verticalMesh.current) return;
-      for (const y of [segment.position[1], segment.position[1] + 0.3]) {
-        matrix.makeTranslation(segment.position[0], y, segment.position[2]);
-        verticalMesh.current.setMatrixAt(index * 2 + (y === segment.position[1] ? 0 : 1), matrix);
+
+      if (horizontal) {
+        postMatrices.push(
+          persistentInstanceMatrix([
+            segment.position[0] - 0.38,
+            0.48,
+            segment.position[2],
+          ]),
+          persistentInstanceMatrix([
+            segment.position[0] + 0.38,
+            0.48,
+            segment.position[2],
+          ]),
+        );
+      } else {
+        postMatrices.push(
+          persistentInstanceMatrix([
+            segment.position[0],
+            0.48,
+            segment.position[2] - 0.38,
+          ]),
+          persistentInstanceMatrix([
+            segment.position[0],
+            0.48,
+            segment.position[2] + 0.38,
+          ]),
+        );
       }
-      verticalMesh.current.instanceMatrix.needsUpdate = true;
-    });
-    posts.forEach((position, index) => {
-      if (!postMesh.current) return;
-      matrix.makeTranslation(...position); postMesh.current.setMatrixAt(index, matrix); postMesh.current.instanceMatrix.needsUpdate = true;
-    });
-    [horizontalMesh.current, verticalMesh.current, postMesh.current].forEach((mesh) => mesh?.computeBoundingSphere());
-  }, [horizontal, posts, vertical]);
-  return <>
-    {horizontal.length > 0 && <instancedMesh ref={horizontalMesh} args={[undefined, undefined, horizontal.length * 2]} castShadow receiveShadow><boxGeometry args={[0.9, 0.09, 0.09]} /><meshStandardMaterial map={texture} color="#725334" roughness={0.9} /></instancedMesh>}
-    {vertical.length > 0 && <instancedMesh ref={verticalMesh} args={[undefined, undefined, vertical.length * 2]} castShadow receiveShadow><boxGeometry args={[0.09, 0.09, 0.9]} /><meshStandardMaterial map={texture} color="#725334" roughness={0.9} /></instancedMesh>}
-    {posts.length > 0 && <instancedMesh ref={postMesh} args={[undefined, undefined, posts.length]} castShadow><cylinderGeometry args={[0.07, 0.08, 0.78, 8]} /><meshStandardMaterial map={texture} color="#684a2f" roughness={0.92} /></instancedMesh>}
-  </>;
+    }
+
+    return {
+      horizontal: horizontalMatrices,
+      vertical: verticalMatrices,
+      posts: postMatrices,
+    };
+  }, [segments]);
+
+  return (
+    <>
+      <PersistentStaticInstances
+        geometry={persistentStaticGeometry.box}
+        material={materials.rail}
+        matrices={horizontal}
+        capacity={PERSISTENT_BRIDGE_INSTANCE_CAPACITY}
+      />
+      <PersistentStaticInstances
+        geometry={persistentStaticGeometry.box}
+        material={materials.rail}
+        matrices={vertical}
+        capacity={PERSISTENT_BRIDGE_INSTANCE_CAPACITY}
+      />
+      <PersistentStaticInstances
+        geometry={persistentStaticGeometry.bridgePost}
+        material={materials.post}
+        matrices={posts}
+        capacity={PERSISTENT_BRIDGE_INSTANCE_CAPACITY}
+        receiveShadow={false}
+      />
+    </>
+  );
 }
 
 function WaterTiles({ positions }: { positions: readonly Position[] }) {
@@ -1361,6 +1737,10 @@ const Structures = memo(function Structures({ map, castleWallContext, input, wor
   const buildings = useMemo(() => map.buildings.filter((entry) => entry.floor === floor), [floor, map.buildings]);
   return (
     <group>
+      {/* TIBIAGAME_STREAMING_FIX_V19: static building shells are chunk batches. */}
+      <BatchedBuildingStaticPrimitives buildings={buildings} />
+      <BatchedHouseShells buildings={buildings} doors={map.doors} windows={map.windows} />
+      <BatchedKeepWalls buildings={buildings} doors={map.doors} windows={map.windows} />
       {buildings.map((building) => <group key={building.id}>
         <Building building={building} doors={map.doors} windows={map.windows} input={input} />
         <GabledRoof building={building} wallHeight={buildingWallHeight(building)} roofVisible={building.id !== indoorBuildingId} roofFade={building.id !== indoorBuildingId ? 1 : 0.08} />
@@ -1575,6 +1955,13 @@ const pooledWorldMaterial = {
   furnitureLeg: new THREE.MeshStandardMaterial({ color: "#61391f", roughness: 1 }),
   stairStep: new THREE.MeshStandardMaterial({ color: "#9a6338", roughness: 0.9 }),
   stairBase: new THREE.MeshStandardMaterial({ color: "#5f432d", roughness: 1 }),
+  // TIBIAGAME_STREAMING_FIX_V19
+  buildingFloorHouse: new THREE.MeshStandardMaterial({ color: "#765b42", roughness: 0.96 }),
+  buildingFloorKeep: new THREE.MeshStandardMaterial({ color: "#666763", roughness: 0.96 }),
+  battlement: new THREE.MeshStandardMaterial({ color: "#87908c", roughness: 0.96 }),
+  buildingSignArm: new THREE.MeshStandardMaterial({ color: "#35251a", roughness: 1 }),
+  buildingSignPost: new THREE.MeshStandardMaterial({ color: "#2d2017", roughness: 1 }),
+  buildingSignBoard: new THREE.MeshStandardMaterial({ color: "#785331", roughness: 0.92 }),
 } as const;
 
 type PooledStaticBatch = {
@@ -1632,7 +2019,11 @@ function appendPooledPart(
   for (const value of matrix.elements) batch.matrices.push(value);
 }
 
-function PooledStaticBatchMesh({ batch }: { batch: PooledStaticBatch }) {
+function PooledStaticBatchMesh({
+  batch,
+}: {
+  batch: PooledStaticBatch;
+}) {
   const mesh = useMemo(() => {
     const count = batch.matrices.length / 16;
     const instance = new THREE.InstancedMesh(
@@ -1642,14 +2033,17 @@ function PooledStaticBatchMesh({ batch }: { batch: PooledStaticBatch }) {
     );
     instance.castShadow = true;
     instance.receiveShadow = true;
+    // TIBIAGAME_STREAMING_FIX_V20
+    // These chunks are already spatially bounded around the player. Avoid an
+    // O(instance-count) bounding-sphere build every time an idle chunk mounts.
+    instance.frustumCulled = false;
     instance.instanceMatrix.setUsage(THREE.StaticDrawUsage);
     instance.instanceMatrix.array.set(batch.matrices);
     instance.instanceMatrix.needsUpdate = true;
-    instance.computeBoundingSphere();
     return instance;
   }, [batch]);
 
-  return <primitive object={mesh} />;
+  return <primitive object={mesh} dispose={null} />;
 }
 
 function WorldObjects({ objects }: { objects: readonly WorldObjectView[] }) {
@@ -1837,6 +2231,337 @@ function WorldObjects({ objects }: { objects: readonly WorldObjectView[] }) {
   return <group>{batches.map((batch) => <PooledStaticBatchMesh key={batch.key} batch={batch} />)}</group>;
 }
 
+// TIBIAGAME_STREAMING_FIX_V19
+type StaticBuildingWallSegment = {
+  position: [number, number, number];
+  size: [number, number, number];
+  window?: WindowView;
+  door?: DoorView;
+};
+
+function staticBuildingWallSegments(
+  building: BuildingView,
+  doors: readonly DoorView[],
+  windows: readonly WindowView[],
+): StaticBuildingWallSegment[] {
+  const height = buildingWallHeight(building);
+  const maxX = building.x + building.width;
+  const maxY = building.y + building.height;
+  const matchingDoors = doors.filter(
+    (door) => door.position.z === building.floor
+      && insideBuilding(door.position, building),
+  );
+  const doorsByKey = new Map(
+    matchingDoors.map((door) => [
+      `${door.position.x}:${door.position.y}`,
+      door,
+    ]),
+  );
+  const matchingWindows = windows.filter(
+    (window) => window.position.z === building.floor
+      && insideBuilding(window.position, building),
+  );
+  const windowsByKey = new Map(
+    matchingWindows.map((window) => [
+      `${window.position.x}:${window.position.y}`,
+      window,
+    ]),
+  );
+
+  const segments: StaticBuildingWallSegment[] = [];
+  for (let x = building.x; x < maxX; x += 1) {
+    segments.push({
+      position: [x + 0.5, height / 2, building.y],
+      size: [1.04, height, 0.13],
+      window: windowsByKey.get(`${x}:${building.y}`),
+      door: doorsByKey.get(`${x}:${building.y}`),
+    });
+    segments.push({
+      position: [x + 0.5, height / 2, maxY],
+      size: [1.04, height, 0.13],
+      window: windowsByKey.get(`${x}:${maxY - 1}`),
+      door: doorsByKey.get(`${x}:${maxY - 1}`),
+    });
+  }
+
+  for (let y = building.y; y < maxY; y += 1) {
+    segments.push({
+      position: [building.x, height / 2, y + 0.5],
+      size: [0.13, height, 1.04],
+      window: windowsByKey.get(`${building.x}:${y}`),
+      door: doorsByKey.get(`${building.x}:${y}`),
+    });
+    segments.push({
+      position: [maxX, height / 2, y + 0.5],
+      size: [0.13, height, 1.04],
+      window: windowsByKey.get(`${maxX - 1}:${y}`),
+      door: doorsByKey.get(`${maxX - 1}:${y}`),
+    });
+  }
+
+  return segments;
+}
+
+function BatchedHouseShells({
+  buildings,
+  doors,
+  windows,
+}: {
+  buildings: readonly BuildingView[];
+  doors: readonly DoorView[];
+  windows: readonly WindowView[];
+}) {
+  const { plinths, walls } = useMemo(() => {
+    const nextPlinths: StaticBuildingWallSegment[] = [];
+    const nextWalls: StaticBuildingWallSegment[] = [];
+
+    for (const building of buildings) {
+      if (building.kind !== "house") continue;
+      for (const segment of staticBuildingWallSegments(
+        building,
+        doors,
+        windows,
+      )) {
+        if (!segment.door) nextPlinths.push(segment);
+        if (!segment.door && !segment.window) nextWalls.push(segment);
+      }
+    }
+
+    return {
+      plinths: nextPlinths,
+      walls: nextWalls,
+    };
+  }, [buildings, doors, windows]);
+
+  return (
+    <group userData={{ occluder: true }}>
+      <InstancedHousePlinths segments={plinths} />
+      <InstancedHouseWalls segments={walls} />
+    </group>
+  );
+}
+
+function BatchedKeepWalls({
+  buildings,
+  doors,
+  windows,
+}: {
+  buildings: readonly BuildingView[];
+  doors: readonly DoorView[];
+  windows: readonly WindowView[];
+}) {
+  const texture = useWorldTexture(
+    "/assets/world/aldoria-castle-stone-v2.png",
+  );
+  const material = useMemo(() => new THREE.MeshStandardMaterial({
+    map: texture,
+    color: "#6d7773",
+    roughness: 1,
+  }), [texture]);
+
+  const segments = useMemo(() => {
+    const next: StaticBuildingWallSegment[] = [];
+    for (const building of buildings) {
+      if (building.kind === "house") continue;
+      for (const segment of staticBuildingWallSegments(
+        building,
+        doors,
+        windows,
+      )) {
+        if (!segment.door) next.push(segment);
+      }
+    }
+    return next;
+  }, [buildings, doors, windows]);
+
+  const mesh = useMemo(() => {
+    if (!segments.length) return null;
+
+    const instance = new THREE.InstancedMesh(
+      pooledWorldGeometry.box,
+      material,
+      segments.length,
+    );
+    instance.castShadow = true;
+    instance.receiveShadow = true;
+    instance.userData.occluder = true;
+    instance.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+    const scale = new THREE.Vector3();
+    const rotation = new THREE.Quaternion();
+
+    segments.forEach((segment, index) => {
+      position.set(...segment.position);
+      scale.set(...segment.size);
+      matrix.compose(position, rotation, scale);
+      instance.setMatrixAt(index, matrix);
+    });
+    instance.instanceMatrix.needsUpdate = true;
+    // TIBIAGAME_STREAMING_FIX_V20
+    instance.frustumCulled = false;
+    return instance;
+  }, [material, segments]);
+
+  useEffect(() => () => material.dispose(), [material]);
+
+  return mesh ? <primitive object={mesh} /> : null;
+}
+
+function BatchedBuildingStaticPrimitives({
+  buildings,
+}: {
+  buildings: readonly BuildingView[];
+}) {
+  const batches = useMemo(() => {
+    const result = new Map<string, PooledStaticBatch>();
+
+    for (const building of buildings) {
+      appendPooledPart(
+        result,
+        building.kind === "keep"
+          ? "building:floor:keep"
+          : "building:floor:house",
+        pooledWorldGeometry.box,
+        building.kind === "keep"
+          ? pooledWorldMaterial.buildingFloorKeep
+          : pooledWorldMaterial.buildingFloorHouse,
+        pooledMatrix([
+          building.x + building.width / 2,
+          0.035,
+          building.y + building.height / 2,
+        ]),
+        [0, 0, 0],
+        [0, 0, 0],
+        [
+          Math.max(0.2, building.width - 0.18),
+          0.07,
+          Math.max(0.2, building.height - 0.18),
+        ],
+      );
+
+      if (building.kind === "house") {
+        const signParent = pooledMatrix(
+          [
+            building.x + building.width - 0.35,
+            buildingWallHeight(building) * 0.72,
+            building.y - 0.18,
+          ],
+          [0, 0, 0],
+          [1.15, 1.15, 1.15],
+        );
+
+        appendPooledPart(
+          result,
+          "building:sign:arm",
+          pooledWorldGeometry.box,
+          pooledWorldMaterial.buildingSignArm,
+          signParent,
+          [0, 0.25, 0],
+          [0, 0, 0],
+          [0.55, 0.055, 0.055],
+        );
+        appendPooledPart(
+          result,
+          "building:sign:post",
+          pooledWorldGeometry.box,
+          pooledWorldMaterial.buildingSignPost,
+          signParent,
+          [0.2, -0.05, 0],
+          [0, 0, 0],
+          [0.06, 0.55, 0.06],
+        );
+        appendPooledPart(
+          result,
+          "building:sign:board",
+          pooledWorldGeometry.box,
+          pooledWorldMaterial.buildingSignBoard,
+          signParent,
+          [0.2, -0.34, 0],
+          [0, 0, 0],
+          [0.52, 0.34, 0.07],
+        );
+      }
+
+      if (building.kind === "keep") {
+        const height = buildingWallHeight(building);
+        for (
+          let x = building.x;
+          x <= building.x + building.width;
+          x += 0.65
+        ) {
+          appendPooledPart(
+            result,
+            "building:battlement",
+            pooledWorldGeometry.box,
+            pooledWorldMaterial.battlement,
+            pooledMatrix([x, height + 0.24, building.y]),
+            [0, 0, 0],
+            [0, 0, 0],
+            [0.34, 0.48, 0.34],
+          );
+          appendPooledPart(
+            result,
+            "building:battlement",
+            pooledWorldGeometry.box,
+            pooledWorldMaterial.battlement,
+            pooledMatrix([
+              x,
+              height + 0.24,
+              building.y + building.height,
+            ]),
+            [0, 0, 0],
+            [0, 0, 0],
+            [0.34, 0.48, 0.34],
+          );
+        }
+
+        for (
+          let y = building.y + 0.65;
+          y < building.y + building.height;
+          y += 0.65
+        ) {
+          appendPooledPart(
+            result,
+            "building:battlement",
+            pooledWorldGeometry.box,
+            pooledWorldMaterial.battlement,
+            pooledMatrix([building.x, height + 0.24, y]),
+            [0, 0, 0],
+            [0, 0, 0],
+            [0.34, 0.48, 0.34],
+          );
+          appendPooledPart(
+            result,
+            "building:battlement",
+            pooledWorldGeometry.box,
+            pooledWorldMaterial.battlement,
+            pooledMatrix([
+              building.x + building.width,
+              height + 0.24,
+              y,
+            ]),
+            [0, 0, 0],
+            [0, 0, 0],
+            [0.34, 0.48, 0.34],
+          );
+        }
+      }
+    }
+
+    return [...result.values()];
+  }, [buildings]);
+
+  return (
+    <group>
+      {batches.map((batch) => (
+        <PooledStaticBatchMesh key={batch.key} batch={batch} />
+      ))}
+    </group>
+  );
+}
+
 const Building = memo(function Building({ building, doors, windows, input }: { building: BuildingView; doors: readonly DoorView[]; windows: readonly WindowView[]; input: InputController }) {
   const height = buildingWallHeight(building);
   const maxX = building.x + building.width;
@@ -1856,13 +2581,7 @@ const Building = memo(function Building({ building, doors, windows, input }: { b
   }
   return (
     <group>
-      <mesh position={[building.x + building.width / 2, 0.035, building.y + building.height / 2]} receiveShadow>
-        <boxGeometry args={[Math.max(0.2, building.width - 0.18), 0.07, Math.max(0.2, building.height - 0.18)]} />
-        <meshStandardMaterial color={building.kind === "keep" ? "#666763" : "#765b42"} roughness={0.96} />
-      </mesh>
       <group userData={{ occluder: true }}>
-        {building.kind === "house" && <InstancedHousePlinths segments={wallSegments.filter((wall) => !wall.door)} />}
-        {building.kind === "house" && <InstancedHouseWalls segments={wallSegments.filter((wall) => !wall.door && !wall.window)} />}
         {wallSegments.map((wall) => (
           wall.door
             ? building.kind === "house"
@@ -1870,12 +2589,10 @@ const Building = memo(function Building({ building, doors, windows, input }: { b
               : <MedievalDoorWall key={wall.key} position={wall.position} size={wall.size} keep openingHeight={Math.min(height - 0.15, DOOR_HEIGHT) + 0.1} />
             : wall.window && building.kind === "house"
             ? <HouseWindowOpening key={wall.key} position={wall.position} size={wall.size} wallRotation={wall.rotation} layout={createHouseWindowLayout(height, Math.max(wall.size[0], wall.size[2]))} open={wall.window.open} onClick={() => input.toggleWindow(wall.window!.id, wall.window!.position)} />
-            : building.kind === "house" ? null : <MedievalWall key={wall.key} position={wall.position} size={wall.size} keep />
+            : null
         ))}
-        <HangingSign building={building} wallHeight={height} />
         {building.kind !== "house" && matchingDoors.map((door) => <Door key={door.id} door={door} building={building} input={input} tall={height} showBeacon={false} />)}
         {building.kind !== "house" && matchingWindows.map((window) => <ShutterWindow key={window.id} window={window} building={building} wallHeight={height} onClick={() => input.toggleWindow(window.id, window.position)} />)}
-        {building.kind === "keep" && <Battlements building={building} height={height} />}
       </group>
       {matchingDoors.map((door) => <DoorBeacon key={`beacon-${door.id}`} door={door} building={building} onOpen={() => input.toggleDoor(door.id, door.position)} />)}
     </group>
@@ -1886,96 +2603,83 @@ function buildingWallHeight(building: BuildingView) {
   return building.kind === "keep" ? CASTLE_HEIGHT : WALL_HEIGHT;
 }
 
-function ConnectedWalls({ positions, contextPositions = positions, castle }: { positions: readonly Position[]; contextPositions?: readonly Position[]; castle: boolean }) {
+function ConnectedWalls({
+  positions,
+  contextPositions = positions,
+  castle,
+}: {
+  positions: readonly Position[];
+  contextPositions?: readonly Position[];
+  castle: boolean;
+}) {
   const height = castle ? CASTLE_HEIGHT : WALL_HEIGHT;
-  const castleTexture = useWorldTexture("/assets/world/aldoria-castle-stone-v2.png", 1.35, 1.35);
-  const mesh = useRef<THREE.InstancedMesh>(null);
-  const instances = useMemo(() => {
-    if (positions.length === 0) return [];
-    // TIBIAGAME_STREAMING_FIX_V9
-    // Iterate/render only core positions, but resolve +x/+y connectivity from
-    // the one-tile context halo so connectors survive chunk boundaries.
+  const castleTexture = useWorldTexture(
+    "/assets/world/aldoria-castle-stone-v2.png",
+    1.35,
+    1.35,
+  );
+  const material = usePersistentConnectedWallMaterial(
+    castle,
+    castleTexture,
+  );
+
+  // TIBIAGAME_STREAMING_FIX_V20
+  const matrices = useMemo(() => {
+    if (positions.length === 0) return [] as THREE.Matrix4[];
+
     const set = new Set(contextPositions.map(tileKey));
     const thickness = castle ? 0.28 : 0.18;
     const centerSize = castle ? 0.3 : 0.24;
     const connectorLength = Math.max(0.1, 1 - centerSize);
-    const next: { position: [number, number, number]; scale: [number, number, number] }[] = [];
+    const next: THREE.Matrix4[] = [];
 
     for (const tile of positions) {
       const x = tile.x + 0.5;
       const z = tile.y + 0.5;
-      next.push({
-        position: [x, height / 2, z],
-        scale: [centerSize, height, centerSize],
-      });
+      next.push(persistentInstanceMatrix(
+        [x, height / 2, z],
+        [0, 0, 0],
+        [centerSize, height, centerSize],
+      ));
 
-      // Emit each connection once. The old merged geometry emitted both
-      // directions for every neighboring pair, allocating overlapping boxes.
       if (set.has(`${tile.x + 1}:${tile.y}:${tile.z}`)) {
-        next.push({
-          position: [x + 0.5, height / 2, z],
-          scale: [connectorLength, height, thickness],
-        });
+        next.push(persistentInstanceMatrix(
+          [x + 0.5, height / 2, z],
+          [0, 0, 0],
+          [connectorLength, height, thickness],
+        ));
       }
       if (set.has(`${tile.x}:${tile.y + 1}:${tile.z}`)) {
-        next.push({
-          position: [x, height / 2, z + 0.5],
-          scale: [thickness, height, connectorLength],
-        });
+        next.push(persistentInstanceMatrix(
+          [x, height / 2, z + 0.5],
+          [0, 0, 0],
+          [thickness, height, connectorLength],
+        ));
       }
       if (castle) {
-        next.push({
-          position: [x, height + 0.18, z],
-          scale: [0.25, 0.36, 0.25],
-        });
+        next.push(persistentInstanceMatrix(
+          [x, height + 0.18, z],
+          [0, 0, 0],
+          [0.25, 0.36, 0.25],
+        ));
       }
     }
+
     return next;
   }, [castle, contextPositions, height, positions]);
 
-  useEffect(() => {
-    if (!mesh.current) return;
-    const matrix = new THREE.Matrix4();
-    const translation = new THREE.Vector3();
-    const scale = new THREE.Vector3();
-    const rotation = new THREE.Quaternion();
-    instances.forEach((instance, index) => {
-      translation.set(...instance.position);
-      scale.set(...instance.scale);
-      matrix.compose(translation, rotation, scale);
-      mesh.current!.setMatrixAt(index, matrix);
-    });
-    mesh.current.instanceMatrix.needsUpdate = true;
-    mesh.current.computeBoundingSphere();
-  }, [instances]);
-
-  if (instances.length === 0) return null;
-  return <instancedMesh
-    ref={mesh}
-    args={[undefined, undefined, instances.length]}
-    castShadow
-    receiveShadow
-    userData={{ occluder: true }}
-  >
-    <boxGeometry args={[1, 1, 1]} />
-    <meshStandardMaterial
-      map={castle ? castleTexture : undefined}
-      color={castle ? "#d0d0c5" : "#aa987c"}
-      roughness={0.98}
+  return (
+    <PersistentStaticInstances
+      geometry={persistentStaticGeometry.box}
+      material={material}
+      matrices={matrices}
+      capacity={PERSISTENT_WALL_INSTANCE_CAPACITY}
+      userData={{ occluder: true }}
     />
-  </instancedMesh>;
+  );
 }
 
-function Battlements({ building, height }: { building: BuildingView; height: number }) {
-  const points: [number, number, number][] = [];
-  for (let x = building.x; x <= building.x + building.width; x += 0.65) {
-    points.push([x, height + 0.24, building.y], [x, height + 0.24, building.y + building.height]);
-  }
-  for (let y = building.y + 0.65; y < building.y + building.height; y += 0.65) {
-    points.push([building.x, height + 0.24, y], [building.x + building.width, height + 0.24, y]);
-  }
-  return <>{points.map((point, index) => <mesh key={index} position={point} castShadow><boxGeometry args={[0.34, 0.48, 0.34]} /><meshStandardMaterial color="#87908c" roughness={0.96} /></mesh>)}</>;
-}
+
 
 function DoorBeacon({ door, building, onOpen }: { door: DoorView; building?: BuildingView; onOpen: () => void }) {
   const transform = doorTransform(door, building);
@@ -2029,123 +2733,228 @@ function Door({ door, input, building, tall = WALL_HEIGHT, showBeacon = true }: 
   );
 }
 
-const TREE_OCCLUSION_BUCKET_SIZE = 6;
-
-function InstancedTrees({ positions, variant = "forest" }: { positions: readonly Position[]; variant?: "forest" | "pine" | "snowy" }) {
-  const batches = useMemo(() => {
-    const grouped = new Map<string, Position[]>();
-    for (const position of positions) {
-      const key = `${Math.floor(position.x / TREE_OCCLUSION_BUCKET_SIZE)}:${Math.floor(position.y / TREE_OCCLUSION_BUCKET_SIZE)}:${position.z}`;
-      const batch = grouped.get(key);
-      if (batch) batch.push(position);
-      else grouped.set(key, [position]);
-    }
-    return [...grouped.entries()];
-  }, [positions]);
-  return <group>{batches.map(([key, batch]) => (
-    <InstancedTreeBatch key={key} positions={batch} variant={variant} />
-  ))}</group>;
+function InstancedTrees({
+  positions,
+  variant = "forest",
+}: {
+  positions: readonly Position[];
+  variant?: "forest" | "pine" | "snowy";
+}) {
+  // TIBIAGAME_STREAMING_FIX_V20
+  // Occlusion has been disabled since V11. The old 6x6 occlusion buckets were
+  // still multiplying mesh/components per retained chunk for no visual benefit.
+  return <InstancedTreeBatch positions={positions} variant={variant} />;
 }
 
-function InstancedTreeBatch({ positions, variant }: { positions: readonly Position[]; variant: "forest" | "pine" | "snowy" }) {
-  const trunks = useRef<THREE.InstancedMesh>(null);
-  const lowerCanopies = useRef<THREE.InstancedMesh>(null);
-  const upperCanopies = useRef<THREE.InstancedMesh>(null);
+function InstancedTreeBatch({
+  positions,
+  variant,
+}: {
+  positions: readonly Position[];
+  variant: "forest" | "pine" | "snowy";
+}) {
   const pine = variant !== "forest";
   const snowy = variant === "snowy";
-  useEffect(() => {
-    const matrix = new THREE.Matrix4(); const quaternion = new THREE.Quaternion(); const location = new THREE.Vector3(); const scale = pine ? new THREE.Vector3(1.04, 1.18, 1.04) : new THREE.Vector3(1.18, 1.22, 1.18);
-    positions.forEach((position, index) => {
-      location.set(position.x + 0.5, 0, position.y + 0.5);
-      quaternion.setFromEuler(new THREE.Euler(0, stablePhase(tileKey(position)), 0));
-      for (const [mesh, y] of [[trunks.current, 0.72], [lowerCanopies.current, 1.75], [upperCanopies.current, 2.35]] as const) {
-        if (!mesh) continue;
-        location.y = y;
-        matrix.compose(location, quaternion, scale);
-        mesh.setMatrixAt(index, matrix);
-        mesh.instanceMatrix.needsUpdate = true;
-      }
-    });
-    [trunks.current, lowerCanopies.current, upperCanopies.current].forEach((mesh) => mesh?.computeBoundingSphere());
-  }, [pine, positions]);
-  if (!positions.length) return null;
-  // Occlusion operates on a small spatial batch. This keeps tree rendering
-  // instanced without fading every tree in the streamed region at once.
-  return <group userData={{ occluder: true }}>
-    <instancedMesh ref={trunks} args={[undefined, undefined, positions.length]} castShadow receiveShadow><cylinderGeometry args={[0.14, 0.2, 1.45, 8]} /><meshStandardMaterial color="#604128" roughness={1} transparent={false} opacity={1} /></instancedMesh>
-    <instancedMesh ref={lowerCanopies} args={[undefined, undefined, positions.length]} castShadow><coneGeometry args={[pine ? 0.72 : 0.82, pine ? 1.9 : 1.75, pine ? 7 : 9]} /><meshStandardMaterial color={snowy ? "#c5dadd" : pine ? "#285744" : "#315c38"} roughness={0.95} transparent={false} opacity={1} /></instancedMesh>
-    <instancedMesh ref={upperCanopies} args={[undefined, undefined, positions.length]} castShadow><coneGeometry args={[pine ? 0.52 : 0.61, pine ? 1.5 : 1.35, pine ? 7 : 9]} /><meshStandardMaterial color={snowy ? "#e0ebea" : pine ? "#346a50" : "#3b7043"} roughness={0.95} transparent={false} opacity={1} /></instancedMesh>
-  </group>;
-}
 
-function InstancedMountainWalls({ positions }: { positions: readonly Position[] }) {
-  const bases = useRef<THREE.InstancedMesh>(null);
-  const caps = useRef<THREE.InstancedMesh>(null);
-  useEffect(() => {
-    const matrix = new THREE.Matrix4();
-    positions.forEach((position, index) => {
-      matrix.makeTranslation(position.x + 0.5, 0.78, position.y + 0.5);
-      bases.current?.setMatrixAt(index, matrix);
-      matrix.makeTranslation(position.x + 0.32, 1.62, position.y + 0.55);
-      caps.current?.setMatrixAt(index, matrix);
-    });
-    for (const mesh of [bases.current, caps.current]) {
-      if (!mesh) continue;
-      mesh.instanceMatrix.needsUpdate = true;
-      mesh.computeBoundingSphere();
+  // TIBIAGAME_STREAMING_FIX_V20
+  const { trunks, lower, upper } = useMemo(() => {
+    const trunkMatrices: THREE.Matrix4[] = [];
+    const lowerMatrices: THREE.Matrix4[] = [];
+    const upperMatrices: THREE.Matrix4[] = [];
+    const scale = pine
+      ? [1.04, 1.18, 1.04] as const
+      : [1.18, 1.22, 1.18] as const;
+
+    for (const position of positions) {
+      const rotation = [0, stablePhase(tileKey(position)), 0] as const;
+      trunkMatrices.push(persistentInstanceMatrix(
+        [position.x + 0.5, 0.72, position.y + 0.5],
+        rotation,
+        scale,
+      ));
+      lowerMatrices.push(persistentInstanceMatrix(
+        [position.x + 0.5, 1.75, position.y + 0.5],
+        rotation,
+        scale,
+      ));
+      upperMatrices.push(persistentInstanceMatrix(
+        [position.x + 0.5, 2.35, position.y + 0.5],
+        rotation,
+        scale,
+      ));
     }
-  }, [positions]);
-  if (!positions.length) return null;
-  return <group>
-    <instancedMesh ref={bases} args={[undefined, undefined, positions.length]} castShadow receiveShadow><boxGeometry args={[1, 1.56, 0.9]} /><meshStandardMaterial color="#59615d" roughness={0.98} /></instancedMesh>
-    <instancedMesh ref={caps} args={[undefined, undefined, positions.length]} castShadow><dodecahedronGeometry args={[0.53, 0]} /><meshStandardMaterial color="#778078" roughness={0.98} /></instancedMesh>
-  </group>;
+
+    return {
+      trunks: trunkMatrices,
+      lower: lowerMatrices,
+      upper: upperMatrices,
+    };
+  }, [pine, positions]);
+
+  return (
+    <group userData={{ occluder: true }}>
+      <PersistentStaticInstances
+        geometry={persistentStaticGeometry.treeTrunk}
+        material={persistentStaticMaterial.treeTrunk}
+        matrices={trunks}
+        capacity={PERSISTENT_CHUNK_INSTANCE_CAPACITY}
+      />
+      <PersistentStaticInstances
+        geometry={pine
+          ? persistentStaticGeometry.pineLower
+          : persistentStaticGeometry.forestLower}
+        material={snowy
+          ? persistentStaticMaterial.snowyLower
+          : pine
+            ? persistentStaticMaterial.pineLower
+            : persistentStaticMaterial.forestLower}
+        matrices={lower}
+        capacity={PERSISTENT_CHUNK_INSTANCE_CAPACITY}
+        receiveShadow={false}
+      />
+      <PersistentStaticInstances
+        geometry={pine
+          ? persistentStaticGeometry.pineUpper
+          : persistentStaticGeometry.forestUpper}
+        material={snowy
+          ? persistentStaticMaterial.snowyUpper
+          : pine
+            ? persistentStaticMaterial.pineUpper
+            : persistentStaticMaterial.forestUpper}
+        matrices={upper}
+        capacity={PERSISTENT_CHUNK_INSTANCE_CAPACITY}
+        receiveShadow={false}
+      />
+    </group>
+  );
 }
 
-function InstancedSimpleObjects({ positions, kind }: { positions: readonly Position[]; kind: "snow-bank" | "barrel" }) {
-  const mesh = useRef<THREE.InstancedMesh>(null);
-  useEffect(() => {
-    if (!mesh.current) return;
-    const matrix = new THREE.Matrix4();
-    positions.forEach((position, index) => {
-      matrix.makeTranslation(position.x + 0.5, kind === "barrel" ? 0.28 : 0.22, position.y + 0.5);
-      mesh.current!.setMatrixAt(index, matrix);
-    });
-    mesh.current.instanceMatrix.needsUpdate = true;
-    mesh.current.computeBoundingSphere();
-  }, [kind, positions]);
-  if (!positions.length) return null;
-  return <instancedMesh ref={mesh} args={[undefined, undefined, positions.length]} castShadow receiveShadow>
-    {kind === "barrel" ? <cylinderGeometry args={[0.24, 0.28, 0.56, 10]} /> : <dodecahedronGeometry args={[0.55, 1]} />}
-    <meshStandardMaterial color={kind === "barrel" ? "#9b5d2c" : "#c9dcdf"} roughness={kind === "barrel" ? 0.85 : 1} />
-  </instancedMesh>;
+function InstancedMountainWalls({
+  positions,
+}: {
+  positions: readonly Position[];
+}) {
+  // TIBIAGAME_STREAMING_FIX_V20
+  const { bases, caps } = useMemo(() => {
+    const baseMatrices: THREE.Matrix4[] = [];
+    const capMatrices: THREE.Matrix4[] = [];
+
+    for (const position of positions) {
+      baseMatrices.push(persistentInstanceMatrix(
+        [position.x + 0.5, 0.78, position.y + 0.5],
+        [0, 0, 0],
+        [1, 1.56, 0.9],
+      ));
+      capMatrices.push(persistentInstanceMatrix(
+        [position.x + 0.32, 1.62, position.y + 0.55],
+      ));
+    }
+
+    return {
+      bases: baseMatrices,
+      caps: capMatrices,
+    };
+  }, [positions]);
+
+  return (
+    <group>
+      <PersistentStaticInstances
+        geometry={persistentStaticGeometry.box}
+        material={persistentStaticMaterial.mountainBase}
+        matrices={bases}
+        capacity={PERSISTENT_CHUNK_INSTANCE_CAPACITY}
+      />
+      <PersistentStaticInstances
+        geometry={persistentStaticGeometry.mountainCap}
+        material={persistentStaticMaterial.mountainCap}
+        matrices={caps}
+        capacity={PERSISTENT_CHUNK_INSTANCE_CAPACITY}
+        receiveShadow={false}
+      />
+    </group>
+  );
 }
 
-function InstancedTorches({ positions }: { positions: readonly Position[] }) {
-  const posts = useRef<THREE.InstancedMesh>(null);
-  const flames = useRef<THREE.InstancedMesh>(null);
-  const flameMaterial = useRef<THREE.MeshStandardMaterial>(null);
-  useEffect(() => {
-    const matrix = new THREE.Matrix4(); const location = new THREE.Vector3(); const scale = new THREE.Vector3(1.15, 1.15, 1.15);
-    positions.forEach((position, index) => {
-      for (const [mesh, y] of [[posts.current, 0.62], [flames.current, 1.31]] as const) {
-        if (!mesh) continue;
-        location.set(position.x + 0.5, y, position.y + 0.5);
-        matrix.compose(location, new THREE.Quaternion(), scale);
-        mesh.setMatrixAt(index, matrix);
-        mesh.instanceMatrix.needsUpdate = true;
-      }
-    });
-    [posts.current, flames.current].forEach((mesh) => mesh?.computeBoundingSphere());
+function InstancedSimpleObjects({
+  positions,
+  kind,
+}: {
+  positions: readonly Position[];
+  kind: "snow-bank" | "barrel";
+}) {
+  // TIBIAGAME_STREAMING_FIX_V20
+  const matrices = useMemo(() => positions.map((position) =>
+    persistentInstanceMatrix([
+      position.x + 0.5,
+      kind === "barrel" ? 0.28 : 0.22,
+      position.y + 0.5,
+    ])
+  ), [kind, positions]);
+
+  return (
+    <PersistentStaticInstances
+      geometry={kind === "barrel"
+        ? persistentStaticGeometry.barrel
+        : persistentStaticGeometry.snowBank}
+      material={kind === "barrel"
+        ? persistentStaticMaterial.barrel
+        : persistentStaticMaterial.snowBank}
+      matrices={matrices}
+      capacity={PERSISTENT_CHUNK_INSTANCE_CAPACITY}
+    />
+  );
+}
+
+function InstancedTorches({
+  positions,
+}: {
+  positions: readonly Position[];
+}) {
+  // TIBIAGAME_STREAMING_FIX_V20
+  // Shared materials/geometries remove one geometry/material pair and one
+  // useFrame callback per retained chunk. Lighting still comes from Atmosphere.
+  const { posts, flames } = useMemo(() => {
+    const postMatrices: THREE.Matrix4[] = [];
+    const flameMatrices: THREE.Matrix4[] = [];
+
+    for (const position of positions) {
+      postMatrices.push(persistentInstanceMatrix(
+        [position.x + 0.5, 0.62, position.y + 0.5],
+        [0, 0, 0],
+        [1.15, 1.15, 1.15],
+      ));
+      flameMatrices.push(persistentInstanceMatrix(
+        [position.x + 0.5, 1.31, position.y + 0.5],
+        [0, 0, 0],
+        [1.15, 1.15, 1.15],
+      ));
+    }
+
+    return {
+      posts: postMatrices,
+      flames: flameMatrices,
+    };
   }, [positions]);
-  useFrame(({ clock }) => {
-    if (flameMaterial.current) flameMaterial.current.emissiveIntensity = 2.8 + Math.sin(clock.elapsedTime * 9) * 0.25;
-  });
-  if (!positions.length) return null;
-  return <>
-    <instancedMesh ref={posts} args={[undefined, undefined, positions.length]} castShadow><cylinderGeometry args={[0.035, 0.055, 1.24, 7]} /><meshStandardMaterial color="#49301f" /></instancedMesh>
-    <instancedMesh ref={flames} args={[undefined, undefined, positions.length]}><coneGeometry args={[0.13, 0.38, 9]} /><meshStandardMaterial ref={flameMaterial} color="#ff8b32" emissive="#ff4d10" emissiveIntensity={3} toneMapped={false} /></instancedMesh>
-  </>;
+
+  return (
+    <>
+      <PersistentStaticInstances
+        geometry={persistentStaticGeometry.torchPost}
+        material={persistentStaticMaterial.torchPost}
+        matrices={posts}
+        capacity={PERSISTENT_CHUNK_INSTANCE_CAPACITY}
+        receiveShadow={false}
+      />
+      <PersistentStaticInstances
+        geometry={persistentStaticGeometry.torchFlame}
+        material={persistentStaticMaterial.torchFlame}
+        matrices={flames}
+        capacity={PERSISTENT_CHUNK_INSTANCE_CAPACITY}
+        castShadow={false}
+        receiveShadow={false}
+      />
+    </>
+  );
 }
 
 type ActorClick = (event: ThreeEvent<MouseEvent>) => void;
@@ -2661,9 +3470,12 @@ const RETAINED_STATIC_CONTEXT_MARGIN = 1;
 
 // TIBIAGAME_STREAMING_FIX_V13
 function mergeTerrainPositionLayer(
-  previous: readonly Position[],
+  previous: Position[],
   incoming: readonly Position[],
-) {
+): Position[] {
+  // TIBIAGAME_STREAMING_FIX_V20_1
+  // MapView owns mutable arrays. Keeping only incoming readonly avoids widening
+  // the merged region into readonly Position[].
   if (incoming.length === 0) return previous;
   const known = new Set(previous.map(tileKey));
   let merged: Position[] | null = null;
@@ -2714,19 +3526,24 @@ function mergeTerrainMaterialLayer(
 function mergeTerrainObjectMaskLayer(
   previous: MapView["objects"],
   incoming: MapView["objects"],
-) {
-  if (incoming.length === 0) return previous;
-  const known = new Set(previous.map((entry) => entry.id));
-  let merged: MapView["objects"] | null = null;
+): WorldObjectView[] {
+  // TIBIAGAME_STREAMING_FIX_V20_1
+  // MapView.objects is optional for sparse/legacy authored regions.
+  const previousObjects = previous ?? [];
+  const incomingObjects = incoming ?? [];
+  if (incomingObjects.length === 0) return previousObjects;
 
-  for (const entry of incoming) {
+  const known = new Set(previousObjects.map((entry) => entry.id));
+  let merged: WorldObjectView[] | null = null;
+
+  for (const entry of incomingObjects) {
     if (known.has(entry.id)) continue;
     known.add(entry.id);
-    if (!merged) merged = [...previous];
+    if (!merged) merged = [...previousObjects];
     merged.push(entry);
   }
 
-  return merged ?? previous;
+  return merged ?? previousObjects;
 }
 
 function mergeTerrainRenderRegion(
@@ -2871,10 +3688,12 @@ function mergeOverlappingTerrainKnowledge(
     ),
   );
 
-  const objectIds = new Set(current.map.objects.map((entry) => entry.id));
+  const currentObjects = current.map.objects ?? [];
+  const knownObjects = known.map.objects ?? [];
+  const objectIds = new Set(currentObjects.map((entry) => entry.id));
   const objects = mergeTerrainObjectMaskLayer(
-    current.map.objects,
-    known.map.objects.filter((entry) =>
+    currentObjects,
+    knownObjects.filter((entry) =>
       terrainPositionInsideBounds(entry.position, bounds)
       && !objectIds.has(entry.id),
     ),

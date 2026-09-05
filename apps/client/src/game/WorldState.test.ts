@@ -86,7 +86,15 @@ describe("server message batching", () => {
     };
 
     world.applyBatch([{
-      type: "world_region", map, ground_items: [], creatures: [], npcs: [], resource_nodes: [],
+      type: "world_region",
+      map,
+      region_center: position(100, 100),
+      region_radius: 64,
+      region_floor_radius: 1,
+      ground_items: [],
+      creatures: [],
+      npcs: [],
+      resource_nodes: [],
     }]);
 
     expect(world.map).toBe(map);

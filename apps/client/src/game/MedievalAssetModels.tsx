@@ -51,61 +51,204 @@ type HouseWallInstance = { position: [number, number, number]; size: [number, nu
  * on local -Z, so this intentionally retains the source model's original
  * orientation rather than using the door/window facing transform. */
 // TIBIAGAME_STREAMING_FIX_V6
-export function InstancedMedievalHouseWalls({ segments }: { segments: readonly HouseWallInstance[] }) {
+// TIBIAGAME_STREAMING_FIX_V20
+// V19 batches solid house walls per retained chunk. Reuse the extracted GLTF
+// geometry/material parts across every chunk instead of cloning their materials
+// again for each chunk mount.
+const PERSISTENT_HOUSE_WALL_INSTANCE_CAPACITY = 2048;
+
+type SharedHouseWallPart = {
+  geometry: THREE.BufferGeometry;
+  material: THREE.Material;
+  matrix: THREE.Matrix4;
+};
+
+const sharedHouseWallPartCache = new WeakMap<
+  THREE.Group[],
+  readonly SharedHouseWallPart[]
+>();
+const sharedHousePlasterMaterialCache = new WeakMap<
+  THREE.Group[],
+  THREE.Material
+>();
+
+function getSharedHouseWallParts(
+  scenes: THREE.Group[],
+): readonly SharedHouseWallPart[] {
+  const cached = sharedHouseWallPartCache.get(scenes);
+  if (cached) return cached;
+
+  const source = scenes
+    .map((scene) => scene.getObjectByName(nodeNames.solid))
+    .find((candidate): candidate is THREE.Object3D =>
+      candidate !== undefined
+    );
+  if (!source) throw new Error("Missing straight medieval house wall asset");
+
+  source.updateWorldMatrix(true, true);
+  const sourceInverse = source.matrixWorld.clone().invert();
+  const next: SharedHouseWallPart[] = [];
+
+  source.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(child.material)
+      ? child.material
+      : [child.material];
+
+    materials.forEach((material) => next.push({
+      geometry: child.geometry,
+      material: material.clone(),
+      matrix: sourceInverse.clone().multiply(child.matrixWorld),
+    }));
+  });
+
+  if (!next.length) {
+    throw new Error("Straight medieval house wall asset has no mesh parts");
+  }
+
+  sharedHouseWallPartCache.set(scenes, next);
+  return next;
+}
+
+function getSharedHousePlasterMaterial(scenes: THREE.Group[]) {
+  const cached = sharedHousePlasterMaterialCache.get(scenes);
+  if (cached) return cached;
+
+  const source = scenes
+    .map((scene) => scene.getObjectByName(nodeNames.solid))
+    .find((candidate): candidate is THREE.Object3D =>
+      candidate !== undefined
+    );
+
+  let plaster: THREE.Material | undefined;
+  source?.traverse((child) => {
+    if (plaster || !(child instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(child.material)
+      ? child.material
+      : [child.material];
+    plaster = materials.find((candidate) =>
+      candidate.name.includes("Plaster")
+    );
+  });
+
+  if (!plaster) {
+    throw new Error("Missing plaster material on medieval house wall");
+  }
+
+  const shared = plaster.clone();
+  sharedHousePlasterMaterialCache.set(scenes, shared);
+  return shared;
+}
+
+export function InstancedMedievalHouseWalls({
+  segments,
+}: {
+  segments: readonly HouseWallInstance[];
+}) {
   const gltf = useLoader(GLTFLoader, MEDIEVAL_VILLAGE_ASSET);
-  const parts = useMemo(() => {
-    const source = gltf.scenes.map((scene) => scene.getObjectByName(nodeNames.solid)).find((candidate): candidate is THREE.Object3D => candidate !== undefined);
-    if (!source) throw new Error("Missing straight medieval house wall asset");
-    source.updateWorldMatrix(true, true);
-    const sourceInverse = source.matrixWorld.clone().invert();
-    const next: { geometry: THREE.BufferGeometry; material: THREE.Material; matrix: THREE.Matrix4 }[] = [];
-    source.traverse((child) => {
-      if (!(child instanceof THREE.Mesh)) return;
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-      materials.forEach((material) => next.push({ geometry: child.geometry, material: material.clone(), matrix: sourceInverse.clone().multiply(child.matrixWorld) }));
-    });
-    if (!next.length) throw new Error("Straight medieval house wall asset has no mesh parts");
-    return next;
-  }, [gltf.scenes]);
-  const meshes = useRef<(THREE.InstancedMesh | null)[]>([]);
-  useEffect(() => {
-    const wallMatrix = new THREE.Matrix4(); const translation = new THREE.Vector3(); const scale = new THREE.Vector3(); const matrix = new THREE.Matrix4();
-    segments.forEach((segment, instanceIndex) => {
+  const parts = useMemo(
+    () => getSharedHouseWallParts(gltf.scenes),
+    [gltf.scenes],
+  );
+
+  // TIBIAGAME_STREAMING_FIX_V20
+  const meshes = useMemo(() => parts.map((part) => {
+    const mesh = new THREE.InstancedMesh(
+      part.geometry,
+      part.material,
+      PERSISTENT_HOUSE_WALL_INSTANCE_CAPACITY,
+    );
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    return mesh;
+  }), [parts]);
+
+  const count = Math.min(
+    segments.length,
+    PERSISTENT_HOUSE_WALL_INSTANCE_CAPACITY,
+  );
+
+  useMemo(() => {
+    const wallMatrix = new THREE.Matrix4();
+    const translation = new THREE.Vector3();
+    const scale = new THREE.Vector3();
+    const matrix = new THREE.Matrix4();
+    const rotation = new THREE.Quaternion();
+    const axis = new THREE.Vector3(0, 1, 0);
+
+    for (let instanceIndex = 0; instanceIndex < count; instanceIndex += 1) {
+      const segment = segments[instanceIndex];
       const horizontal = segment.size[0] > segment.size[2];
-      translation.set(segment.position[0], 0, segment.position[2]);
-      scale.set(horizontal ? segment.size[0] / SOURCE_WIDTH : segment.size[2] / SOURCE_WIDTH, segment.size[1] / SOURCE_HEIGHT, Math.max(0.28, (horizontal ? segment.size[2] : segment.size[0]) / SOURCE_DEPTH));
-      wallMatrix.compose(translation, new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), horizontal ? 0 : Math.PI / 2), scale);
+      translation.set(
+        segment.position[0],
+        0,
+        segment.position[2],
+      );
+      scale.set(
+        horizontal
+          ? segment.size[0] / SOURCE_WIDTH
+          : segment.size[2] / SOURCE_WIDTH,
+        segment.size[1] / SOURCE_HEIGHT,
+        Math.max(
+          0.28,
+          (horizontal ? segment.size[2] : segment.size[0])
+            / SOURCE_DEPTH,
+        ),
+      );
+      rotation.setFromAxisAngle(
+        axis,
+        horizontal ? 0 : Math.PI / 2,
+      );
+      wallMatrix.compose(translation, rotation, scale);
+
       parts.forEach((part, partIndex) => {
-        const mesh = meshes.current[partIndex]; if (!mesh) return;
         matrix.copy(wallMatrix).multiply(part.matrix);
-        mesh.setMatrixAt(instanceIndex, matrix); mesh.instanceMatrix.needsUpdate = true;
+        meshSetMatrix(meshes[partIndex], instanceIndex, matrix);
       });
-    });
-    meshes.current.forEach((mesh) => mesh?.computeBoundingSphere());
-  }, [parts, segments]);
-  useEffect(() => () => parts.forEach((part) => part.material.dispose()), [parts]);
-  if (!segments.length) return null;
-  return <>{parts.map((part, index) => <instancedMesh key={index} ref={(mesh: THREE.InstancedMesh | null) => { meshes.current[index] = mesh; }} args={[part.geometry, part.material, segments.length]} castShadow receiveShadow />)}</>;
+    }
+
+    for (const mesh of meshes) {
+      mesh.count = count;
+      mesh.instanceMatrix.clearUpdateRanges();
+      if (count > 0) {
+        mesh.instanceMatrix.addUpdateRange(0, count * 16);
+        mesh.instanceMatrix.needsUpdate = true;
+      }
+    }
+  }, [count, meshes, parts, segments]);
+
+  return (
+    <>
+      {meshes.map((mesh, index) => (
+        <primitive key={index} object={mesh} dispose={null} />
+      ))}
+    </>
+  );
+}
+
+function meshSetMatrix(
+  mesh: THREE.InstancedMesh,
+  index: number,
+  matrix: THREE.Matrix4,
+) {
+  matrix.toArray(
+    mesh.instanceMatrix.array as Float32Array,
+    index * 16,
+  );
 }
 
 /** Uses the exact plaster material from the straight house-wall asset. */
 export function useHouseFacadePlasterMaterial() {
   const gltf = useLoader(GLTFLoader, MEDIEVAL_VILLAGE_ASSET);
-  const material = useMemo(() => {
-    const source = gltf.scenes
-      .map((scene) => scene.getObjectByName(nodeNames.solid))
-      .find((candidate): candidate is THREE.Object3D => candidate !== undefined);
-    let plaster: THREE.Material | undefined;
-    source?.traverse((child) => {
-      if (plaster || !(child instanceof THREE.Mesh)) return;
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-      plaster = materials.find((candidate) => candidate.name.includes("Plaster"));
-    });
-    if (!plaster) throw new Error("Missing plaster material on medieval house wall");
-    return plaster.clone();
-  }, [gltf.scenes]);
-  useEffect(() => () => material.dispose(), [material]);
-  return material;
+  // TIBIAGAME_STREAMING_FIX_V20
+  // The facade material is immutable. One shared clone is sufficient for every
+  // house opening instead of one clone/dispose cycle per door/window component.
+  return useMemo(
+    () => getSharedHousePlasterMaterial(gltf.scenes),
+    [gltf.scenes],
+  );
 }
 
 export function MedievalWindowShuttersAsset({
