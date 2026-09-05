@@ -57,6 +57,17 @@ type HouseWallInstance = { position: [number, number, number]; size: [number, nu
 // again for each chunk mount.
 const PERSISTENT_HOUSE_WALL_INSTANCE_CAPACITY = 2048;
 
+// TIBIAGAME_STREAMING_FIX_V20_3
+function houseWallInstanceCapacity(count: number) {
+  if (count <= 1) return 1;
+  let value = 1;
+  while (
+    value < count
+    && value < PERSISTENT_HOUSE_WALL_INSTANCE_CAPACITY
+  ) value *= 2;
+  return Math.min(value, PERSISTENT_HOUSE_WALL_INSTANCE_CAPACITY);
+}
+
 type SharedHouseWallPart = {
   geometry: THREE.BufferGeometry;
   material: THREE.Material;
@@ -152,22 +163,24 @@ export function InstancedMedievalHouseWalls({
   );
 
   // TIBIAGAME_STREAMING_FIX_V20
+  // TIBIAGAME_STREAMING_FIX_V20_3
+  const allocationCapacity = houseWallInstanceCapacity(segments.length);
   const meshes = useMemo(() => parts.map((part) => {
     const mesh = new THREE.InstancedMesh(
       part.geometry,
       part.material,
-      PERSISTENT_HOUSE_WALL_INSTANCE_CAPACITY,
+      allocationCapacity,
     );
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     return mesh;
-  }), [parts]);
+  }), [allocationCapacity, parts]);
 
   const count = Math.min(
     segments.length,
-    PERSISTENT_HOUSE_WALL_INSTANCE_CAPACITY,
+    allocationCapacity,
   );
 
   useMemo(() => {

@@ -77,7 +77,6 @@ const RETAINED_STATIC_CHUNK_SIZE = 24;
 const RETAINED_STATIC_CACHE_LIMIT = 17;
 const RETAINED_STATIC_HARD_LIMIT = 18;
 const RETAINED_STATIC_CHUNK_HYSTERESIS = 4;
-const RETAINED_STATIC_FRONTIER_DISTANCE = 10;
 // TIBIAGAME_STREAMING_FIX_V8: superseded by authoritative completeness.
  // TIBIAGAME_STREAMING_FIX_V9: immutable retained chunks require full coverage.
 
@@ -583,61 +582,10 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
       chunkY: staticChunkY + dy,
     }));
 
-    // TIBIAGAME_STREAMING_FIX_V20
-    // Prepare only the strip(s) the player is approaching. This is a narrow
-    // frontier, not a blanket 5x5 GPU prewarm.
-    const frontierSpecs: {
-      floor: number;
-      chunkX: number;
-      chunkY: number;
-    }[] = [];
-    const offsetX = local.position.x
-      - staticChunkX * RETAINED_STATIC_CHUNK_SIZE;
-    const offsetY = local.position.y
-      - staticChunkY * RETAINED_STATIC_CHUNK_SIZE;
-
-    const addVerticalFrontier = (chunkX: number) => {
-      for (let dy = -1; dy <= 1; dy += 1) {
-        frontierSpecs.push({
-          floor,
-          chunkX,
-          chunkY: staticChunkY + dy,
-        });
-      }
-    };
-    const addHorizontalFrontier = (chunkY: number) => {
-      for (let dx = -1; dx <= 1; dx += 1) {
-        frontierSpecs.push({
-          floor,
-          chunkX: staticChunkX + dx,
-          chunkY,
-        });
-      }
-    };
-
-    if (
-      offsetX
-      >= RETAINED_STATIC_CHUNK_SIZE - RETAINED_STATIC_FRONTIER_DISTANCE
-    ) addVerticalFrontier(staticChunkX + 2);
-    if (offsetX <= RETAINED_STATIC_FRONTIER_DISTANCE) {
-      addVerticalFrontier(staticChunkX - 2);
-    }
-    if (
-      offsetY
-      >= RETAINED_STATIC_CHUNK_SIZE - RETAINED_STATIC_FRONTIER_DISTANCE
-    ) addHorizontalFrontier(staticChunkY + 2);
-    if (offsetY <= RETAINED_STATIC_FRONTIER_DISTANCE) {
-      addHorizontalFrontier(staticChunkY - 2);
-    }
-
-    const uniqueFrontierSpecs = frontierSpecs.filter((spec, index, all) =>
-      all.findIndex((candidate) =>
-        candidate.floor === spec.floor
-        && candidate.chunkX === spec.chunkX
-        && candidate.chunkY === spec.chunkY
-      ) === index
-    );
-
+    // TIBIAGAME_STREAMING_FIX_V20_3
+    // Production trace showed that whole React/R3F chunk mounts scheduled from
+    // requestIdleCallback become the hitch themselves. Runtime frontier mounts
+    // are disabled; normal 3x3 + stair-target loading remains.
     // TIBIAGAME_STREAMING_FIX_V7
     // Network/CPU streaming still preloads adjacent floors. GPU prewarm is
     // limited to actual stair destinations inside the current 3x3 vicinity.
@@ -742,7 +690,6 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
 
     const pending = [
       ...currentFloorSpecs.slice(1),
-      ...uniqueFrontierSpecs,
       ...stairTargetSpecs,
     ].filter((spec) => !retainedStaticKeys.current.has(
       retainedStaticChunkKey(spec.floor, spec.chunkX, spec.chunkY),
@@ -1478,6 +1425,14 @@ function usePersistentBridgeMaterials(texture: THREE.Texture) {
   }, [texture]);
 }
 
+// TIBIAGAME_STREAMING_FIX_V20_3
+function retainedInstanceCapacity(count: number, maximum: number) {
+  if (count <= 1) return 1;
+  let value = 1;
+  while (value < count && value < maximum) value *= 2;
+  return Math.min(value, maximum);
+}
+
 function persistentInstanceMatrix(
   position: readonly number[],
   rotation: readonly number[] = [0, 0, 0],
@@ -1509,11 +1464,16 @@ function PersistentStaticInstances({
   receiveShadow?: boolean;
   userData?: Record<string, unknown>;
 }) {
+  const allocationCapacity = retainedInstanceCapacity(
+    matrices.length,
+    capacity,
+  );
+
   const mesh = useMemo(() => {
     const instance = new THREE.InstancedMesh(
       geometry,
       material,
-      capacity,
+      allocationCapacity,
     );
     instance.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     instance.castShadow = castShadow;
@@ -1522,14 +1482,14 @@ function PersistentStaticInstances({
     if (userData) Object.assign(instance.userData, userData);
     return instance;
   }, [
-    capacity,
+    allocationCapacity,
     castShadow,
     geometry,
     material,
     receiveShadow,
   ]);
 
-  const count = Math.min(matrices.length, capacity);
+  const count = Math.min(matrices.length, allocationCapacity);
 
   useMemo(() => {
     const target = mesh.instanceMatrix.array as Float32Array;
