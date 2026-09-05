@@ -17,6 +17,7 @@ import { getAudioSettings, subscribeAudioSettings, updateAudioSettings } from ".
 import { InputController } from "./game/InputController";
 import { GameMinimap } from "./game/GameMinimap";
 import { ThreeWorld } from "./game/ThreeWorld";
+import { NativeWorldRenderer } from "./game/NativeWorldRenderer";
 import { NetworkClient } from "./game/NetworkClient";
 import { WorldState } from "./game/WorldState";
 import { isWorldTimePaused, setWorldTime, setWorldTimePaused, worldEnvironment, worldTimeLabel } from "./game/worldEnvironment";
@@ -244,6 +245,12 @@ function Game({ onLeave }: { onLeave: () => void }) {
   const [showPerformance, setShowPerformance] = useState(() => loadStoredBoolean("aldoria.show-performance", true));
   const [reducedMotion, setReducedMotion] = useState(() => loadStoredBoolean("aldoria.reduced-motion", false));
   const [sceneReady, setSceneReady] = useState(false);
+  // TIBIAGAME_NATIVE_RENDERER_EXPERIMENT_V22
+  // Use ?renderer=native in production preview to bypass React Three Fiber for
+  // the world scene while keeping the existing React HUD/network/game state.
+  const nativeWorldRenderer =
+    new URLSearchParams(window.location.search).get("renderer") === "native";
+  const handleSceneReady = useCallback(() => setSceneReady(true), []);
   const [actionSkills, setActionSkills] = useState<Record<number, string | null>>(() => loadActionSkills());
   const pendingGoldPickups = useRef(new Set<string>());
   const emberSigil = world.inventory.find(
@@ -403,7 +410,21 @@ function Game({ onLeave }: { onLeave: () => void }) {
     <main className={`game-shell ${reducedMotion ? "reduced-motion" : ""}`}>
       <WorldMusic world={world} />
       <section className="viewport">
-        <ThreeWorld world={world} input={input} showDebug={showPerformance} onReady={() => setSceneReady(true)} />
+        {nativeWorldRenderer ? (
+          <NativeWorldRenderer
+            world={world}
+            input={input}
+            showDebug={showPerformance}
+            onReady={handleSceneReady}
+          />
+        ) : (
+          <ThreeWorld
+            world={world}
+            input={input}
+            showDebug={showPerformance}
+            onReady={handleSceneReady}
+          />
+        )}
         {!sceneReady && <WorldLoadingScreen />}
       </section>
       <AreaTransition world={world} />
