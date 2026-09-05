@@ -37,6 +37,11 @@ export class CreatureAssetManager {
     return loading;
   }
 
+  async preload(id: string): Promise<void> {
+    const definition = await this.load(id);
+    await Promise.all(Object.values(definition.animations).map((animation) => this.loadAnimation(id, animation)));
+  }
+
   /** Dispose the app-lifetime cache when the entire Three.js world is torn down. */
   dispose(): void {
     for (const texture of this.textures.values()) void texture.then((loaded) => loaded.dispose());
@@ -63,3 +68,19 @@ export class CreatureAssetManager {
 }
 
 export const creatureAssetManager = new CreatureAssetManager();
+
+// The castle rat is currently the sprite-creature path. Warm its JSON, WebP
+// decode and Three.js texture cache while the player is still entering the
+// world instead of paying that cost at the first on-screen encounter.
+if (typeof window !== "undefined") {
+  const idleWindow = window as Window & {
+    requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+  };
+  const preload = () => {
+    void creatureAssetManager.preload("castle_rat").catch((error) => {
+      console.warn("sprite creature preload failed", error);
+    });
+  };
+  if (idleWindow.requestIdleCallback) idleWindow.requestIdleCallback(preload, { timeout: 1_500 });
+  else window.setTimeout(preload, 0);
+}

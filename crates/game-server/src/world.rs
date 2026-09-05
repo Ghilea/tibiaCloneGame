@@ -2021,30 +2021,6 @@ impl World {
         self.npcs.clone()
     }
 
-    pub fn creature_views_near(&self, center: Position, radius: i32) -> Vec<CreatureView> {
-        self.creatures
-            .values()
-            .filter(|creature| position_in_region(creature.view.position, center, radius))
-            .map(|creature| creature.view.clone())
-            .collect()
-    }
-
-    pub fn npc_views_near(&self, center: Position, radius: i32) -> Vec<NpcView> {
-        self.npcs
-            .iter()
-            .filter(|npc| position_in_region(npc.position, center, radius))
-            .cloned()
-            .collect()
-    }
-
-    pub fn ground_items_near(&self, center: Position, radius: i32) -> Vec<GroundItem> {
-        self.ground_items
-            .iter()
-            .filter(|item| position_in_region(item.position, center, radius))
-            .cloned()
-            .collect()
-    }
-
     pub fn buy_from_npc(
         &mut self,
         player_id: EntityId,
@@ -3202,6 +3178,110 @@ impl World {
                 .cloned()
                 .collect(),
         }
+    }
+
+    /// Build one streamed payload containing the current floor plus nearby
+    /// vertical floors. The per-floor spatial index is still used, so this
+    /// does not scan the complete world.
+    pub fn map_view_near_floors(
+        &self,
+        center: Position,
+        radius: i32,
+        floor_radius: i16,
+    ) -> MapView {
+        let floor_radius = floor_radius.max(0);
+        let min_floor = center.z.saturating_sub(floor_radius);
+        let max_floor = center.z.saturating_add(floor_radius);
+        let mut merged = self.map_view_near(center, radius);
+        merged.floor = center.z;
+
+        for floor in min_floor..=max_floor {
+            if floor == center.z {
+                continue;
+            }
+            let mut next = self.map_view_near(Position { z: floor, ..center }, radius);
+            merged.blocked.append(&mut next.blocked);
+            merged.water.append(&mut next.water);
+            merged.bridges.append(&mut next.bridges);
+            merged.trees.append(&mut next.trees);
+            merged.roads.append(&mut next.roads);
+            merged.floors.append(&mut next.floors);
+            merged.house_walls.append(&mut next.house_walls);
+            merged.castle_walls.append(&mut next.castle_walls);
+            merged.windows.append(&mut next.windows);
+            merged.torches.append(&mut next.torches);
+            merged.terrain_materials.append(&mut next.terrain_materials);
+            merged.objects.append(&mut next.objects);
+            merged.buildings.append(&mut next.buildings);
+            merged.doors.append(&mut next.doors);
+            merged.stairs.append(&mut next.stairs);
+        }
+
+        // A staircase can be selected once from each endpoint floor.
+        let mut stair_ids = HashSet::new();
+        merged.stairs.retain(|stairs| stair_ids.insert(stairs.id.clone()));
+        merged
+    }
+
+    pub fn ground_items_near_floors(
+        &self,
+        center: Position,
+        radius: i32,
+        floor_radius: i16,
+    ) -> Vec<GroundItem> {
+        self.ground_items
+            .iter()
+            .filter(|entry| position_in_region_floors(entry.position, center, radius, floor_radius))
+            .cloned()
+            .collect()
+    }
+
+    pub fn creature_views_near_floors(
+        &self,
+        center: Position,
+        radius: i32,
+        floor_radius: i16,
+    ) -> Vec<CreatureView> {
+        self.creatures
+            .values()
+            .filter(|creature| {
+                position_in_region_floors(creature.view.position, center, radius, floor_radius)
+            })
+            .map(|creature| creature.view.clone())
+            .collect()
+    }
+
+    pub fn npc_views_near_floors(
+        &self,
+        center: Position,
+        radius: i32,
+        floor_radius: i16,
+    ) -> Vec<NpcView> {
+        self.npcs
+            .iter()
+            .filter(|npc| position_in_region_floors(npc.position, center, radius, floor_radius))
+            .cloned()
+            .collect()
+    }
+
+    pub fn resource_nodes_near_floors(
+        &self,
+        center: Position,
+        radius: i32,
+        floor_radius: i16,
+    ) -> Vec<ResourceNodeView> {
+        self.resource_nodes
+            .iter()
+            .filter(|node| {
+                position_in_region_floors(
+                    node.document.position,
+                    center,
+                    radius,
+                    floor_radius,
+                )
+            })
+            .map(ResourceNode::view)
+            .collect()
     }
 
     /// Small worlds already fit completely inside the initial region payload.
@@ -4830,6 +4910,18 @@ fn position_in_region(position: Position, center: Position, radius: i32) -> bool
         && (position.y - center.y).abs() <= radius
 }
 
+fn position_in_region_floors(
+    position: Position,
+    center: Position,
+    radius: i32,
+    floor_radius: i16,
+) -> bool {
+    (i32::from(position.z) - i32::from(center.z)).abs()
+        <= i32::from(floor_radius.max(0))
+        && (position.x - center.x).abs() <= radius
+        && (position.y - center.y).abs() <= radius
+}
+
 fn has_line_of_sight_on(map: &WorldMap, start: Position, end: Position) -> bool {
     if start.z != end.z {
         return false;
@@ -5260,6 +5352,7 @@ mod tests {
                 max_stack: 100,
                 charges: None,
                 attack: None,
+                defense: None,
                 container_slots: None,
                 equipment_slot: None,
                 pickupable: true,
@@ -5452,6 +5545,7 @@ mod tests {
                 max_stack: 100,
                 charges: None,
                 attack: None,
+                defense: None,
                 container_slots: None,
                 equipment_slot: None,
                 pickupable: true,
@@ -5469,6 +5563,7 @@ mod tests {
                 max_stack: 1,
                 charges: None,
                 attack: None,
+                defense: None,
                 container_slots: Some(3),
                 equipment_slot: None,
                 pickupable: true,
@@ -5486,6 +5581,7 @@ mod tests {
                 max_stack: 1,
                 charges: None,
                 attack: Some(5),
+                defense: None,
                 container_slots: None,
                 equipment_slot: Some("weapon".into()),
                 pickupable: true,
@@ -5512,6 +5608,7 @@ mod tests {
                     max_stack: 100,
                     charges: None,
                     attack: None,
+                    defense: None,
                     container_slots: None,
                     equipment_slot: None,
                     pickupable: true,
@@ -5529,6 +5626,7 @@ mod tests {
                     max_stack: 100,
                     charges: None,
                     attack: None,
+                    defense: None,
                     container_slots: None,
                     equipment_slot: None,
                     pickupable: true,
@@ -5546,6 +5644,7 @@ mod tests {
                     max_stack: 1,
                     charges: None,
                     attack: None,
+                    defense: None,
                     container_slots: Some(8),
                     equipment_slot: None,
                     pickupable: false,
@@ -5563,6 +5662,7 @@ mod tests {
                     max_stack: 100,
                     charges: None,
                     attack: None,
+                    defense: None,
                     container_slots: None,
                     equipment_slot: None,
                     pickupable: true,
@@ -5580,6 +5680,7 @@ mod tests {
                     max_stack: 1,
                     charges: Some(5),
                     attack: None,
+                    defense: None,
                     container_slots: None,
                     equipment_slot: None,
                     pickupable: true,
@@ -5601,6 +5702,7 @@ mod tests {
                     max_stack: 100,
                     charges: None,
                     attack: None,
+                    defense: None,
                     container_slots: None,
                     equipment_slot: None,
                     pickupable: true,
@@ -5618,6 +5720,7 @@ mod tests {
                     max_stack: 1,
                     charges: None,
                     attack: None,
+                    defense: None,
                     container_slots: None,
                     equipment_slot: Some("weapon".into()),
                     pickupable: true,
@@ -5709,6 +5812,7 @@ mod tests {
             max_stack: 1,
             charges: None,
             attack: None,
+            defense: None,
             container_slots: Some(100),
             equipment_slot: Some("backpack".into()),
             pickupable: true,

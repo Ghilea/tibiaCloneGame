@@ -1,7 +1,7 @@
 import { Canvas, type ThreeEvent, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { memo, Suspense, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type MutableRefObject, type RefObject } from "react";
 import * as THREE from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+
 import type {
   BuildingView,
   CreatureView,
@@ -286,34 +286,44 @@ const Terrain = memo(function Terrain({
   const marshGrassTexture = useWorldTexture("/assets/world/aldoria-marsh-grass-v1.png");
   const ashSoilTexture = useWorldTexture("/assets/world/aldoria-ash-soil-v1.png");
   const bridgeTexture = useWorldTexture("/assets/world/aldoria-bridge-planks-v1.png");
-  const onFloor = (positions: readonly Position[]) => positions.filter((tile) => tile.z === floor);
-  const materials = new Map(map.terrainMaterials.filter((entry) => entry.position.z === floor).map((entry) => [`${entry.position.x}:${entry.position.y}`, entry.material]));
-  const materialTiles = (id: string) => [...materials.entries()].filter(([, value]) => value === id).map(([key]) => {
-    const [x, y] = key.split(":").map(Number);
-    return { x, y, z: floor };
-  });
-  const structuralTiles = new Set([
-    ...map.water,
-    ...map.trees,
-    ...map.houseWalls,
-    ...map.castleWalls,
-    ...(map.objects ?? [])
-      .filter((object) => object.position.z === floor && [
-        "mountain_wall",
-        "forest_tree",
-        "pine_tree",
-        "snowy_pine",
-        "snow_bank",
-        "well",
-        "table",
-        "wooden_crate",
-        "rock_pile",
-        "campfire",
-        "fence_post",
-      ].includes(object.kind))
-      .map((object) => object.position),
-  ].map(tileKey));
-  const visibleRocks = map.blocked.filter((tile) => tile.z === floor && !structuralTiles.has(tileKey(tile)));
+  // createRenderRegion already clips every positional layer to this floor.
+  // Group terrain materials once instead of scanning/splitting the complete
+  // material list once for every material type.
+  const materialTiles = useMemo(() => {
+    const grouped = new Map<string, Position[]>();
+    for (const entry of map.terrainMaterials) {
+      const entries = grouped.get(entry.material);
+      if (entries) entries.push(entry.position);
+      else grouped.set(entry.material, [entry.position]);
+    }
+    return grouped;
+  }, [map.terrainMaterials]);
+  const tilesForMaterial = (id: string) => materialTiles.get(id) ?? [];
+
+  const visibleRocks = useMemo(() => {
+    const structuralTiles = new Set([
+      ...map.water,
+      ...map.trees,
+      ...map.houseWalls,
+      ...map.castleWalls,
+      ...(map.objects ?? [])
+        .filter((object) => [
+          "mountain_wall",
+          "forest_tree",
+          "pine_tree",
+          "snowy_pine",
+          "snow_bank",
+          "well",
+          "table",
+          "wooden_crate",
+          "rock_pile",
+          "campfire",
+          "fence_post",
+        ].includes(object.kind))
+        .map((object) => object.position),
+    ].map(tileKey));
+    return map.blocked.filter((tile) => !structuralTiles.has(tileKey(tile)));
+  }, [map.blocked, map.castleWalls, map.houseWalls, map.objects, map.trees, map.water]);
 
   return (
     <group>
@@ -321,19 +331,19 @@ const Terrain = memo(function Terrain({
         <boxGeometry args={[bounds.width, 0.2, bounds.height]} />
         <meshStandardMaterial map={grassTexture} color="#91a477" roughness={0.96} />
       </mesh>
-      <InstancedTiles positions={onFloor(map.roads)} color="#b7a889" texture={roadTexture} height={0.035} y={0.015} />
-      <InstancedTiles positions={onFloor(map.floors)} color="#aaa18d" texture={mossStoneTexture} height={0.045} y={0.025} />
-      <InstancedTiles positions={materialTiles("packed_earth")} color="#b29676" texture={packedEarthTexture} height={0.048} y={0.03} />
-      <InstancedTiles positions={materialTiles("moss_stone")} color="#a4ad9a" texture={mossStoneTexture} height={0.052} y={0.034} />
-      <InstancedTiles positions={materialTiles("sandstone")} color="#d0ba91" texture={sandstoneTexture} height={0.052} y={0.034} />
-      <InstancedTiles positions={materialTiles("mud")} color="#806248" texture={mudTexture} height={0.049} y={0.031} />
-      <InstancedTiles positions={materialTiles("gravel")} color="#aaa18f" texture={gravelTexture} height={0.051} y={0.033} />
-      <InstancedTiles positions={materialTiles("crypt_stone")} color="#89908a" texture={cryptStoneTexture} height={0.052} y={0.034} />
-      <InstancedTiles positions={materialTiles("wood_planks")} color="#a0744d" texture={woodPlanksTexture} height={0.052} y={0.034} />
-      <InstancedTiles positions={materialTiles("marsh_grass")} color="#71865d" texture={marshGrassTexture} height={0.05} y={0.032} />
-      <InstancedTiles positions={materialTiles("ash_soil")} color="#746d63" texture={ashSoilTexture} height={0.049} y={0.031} />
-      <WaterTiles positions={onFloor(map.water)} />
-      <BridgeTiles positions={onFloor(map.bridges)} texture={bridgeTexture} />
+      <InstancedTiles positions={map.roads} color="#b7a889" texture={roadTexture} height={0.035} y={0.015} />
+      <InstancedTiles positions={map.floors} color="#aaa18d" texture={mossStoneTexture} height={0.045} y={0.025} />
+      <InstancedTiles positions={tilesForMaterial("packed_earth")} color="#b29676" texture={packedEarthTexture} height={0.048} y={0.03} />
+      <InstancedTiles positions={tilesForMaterial("moss_stone")} color="#a4ad9a" texture={mossStoneTexture} height={0.052} y={0.034} />
+      <InstancedTiles positions={tilesForMaterial("sandstone")} color="#d0ba91" texture={sandstoneTexture} height={0.052} y={0.034} />
+      <InstancedTiles positions={tilesForMaterial("mud")} color="#806248" texture={mudTexture} height={0.049} y={0.031} />
+      <InstancedTiles positions={tilesForMaterial("gravel")} color="#aaa18f" texture={gravelTexture} height={0.051} y={0.033} />
+      <InstancedTiles positions={tilesForMaterial("crypt_stone")} color="#89908a" texture={cryptStoneTexture} height={0.052} y={0.034} />
+      <InstancedTiles positions={tilesForMaterial("wood_planks")} color="#a0744d" texture={woodPlanksTexture} height={0.052} y={0.034} />
+      <InstancedTiles positions={tilesForMaterial("marsh_grass")} color="#71865d" texture={marshGrassTexture} height={0.05} y={0.032} />
+      <InstancedTiles positions={tilesForMaterial("ash_soil")} color="#746d63" texture={ashSoilTexture} height={0.049} y={0.031} />
+      <WaterTiles positions={map.water} />
+      <BridgeTiles positions={map.bridges} texture={bridgeTexture} />
       <InstancedTiles positions={visibleRocks} color="#626d66" height={0.55} y={0.275} scale={0.72} castShadow />
     </group>
   );
@@ -555,7 +565,8 @@ const Structures = memo(function Structures({ map, input, world, discoveryRevisi
 });
 
 const StaticStructures = memo(function StaticStructures({ map, input, world, discoveryRevision: _discoveryRevision, floor, buildings, onHover }: { map: NonNullable<WorldState["map"]>; input: InputController; world: WorldState; discoveryRevision: number; floor: number; buildings: readonly BuildingView[]; onHover: (hover: { label: string; x: number; y: number } | null) => void }) {
-  const visibleObjects = useMemo(() => (map.objects ?? []).filter((entry) => entry.position.z === floor), [floor, map.objects]);
+  // The region slicer already guarantees that world objects are on `floor`.
+  const visibleObjects = map.objects ?? [];
   const groupedObjects = useMemo(() => {
     const groups = {
       forestTrees: [] as Position[],
@@ -584,11 +595,11 @@ const StaticStructures = memo(function StaticStructures({ map, input, world, dis
     return groups;
   }, [visibleObjects]);
   const forestTrees = useMemo(() => [
-    ...map.trees.filter((tile) => tile.z === floor),
+    ...map.trees,
     ...groupedObjects.forestTrees,
   ], [floor, groupedObjects.forestTrees, map.trees]);
   return <>
-      <ConnectedWalls positions={map.castleWalls.filter((tile) => tile.z === floor)} castle />
+      <ConnectedWalls positions={map.castleWalls} castle />
       <InstancedTiles positions={groupedObjects.dirtPaths} color="#8d6c49" height={0.055} y={0.045} />
       <InstancedTiles positions={groupedObjects.snowGround} color="#e6f0ee" height={0.055} y={0.045} />
       <InstancedTrees positions={forestTrees} variant="forest" />
@@ -599,7 +610,7 @@ const StaticStructures = memo(function StaticStructures({ map, input, world, dis
       <InstancedSimpleObjects positions={groupedObjects.barrels} kind="barrel" />
       <WorldObjects objects={groupedObjects.other} />
       <InspectableWorldObjects objects={visibleObjects.filter((object) => inspectableWorldObjectIds.has(object.id))} input={input} world={world} onHover={onHover} />
-      <InstancedTorches positions={map.torches.filter((tile) => tile.z === floor)} />
+      <InstancedTorches positions={map.torches} />
       <Stairs stairs={map.stairs} floor={floor} />
       {map.doors.filter((door) => door.position.z === floor && !insideAnyBuilding(door.position, buildings)).map((door) => <Door key={door.id} door={door} input={input} />)}
     </>;
@@ -738,44 +749,79 @@ function buildingWallHeight(building: BuildingView) {
 
 function ConnectedWalls({ positions, castle }: { positions: readonly Position[]; castle: boolean }) {
   const height = castle ? CASTLE_HEIGHT : WALL_HEIGHT;
-  const castleTexture = useLoader(THREE.TextureLoader, "/assets/world/aldoria-castle-stone-v2.png");
-  castleTexture.wrapS = castleTexture.wrapT = THREE.RepeatWrapping;
-  castleTexture.repeat.set(1.35, 1.35);
-  castleTexture.colorSpace = THREE.SRGBColorSpace;
-  const geometry = useMemo(() => {
-    // BufferGeometryUtils assumes at least one geometry and dereferences
-    // geometries[0]. Empty authored layers are valid, especially on a new map.
-    if (positions.length === 0) return null;
+  const castleTexture = useWorldTexture("/assets/world/aldoria-castle-stone-v2.png", 1.35, 1.35);
+  const mesh = useRef<THREE.InstancedMesh>(null);
+  const instances = useMemo(() => {
+    if (positions.length === 0) return [];
     const set = new Set(positions.map(tileKey));
     const thickness = castle ? 0.28 : 0.18;
     const centerSize = castle ? 0.3 : 0.24;
-    const pieces: THREE.BufferGeometry[] = [];
-    const addBox = (size: [number, number, number], offset: [number, number, number]) => {
-      const box = new THREE.BoxGeometry(...size);
-      box.translate(...offset);
-      pieces.push(box);
-    };
-    positions.forEach((tile) => {
-      const x = tile.x + 0.5; const z = tile.y + 0.5;
-      addBox([centerSize, height, centerSize], [x, height / 2, z]);
-      if (set.has(`${tile.x - 1}:${tile.y}:${tile.z}`)) addBox([0.42, height, thickness], [x - 0.32, height / 2, z]);
-      if (set.has(`${tile.x + 1}:${tile.y}:${tile.z}`)) addBox([0.42, height, thickness], [x + 0.32, height / 2, z]);
-      if (set.has(`${tile.x}:${tile.y - 1}:${tile.z}`)) addBox([thickness, height, 0.42], [x, height / 2, z - 0.32]);
-      if (set.has(`${tile.x}:${tile.y + 1}:${tile.z}`)) addBox([thickness, height, 0.42], [x, height / 2, z + 0.32]);
-      if (castle) addBox([0.25, 0.36, 0.25], [x, height + 0.18, z]);
-    });
-    const merged = pieces.length > 0 ? mergeGeometries(pieces, false) : null;
-    pieces.forEach((piece) => piece.dispose());
-    if (!merged) throw new Error("Unable to merge connected wall geometry");
-    merged.computeBoundingBox();
-    merged.computeBoundingSphere();
-    return merged;
+    const connectorLength = Math.max(0.1, 1 - centerSize);
+    const next: { position: [number, number, number]; scale: [number, number, number] }[] = [];
+
+    for (const tile of positions) {
+      const x = tile.x + 0.5;
+      const z = tile.y + 0.5;
+      next.push({
+        position: [x, height / 2, z],
+        scale: [centerSize, height, centerSize],
+      });
+
+      // Emit each connection once. The old merged geometry emitted both
+      // directions for every neighboring pair, allocating overlapping boxes.
+      if (set.has(`${tile.x + 1}:${tile.y}:${tile.z}`)) {
+        next.push({
+          position: [x + 0.5, height / 2, z],
+          scale: [connectorLength, height, thickness],
+        });
+      }
+      if (set.has(`${tile.x}:${tile.y + 1}:${tile.z}`)) {
+        next.push({
+          position: [x, height / 2, z + 0.5],
+          scale: [thickness, height, connectorLength],
+        });
+      }
+      if (castle) {
+        next.push({
+          position: [x, height + 0.18, z],
+          scale: [0.25, 0.36, 0.25],
+        });
+      }
+    }
+    return next;
   }, [castle, height, positions]);
-  useEffect(() => () => geometry?.dispose(), [geometry]);
-  if (!geometry) return null;
-  return <mesh geometry={geometry} castShadow receiveShadow userData={{ occluder: true }}>
-    <meshStandardMaterial map={castle ? castleTexture : undefined} color={castle ? "#d0d0c5" : "#aa987c"} roughness={0.98} />
-  </mesh>;
+
+  useLayoutEffect(() => {
+    if (!mesh.current) return;
+    const matrix = new THREE.Matrix4();
+    const translation = new THREE.Vector3();
+    const scale = new THREE.Vector3();
+    const rotation = new THREE.Quaternion();
+    instances.forEach((instance, index) => {
+      translation.set(...instance.position);
+      scale.set(...instance.scale);
+      matrix.compose(translation, rotation, scale);
+      mesh.current!.setMatrixAt(index, matrix);
+    });
+    mesh.current.instanceMatrix.needsUpdate = true;
+    mesh.current.computeBoundingSphere();
+  }, [instances]);
+
+  if (instances.length === 0) return null;
+  return <instancedMesh
+    ref={mesh}
+    args={[undefined, undefined, instances.length]}
+    castShadow
+    receiveShadow
+    userData={{ occluder: true }}
+  >
+    <boxGeometry args={[1, 1, 1]} />
+    <meshStandardMaterial
+      map={castle ? castleTexture : undefined}
+      color={castle ? "#d0d0c5" : "#aa987c"}
+      roughness={0.98}
+    />
+  </instancedMesh>;
 }
 
 function Battlements({ building, height }: { building: BuildingView; height: number }) {
@@ -1436,7 +1482,7 @@ function Atmosphere({ torches, local, visualTarget, playerLight }: { torches: re
   return (
     <>
       <hemisphereLight ref={ambient} args={["#bfd5cb", "#172019", 0.8]} />
-      <directionalLight ref={sun} position={[14, 24, 9]} intensity={1.8} color="#ffe1aa" castShadow shadow-mapSize={[1024, 1024]} shadow-camera-near={1} shadow-camera-far={70} shadow-camera-left={-18} shadow-camera-right={18} shadow-camera-top={18} shadow-camera-bottom={-18} />
+      <directionalLight ref={sun} position={[14, 24, 9]} intensity={1.8} color="#ffe1aa" castShadow shadow-mapSize={[512, 512]} shadow-camera-near={1} shadow-camera-far={70} shadow-camera-left={-18} shadow-camera-right={18} shadow-camera-top={18} shadow-camera-bottom={-18} />
       <PlayerLight target={local} visualTarget={visualTarget} profile={playerLight} />
       {activeTorches.map((torch) => <pointLight key={tileKey(torch)} position={[torch.x + 0.5, 1.55, torch.y + 0.5]} color="#ff6a24" intensity={5.4} distance={6.1} decay={2} />)}
     </>

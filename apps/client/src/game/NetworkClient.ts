@@ -6,8 +6,12 @@ export class NetworkClient {
   private sequence = 0;
   private pingTimer: number | null = null;
   private attackTimer: number | null = null;
+  // TIBIAGAME_STREAMING_FIX_V1
   private incomingFrame: number | null = null;
   private incomingMessages: ServerMessage[] = [];
+  private pendingWorldRegion: Extract<ServerMessage, { type: "world_region" }> | null = null;
+  private worldRegionIdleHandle: number | null = null;
+  private regionDecodeWorker: Worker | null = null;
 
   constructor(private world: WorldState) { }
 
@@ -30,6 +34,11 @@ export class NetworkClient {
     });
     socket.addEventListener("message", (event) => {
       if (this.socket !== socket) return;
+      if (typeof event.data === "string"
+        && event.data.slice(0, 96).includes('"type":"world_region"')) {
+        this.decodeWorldRegion(event.data);
+        return;
+      }
       try {
         const message = JSON.parse(event.data) as ServerMessage;
         if (message.type === "welcome" && message.player.id !== characterId) {
@@ -41,9 +50,18 @@ export class NetworkClient {
           socket.close();
           return;
         }
-        this.incomingMessages.push(message);
-        if (this.incomingFrame === null) {
-          this.incomingFrame = window.requestAnimationFrame(() => this.flushIncomingMessages());
+        if (message.type === "world_region") {
+          // Region packets are large and mostly static. Do not apply them in
+          // the same requestAnimationFrame batch as movement/combat updates.
+          // Coalescing also prevents an old region from being built if the
+          // network briefly catches up with more than one payload queued.
+          this.pendingWorldRegion = message;
+          this.scheduleWorldRegionApply();
+        } else {
+          this.incomingMessages.push(message);
+          if (this.incomingFrame === null) {
+            this.incomingFrame = window.requestAnimationFrame(() => this.flushIncomingMessages());
+          }
         }
       }
       catch { this.world.connection = "error"; this.world.notify(); }
@@ -53,6 +71,8 @@ export class NetworkClient {
       this.socket = null;
       this.stopPingTimer();
       this.stopAttackTimer();
+      this.cancelWorldRegionApply();
+      this.stopRegionDecodeWorker();
       this.world.attackTargetId = null;
       this.world.connection = "offline";
       this.world.notify();
@@ -132,12 +152,81 @@ export class NetworkClient {
     if (this.incomingFrame !== null) window.cancelAnimationFrame(this.incomingFrame);
     this.incomingFrame = null;
     this.incomingMessages.length = 0;
+    this.cancelWorldRegionApply();
+    this.stopRegionDecodeWorker();
     const socket = this.socket;
     this.socket = null;
     socket?.close();
     this.world.prepareForConnection();
     this.world.connection = "offline";
     this.world.notify();
+  }
+
+  private decodeWorldRegion(raw: string) {
+    if (!this.regionDecodeWorker) {
+      const worker = new Worker(new URL("./NetworkDecodeWorker.ts", import.meta.url), { type: "module" });
+      worker.addEventListener("message", (event: MessageEvent<{ ok: boolean; message?: ServerMessage }>) => {
+        const decoded = event.data;
+        if (!decoded.ok || decoded.message?.type !== "world_region") {
+          this.world.connection = "error";
+          this.world.notify();
+          return;
+        }
+        // Dedicated workers process posted messages in order. Keep only the
+        // newest static region so a network burst cannot build stale geometry.
+        this.pendingWorldRegion = decoded.message;
+        this.scheduleWorldRegionApply();
+      });
+      worker.addEventListener("error", () => {
+        this.world.connection = "error";
+        this.world.notify();
+      });
+      this.regionDecodeWorker = worker;
+    }
+    this.regionDecodeWorker.postMessage(raw);
+  }
+
+  private stopRegionDecodeWorker() {
+    this.regionDecodeWorker?.terminate();
+    this.regionDecodeWorker = null;
+  }
+
+  private scheduleWorldRegionApply() {
+    if (this.worldRegionIdleHandle !== null) return;
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+    };
+    const apply = () => {
+      this.worldRegionIdleHandle = null;
+      const region = this.pendingWorldRegion;
+      this.pendingWorldRegion = null;
+      if (!region) return;
+
+      const startedAt = performance.now();
+      this.world.apply(region);
+      const elapsedMs = performance.now() - startedAt;
+      if (elapsedMs > 8) {
+        console.info(`world region apply: ${elapsedMs.toFixed(1)}ms`);
+      }
+
+      if (this.pendingWorldRegion) this.scheduleWorldRegionApply();
+    };
+
+    this.worldRegionIdleHandle = idleWindow.requestIdleCallback
+      ? idleWindow.requestIdleCallback(apply, { timeout: 500 })
+      : window.setTimeout(apply, 0);
+  }
+
+  private cancelWorldRegionApply() {
+    if (this.worldRegionIdleHandle !== null) {
+      const idleWindow = window as Window & {
+        cancelIdleCallback?: (handle: number) => void;
+      };
+      if (idleWindow.cancelIdleCallback) idleWindow.cancelIdleCallback(this.worldRegionIdleHandle);
+      else window.clearTimeout(this.worldRegionIdleHandle);
+    }
+    this.worldRegionIdleHandle = null;
+    this.pendingWorldRegion = null;
   }
 
   private flushIncomingMessages() {

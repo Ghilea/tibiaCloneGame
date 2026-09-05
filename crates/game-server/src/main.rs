@@ -40,6 +40,9 @@ use world::World;
 use world::WorldEvent;
 
 const WORLD_REGION_RADIUS: i32 = 48;
+// Keep the next floor above and below hot in the client cache. This makes a
+// stair transition use already-delivered static geometry and nearby actors.
+const WORLD_REGION_FLOOR_RADIUS: i16 = 1;
 // Refresh before the player reaches the edge of the current payload. Keeping a
 // 16-tile margin lets the next region arrive before the camera exposes missing
 // terrain, while measuring from the last center avoids chunk-border thrashing.
@@ -742,11 +745,31 @@ async fn session(mut socket: WebSocket, state: AppState) {
             depot,
             weight,
             capacity,
-            world.ground_items_near(position, WORLD_REGION_RADIUS),
-            world.creature_views_near(position, WORLD_REGION_RADIUS),
-            world.npc_views_near(position, WORLD_REGION_RADIUS),
-            world.resource_nodes_near(position, WORLD_REGION_RADIUS),
-            world.map_view_near(position, WORLD_REGION_RADIUS),
+            world.ground_items_near_floors(
+                position,
+                WORLD_REGION_RADIUS,
+                WORLD_REGION_FLOOR_RADIUS,
+            ),
+            world.creature_views_near_floors(
+                position,
+                WORLD_REGION_RADIUS,
+                WORLD_REGION_FLOOR_RADIUS,
+            ),
+            world.npc_views_near_floors(
+                position,
+                WORLD_REGION_RADIUS,
+                WORLD_REGION_FLOOR_RADIUS,
+            ),
+            world.resource_nodes_near_floors(
+                position,
+                WORLD_REGION_RADIUS,
+                WORLD_REGION_FLOOR_RADIUS,
+            ),
+            world.map_view_near_floors(
+                position,
+                WORLD_REGION_RADIUS,
+                WORLD_REGION_FLOOR_RADIUS,
+            ),
         )
     };
     info!(%id, %name, %client_version, "player connected");
@@ -814,27 +837,13 @@ async fn session(mut socket: WebSocket, state: AppState) {
                 };
                 match result {
                     Ok(position) => {
-                        // Send a new floor/region before the movement event. The
-                        // control channel is prioritized by the websocket writer,
-                        // so the client can prepare geometry before rendering the
-                        // player on the new floor.
-                        if should_refresh_world_region(streamed_region_center, position) {
-                            let world = state.world.read().await;
-                            let message = world
-                                .requires_region_streaming(WORLD_REGION_RADIUS)
-                                .then(|| ServerMessage::WorldRegion {
-                                    map: Box::new(world.map_view_near(position, WORLD_REGION_RADIUS)),
-                                    ground_items: world.ground_items_near(position, WORLD_REGION_RADIUS),
-                                    creatures: world.creature_views_near(position, WORLD_REGION_RADIUS),
-                                    npcs: world.npc_views_near(position, WORLD_REGION_RADIUS),
-                                    resource_nodes: world.resource_nodes_near(position, WORLD_REGION_RADIUS),
-                                });
-                            drop(world);
-                            if let Some(message) = message {
-                                state.private(id, message);
-                            }
-                            streamed_region_center = position;
-                        }
+                        let refresh_world_region =
+                            should_refresh_world_region(streamed_region_center, position);
+
+                        // Movement is latency-critical. The previous payload has a
+                        // 16-tile XY safety margin and adjacent floors preloaded, so
+                        // publish movement first and stream the heavy replacement
+                        // payload afterwards on the lower-priority update channel.
                         state
                             .publish_player_movement(
                                 id,
@@ -843,6 +852,44 @@ async fn session(mut socket: WebSocket, state: AppState) {
                                 sequence,
                             )
                             .await;
+
+                        if refresh_world_region {
+                            let world = state.world.read().await;
+                            let message = world
+                                .requires_region_streaming(WORLD_REGION_RADIUS)
+                                .then(|| ServerMessage::WorldRegion {
+                                    map: Box::new(world.map_view_near_floors(
+                                        position,
+                                        WORLD_REGION_RADIUS,
+                                        WORLD_REGION_FLOOR_RADIUS,
+                                    )),
+                                    ground_items: world.ground_items_near_floors(
+                                        position,
+                                        WORLD_REGION_RADIUS,
+                                        WORLD_REGION_FLOOR_RADIUS,
+                                    ),
+                                    creatures: world.creature_views_near_floors(
+                                        position,
+                                        WORLD_REGION_RADIUS,
+                                        WORLD_REGION_FLOOR_RADIUS,
+                                    ),
+                                    npcs: world.npc_views_near_floors(
+                                        position,
+                                        WORLD_REGION_RADIUS,
+                                        WORLD_REGION_FLOOR_RADIUS,
+                                    ),
+                                    resource_nodes: world.resource_nodes_near_floors(
+                                        position,
+                                        WORLD_REGION_RADIUS,
+                                        WORLD_REGION_FLOOR_RADIUS,
+                                    ),
+                                });
+                            drop(world);
+                            if let Some(message) = message {
+                                state.publish_update(id, message);
+                            }
+                            streamed_region_center = position;
+                        }
                     }
                     Err(reason) => {
                         let world = state.world.read().await;
