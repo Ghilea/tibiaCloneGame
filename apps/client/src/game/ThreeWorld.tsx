@@ -54,6 +54,15 @@ const BRIDGE_ACTOR_Y = 0.23;
 const RENDER_CHUNK_SIZE = 32;
 const RENDER_PADDING = 8;
 
+// TIBIAGAME_STREAMING_FIX_V15
+// Terrain gets a wider safety skirt than actors/dynamic entities. A 16-tile
+// skirt keeps the camera covered during terrain handoff while the ordinary
+// render region stays at its cheaper 8-tile padding.
+const TERRAIN_RENDER_PADDING = 16;
+// Do not swap terrain exactly on a 32-tile boundary. Server correction can
+// otherwise move the logical player one tile back and forth around the border.
+const TERRAIN_CHUNK_HYSTERESIS = 4;
+
 // TIBIAGAME_STREAMING_FIX_V6
 // TIBIAGAME_STREAMING_FIX_V7
 const RETAINED_STATIC_CHUNK_SIZE = 24;
@@ -98,9 +107,9 @@ export function ThreeWorld({ world, input, onReady, showDebug = true }: ThreeWor
         }}
       >
         <Suspense fallback={null}>
-          <WorldScene world={world} input={input} onLootHover={setLootHover} />
+          <WorldScene world={world} input={input} onLootHover={setLootHover} onReady={onReady} />
           {showDebug && <ClientPerformanceMonitor label={performanceLabel} positionLabel={positionLabel} world={world} />}
-          <SceneReady onReady={onReady} />
+
         </Suspense>
       </Canvas>
       {lootHover && <div className="ground-loot-tooltip" style={{ left: lootHover.x + 14, top: lootHover.y + 14 }}><strong>{lootHover.label}</strong><small>Click to interact</small></div>}
@@ -114,17 +123,91 @@ export function ThreeWorld({ world, input, onReady, showDebug = true }: ThreeWor
   );
 }
 
-function SceneReady({ onReady }: { onReady?: () => void }) {
+function SceneReady({
+  armed,
+  onReady,
+}: {
+  armed: boolean;
+  onReady?: () => void;
+}) {
+  const { gl, scene, camera } = useThree();
   const reported = useRef(false);
+  const armedAt = useRef(0);
+  const lastSignature = useRef("");
+  const stableFrames = useRef(0);
+  const compileStarted = useRef(false);
+  const compileFinished = useRef(false);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+
+  useEffect(() => {
+    if (!armed || reported.current) return;
+    armedAt.current = performance.now();
+    lastSignature.current = "";
+    stableFrames.current = 0;
+    compileStarted.current = false;
+    compileFinished.current = false;
+  }, [armed]);
+
   useFrame(() => {
-    if (reported.current) return;
-    reported.current = true;
-    onReady?.();
+    if (reported.current || !armed) return;
+
+    const signature = [
+      gl.info.memory.geometries,
+      gl.info.memory.textures,
+      gl.info.programs?.length ?? 0,
+    ].join(":");
+
+    if (signature === lastSignature.current) {
+      stableFrames.current += 1;
+    } else {
+      lastSignature.current = signature;
+      stableFrames.current = 0;
+    }
+
+    const elapsed = performance.now() - armedAt.current;
+
+    // Wait until the initial 3x3 structure neighborhood has stopped creating
+    // GPU resources, then precompile the currently visible material programs
+    // while the loading screen is still covering the world.
+    if (!compileStarted.current && stableFrames.current >= 18 && elapsed >= 600) {
+      compileStarted.current = true;
+      const renderer = gl as THREE.WebGLRenderer & {
+        compileAsync?: (scene: THREE.Object3D, camera: THREE.Camera) => Promise<unknown>;
+      };
+
+      try {
+        const result = renderer.compileAsync
+          ? renderer.compileAsync(scene, camera)
+          : Promise.resolve(renderer.compile(scene, camera));
+        void result
+          .catch(() => undefined)
+          .then(() => {
+            compileFinished.current = true;
+            lastSignature.current = "";
+            stableFrames.current = 0;
+          });
+      } catch {
+        compileFinished.current = true;
+        lastSignature.current = "";
+        stableFrames.current = 0;
+      }
+      return;
+    }
+
+    // Do not expose the world immediately after compilation either. Require a
+    // second stable window so late texture/geometry uploads remain hidden by
+    // the loading screen instead of visibly popping into the scene.
+    if (compileFinished.current && stableFrames.current >= 24 && elapsed >= 1_100) {
+      reported.current = true;
+      onReadyRef.current?.();
+    }
   });
+
   return null;
 }
 
-function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHover: (hover: { label: string; x: number; y: number } | null) => void }) {
+function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { onLootHover: (hover: { label: string; x: number; y: number } | null) => void }) {
   const subscribeVisual = useCallback((listener: () => void) => world.subscribeVisual(listener), [world]);
   const visualSnapshot = useCallback(() => world.visualRevision, [world]);
   useSyncExternalStore(subscribeVisual, visualSnapshot);
@@ -173,13 +256,64 @@ function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHov
     streamRegionRevision,
   ]);
 
-  // TIBIAGAME_STREAMING_FIX_V13
-  // Terrain is static world knowledge. A later sliding world_region is allowed
-  // to ADD newly discovered ground data, but it must never remove a road,
-  // floor, water tile or material tile that has already been observed.
-  //
-  // Cache by 32x32 render chunk (including createRenderRegion's padding), so
-  // region recenters cannot make previously visible terrain disappear.
+  // TIBIAGAME_STREAMING_FIX_V15
+  // Terrain uses a Schmitt-trigger style anchor instead of following the raw
+  // logical 32x32 chunk immediately. This prevents a correction at e.g.
+  // y=63/64 from swapping the complete terrain window out and back.
+  const terrainAnchorRef = useRef({
+    floor,
+    chunkX,
+    chunkY,
+  });
+  {
+    const positionX = local?.position.x ?? chunkX * RENDER_CHUNK_SIZE;
+    const positionY = local?.position.y ?? chunkY * RENDER_CHUNK_SIZE;
+    const current = terrainAnchorRef.current;
+
+    if (current.floor !== floor) {
+      terrainAnchorRef.current = { floor, chunkX, chunkY };
+    } else {
+      let nextChunkX = current.chunkX;
+      let nextChunkY = current.chunkY;
+
+      while (
+        positionX
+        < nextChunkX * RENDER_CHUNK_SIZE - TERRAIN_CHUNK_HYSTERESIS
+      ) nextChunkX -= 1;
+      while (
+        positionX
+        >= (nextChunkX + 1) * RENDER_CHUNK_SIZE + TERRAIN_CHUNK_HYSTERESIS
+      ) nextChunkX += 1;
+
+      while (
+        positionY
+        < nextChunkY * RENDER_CHUNK_SIZE - TERRAIN_CHUNK_HYSTERESIS
+      ) nextChunkY -= 1;
+      while (
+        positionY
+        >= (nextChunkY + 1) * RENDER_CHUNK_SIZE + TERRAIN_CHUNK_HYSTERESIS
+      ) nextChunkY += 1;
+
+      if (
+        nextChunkX !== current.chunkX
+        || nextChunkY !== current.chunkY
+      ) {
+        terrainAnchorRef.current = {
+          floor,
+          chunkX: nextChunkX,
+          chunkY: nextChunkY,
+        };
+      }
+    }
+  }
+  const terrainChunkX = terrainAnchorRef.current.chunkX;
+  const terrainChunkY = terrainAnchorRef.current.chunkY;
+
+  // TIBIAGAME_STREAMING_FIX_V14
+  // Terrain knowledge is monotonic across OVERLAPPING render chunks.
+  // V13 cached each 32x32 render key independently, which meant crossing a
+  // render-chunk boundary could switch to a different cache entry that did not
+  // yet contain a tile the previous overlapping entry had already seen.
   const immediateStreamRegionRevision = world.streamRegionRevision;
   const terrainRegionsRef = useRef(
     new Map<string, ReturnType<typeof createRenderRegion>>(),
@@ -189,19 +323,36 @@ function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHov
     const source = mapReady ? latestMapRef.current : null;
     if (!source) return null;
 
-    const key = `${floor}:${chunkX}:${chunkY}`;
-    const candidate = createRenderRegion(source, floor, chunkX, chunkY);
+    const key = `${floor}:${terrainChunkX}:${terrainChunkY}`;
+    const candidate = createRenderRegion(
+      source,
+      floor,
+      terrainChunkX,
+      terrainChunkY,
+      TERRAIN_RENDER_PADDING,
+    );
     const previous = terrainRegionsRef.current.get(key);
-    const merged = previous
+
+    // Preserve everything already known for this exact render chunk, then
+    // import terrain knowledge from neighboring cached chunks wherever their
+    // padded render bounds overlap the new one. The newest packet remains the
+    // authority for conflicts; neighboring entries only fill missing terrain.
+    let merged = previous
       ? mergeTerrainRenderRegion(previous, candidate)
       : candidate;
 
-    // Refresh insertion order when the active chunk is touched so FIFO cleanup
-    // favors terrain the player has not visited recently.
+    for (const [knownKey, known] of terrainRegionsRef.current) {
+      if (knownKey === key || !knownKey.startsWith(`${floor}:`)) continue;
+      if (!terrainRenderBoundsOverlap(known.bounds, candidate.bounds)) continue;
+      merged = mergeOverlappingTerrainKnowledge(merged, known, candidate.bounds);
+    }
+
     terrainRegionsRef.current.delete(key);
     terrainRegionsRef.current.set(key, merged);
 
-    if (terrainRegionsRef.current.size > 24) {
+    // This is CPU-side terrain knowledge, not mounted GPU chunks. Keep enough
+    // history to bridge several render boundaries without unbounded growth.
+    if (terrainRegionsRef.current.size > 32) {
       const oldestKey = terrainRegionsRef.current.keys().next().value;
       if (oldestKey && oldestKey !== key) {
         terrainRegionsRef.current.delete(oldestKey);
@@ -212,8 +363,8 @@ function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHov
   }, [
     mapReady,
     floor,
-    chunkX,
-    chunkY,
+    terrainChunkX,
+    terrainChunkY,
     immediateStreamRegionRevision,
   ]);
 
@@ -466,6 +617,35 @@ function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHov
   );
   const staticSceneRevision = `${floor}:${staticChunkX}:${staticChunkY}:${activeStaticChunkCount}:${dynamicMapRevision}`;
 
+  // TIBIAGAME_STREAMING_FIX_V14
+  // Keep the loading screen until every retained structure chunk that can
+  // intersect the initial 3x3 neighborhood has been created.
+  const retainedStaticKeySet = new Set(retainedStaticChunks.map((entry) => entry.key));
+  const initialRequiredStaticKeys: string[] = [];
+  if (map) {
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        const requiredChunkX = staticChunkX + dx;
+        const requiredChunkY = staticChunkY + dy;
+        const minX = requiredChunkX * RETAINED_STATIC_CHUNK_SIZE;
+        const minY = requiredChunkY * RETAINED_STATIC_CHUNK_SIZE;
+        const maxX = minX + RETAINED_STATIC_CHUNK_SIZE;
+        const maxY = minY + RETAINED_STATIC_CHUNK_SIZE;
+        if (maxX <= 0 || maxY <= 0 || minX >= map.width || minY >= map.height) continue;
+        initialRequiredStaticKeys.push(
+          retainedStaticChunkKey(floor, requiredChunkX, requiredChunkY),
+        );
+      }
+    }
+  }
+  const initialWorldReady = Boolean(
+    map
+    && region
+    && terrainRegion
+    && initialRequiredStaticKeys.length > 0
+    && initialRequiredStaticKeys.every((key) => retainedStaticKeySet.has(key))
+  );
+
   if (!map || !region) return null;
   const bridgeTiles = useMemo(() => new Set(region.map.bridges.map(tileKey)), [region.map.bridges]);
   const actorGroundY = (position: Position) => bridgeTiles.has(tileKey(position)) ? BRIDGE_ACTOR_Y : GROUND_ACTOR_Y;
@@ -491,6 +671,7 @@ function WorldScene({ world, input, onLootHover }: ThreeWorldProps & { onLootHov
     <>
       <Atmosphere torches={region.map.torches} local={local?.position} visualTarget={localVisualPosition} playerLight={playerLight} />
       <FollowCamera target={local?.position} visualTarget={localVisualPosition} mapWidth={map.width} mapHeight={map.height} />
+      <SceneReady armed={initialWorldReady} onReady={onReady} />
       {/* TIBIAGAME_STREAMING_FIX_V11
           Ground is immediate and independent from background structure chunks. */}
       {terrainRegion && <Terrain
@@ -794,19 +975,24 @@ function InstancedTiles({
   castShadow?: boolean;
   texture?: THREE.Texture;
 }) {
-  const mesh = useRef<THREE.InstancedMesh>(null);
-  useEffect(() => {
-    if (!mesh.current) return;
+  // TIBIAGAME_STREAMING_FIX_V14
+  // Build instance matrices during render, not in a post-commit effect. V7's
+  // useEffect conversion removed layout stalls but allowed a freshly resized
+  // instanced mesh to be painted for one frame before its matrices were ready.
+  const instanceMatrix = useMemo(() => {
+    const data = new Float32Array(positions.length * 16);
     const matrix = new THREE.Matrix4();
     positions.forEach((tile, index) => {
       matrix.makeTranslation(tile.x + 0.5, y, tile.y + 0.5);
-      mesh.current!.setMatrixAt(index, matrix);
+      matrix.toArray(data, index * 16);
     });
-    mesh.current.instanceMatrix.needsUpdate = true;
+    return new THREE.InstancedBufferAttribute(data, 16);
   }, [positions, y]);
+
   if (!positions.length) return null;
   return (
-    <instancedMesh ref={mesh} args={[undefined, undefined, positions.length]} castShadow={castShadow} receiveShadow>
+    <instancedMesh args={[undefined, undefined, positions.length]} castShadow={castShadow} receiveShadow>
+      <primitive object={instanceMatrix} attach="instanceMatrix" />
       <boxGeometry args={[scale, height, scale]} />
       <meshStandardMaterial map={texture} color={color} roughness={0.92} />
     </instancedMesh>
@@ -905,7 +1091,6 @@ function InstancedBridgeRails({ segments, texture }: { segments: readonly { key:
 }
 
 function WaterTiles({ positions }: { positions: readonly Position[] }) {
-  const mesh = useRef<THREE.InstancedMesh>(null);
   const waterTexture = useWorldTexture("/assets/world/aldoria-water-v1.png");
   const material = useMemo(() => new THREE.MeshPhysicalMaterial({
     map: waterTexture,
@@ -917,19 +1102,25 @@ function WaterTiles({ positions }: { positions: readonly Position[] }) {
     transparent: true,
     opacity: 0.86,
   }), [waterTexture]);
-  useEffect(() => {
-    if (!mesh.current) return;
+
+  // TIBIAGAME_STREAMING_FIX_V14
+  // Like ground tiles, water matrices must exist before the first painted frame.
+  const instanceMatrix = useMemo(() => {
+    const data = new Float32Array(positions.length * 16);
     const matrix = new THREE.Matrix4();
+    const quaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+    const scale = new THREE.Vector3(1.02, 1.02, 1);
     positions.forEach((tile, index) => {
       matrix.compose(
         new THREE.Vector3(tile.x + 0.5, 0.015, tile.y + 0.5),
-        new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)),
-        new THREE.Vector3(1.02, 1.02, 1),
+        quaternion,
+        scale,
       );
-      mesh.current!.setMatrixAt(index, matrix);
+      matrix.toArray(data, index * 16);
     });
-    mesh.current.instanceMatrix.needsUpdate = true;
+    return new THREE.InstancedBufferAttribute(data, 16);
   }, [positions]);
+
   useEffect(() => () => material.dispose(), [material]);
   useFrame(({ clock }) => {
     const wave = Math.sin(clock.elapsedTime * 1.6) * 0.035;
@@ -940,7 +1131,8 @@ function WaterTiles({ positions }: { positions: readonly Position[] }) {
   });
   if (!positions.length) return null;
   return (
-    <instancedMesh ref={mesh} args={[undefined, undefined, positions.length]} receiveShadow>
+    <instancedMesh args={[undefined, undefined, positions.length]} receiveShadow>
+      <primitive object={instanceMatrix} attach="instanceMatrix" />
       <planeGeometry args={[1, 1]} />
       <primitive object={material} attach="material" />
     </instancedMesh>
@@ -2085,6 +2277,114 @@ function mergeTerrainRenderRegion(
   };
 }
 
+// TIBIAGAME_STREAMING_FIX_V14
+function terrainRenderBoundsOverlap(a: RenderBounds, b: RenderBounds) {
+  return a.minX < b.minX + b.width
+    && a.minX + a.width > b.minX
+    && a.minY < b.minY + b.height
+    && a.minY + a.height > b.minY;
+}
+
+function terrainPositionInsideBounds(position: Position, bounds: RenderBounds) {
+  return position.x >= bounds.minX
+    && position.x < bounds.minX + bounds.width
+    && position.y >= bounds.minY
+    && position.y < bounds.minY + bounds.height;
+}
+
+function mergeOverlappingTerrainKnowledge(
+  current: ReturnType<typeof createRenderRegion>,
+  known: ReturnType<typeof createRenderRegion>,
+  bounds: RenderBounds,
+) {
+  const blocked = mergeTerrainPositionLayer(
+    current.map.blocked,
+    known.map.blocked.filter((entry) => terrainPositionInsideBounds(entry, bounds)),
+  );
+  const water = mergeTerrainPositionLayer(
+    current.map.water,
+    known.map.water.filter((entry) => terrainPositionInsideBounds(entry, bounds)),
+  );
+  const bridges = mergeTerrainPositionLayer(
+    current.map.bridges,
+    known.map.bridges.filter((entry) => terrainPositionInsideBounds(entry, bounds)),
+  );
+  const trees = mergeTerrainPositionLayer(
+    current.map.trees,
+    known.map.trees.filter((entry) => terrainPositionInsideBounds(entry, bounds)),
+  );
+  const roads = mergeTerrainPositionLayer(
+    current.map.roads,
+    known.map.roads.filter((entry) => terrainPositionInsideBounds(entry, bounds)),
+  );
+  const floors = mergeTerrainPositionLayer(
+    current.map.floors,
+    known.map.floors.filter((entry) => terrainPositionInsideBounds(entry, bounds)),
+  );
+  const houseWalls = mergeTerrainPositionLayer(
+    current.map.houseWalls,
+    known.map.houseWalls.filter((entry) => terrainPositionInsideBounds(entry, bounds)),
+  );
+  const castleWalls = mergeTerrainPositionLayer(
+    current.map.castleWalls,
+    known.map.castleWalls.filter((entry) => terrainPositionInsideBounds(entry, bounds)),
+  );
+
+  // Never let an older overlapping cache entry overwrite the current packet's
+  // material choice for a tile. It may only contribute a material not known in
+  // the current render slice yet.
+  const materialKeys = new Set(current.map.terrainMaterials.map((entry) => tileKey(entry.position)));
+  const terrainMaterials = mergeTerrainMaterialLayer(
+    current.map.terrainMaterials,
+    known.map.terrainMaterials.filter((entry) =>
+      terrainPositionInsideBounds(entry.position, bounds)
+      && !materialKeys.has(tileKey(entry.position)),
+    ),
+  );
+
+  const objectIds = new Set(current.map.objects.map((entry) => entry.id));
+  const objects = mergeTerrainObjectMaskLayer(
+    current.map.objects,
+    known.map.objects.filter((entry) =>
+      terrainPositionInsideBounds(entry.position, bounds)
+      && !objectIds.has(entry.id),
+    ),
+  );
+
+  const unchanged =
+    blocked === current.map.blocked
+    && water === current.map.water
+    && bridges === current.map.bridges
+    && trees === current.map.trees
+    && roads === current.map.roads
+    && floors === current.map.floors
+    && houseWalls === current.map.houseWalls
+    && castleWalls === current.map.castleWalls
+    && terrainMaterials === current.map.terrainMaterials
+    && objects === current.map.objects;
+
+  if (unchanged) return current;
+
+  return {
+    ...current,
+    map: {
+      ...current.map,
+      blocked,
+      water,
+      bridges,
+      trees,
+      roads,
+      floors,
+      houseWalls,
+      castleWalls,
+      terrainMaterials,
+      objects,
+    },
+  };
+}
+
+
+
 // TIBIAGAME_STREAMING_FIX_V12
 function renderBoundsFullyCovered(
   bounds: RenderBounds,
@@ -2239,11 +2539,17 @@ function createRetainedStaticChunk(
   };
 }
 
-function createRenderRegion(map: MapView, floor: number, chunkX: number, chunkY: number) {
-  const minX = Math.max(0, chunkX * RENDER_CHUNK_SIZE - RENDER_PADDING);
-  const minY = Math.max(0, chunkY * RENDER_CHUNK_SIZE - RENDER_PADDING);
-  const maxX = Math.min(map.width, (chunkX + 1) * RENDER_CHUNK_SIZE + RENDER_PADDING);
-  const maxY = Math.min(map.height, (chunkY + 1) * RENDER_CHUNK_SIZE + RENDER_PADDING);
+function createRenderRegion(
+  map: MapView,
+  floor: number,
+  chunkX: number,
+  chunkY: number,
+  padding = RENDER_PADDING,
+) {
+  const minX = Math.max(0, chunkX * RENDER_CHUNK_SIZE - padding);
+  const minY = Math.max(0, chunkY * RENDER_CHUNK_SIZE - padding);
+  const maxX = Math.min(map.width, (chunkX + 1) * RENDER_CHUNK_SIZE + padding);
+  const maxY = Math.min(map.height, (chunkY + 1) * RENDER_CHUNK_SIZE + padding);
   const bounds: RenderBounds = {
     minX,
     minY,
