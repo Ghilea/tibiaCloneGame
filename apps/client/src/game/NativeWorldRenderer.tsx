@@ -48,8 +48,13 @@ const NATIVE_CAMERA_ZOOM = 90;
 // TIBIAGAME_NATIVE_RENDERER_V27
 // TIBIAGAME_NATIVE_RENDERER_V28
 // TIBIAGAME_NATIVE_RENDERER_V29
-// Native interaction/content parity: full pointer dispatch, NPC service
-// markers, projectile travel and more specific ground-item families.
+// TIBIAGAME_NATIVE_RENDERER_V30
+// TIBIAGAME_NATIVE_RENDERER_V30_1
+// TIBIAGAME_NATIVE_RENDERER_V30_1_1
+// TIBIAGAME_NATIVE_RENDERER_V30_2
+// TIBIAGAME_NATIVE_RENDERER_V30_2_1
+// Indoor roof + chimney fade, indoor wall-cutaway suppression, and clearer
+// doors/windows so house entrances remain easy to find.
 
 type NativeWorldRendererProps = {
   world: WorldState;
@@ -67,6 +72,15 @@ type Transform = readonly [
   sz: number,
   rotationY?: number,
 ];
+
+type NativeRoofRegion = {
+  id: string;
+  floor: number;
+  minX: number;
+  minZ: number;
+  maxX: number;
+  maxZ: number;
+};
 
 type StaticSnapshot = {
   signature: string;
@@ -93,11 +107,17 @@ type StaticSnapshot = {
   houseRoofsAlongX: Transform[];
   keepRoofsAlongZ: Transform[];
   keepRoofsAlongX: Transform[];
+  houseRoofRegionsAlongZ: NativeRoofRegion[];
+  houseRoofRegionsAlongX: NativeRoofRegion[];
+  keepRoofRegionsAlongZ: NativeRoofRegion[];
+  keepRoofRegionsAlongX: NativeRoofRegion[];
   keepMerlons: Transform[];
   keepCornerTowers: Transform[];
   keepTowerCaps: Transform[];
   chimneys: Transform[];
   chimneyCaps: Transform[];
+  chimneyRegions: NativeRoofRegion[];
+  chimneyCapRegions: NativeRoofRegion[];
   signArms: Transform[];
   signPosts: Transform[];
   signBoards: Transform[];
@@ -109,6 +129,7 @@ type StaticSnapshot = {
   doorThresholds: Transform[];
   doorLeaves: Transform[];
   doorKnobs: Transform[];
+  doorLocatorBeacons: Transform[];
 
   windowFacadeSides: Transform[];
   windowFacadeLower: Transform[];
@@ -116,6 +137,7 @@ type StaticSnapshot = {
   windowFramesHorizontal: Transform[];
   windowShuttersOpen: Transform[];
   windowShuttersClosed: Transform[];
+  windowLocatorBeacons: Transform[];
 
   treeTrunks: Transform[];
   forestLower: Transform[];
@@ -235,6 +257,138 @@ class NativeInstancedLayer {
     if (count > 0) {
       this.mesh.instanceMatrix.addUpdateRange(0, count * 16);
       this.mesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+}
+
+
+class NativeRoofLayer extends NativeInstancedLayer {
+  readonly roofGeometry: THREE.BufferGeometry;
+  private readonly alphaAttribute: THREE.InstancedBufferAttribute;
+  private readonly alphaValues: Float32Array;
+  private readonly alphaById = new Map<string, number>();
+  private regions: readonly NativeRoofRegion[] = [];
+
+  constructor(
+    sourceGeometry: THREE.BufferGeometry,
+    material: THREE.Material,
+    capacity: number,
+  ) {
+    const geometry = sourceGeometry.clone();
+    const alphaValues = new Float32Array(capacity);
+    alphaValues.fill(1);
+
+    const alphaAttribute = new THREE.InstancedBufferAttribute(
+      alphaValues,
+      1,
+    );
+    alphaAttribute.setUsage(THREE.DynamicDrawUsage);
+    geometry.setAttribute(
+      "instanceWholeAlpha",
+      alphaAttribute,
+    );
+
+    super(
+      geometry,
+      material,
+      capacity,
+      false,
+      true,
+    );
+
+    this.roofGeometry = geometry;
+    this.alphaValues = alphaValues;
+    this.alphaAttribute = alphaAttribute;
+  }
+
+  setRoofData(
+    transforms: readonly Transform[],
+    regions: readonly NativeRoofRegion[],
+  ) {
+    super.setTransforms(transforms);
+    this.regions = regions.slice(
+      0,
+      Math.min(regions.length, this.mesh.count),
+    );
+
+    let changed = false;
+    for (let index = 0; index < this.mesh.count; index += 1) {
+      const region = this.regions[index];
+      const previous = region
+        ? this.alphaById.get(region.id)
+        : undefined;
+      const next = previous ?? 1;
+      if (Math.abs(this.alphaValues[index] - next) > 0.0001) {
+        this.alphaValues[index] = next;
+        changed = true;
+      }
+    }
+
+    if (changed && this.mesh.count > 0) {
+      this.alphaAttribute.clearUpdateRanges();
+      this.alphaAttribute.addUpdateRange(0, this.mesh.count);
+      this.alphaAttribute.needsUpdate = true;
+    }
+  }
+
+  updateIndoorAlpha(
+    visualPosition: THREE.Vector3 | null,
+    floor: number,
+    deltaSeconds: number,
+    enabled: boolean,
+    insideAlpha: number,
+  ) {
+    const count = Math.min(this.mesh.count, this.regions.length);
+    if (count <= 0) return;
+
+    const x = visualPosition?.x ?? Number.NaN;
+    const z = visualPosition?.z ?? Number.NaN;
+    const lambda = 18;
+    const factor = 1 - Math.exp(-lambda * deltaSeconds);
+    let firstChanged = -1;
+    let lastChanged = -1;
+
+    for (let index = 0; index < count; index += 1) {
+      const region = this.regions[index];
+      const inside =
+        enabled
+        && visualPosition !== null
+        && region.floor === floor
+        && x >= region.minX
+        && x < region.maxX
+        && z >= region.minZ
+        && z < region.maxZ;
+
+      const target = inside ? insideAlpha : 1;
+      const current = this.alphaValues[index];
+      const next = THREE.MathUtils.lerp(
+        current,
+        target,
+        factor,
+      );
+
+      if (Math.abs(next - current) <= 0.00025) {
+        if (Math.abs(current - target) <= 0.001) {
+          this.alphaValues[index] = target;
+          this.alphaById.set(region.id, target);
+        }
+        continue;
+      }
+
+      this.alphaValues[index] = next;
+      this.alphaById.set(region.id, next);
+
+      if (firstChanged < 0) firstChanged = index;
+      lastChanged = index;
+    }
+
+    if (firstChanged >= 0) {
+      this.alphaAttribute.clearUpdateRanges();
+      this.alphaAttribute.addUpdateRange(
+        firstChanged,
+        lastChanged - firstChanged + 1,
+      );
+      this.alphaAttribute.needsUpdate = true;
     }
   }
 }
@@ -636,6 +790,21 @@ function openingBuilding(
   });
 }
 
+function buildingInteriorAtWorld(
+  x: number,
+  z: number,
+  floor: number,
+  buildings: readonly BuildingView[],
+) {
+  return buildings.find((building) =>
+    building.floor === floor
+    && x >= building.x
+    && x < building.x + building.width
+    && z >= building.y
+    && z < building.y + building.height
+  ) ?? null;
+}
+
 function wallOpeningTransform(
   position: Position,
   building: BuildingView,
@@ -766,8 +935,14 @@ function appendBuilding(
   houseRoofsAlongX: Transform[],
   keepRoofsAlongZ: Transform[],
   keepRoofsAlongX: Transform[],
+  houseRoofRegionsAlongZ: NativeRoofRegion[],
+  houseRoofRegionsAlongX: NativeRoofRegion[],
+  keepRoofRegionsAlongZ: NativeRoofRegion[],
+  keepRoofRegionsAlongX: NativeRoofRegion[],
   chimneys: Transform[],
   chimneyCaps: Transform[],
+  chimneyRegions: NativeRoofRegion[],
+  chimneyCapRegions: NativeRoofRegion[],
   signArms: Transform[],
   signPosts: Transform[],
   signBoards: Transform[],
@@ -862,10 +1037,29 @@ function appendBuilding(
   ];
 
   const alongZ = roofDepth >= roofWidth;
+  const roofRegion: NativeRoofRegion = {
+    id: building.id,
+    floor: building.floor,
+    minX: building.x,
+    minZ: building.y,
+    maxX: building.x + building.width,
+    maxZ: building.y + building.height,
+  };
+
   if (building.kind === "keep") {
-    (alongZ ? keepRoofsAlongZ : keepRoofsAlongX).push(roof);
+    if (alongZ) {
+      keepRoofsAlongZ.push(roof);
+      keepRoofRegionsAlongZ.push(roofRegion);
+    } else {
+      keepRoofsAlongX.push(roof);
+      keepRoofRegionsAlongX.push(roofRegion);
+    }
+  } else if (alongZ) {
+    houseRoofsAlongZ.push(roof);
+    houseRoofRegionsAlongZ.push(roofRegion);
   } else {
-    (alongZ ? houseRoofsAlongZ : houseRoofsAlongX).push(roof);
+    houseRoofsAlongX.push(roof);
+    houseRoofRegionsAlongX.push(roofRegion);
   }
 
   const chimneyX = centerX + building.width * 0.22;
@@ -886,6 +1080,8 @@ function appendBuilding(
     0.14,
     0.48,
   ]);
+  chimneyRegions.push(roofRegion);
+  chimneyCapRegions.push(roofRegion);
 
   if (building.kind === "house") {
     const signX = building.x + building.width - 0.35;
@@ -1023,11 +1219,17 @@ function prepareNativeSnapshot(
     houseRoofsAlongX: [],
     keepRoofsAlongZ: [],
     keepRoofsAlongX: [],
+    houseRoofRegionsAlongZ: [],
+    houseRoofRegionsAlongX: [],
+    keepRoofRegionsAlongZ: [],
+    keepRoofRegionsAlongX: [],
     keepMerlons: [],
     keepCornerTowers: [],
     keepTowerCaps: [],
     chimneys: [],
     chimneyCaps: [],
+    chimneyRegions: [],
+    chimneyCapRegions: [],
     signArms: [],
     signPosts: [],
     signBoards: [],
@@ -1039,6 +1241,7 @@ function prepareNativeSnapshot(
     doorThresholds: [],
     doorLeaves: [],
     doorKnobs: [],
+    doorLocatorBeacons: [],
 
     windowFacadeSides: [],
     windowFacadeLower: [],
@@ -1046,6 +1249,7 @@ function prepareNativeSnapshot(
     windowFramesHorizontal: [],
     windowShuttersOpen: [],
     windowShuttersClosed: [],
+    windowLocatorBeacons: [],
 
     treeTrunks: [],
     forestLower: [],
@@ -1188,8 +1392,14 @@ function prepareNativeSnapshot(
       snapshot.houseRoofsAlongX,
       snapshot.keepRoofsAlongZ,
       snapshot.keepRoofsAlongX,
+      snapshot.houseRoofRegionsAlongZ,
+      snapshot.houseRoofRegionsAlongX,
+      snapshot.keepRoofRegionsAlongZ,
+      snapshot.keepRoofRegionsAlongX,
       snapshot.chimneys,
       snapshot.chimneyCaps,
+      snapshot.chimneyRegions,
+      snapshot.chimneyCapRegions,
       snapshot.signArms,
       snapshot.signPosts,
       snapshot.signBoards,
@@ -1419,6 +1629,19 @@ function prepareNativeSnapshot(
         0.08,
       ),
     );
+    snapshot.doorLocatorBeacons.push(
+      facadeBox(
+        transform.x,
+        transform.z,
+        transform.rotation,
+        0,
+        layout.openingTop + 0.18,
+        -layout.frameDepth / 2 - 0.05,
+        layout.openingWidth * 0.78,
+        0.12,
+        0.11,
+      ),
+    );
   }
 
   for (const window of map.windows) {
@@ -1531,6 +1754,20 @@ function prepareNativeSnapshot(
     } else {
       snapshot.windowShuttersClosed.push(shutterTransform);
     }
+
+    snapshot.windowLocatorBeacons.push(
+      facadeBox(
+        transform.x,
+        transform.z,
+        transform.rotation,
+        0,
+        layout.openingTop + 0.14,
+        -layout.frameDepth / 2 - 0.04,
+        layout.openingWidth * 0.68,
+        0.09,
+        0.09,
+      ),
+    );
   }
 
   for (const position of map.trees) {
@@ -1741,6 +1978,277 @@ async function loadNativeTextures(
     timberPlaster,
     roofTiles,
   };
+}
+
+
+type NativeOcclusionFadeOptions = {
+  minimumAlpha: number;
+  radiusScale: number;
+  wholeInstanceAlpha?: boolean;
+  disableWhenIndoors?: boolean;
+};
+
+class NativeOcclusionFadeController {
+  private readonly center = { value: new THREE.Vector3(0, 0.05, 0) };
+  private readonly enabled = { value: 0 };
+  private readonly indoors = { value: 0 };
+  private readonly radius = { value: 1.08 };
+  private readonly installed = new WeakSet<THREE.Material>();
+
+  install(
+    materialValue: THREE.Material | THREE.Material[],
+    options: NativeOcclusionFadeOptions,
+  ) {
+    const materials = Array.isArray(materialValue)
+      ? materialValue
+      : [materialValue];
+
+    for (const material of materials) {
+      if (this.installed.has(material)) continue;
+      if (
+        !(
+          material instanceof THREE.MeshStandardMaterial
+          || material instanceof THREE.MeshPhysicalMaterial
+        )
+      ) {
+        continue;
+      }
+
+      // Preserve genuine glass/translucent authored materials. The cutaway is
+      // for otherwise opaque environment geometry.
+      if (
+        material.name.toLowerCase().includes("glass")
+        || (material.transparent && material.opacity < 0.98)
+      ) {
+        continue;
+      }
+
+      this.installed.add(material);
+
+      const previousOnBeforeCompile =
+        material.onBeforeCompile.bind(material);
+      const previousProgramCacheKey =
+        material.customProgramCacheKey.bind(material);
+
+      material.transparent = true;
+      // Transparent occluders render after opaque actors. Keep depth writes so
+      // solid portions of the same wall/roof still occlude normally.
+      material.depthWrite = true;
+      material.forceSinglePass = true;
+
+      material.onBeforeCompile = (shader, renderer) => {
+        previousOnBeforeCompile(shader, renderer);
+
+        shader.uniforms.nativeOcclusionCenter = this.center;
+        shader.uniforms.nativeOcclusionEnabled = this.enabled;
+        shader.uniforms.nativeOcclusionIndoors = this.indoors;
+        shader.uniforms.nativeOcclusionRadius = this.radius;
+        shader.uniforms.nativeOcclusionRadiusScale = {
+          value: options.radiusScale,
+        };
+        shader.uniforms.nativeOcclusionMinimumAlpha = {
+          value: options.minimumAlpha,
+        };
+        shader.uniforms.nativeOcclusionDisableWhenIndoors = {
+          value: options.disableWhenIndoors ? 1 : 0,
+        };
+
+        shader.vertexShader = shader.vertexShader.replace(
+          "#include <common>",
+          `#include <common>
+varying vec3 vNativeOcclusionWorldPosition;`,
+        );
+
+        shader.vertexShader = shader.vertexShader.replace(
+          "#include <project_vertex>",
+          `
+vec4 nativeOcclusionWorldPosition = vec4(transformed, 1.0);
+#ifdef USE_BATCHING
+  nativeOcclusionWorldPosition =
+    batchingMatrix * nativeOcclusionWorldPosition;
+#endif
+#ifdef USE_INSTANCING
+  nativeOcclusionWorldPosition =
+    instanceMatrix * nativeOcclusionWorldPosition;
+#endif
+nativeOcclusionWorldPosition =
+  modelMatrix * nativeOcclusionWorldPosition;
+vNativeOcclusionWorldPosition =
+  nativeOcclusionWorldPosition.xyz;
+
+#include <project_vertex>`,
+        );
+
+        shader.fragmentShader = shader.fragmentShader.replace(
+          "#include <common>",
+          `#include <common>
+varying vec3 vNativeOcclusionWorldPosition;
+uniform vec3 nativeOcclusionCenter;
+uniform float nativeOcclusionEnabled;
+uniform float nativeOcclusionIndoors;
+uniform float nativeOcclusionRadius;
+uniform float nativeOcclusionRadiusScale;
+uniform float nativeOcclusionMinimumAlpha;
+uniform float nativeOcclusionDisableWhenIndoors;`,
+        );
+
+        shader.fragmentShader = shader.fragmentShader.replace(
+          "#include <opaque_fragment>",
+          `
+vec3 nativeOcclusionView =
+  cameraPosition - nativeOcclusionCenter;
+vec2 nativeOcclusionViewXZ = nativeOcclusionView.xz;
+float nativeOcclusionHorizontalDistance =
+  max(length(nativeOcclusionViewXZ), 0.0001);
+vec2 nativeOcclusionViewDirection =
+  nativeOcclusionViewXZ / nativeOcclusionHorizontalDistance;
+
+// Project an elevated fragment down along the actual camera->player view line.
+// A roof/wall/tree fragment that visually covers the player therefore maps
+// back onto the player's ground position even when its raw XZ is 1-2 tiles
+// toward the camera.
+float nativeOcclusionHeight =
+  max(
+    0.0,
+    vNativeOcclusionWorldPosition.y
+      - nativeOcclusionCenter.y
+  );
+float nativeOcclusionHorizontalPerHeight =
+  nativeOcclusionHorizontalDistance
+  / max(abs(nativeOcclusionView.y), 0.001);
+
+vec2 nativeOcclusionProjectedXZ =
+  vNativeOcclusionWorldPosition.xz
+  - nativeOcclusionViewDirection
+    * nativeOcclusionHeight
+    * nativeOcclusionHorizontalPerHeight;
+
+float nativeOcclusionDistance =
+  distance(
+    nativeOcclusionProjectedXZ,
+    nativeOcclusionCenter.xz
+  );
+
+float nativeOcclusionScaledRadius =
+  nativeOcclusionRadius * nativeOcclusionRadiusScale;
+float nativeOcclusionInnerRadius =
+  nativeOcclusionScaledRadius * 0.55;
+
+float nativeOcclusionCutout =
+  1.0
+  - smoothstep(
+      nativeOcclusionInnerRadius,
+      nativeOcclusionScaledRadius,
+      nativeOcclusionDistance
+    );
+
+// Do not fade geometry materially behind the player. Only the camera-facing
+// line of sight (including elevated roofs) participates.
+float nativeOcclusionTowardCamera =
+  dot(
+    vNativeOcclusionWorldPosition.xz
+      - nativeOcclusionCenter.xz,
+    nativeOcclusionViewDirection
+  );
+
+float nativeOcclusionFrontMask =
+  smoothstep(
+    -0.42,
+    0.08,
+    nativeOcclusionTowardCamera
+      + nativeOcclusionHeight
+        * nativeOcclusionHorizontalPerHeight
+  );
+
+float nativeOcclusionEffectiveEnabled =
+  nativeOcclusionEnabled
+  * (
+    1.0
+    - nativeOcclusionDisableWhenIndoors
+      * nativeOcclusionIndoors
+  );
+
+float nativeOcclusionMask =
+  nativeOcclusionCutout
+  * nativeOcclusionFrontMask
+  * nativeOcclusionEffectiveEnabled;
+
+diffuseColor.a *=
+  mix(
+    1.0,
+    nativeOcclusionMinimumAlpha,
+    nativeOcclusionMask
+  );
+
+#include <opaque_fragment>`,
+        );
+
+        if (options.wholeInstanceAlpha) {
+          shader.vertexShader = shader.vertexShader.replace(
+            "#include <common>",
+            `#include <common>
+attribute float instanceWholeAlpha;
+varying float vNativeWholeAlpha;`,
+          );
+
+          shader.vertexShader = shader.vertexShader.replace(
+            "#include <project_vertex>",
+            `vNativeWholeAlpha = instanceWholeAlpha;
+#include <project_vertex>`,
+          );
+
+          shader.fragmentShader = shader.fragmentShader.replace(
+            "#include <common>",
+            `#include <common>
+varying float vNativeWholeAlpha;`,
+          );
+
+          shader.fragmentShader = shader.fragmentShader.replace(
+            "#include <opaque_fragment>",
+            `diffuseColor.a *= vNativeWholeAlpha;
+#include <opaque_fragment>`,
+          );
+        }
+      };
+
+      material.customProgramCacheKey = () =>
+        `${previousProgramCacheKey()}|native-occlusion-v30.2|`
+        + `${options.minimumAlpha}|${options.radiusScale}|`
+        + `${options.wholeInstanceAlpha ? 1 : 0}|`
+        + `${options.disableWhenIndoors ? 1 : 0}`;
+
+      material.needsUpdate = true;
+    }
+  }
+
+  installParts(
+    parts: readonly NativeGltfPart[],
+    options: NativeOcclusionFadeOptions,
+  ) {
+    for (const part of parts) {
+      this.install(part.material, options);
+    }
+  }
+
+  update(
+    visualPosition: THREE.Vector3 | null,
+    active: boolean,
+    indoors: boolean,
+  ) {
+    this.enabled.value = active && visualPosition ? 1 : 0;
+    this.indoors.value = indoors ? 1 : 0;
+    if (!visualPosition) return;
+
+    this.center.value.set(
+      visualPosition.x,
+      Math.max(0.04, visualPosition.y),
+      visualPosition.z,
+    );
+  }
+
+  setRadius(radius: number) {
+    this.radius.value = THREE.MathUtils.clamp(radius, 0.65, 1.8);
+  }
 }
 
 function materialWithTexture(
@@ -4050,13 +4558,14 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     let actorManager: NativeActorManager | null = null;
     let dynamicSceneManager: NativeDynamicSceneManager | null = null;
     let openingAnimationManager: NativeOpeningAnimationManager | null = null;
+    let occlusionFadeController: NativeOcclusionFadeController | null = null;
     let loadedCharacterAssets: NativeCharacterAssets | null = null;
     let loadedCreatureAssets: NativeCreatureAssets | null = null;
     let loadedMedievalAssets: NativeMedievalAssets | null = null;
     const disposables: Array<{ dispose(): void }> = [];
 
     console.info(
-      "NATIVE WORLD V29 active · interaction/content parity · raw Three.js",
+      "NATIVE WORLD V30.2.1 active · startup occlusion hotfix · raw Three.js",
     );
 
     const bootstrap = async () => {
@@ -4325,7 +4834,26 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         chimneyCap: new THREE.MeshStandardMaterial({ color: "#3c3731", roughness: 1 }),
         signDark: new THREE.MeshStandardMaterial({ color: "#35251a", roughness: 0.96 }),
         signWood: new THREE.MeshStandardMaterial({ color: "#785331", roughness: 0.92 }),
-        door: new THREE.MeshStandardMaterial({ color: "#654128", roughness: 0.82 }),
+        door: new THREE.MeshStandardMaterial({
+          color: "#825233",
+          emissive: "#2d1706",
+          emissiveIntensity: 0.18,
+          roughness: 0.78,
+        }),
+        doorAccent: new THREE.MeshStandardMaterial({
+          color: "#d8b26e",
+          emissive: "#8a6426",
+          emissiveIntensity: 0.52,
+          roughness: 0.42,
+          metalness: 0.08,
+        }),
+        windowAccent: new THREE.MeshStandardMaterial({
+          color: "#93cee4",
+          emissive: "#2c6d87",
+          emissiveIntensity: 0.38,
+          roughness: 0.36,
+          metalness: 0.04,
+        }),
         doorKnob: new THREE.MeshStandardMaterial({
           color: "#d6aa54",
           metalness: 0.65,
@@ -4536,6 +5064,163 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           toneMapped: false,
         }),
       };
+
+      const nativeOcclusionEnabled =
+        new URLSearchParams(window.location.search).get("occlusion") !== "off";
+      const nativeOcclusionRadiusParam =
+        Number.parseFloat(
+          new URLSearchParams(window.location.search)
+            .get("occlusionRadius")
+            ?? "1.08",
+        );
+
+      const indoorRoofFadeEnabled =
+        new URLSearchParams(window.location.search)
+          .get("indoorRoof") !== "off";
+      const indoorRoofAlphaParam =
+        Number.parseFloat(
+          new URLSearchParams(window.location.search)
+            .get("indoorRoofAlpha")
+            ?? "0.14",
+        );
+      const indoorRoofAlpha =
+        Number.isFinite(indoorRoofAlphaParam)
+          ? THREE.MathUtils.clamp(indoorRoofAlphaParam, 0.04, 0.5)
+          : 0.14;
+
+      occlusionFadeController = new NativeOcclusionFadeController();
+      const activeOcclusionFadeController = occlusionFadeController;
+      activeOcclusionFadeController.setRadius(
+        Number.isFinite(nativeOcclusionRadiusParam)
+          ? nativeOcclusionRadiusParam
+          : 1.08,
+      );
+
+      if (nativeOcclusionEnabled) {
+        // Roofs need the widest/clearest cutaway because the player can be
+        // completely underneath them.
+        for (const material of [
+          materials.houseRoof,
+          materials.keepRoof,
+          materials.keepCap,
+          materials.chimneyHouse,
+          materials.chimneyKeep,
+          materials.chimneyCap,
+        ]) {
+          activeOcclusionFadeController.install(material, {
+            minimumAlpha: 0.10,
+            radiusScale: 1.28,
+            wholeInstanceAlpha: true,
+          });
+        }
+
+        // Main structural blockers. While the player is indoors, suppress the
+        // line-of-sight wall cutaway so interior/north walls stay solid while
+        // the owning roof and chimney fade away.
+        for (const material of [
+          materials.looseHouseWall,
+          materials.facadePlaster,
+          materials.facadeStone,
+          materials.facadeFrame,
+          materials.castleWall,
+          materials.keepDetail,
+          materials.door,
+        ]) {
+          activeOcclusionFadeController.install(material, {
+            minimumAlpha: 0.20,
+            radiusScale: 1.04,
+            disableWhenIndoors: true,
+          });
+        }
+
+        // Trees are a frequent 2.5D occluder. The slightly larger projected
+        // radius avoids only half of the canopy becoming translucent.
+        for (const material of [
+          materials.treeTrunk,
+          materials.forestLower,
+          materials.forestUpper,
+          materials.pineLower,
+          materials.pineUpper,
+          materials.snowyLower,
+          materials.snowyUpper,
+        ]) {
+          activeOcclusionFadeController.install(material, {
+            minimumAlpha: 0.16,
+            radiusScale: 1.18,
+          });
+        }
+
+        // Large terrain/props can also sit between the camera and the actor.
+        for (const material of [
+          materials.rock,
+          materials.mountain,
+          materials.mountainCap,
+          materials.snowBank,
+          materials.bridgeRail,
+          materials.bridgePost,
+          materials.barrel,
+          materials.woodenProp,
+          materials.stoneProp,
+          materials.organicProp,
+          materials.resourceAvailable,
+          materials.resourceDepleted,
+          materials.resourceCopper,
+          materials.resourceWood,
+          materials.resourceHerb,
+        ]) {
+          activeOcclusionFadeController.install(material, {
+            minimumAlpha: 0.28,
+            radiusScale: 0.92,
+          });
+        }
+
+        // Authored medieval GLTF parts use their original material channels,
+        // so patch those same loaded materials rather than replacing them.
+        activeOcclusionFadeController.installParts(
+          medievalAssets.wallParts,
+          {
+            minimumAlpha: 0.20,
+            radiusScale: 1.04,
+            disableWhenIndoors: true,
+          },
+        );
+        activeOcclusionFadeController.installParts(
+          medievalAssets.shutterOpenParts,
+          {
+            minimumAlpha: 0.22,
+            radiusScale: 1.00,
+            disableWhenIndoors: true,
+          },
+        );
+        activeOcclusionFadeController.installParts(
+          medievalAssets.shutterClosedParts,
+          {
+            minimumAlpha: 0.22,
+            radiusScale: 1.00,
+            disableWhenIndoors: true,
+          },
+        );
+      }
+
+      console.info(
+        `NATIVE V30 occlusion cutaway: ${
+          nativeOcclusionEnabled ? "enabled" : "disabled"
+        } · radius ${
+          Number.isFinite(nativeOcclusionRadiusParam)
+            ? THREE.MathUtils.clamp(
+                nativeOcclusionRadiusParam,
+                0.65,
+                1.8,
+              ).toFixed(2)
+            : "1.08"
+        }`,
+      );
+      console.info(
+        `NATIVE V30.2 indoor fade: ${
+          indoorRoofFadeEnabled ? "enabled" : "disabled"
+        } · alpha ${indoorRoofAlpha.toFixed(2)}`,
+      );
+
       disposables.push(...Object.values(materials));
 
       const ground = new THREE.Mesh(box, materials.grass);
@@ -4566,10 +5251,26 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         castleWalls: new NativeInstancedLayer(box, materials.castleWall, 8192),
         buildingFloors: new NativeInstancedLayer(box, materials.buildingFloor, 4096),
 
-        houseRoofsAlongZ: new NativeInstancedLayer(roofAlongZGeometry, materials.houseRoof, 2048),
-        houseRoofsAlongX: new NativeInstancedLayer(roofAlongXGeometry, materials.houseRoof, 2048),
-        keepRoofsAlongZ: new NativeInstancedLayer(roofAlongZGeometry, materials.keepRoof, 1024),
-        keepRoofsAlongX: new NativeInstancedLayer(roofAlongXGeometry, materials.keepRoof, 1024),
+        houseRoofsAlongZ: new NativeRoofLayer(
+          roofAlongZGeometry,
+          materials.houseRoof,
+          2048,
+        ),
+        houseRoofsAlongX: new NativeRoofLayer(
+          roofAlongXGeometry,
+          materials.houseRoof,
+          2048,
+        ),
+        keepRoofsAlongZ: new NativeRoofLayer(
+          roofAlongZGeometry,
+          materials.keepRoof,
+          1024,
+        ),
+        keepRoofsAlongX: new NativeRoofLayer(
+          roofAlongXGeometry,
+          materials.keepRoof,
+          1024,
+        ),
         keepMerlons: new NativeInstancedLayer(box, materials.keepDetail, 4096),
         keepCornerTowers: new NativeInstancedLayer(
           keepTowerGeometry,
@@ -4581,8 +5282,16 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           materials.keepCap,
           512,
         ),
-        chimneys: new NativeInstancedLayer(box, materials.chimneyHouse, 2048),
-        chimneyCaps: new NativeInstancedLayer(box, materials.chimneyCap, 2048),
+        chimneys: new NativeRoofLayer(
+          box,
+          materials.chimneyHouse,
+          2048,
+        ),
+        chimneyCaps: new NativeRoofLayer(
+          box,
+          materials.chimneyCap,
+          2048,
+        ),
         signArms: new NativeInstancedLayer(box, materials.signDark, 2048),
         signPosts: new NativeInstancedLayer(box, materials.signDark, 2048),
         signBoards: new NativeInstancedLayer(box, materials.signWood, 2048),
@@ -4591,14 +5300,16 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         doorFacadeTops: new NativeInstancedLayer(box, materials.facadePlaster, 2048),
         doorFramesVertical: new NativeInstancedLayer(box, materials.facadeFrame, 4096),
         doorFramesHorizontal: new NativeInstancedLayer(box, materials.facadeFrame, 2048),
-        doorThresholds: new NativeInstancedLayer(box, materials.facadeFrame, 2048),
+        doorThresholds: new NativeInstancedLayer(box, materials.doorAccent, 2048),
         doorLeaves: new NativeInstancedLayer(box, materials.door, 2048),
         doorKnobs: new NativeInstancedLayer(doorKnobGeometry, materials.doorKnob, 2048),
+        doorLocatorBeacons: new NativeInstancedLayer(box, materials.doorAccent, 2048),
 
         windowFacadeSides: new NativeInstancedLayer(box, materials.facadePlaster, 4096),
         windowFacadeLower: new NativeInstancedLayer(box, materials.facadePlaster, 2048),
         windowFacadeTops: new NativeInstancedLayer(box, materials.facadePlaster, 2048),
         windowFramesHorizontal: new NativeInstancedLayer(box, materials.facadeFrame, 4096),
+        windowLocatorBeacons: new NativeInstancedLayer(box, materials.windowAccent, 2048),
 
         treeTrunks: new NativeInstancedLayer(treeTrunkGeometry, materials.treeTrunk, 4096),
         forestLower: new NativeInstancedLayer(forestLowerGeometry, materials.forestLower, 4096),
@@ -4847,6 +5558,15 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
 
       for (const layer of Object.values(layers)) scene.add(layer.mesh);
 
+      disposables.push(
+        layers.houseRoofsAlongZ.roofGeometry,
+        layers.houseRoofsAlongX.roofGeometry,
+        layers.keepRoofsAlongZ.roofGeometry,
+        layers.keepRoofsAlongX.roofGeometry,
+        layers.chimneys.roofGeometry,
+        layers.chimneyCaps.roofGeometry,
+      );
+
       layers.lootRings.mesh.renderOrder = 17;
       layers.combatIncoming.mesh.renderOrder = 18;
       layers.combatOutgoing.mesh.renderOrder = 18;
@@ -5057,15 +5777,33 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         stage("loose house walls", () => layers.looseHouseWalls.setTransforms(snapshot.looseHouseWalls));
         stage("castle walls", () => layers.castleWalls.setTransforms(snapshot.castleWalls));
 
-        stage("house roofs z", () => layers.houseRoofsAlongZ.setTransforms(snapshot.houseRoofsAlongZ));
-        stage("house roofs x", () => layers.houseRoofsAlongX.setTransforms(snapshot.houseRoofsAlongX));
-        stage("keep roofs z", () => layers.keepRoofsAlongZ.setTransforms(snapshot.keepRoofsAlongZ));
-        stage("keep roofs x", () => layers.keepRoofsAlongX.setTransforms(snapshot.keepRoofsAlongX));
+        stage("house roofs z", () => layers.houseRoofsAlongZ.setRoofData(
+          snapshot.houseRoofsAlongZ,
+          snapshot.houseRoofRegionsAlongZ,
+        ));
+        stage("house roofs x", () => layers.houseRoofsAlongX.setRoofData(
+          snapshot.houseRoofsAlongX,
+          snapshot.houseRoofRegionsAlongX,
+        ));
+        stage("keep roofs z", () => layers.keepRoofsAlongZ.setRoofData(
+          snapshot.keepRoofsAlongZ,
+          snapshot.keepRoofRegionsAlongZ,
+        ));
+        stage("keep roofs x", () => layers.keepRoofsAlongX.setRoofData(
+          snapshot.keepRoofsAlongX,
+          snapshot.keepRoofRegionsAlongX,
+        ));
         stage("keep merlons", () => layers.keepMerlons.setTransforms(snapshot.keepMerlons));
         stage("keep corner towers", () => layers.keepCornerTowers.setTransforms(snapshot.keepCornerTowers));
         stage("keep tower caps", () => layers.keepTowerCaps.setTransforms(snapshot.keepTowerCaps));
-        stage("chimneys", () => layers.chimneys.setTransforms(snapshot.chimneys));
-        stage("chimney caps", () => layers.chimneyCaps.setTransforms(snapshot.chimneyCaps));
+        stage("chimneys", () => layers.chimneys.setRoofData(
+          snapshot.chimneys,
+          snapshot.chimneyRegions,
+        ));
+        stage("chimney caps", () => layers.chimneyCaps.setRoofData(
+          snapshot.chimneyCaps,
+          snapshot.chimneyCapRegions,
+        ));
         stage("sign arms", () => layers.signArms.setTransforms(snapshot.signArms));
         stage("sign posts", () => layers.signPosts.setTransforms(snapshot.signPosts));
         stage("sign boards", () => layers.signBoards.setTransforms(snapshot.signBoards));
@@ -5075,10 +5813,12 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         stage("door frame vertical", () => layers.doorFramesVertical.setTransforms(snapshot.doorFramesVertical));
         stage("door frame horizontal", () => layers.doorFramesHorizontal.setTransforms(snapshot.doorFramesHorizontal));
         stage("door thresholds", () => layers.doorThresholds.setTransforms(snapshot.doorThresholds));
+        stage("door locator beacons", () => layers.doorLocatorBeacons.setTransforms(snapshot.doorLocatorBeacons));
         stage("window facade sides", () => layers.windowFacadeSides.setTransforms(snapshot.windowFacadeSides));
         stage("window facade lower", () => layers.windowFacadeLower.setTransforms(snapshot.windowFacadeLower));
         stage("window facade tops", () => layers.windowFacadeTops.setTransforms(snapshot.windowFacadeTops));
         stage("window frames", () => layers.windowFramesHorizontal.setTransforms(snapshot.windowFramesHorizontal));
+        stage("window locator beacons", () => layers.windowLocatorBeacons.setTransforms(snapshot.windowLocatorBeacons));
         stage("tree trunks", () => layers.treeTrunks.setTransforms(snapshot.treeTrunks));
         stage("forest lower", () => layers.forestLower.setTransforms(snapshot.forestLower));
         stage("forest upper", () => layers.forestUpper.setTransforms(snapshot.forestUpper));
@@ -5415,6 +6155,14 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           camera,
           layers.creatures,
         );
+        const initialVisualLocal =
+          activeActorManager.playerVisualPosition(world.localPlayerId);
+        activeOcclusionFadeController.update(
+          initialVisualLocal,
+          nativeOcclusionEnabled,
+          false,
+        );
+
         if (world.map) {
           activeOpeningAnimationManager.update(
             world.map,
@@ -5427,7 +6175,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
             world.map,
             initialLocal.position.z,
             initialLocal.position,
-            activeActorManager.playerVisualPosition(world.localPlayerId),
+            initialVisualLocal,
             activeActorManager,
             initialNow,
           );
@@ -5492,6 +6240,68 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           const visualLocal = activeActorManager.playerVisualPosition(
             world.localPlayerId,
           );
+
+          // The cutaway center follows the same interpolated actor position as
+          // the camera, so transparency moves continuously rather than hopping
+          // once per logical tile.
+          const indoorBuilding = visualLocal
+            ? buildingInteriorAtWorld(
+                visualLocal.x,
+                visualLocal.z,
+                floor,
+                map.buildings,
+              )
+            : null;
+          activeOcclusionFadeController.update(
+            visualLocal,
+            nativeOcclusionEnabled,
+            Boolean(indoorBuilding),
+          );
+
+          const roofFadeDelta = Math.min(frameMs / 1000, 0.05);
+          layers.houseRoofsAlongZ.updateIndoorAlpha(
+            visualLocal,
+            floor,
+            roofFadeDelta,
+            indoorRoofFadeEnabled,
+            indoorRoofAlpha,
+          );
+          layers.houseRoofsAlongX.updateIndoorAlpha(
+            visualLocal,
+            floor,
+            roofFadeDelta,
+            indoorRoofFadeEnabled,
+            indoorRoofAlpha,
+          );
+          layers.keepRoofsAlongZ.updateIndoorAlpha(
+            visualLocal,
+            floor,
+            roofFadeDelta,
+            indoorRoofFadeEnabled,
+            indoorRoofAlpha,
+          );
+          layers.keepRoofsAlongX.updateIndoorAlpha(
+            visualLocal,
+            floor,
+            roofFadeDelta,
+            indoorRoofFadeEnabled,
+            indoorRoofAlpha,
+          );
+          layers.chimneys.updateIndoorAlpha(
+            visualLocal,
+            floor,
+            roofFadeDelta,
+            indoorRoofFadeEnabled,
+            indoorRoofAlpha,
+          );
+          layers.chimneyCaps.updateIndoorAlpha(
+            visualLocal,
+            floor,
+            roofFadeDelta,
+            indoorRoofFadeEnabled,
+            indoorRoofAlpha,
+          );
+
           const cameraX = visualLocal?.x ?? local.position.x + 0.5;
           const cameraZ = visualLocal?.z ?? local.position.y + 0.5;
 
@@ -5530,7 +6340,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
 
           if (positionRef.current) {
             positionRef.current.textContent =
-              `NATIVE V29 · x ${local.position.x} · y ${local.position.y} · z ${floor}`;
+              `NATIVE V30.2.1 · x ${local.position.x} · y ${local.position.y} · z ${floor}`;
           }
         }
 
@@ -5583,7 +6393,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     };
 
     void bootstrap().catch((error) => {
-      console.error("Native V29 renderer bootstrap failed", error);
+      console.error("Native V30.2.1 renderer bootstrap failed", error);
     });
 
     return () => {
@@ -5593,6 +6403,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       cleanupInput?.();
 
       openingAnimationManager = null;
+      occlusionFadeController = null;
 
       dynamicSceneManager?.dispose();
       dynamicSceneManager = null;
@@ -5625,7 +6436,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       <canvas
         ref={canvasRef}
         className="three-world"
-        data-native-world-renderer="v29"
+        data-native-world-renderer="v30.2.1"
         style={{ width: "100%", height: "100%", display: "block" }}
       />
       <div
@@ -5641,7 +6452,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       {showDebug && (
         <div className="debug-meter" aria-label="Native renderer performance">
           <div ref={positionRef} className="position-meter">
-            NATIVE V29 · x -- · y -- · z --
+            NATIVE V30.2.1 · x -- · y -- · z --
           </div>
           <div ref={performanceRef} className="fps-meter">
             Native renderer loading world + actors…
