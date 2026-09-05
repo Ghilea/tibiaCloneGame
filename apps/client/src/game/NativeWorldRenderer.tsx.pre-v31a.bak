@@ -52,6 +52,7 @@ const NATIVE_CAMERA_ZOOM = 90;
 // TIBIAGAME_NATIVE_RENDERER_V30_1
 // TIBIAGAME_NATIVE_RENDERER_V30_1_1
 // TIBIAGAME_NATIVE_RENDERER_V30_2
+// TIBIAGAME_NATIVE_RENDERER_V30_2_1
 // Indoor roof + chimney fade, indoor wall-cutaway suppression, and clearer
 // doors/windows so house entrances remain easy to find.
 
@@ -4564,7 +4565,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     const disposables: Array<{ dispose(): void }> = [];
 
     console.info(
-      "NATIVE WORLD V30.2 active · indoor roof/chimney fade + opening clarity · raw Three.js",
+      "NATIVE WORLD V30.2.1 active · startup occlusion hotfix · raw Three.js",
     );
 
     const bootstrap = async () => {
@@ -6159,6 +6160,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         activeOcclusionFadeController.update(
           initialVisualLocal,
           nativeOcclusionEnabled,
+          false,
         );
 
         if (world.map) {
@@ -6338,7 +6340,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
 
           if (positionRef.current) {
             positionRef.current.textContent =
-              `NATIVE V30.2 · x ${local.position.x} · y ${local.position.y} · z ${floor}`;
+              `NATIVE V30.2.1 · x ${local.position.x} · y ${local.position.y} · z ${floor}`;
           }
         }
 
@@ -6391,7 +6393,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     };
 
     void bootstrap().catch((error) => {
-      console.error("Native V30.2 renderer bootstrap failed", error);
+      console.error("Native V30.2.1 renderer bootstrap failed", error);
     });
 
     return () => {
@@ -6434,7 +6436,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       <canvas
         ref={canvasRef}
         className="three-world"
-        data-native-world-renderer="v30.2"
+        data-native-world-renderer="v30.2.1"
         style={{ width: "100%", height: "100%", display: "block" }}
       />
       <div
@@ -6450,7 +6452,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       {showDebug && (
         <div className="debug-meter" aria-label="Native renderer performance">
           <div ref={positionRef} className="position-meter">
-            NATIVE V30.2 · x -- · y -- · z --
+            NATIVE V30.2.1 · x -- · y -- · z --
           </div>
           <div ref={performanceRef} className="fps-meter">
             Native renderer loading world + actors…

@@ -30,6 +30,11 @@ import {
   createHouseWindowLayout,
 } from "./DoorwayLayout";
 import type { WorldState } from "./WorldState";
+import {
+  worldEnvironment,
+  worldTimeLabel,
+  type WorldEnvironment,
+} from "./worldEnvironment";
 
 const NATIVE_RENDER_CHUNK_SIZE = 24;
 const NATIVE_RENDER_RADIUS = 44;
@@ -53,6 +58,9 @@ const NATIVE_CAMERA_ZOOM = 90;
 // TIBIAGAME_NATIVE_RENDERER_V30_1_1
 // TIBIAGAME_NATIVE_RENDERER_V30_2
 // TIBIAGAME_NATIVE_RENDERER_V30_2_1
+// TIBIAGAME_NATIVE_RENDERER_V31_A
+// Native day/night atmosphere using the existing shared worldEnvironment()
+// clock. Fog/background/light objects stay persistent; only values change.
 // Indoor roof + chimney fade, indoor wall-cutaway suppression, and clearer
 // doors/windows so house entrances remain easy to find.
 
@@ -3503,6 +3511,101 @@ function nativeResourceFamily(kind: string): NativeResourceFamily {
   return "generic";
 }
 
+
+class NativeWorldAtmosphere {
+  private readonly background: THREE.Color;
+  private readonly fog: THREE.FogExp2 | null;
+
+  private readonly nightBackground = new THREE.Color(0x07111c);
+  private readonly dayBackground = new THREE.Color(0x829da6);
+  private readonly twilightBackground = new THREE.Color(0xa46554);
+
+  private readonly nightSky = new THREE.Color(0x253953);
+  private readonly daySky = new THREE.Color(0xc8d7c7);
+  private readonly twilightSky = new THREE.Color(0xe59a75);
+
+  private readonly nightGround = new THREE.Color(0x090d12);
+  private readonly dayGround = new THREE.Color(0x19231d);
+
+  private readonly nightSun = new THREE.Color(0x7896c8);
+  private readonly daySun = new THREE.Color(0xffe4b8);
+  private readonly twilightSun = new THREE.Color(0xff9a63);
+
+  constructor(
+    private readonly scene: THREE.Scene,
+    private readonly hemisphere: THREE.HemisphereLight,
+    private readonly sun: THREE.DirectionalLight,
+    private readonly enabled: boolean,
+  ) {
+    this.background = scene.background instanceof THREE.Color
+      ? scene.background
+      : new THREE.Color(0x0b1210);
+    scene.background = this.background;
+
+    if (enabled) {
+      this.fog = new THREE.FogExp2(0x718079, 0.012);
+      scene.fog = this.fog;
+    } else {
+      this.fog = null;
+    }
+  }
+
+  update(environment: WorldEnvironment) {
+    if (!this.enabled) return;
+
+    const daylight = THREE.MathUtils.clamp(
+      environment.daylight,
+      0,
+      1,
+    );
+
+    // Peaks around sunrise/sunset while remaining zero around midnight/noon.
+    const twilight = Math.pow(
+      Math.max(
+        0,
+        1 - Math.abs(daylight - 0.5) / 0.24,
+      ),
+      2,
+    );
+
+    this.background
+      .copy(this.nightBackground)
+      .lerp(this.dayBackground, daylight)
+      .lerp(this.twilightBackground, twilight * 0.3);
+
+    this.hemisphere.color
+      .copy(this.nightSky)
+      .lerp(this.daySky, daylight)
+      .lerp(this.twilightSky, twilight * 0.18);
+    this.hemisphere.groundColor
+      .copy(this.nightGround)
+      .lerp(this.dayGround, daylight);
+    this.hemisphere.intensity =
+      0.16 + daylight * 1.56;
+
+    this.sun.color
+      .copy(this.nightSun)
+      .lerp(this.daySun, daylight)
+      .lerp(this.twilightSun, twilight * 0.58);
+    this.sun.intensity =
+      0.04 + daylight * 1.72 + twilight * 0.12;
+
+    if (this.fog) {
+      this.fog.color.copy(this.background);
+      this.fog.density =
+        THREE.MathUtils.lerp(0.0185, 0.0075, daylight)
+        + (environment.weather === "rain" ? 0.004 : 0);
+    }
+  }
+
+  dispose() {
+    if (this.scene.fog === this.fog) {
+      this.scene.fog = null;
+    }
+  }
+}
+
+
 class NativeDynamicSceneManager {
   private readonly attackRing: THREE.Mesh;
   private readonly selectionRing: THREE.Mesh;
@@ -4187,6 +4290,7 @@ class NativeDynamicSceneManager {
     floor: number,
     local: Position,
     visualLocal: THREE.Vector3 | null,
+    daylight: number,
     now: number,
   ) {
     if (!this.playerLights.length && !this.torchLights.length) return;
@@ -4198,8 +4302,15 @@ class NativeDynamicSceneManager {
     const centerX = visualLocal?.x ?? local.x + 0.5;
     const centerZ = visualLocal?.z ?? local.y + 0.5;
     const ringRadius = 1.15;
+    // World-local light remains useful during the day, but becomes more
+    // important after sunset. Light object count stays fixed.
+    const playerLightBoost =
+      THREE.MathUtils.lerp(1.42, 1, daylight);
     const playerIntensity =
-      profile.intensity * 1.5 / NATIVE_PLAYER_LIGHT_COUNT;
+      profile.intensity
+      * 1.5
+      * playerLightBoost
+      / NATIVE_PLAYER_LIGHT_COUNT;
 
     for (let index = 0; index < this.playerLights.length; index += 1) {
       const angle =
@@ -4254,12 +4365,15 @@ class NativeDynamicSceneManager {
       }
     }
 
+    const torchLightBoost =
+      THREE.MathUtils.lerp(1.46, 0.9, daylight);
     for (let index = 0; index < this.torchLights.length; index += 1) {
       const light = this.torchLights[index];
       if (!light.userData.active) continue;
       // Intensity-only flicker does not change shader shape or allocate objects.
       light.intensity =
-        5.25 + Math.sin(now * 0.0075 + index * 1.91) * 0.28;
+        (5.25 + Math.sin(now * 0.0075 + index * 1.91) * 0.28)
+        * torchLightBoost;
     }
   }
 
@@ -4270,6 +4384,7 @@ class NativeDynamicSceneManager {
     local: Position,
     visualLocal: THREE.Vector3 | null,
     actorManager: NativeActorManager,
+    daylight: number,
     now: number,
   ) {
     this.updateGroundAndResources(world, floor, local);
@@ -4282,6 +4397,7 @@ class NativeDynamicSceneManager {
       floor,
       local,
       visualLocal,
+      daylight,
       now,
     );
   }
@@ -4559,13 +4675,14 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     let dynamicSceneManager: NativeDynamicSceneManager | null = null;
     let openingAnimationManager: NativeOpeningAnimationManager | null = null;
     let occlusionFadeController: NativeOcclusionFadeController | null = null;
+    let atmosphereManager: NativeWorldAtmosphere | null = null;
     let loadedCharacterAssets: NativeCharacterAssets | null = null;
     let loadedCreatureAssets: NativeCreatureAssets | null = null;
     let loadedMedievalAssets: NativeMedievalAssets | null = null;
     const disposables: Array<{ dispose(): void }> = [];
 
     console.info(
-      "NATIVE WORLD V30.2.1 active · startup occlusion hotfix · raw Three.js",
+      "NATIVE WORLD V31A active · native day/night atmosphere · raw Three.js",
     );
 
     const bootstrap = async () => {
@@ -4613,6 +4730,22 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       const sun = new THREE.DirectionalLight(0xffe4b8, 1.2);
       sun.position.set(10, 24, 8);
       scene.add(sun);
+
+      const nativeAtmosphereEnabled =
+        new URLSearchParams(window.location.search)
+          .get("atmosphere") !== "off";
+      atmosphereManager = new NativeWorldAtmosphere(
+        scene,
+        hemisphere,
+        sun,
+        nativeAtmosphereEnabled,
+      );
+      const activeAtmosphereManager = atmosphereManager;
+      const initialEnvironment = worldEnvironment();
+      activeAtmosphereManager.update(initialEnvironment);
+      console.info(
+        `NATIVE V31A atmosphere: ${nativeAtmosphereEnabled ? "enabled" : "disabled"}`,
+      );
 
       const box = new THREE.BoxGeometry(1, 1, 1);
       const bridgePostGeometry = new THREE.CylinderGeometry(0.07, 0.08, 0.78, 8);
@@ -6177,6 +6310,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
             initialLocal.position,
             initialVisualLocal,
             activeActorManager,
+            initialEnvironment.daylight,
             initialNow,
           );
         }
@@ -6192,6 +6326,9 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
 
         const frameMs = Math.max(0, now - lastFrameAt);
         lastFrameAt = now;
+
+        const environment = worldEnvironment();
+        activeAtmosphereManager.update(environment);
 
         const map = world.map;
         const local = world.localPlayerId
@@ -6319,6 +6456,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
             local.position,
             visualLocal,
             activeActorManager,
+            environment.daylight,
             now,
           );
 
@@ -6340,7 +6478,8 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
 
           if (positionRef.current) {
             positionRef.current.textContent =
-              `NATIVE V30.2.1 · x ${local.position.x} · y ${local.position.y} · z ${floor}`;
+              `NATIVE V31A · ${worldTimeLabel(environment)} ${environment.period} · `
+              + `x ${local.position.x} · y ${local.position.y} · z ${floor}`;
           }
         }
 
@@ -6393,7 +6532,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     };
 
     void bootstrap().catch((error) => {
-      console.error("Native V30.2.1 renderer bootstrap failed", error);
+      console.error("Native V31A renderer bootstrap failed", error);
     });
 
     return () => {
@@ -6404,6 +6543,9 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
 
       openingAnimationManager = null;
       occlusionFadeController = null;
+
+      atmosphereManager?.dispose();
+      atmosphereManager = null;
 
       dynamicSceneManager?.dispose();
       dynamicSceneManager = null;
@@ -6436,7 +6578,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       <canvas
         ref={canvasRef}
         className="three-world"
-        data-native-world-renderer="v30.2.1"
+        data-native-world-renderer="v31a"
         style={{ width: "100%", height: "100%", display: "block" }}
       />
       <div
@@ -6452,7 +6594,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       {showDebug && (
         <div className="debug-meter" aria-label="Native renderer performance">
           <div ref={positionRef} className="position-meter">
-            NATIVE V30.2.1 · x -- · y -- · z --
+            NATIVE V31A · --:-- · x -- · y -- · z --
           </div>
           <div ref={performanceRef} className="fps-meter">
             Native renderer loading world + actors…
