@@ -63,12 +63,18 @@ const TERRAIN_RENDER_PADDING = 16;
 // otherwise move the logical player one tile back and forth around the border.
 const TERRAIN_CHUNK_HYSTERESIS = 4;
 
+// TIBIAGAME_STREAMING_FIX_V17
+// 32 + 16*2 = 64 tile terrain window => 4096 unique tile positions.
+// Keep a little headroom without changing the visible terrain window.
+const TERRAIN_INSTANCE_CAPACITY = 4608;
+
 // TIBIAGAME_STREAMING_FIX_V6
 // TIBIAGAME_STREAMING_FIX_V7
 const RETAINED_STATIC_CHUNK_SIZE = 24;
 // TIBIAGAME_STREAMING_FIX_V11
-const RETAINED_STATIC_CACHE_LIMIT = 24;
-const RETAINED_STATIC_HARD_LIMIT = 40;
+// TIBIAGAME_STREAMING_FIX_V16: compact rolling GPU cache.
+const RETAINED_STATIC_CACHE_LIMIT = 12;
+const RETAINED_STATIC_HARD_LIMIT = 18;
 // TIBIAGAME_STREAMING_FIX_V8: superseded by authoritative completeness.
  // TIBIAGAME_STREAMING_FIX_V9: immutable retained chunks require full coverage.
 
@@ -547,12 +553,18 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
     };
   }, [floor, staticChunkX, staticChunkY, immediateStreamRegionRevision]);
 
-  // V6 could evict an old chunk in the same React commit that mounted a new
-  // one. Release at most one old GPU chunk only after movement has been quiet.
+  // TIBIAGAME_STREAMING_FIX_V16
+  // Retire old GPU chunks while moving, but only in browser idle time. The old
+  // 650ms stationary timer let retained geometry accumulate for a whole walk.
   useEffect(() => {
     if (!local || retainedStaticChunks.length <= RETAINED_STATIC_CACHE_LIMIT) return;
 
-    const handle = window.setTimeout(() => {
+    let cancelled = false;
+    let idleHandle: number | null = null;
+    let timeoutHandle: number | null = null;
+
+    const retireOne = () => {
+      if (cancelled) return;
       startTransition(() => {
         setRetainedStaticChunks((previous) => {
           if (previous.length <= RETAINED_STATIC_CACHE_LIMIT) return previous;
@@ -583,13 +595,28 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
           return next;
         });
       });
-    }, 650);
+    };
 
-    return () => window.clearTimeout(handle);
+    const idleWindow = window as typeof window & {
+      requestIdleCallback?: (
+        callback: (deadline: { didTimeout: boolean; timeRemaining: () => number }) => void,
+      ) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+
+    if (idleWindow.requestIdleCallback) {
+      idleHandle = idleWindow.requestIdleCallback(() => retireOne());
+    } else {
+      timeoutHandle = window.setTimeout(retireOne, 48);
+    }
+
+    return () => {
+      cancelled = true;
+      if (idleHandle !== null) idleWindow.cancelIdleCallback?.(idleHandle);
+      if (timeoutHandle !== null) window.clearTimeout(timeoutHandle);
+    };
   }, [
     floor,
-    local?.position.x,
-    local?.position.y,
     retainedStaticChunks.length,
     staticChunkX,
     staticChunkY,
@@ -659,7 +686,7 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
   const playerLight = playerLightProfile(world.inventory, world.itemDefinitions);
   const onGround = useCallback((event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
-    if (event.button === 2) event.nativeEvent.preventDefault();
+    if (event.button === 2)
     input.interactAt({
       x: Math.max(0, Math.min(map.width - 1, worldToTile(event.point.x))),
       y: Math.max(0, Math.min(map.height - 1, worldToTile(event.point.z))),
@@ -716,7 +743,7 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
               input.interactPlayer(player.id, event.nativeEvent.clientX, event.nativeEvent.clientY);
           }}
           onContextMenu={(event) => {
-            event.stopPropagation(); event.nativeEvent.preventDefault();
+            event.stopPropagation();
             if (player.id !== world.localPlayerId)
               input.interactPlayer(player.id, event.nativeEvent.clientX, event.nativeEvent.clientY);
           }}
@@ -733,7 +760,7 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
             input.targetCreature(creature.id);
           }}
           onContextMenu={(event) => {
-            event.stopPropagation(); event.nativeEvent.preventDefault();
+            event.stopPropagation();
             input.targetCreature(creature.id);
           }}
         />
@@ -749,7 +776,7 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
             input.interactNpc(npc.id);
           }}
           onContextMenu={(event) => {
-            event.stopPropagation(); event.nativeEvent.preventDefault();
+            event.stopPropagation();
             input.interactNpc(npc.id);
           }}
         />
@@ -764,7 +791,7 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
             input.interactAt(node.position);
           }}
           onContextMenu={(event) => {
-            event.stopPropagation(); event.nativeEvent.preventDefault();
+            event.stopPropagation();
             input.interactAt(node.position);
           }}
         />
@@ -786,7 +813,7 @@ function WorldScene({ world, input, onLootHover, onReady }: ThreeWorldProps & { 
               input.lootAt(entry.position);
             }}
             onContextMenu={(event) => {
-              event.stopPropagation(); event.nativeEvent.preventDefault();
+              event.stopPropagation();
               input.lootAt(entry.position);
             }}
           />
@@ -975,10 +1002,13 @@ function InstancedTiles({
   castShadow?: boolean;
   texture?: THREE.Texture;
 }) {
-  // TIBIAGAME_STREAMING_FIX_V14
-  // Build instance matrices during render, not in a post-commit effect. V7's
-  // useEffect conversion removed layout stalls but allowed a freshly resized
-  // instanced mesh to be painted for one frame before its matrices were ready.
+  // TIBIAGAME_STREAMING_FIX_V17
+  // Keep the InstancedMesh constructor args constant across terrain-window
+  // handoffs. V14 used positions.length as the constructor count, so R3F had
+  // to reconstruct the mesh whenever a road/floor/material batch changed size.
+  //
+  // The matrix attribute may still be replaced atomically in the same commit,
+  // but geometry/material/InstancedMesh objects stay alive.
   const instanceMatrix = useMemo(() => {
     const data = new Float32Array(positions.length * 16);
     const matrix = new THREE.Matrix4();
@@ -986,12 +1016,20 @@ function InstancedTiles({
       matrix.makeTranslation(tile.x + 0.5, y, tile.y + 0.5);
       matrix.toArray(data, index * 16);
     });
-    return new THREE.InstancedBufferAttribute(data, 16);
+    const attribute = new THREE.InstancedBufferAttribute(data, 16);
+    attribute.setUsage(THREE.DynamicDrawUsage);
+    return attribute;
   }, [positions, y]);
 
   if (!positions.length) return null;
   return (
-    <instancedMesh args={[undefined, undefined, positions.length]} castShadow={castShadow} receiveShadow>
+    <instancedMesh
+      args={[undefined, undefined, TERRAIN_INSTANCE_CAPACITY]}
+      count={positions.length}
+      castShadow={castShadow}
+      receiveShadow
+      frustumCulled={false}
+    >
       <primitive object={instanceMatrix} attach="instanceMatrix" />
       <boxGeometry args={[scale, height, scale]} />
       <meshStandardMaterial map={texture} color={color} roughness={0.92} />
@@ -1103,12 +1141,17 @@ function WaterTiles({ positions }: { positions: readonly Position[] }) {
     opacity: 0.86,
   }), [waterTexture]);
 
-  // TIBIAGAME_STREAMING_FIX_V14
-  // Like ground tiles, water matrices must exist before the first painted frame.
+  // TIBIAGAME_STREAMING_FIX_V17
+  // Same persistent-capacity strategy as InstancedTiles. Disabling mesh-level
+  // frustum culling is intentional: the whole terrain window is already local
+  // to the player, while stale InstancedMesh bounds during a matrix swap can
+  // hide an otherwise valid water/terrain batch for a frame.
   const instanceMatrix = useMemo(() => {
     const data = new Float32Array(positions.length * 16);
     const matrix = new THREE.Matrix4();
-    const quaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+    const quaternion = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(-Math.PI / 2, 0, 0),
+    );
     const scale = new THREE.Vector3(1.02, 1.02, 1);
     positions.forEach((tile, index) => {
       matrix.compose(
@@ -1118,7 +1161,9 @@ function WaterTiles({ positions }: { positions: readonly Position[] }) {
       );
       matrix.toArray(data, index * 16);
     });
-    return new THREE.InstancedBufferAttribute(data, 16);
+    const attribute = new THREE.InstancedBufferAttribute(data, 16);
+    attribute.setUsage(THREE.DynamicDrawUsage);
+    return attribute;
   }, [positions]);
 
   useEffect(() => () => material.dispose(), [material]);
@@ -1129,9 +1174,15 @@ function WaterTiles({ positions }: { positions: readonly Position[] }) {
     material.emissiveIntensity = 0.1 + wave;
     waterTexture.offset.set(clock.elapsedTime * 0.032, clock.elapsedTime * 0.019);
   });
+
   if (!positions.length) return null;
   return (
-    <instancedMesh args={[undefined, undefined, positions.length]} receiveShadow>
+    <instancedMesh
+      args={[undefined, undefined, TERRAIN_INSTANCE_CAPACITY]}
+      count={positions.length}
+      receiveShadow
+      frustumCulled={false}
+    >
       <primitive object={instanceMatrix} attach="instanceMatrix" />
       <planeGeometry args={[1, 1]} />
       <primitive object={material} attach="material" />
@@ -1227,20 +1278,52 @@ const StaticStructures = memo(function StaticStructures({ map, castleWallContext
 });
 
 function Stairs({ stairs, floor }: { stairs: readonly StairView[]; floor: number }) {
-  return <group>{stairs.map((stair) => {
-    const position = stair.from.z === floor ? stair.from : stair.to.z === floor ? stair.to : null;
-    if (!position) return null;
-    return <group key={`${stair.id}:${floor}`} position={[position.x + 0.5, 0.04, position.y + 0.5]}>
-      {[0, 1, 2, 3].map((step) => <mesh key={step} castShadow position={[(step - 1.5) * 0.18, step * 0.075, 0]}>
-        <boxGeometry args={[0.22, 0.12, 0.78]} />
-        <meshStandardMaterial color="#9a6338" roughness={0.9} />
-      </mesh>)}
-      <mesh position={[0, 0.02, 0]}>
-        <boxGeometry args={[0.95, 0.035, 0.95]} />
-        <meshStandardMaterial color="#5f432d" roughness={1} />
-      </mesh>
-    </group>;
-  })}</group>;
+  // TIBIAGAME_STREAMING_FIX_V16
+  const batches = useMemo(() => {
+    const result = new Map<string, PooledStaticBatch>();
+
+    for (const stair of stairs) {
+      const position = stair.from.z === floor
+        ? stair.from
+        : stair.to.z === floor
+          ? stair.to
+          : null;
+      if (!position) continue;
+
+      const parent = pooledMatrix([
+        position.x + 0.5,
+        0.04,
+        position.y + 0.5,
+      ]);
+
+      [0, 1, 2, 3].forEach((step) => {
+        appendPooledPart(
+          result,
+          "stairs:step",
+          pooledWorldGeometry.box,
+          pooledWorldMaterial.stairStep,
+          parent,
+          [(step - 1.5) * 0.18, step * 0.075, 0],
+          [0, 0, 0],
+          [0.22, 0.12, 0.78],
+        );
+      });
+      appendPooledPart(
+        result,
+        "stairs:base",
+        pooledWorldGeometry.box,
+        pooledWorldMaterial.stairBase,
+        parent,
+        [0, 0.02, 0],
+        [0, 0, 0],
+        [0.95, 0.035, 0.95],
+      );
+    }
+
+    return [...result.values()];
+  }, [floor, stairs]);
+
+  return <group>{batches.map((batch) => <PooledStaticBatchMesh key={batch.key} batch={batch} />)}</group>;
 }
 
 const inspectableWorldObjectIds = new Set(["rivercross_mire_notice", "mire_drowned_supply_note", "mire_eastward_slick"]);
@@ -1274,7 +1357,7 @@ function InspectableWorldObject({ object, input, world, onHover }: { object: Wor
     onPointerOver={(event) => { event.stopPropagation(); setHovered(true); document.body.style.cursor = "pointer"; onHover({ label, x: event.nativeEvent.clientX, y: event.nativeEvent.clientY }); }}
     onPointerOut={() => { setHovered(false); document.body.style.cursor = ""; onHover(null); }}
     onClick={(event) => { event.stopPropagation(); document.body.style.cursor = ""; onHover(null); input.interactWorldObject(object.id, object.position); }}
-    onContextMenu={(event) => { event.stopPropagation(); event.nativeEvent.preventDefault(); input.interactWorldObject(object.id, object.position); }}
+    onContextMenu={(event) => { event.stopPropagation(); input.interactWorldObject(object.id, object.position); }}
   >
     <mesh position={[0, hitboxY, 0]}>
       <boxGeometry args={hitbox} />
@@ -1288,24 +1371,325 @@ function InspectableWorldObject({ object, input, world, onHover }: { object: Wor
   </group>;
 }
 
+// TIBIAGAME_STREAMING_FIX_V16
+// Shared immutable primitives for repeated static props. These objects live for
+// the renderer lifetime and are referenced by all retained chunks.
+const pooledWorldGeometry = {
+  box: new THREE.BoxGeometry(1, 1, 1),
+  plane: new THREE.PlaneGeometry(1, 1),
+  bogCircle: new THREE.CircleGeometry(1, 12),
+  reedStem: new THREE.CylinderGeometry(0.017, 0.025, 1, 5),
+  wellBody: new THREE.CylinderGeometry(0.42, 0.48, 1, 10),
+  wellRing: new THREE.TorusGeometry(0.34, 0.09, 6, 10),
+  sphere10x8: new THREE.SphereGeometry(1, 10, 8),
+  sphere8x7: new THREE.SphereGeometry(1, 8, 7),
+  sphere8x6: new THREE.SphereGeometry(1, 8, 6),
+  bone: new THREE.CylinderGeometry(0.035, 0.04, 1, 7),
+  rock: new THREE.DodecahedronGeometry(1, 0),
+  mushroomStem: new THREE.CylinderGeometry(0.025, 0.035, 1, 6),
+  campLog: new THREE.CylinderGeometry(0.07, 0.08, 1, 7),
+  campFlame: new THREE.ConeGeometry(0.16, 1, 8),
+  hayBody: new THREE.CylinderGeometry(0.27, 0.27, 1, 10),
+  hayBand: new THREE.TorusGeometry(0.275, 0.018, 5, 12),
+} as const;
+
+const pooledWorldMaterial = {
+  noticePost: new THREE.MeshStandardMaterial({ color: "#553a24", roughness: 1 }),
+  noticeBoard: new THREE.MeshStandardMaterial({ color: "#765038", roughness: 0.95 }),
+  noticePaper: new THREE.MeshStandardMaterial({ color: "#d1be8a", roughness: 1 }),
+  bog: new THREE.MeshStandardMaterial({ color: "#17231f", roughness: 0.38, metalness: 0.12 }),
+  reedStem: new THREE.MeshStandardMaterial({ color: "#526a36", roughness: 0.96 }),
+  reedLeaf: new THREE.MeshStandardMaterial({ color: "#6f873f", roughness: 0.92, side: THREE.DoubleSide }),
+  plank: new THREE.MeshStandardMaterial({ color: "#66452d", roughness: 1 }),
+  plankDark: new THREE.MeshStandardMaterial({ color: "#4d392a", roughness: 1 }),
+  wellBody: new THREE.MeshStandardMaterial({ color: "#77807b", roughness: 0.98 }),
+  wellRing: new THREE.MeshStandardMaterial({ color: "#58615d", roughness: 0.95 }),
+  crate: new THREE.MeshStandardMaterial({ color: "#855833", roughness: 0.92 }),
+  crateBand: new THREE.MeshStandardMaterial({ color: "#4f321f", roughness: 1 }),
+  sack: new THREE.MeshStandardMaterial({ color: "#b39a6a", roughness: 1 }),
+  sackTie: new THREE.MeshStandardMaterial({ color: "#7c6542", roughness: 1 }),
+  bone: new THREE.MeshStandardMaterial({ color: "#cfc4a2", roughness: 0.95 }),
+  skull: new THREE.MeshStandardMaterial({ color: "#bfb28f", roughness: 0.96 }),
+  rock: new THREE.MeshStandardMaterial({ color: "#7a807b", roughness: 0.99 }),
+  rockDark: new THREE.MeshStandardMaterial({ color: "#666d69", roughness: 0.99 }),
+  mushroomStem: new THREE.MeshStandardMaterial({ color: "#d8c6a1", roughness: 1 }),
+  mushroom: new THREE.MeshStandardMaterial({ color: "#9c6048", roughness: 0.9 }),
+  mushroomBright: new THREE.MeshStandardMaterial({ color: "#c68155", roughness: 0.9 }),
+  log: new THREE.MeshStandardMaterial({ color: "#5d3924", roughness: 1 }),
+  flame: new THREE.MeshStandardMaterial({
+    color: "#ff9a38",
+    emissive: "#e84d16",
+    emissiveIntensity: 1.8,
+    toneMapped: false,
+  }),
+  hay: new THREE.MeshStandardMaterial({ color: "#b49543", roughness: 1 }),
+  hayBand: new THREE.MeshStandardMaterial({ color: "#6f5930", roughness: 1 }),
+  fencePost: new THREE.MeshStandardMaterial({ color: "#6e482d", roughness: 1 }),
+  fenceRail: new THREE.MeshStandardMaterial({ color: "#805638", roughness: 1 }),
+  furnitureTop: new THREE.MeshStandardMaterial({ color: "#80502d", roughness: 0.9 }),
+  furnitureLeg: new THREE.MeshStandardMaterial({ color: "#61391f", roughness: 1 }),
+  stairStep: new THREE.MeshStandardMaterial({ color: "#9a6338", roughness: 0.9 }),
+  stairBase: new THREE.MeshStandardMaterial({ color: "#5f432d", roughness: 1 }),
+} as const;
+
+type PooledStaticBatch = {
+  key: string;
+  geometry: THREE.BufferGeometry;
+  material: THREE.Material;
+  matrices: number[];
+};
+
+function pooledMatrix(
+  position: readonly number[],
+  rotation: readonly number[] = [0, 0, 0],
+  scale: readonly number[] = [1, 1, 1],
+) {
+  return new THREE.Matrix4().compose(
+    new THREE.Vector3(position[0], position[1], position[2]),
+    new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(rotation[0], rotation[1], rotation[2]),
+    ),
+    new THREE.Vector3(scale[0], scale[1], scale[2]),
+  );
+}
+
+function pooledChild(
+  parent: THREE.Matrix4,
+  position: readonly number[],
+  rotation: readonly number[] = [0, 0, 0],
+) {
+  return new THREE.Matrix4().multiplyMatrices(
+    parent,
+    pooledMatrix(position, rotation),
+  );
+}
+
+function appendPooledPart(
+  batches: Map<string, PooledStaticBatch>,
+  key: string,
+  geometry: THREE.BufferGeometry,
+  material: THREE.Material,
+  parent: THREE.Matrix4,
+  position: readonly number[] = [0, 0, 0],
+  rotation: readonly number[] = [0, 0, 0],
+  scale: readonly number[] = [1, 1, 1],
+) {
+  let batch = batches.get(key);
+  if (!batch) {
+    batch = { key, geometry, material, matrices: [] };
+    batches.set(key, batch);
+  }
+
+  const matrix = new THREE.Matrix4().multiplyMatrices(
+    parent,
+    pooledMatrix(position, rotation, scale),
+  );
+  for (const value of matrix.elements) batch.matrices.push(value);
+}
+
+function PooledStaticBatchMesh({ batch }: { batch: PooledStaticBatch }) {
+  const mesh = useMemo(() => {
+    const count = batch.matrices.length / 16;
+    const instance = new THREE.InstancedMesh(
+      batch.geometry,
+      batch.material,
+      count,
+    );
+    instance.castShadow = true;
+    instance.receiveShadow = true;
+    instance.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    instance.instanceMatrix.array.set(batch.matrices);
+    instance.instanceMatrix.needsUpdate = true;
+    instance.computeBoundingSphere();
+    return instance;
+  }, [batch]);
+
+  return <primitive object={mesh} />;
+}
+
 function WorldObjects({ objects }: { objects: readonly WorldObjectView[] }) {
-  return <group>{objects.map((object) => {
-    const [x, z] = [object.position.x + 0.5, object.position.y + 0.5];
-    if (object.kind === "notice_post") return <group key={object.id} position={[x, 0, z]} rotation={[0, 0.28, 0]}><mesh castShadow position={[0, 0.42, 0]}><boxGeometry args={[0.08, 0.84, 0.08]} /><meshStandardMaterial color="#553a24" roughness={1} /></mesh><mesh castShadow position={[0, 0.67, 0.015]}><boxGeometry args={[0.56, 0.38, 0.055]} /><meshStandardMaterial color="#765038" roughness={0.95} /></mesh><mesh position={[0, 0.68, 0.047]}><planeGeometry args={[0.4, 0.25]} /><meshStandardMaterial color="#d1be8a" roughness={1} /></mesh></group>;
-    if (object.kind === "bog_slick") return <mesh key={object.id} receiveShadow position={[x, 0.012, z]} rotation={[-Math.PI / 2, 0, 0]}><circleGeometry args={[0.46, 12]} /><meshStandardMaterial color="#17231f" roughness={0.38} metalness={0.12} /></mesh>;
-    if (object.kind === "bent_reeds") return <group key={object.id} position={[x, 0, z]} rotation={[0, 0.82, -0.18]}>{[-0.23, -0.08, 0.08, 0.22].map((offset, index) => <group key={offset} position={[offset, 0, (index % 2 - 0.5) * 0.12]} rotation={[0, 0, 0.24 + index * 0.06]}><mesh castShadow position={[0, 0.34 + index * 0.025, 0]}><cylinderGeometry args={[0.017, 0.025, 0.7 + index * 0.05, 5]} /><meshStandardMaterial color="#526a36" roughness={0.96} /></mesh><mesh castShadow position={[0.07, 0.61 + index * 0.04, 0]} rotation={[0, 0, -0.48]}><planeGeometry args={[0.18, 0.045]} /><meshStandardMaterial color="#6f873f" roughness={0.92} side={2} /></mesh></group>)}</group>;
-    if (object.kind === "wrecked_planks") return <group key={object.id} position={[x, 0.08, z]} rotation={[0, 0.36, 0]}>{[-0.22, 0, 0.22].map((offset, index) => <mesh key={offset} castShadow position={[offset, index * 0.025, (index - 1) * 0.12]} rotation={[0, 0.22 * (index - 1), 0.1 * (index - 1)]}><boxGeometry args={[0.62, 0.09, 0.16]} /><meshStandardMaterial color={index === 1 ? "#4d392a" : "#66452d"} roughness={1} /></mesh>)}</group>;
-    if (object.kind === "well") return <group key={object.id} position={[x, 0, z]}><mesh castShadow position={[0, 0.3, 0]}><cylinderGeometry args={[0.42, 0.48, 0.55, 10]} /><meshStandardMaterial color="#77807b" roughness={0.98} /></mesh><mesh position={[0, 0.59, 0]}><torusGeometry args={[0.34, 0.09, 6, 10]} /><meshStandardMaterial color="#58615d" roughness={0.95} /></mesh></group>;
-    if (object.kind === "wooden_crate") return <group key={object.id} position={[x, 0, z]}><mesh castShadow receiveShadow position={[0, 0.28, 0]}><boxGeometry args={[0.66, 0.56, 0.66]} /><meshStandardMaterial color="#855833" roughness={0.92} /></mesh><mesh castShadow position={[0, 0.29, 0.35]}><boxGeometry args={[0.72, 0.08, 0.06]} /><meshStandardMaterial color="#4f321f" roughness={1} /></mesh><mesh castShadow position={[0, 0.29, -0.35]}><boxGeometry args={[0.72, 0.08, 0.06]} /><meshStandardMaterial color="#4f321f" roughness={1} /></mesh></group>;
-    if (object.kind === "grain_sack") return <group key={object.id} position={[x, 0, z]}><mesh castShadow position={[0, 0.3, 0]} scale={[0.78, 1.08, 0.7]}><sphereGeometry args={[0.34, 10, 8]} /><meshStandardMaterial color="#b39a6a" roughness={1} /></mesh><mesh castShadow position={[0, 0.64, 0]}><sphereGeometry args={[0.09, 7, 6]} /><meshStandardMaterial color="#7c6542" roughness={1} /></mesh></group>;
-    if (object.kind === "bone_pile") return <group key={object.id} position={[x, 0.08, z]}>{[[-0.18,0.1,-0.08,0.7],[0.13,0.12,0.12,-0.55],[-0.02,0.15,0.2,1.1]].map(([bx,by,bz,rot], index) => <mesh key={index} castShadow position={[bx,by,bz]} rotation={[Math.PI / 2, rot, 0]}><cylinderGeometry args={[0.035, 0.04, 0.48, 7]} /><meshStandardMaterial color="#cfc4a2" roughness={0.95} /></mesh>)}<mesh castShadow position={[0.22, 0.18, -0.14]}><sphereGeometry args={[0.14, 8, 7]} /><meshStandardMaterial color="#bfb28f" roughness={0.96} /></mesh></group>;
-    if (object.kind === "rock_pile") return <group key={object.id} position={[x, 0, z]}>{[[-0.18,0.17,0.02,0.24],[0.16,0.2,0.1,0.3],[0.03,0.28,-0.14,0.25]].map(([rx,ry,rz,r], index) => <mesh key={index} castShadow receiveShadow position={[rx,ry,rz]}><dodecahedronGeometry args={[r, 0]} /><meshStandardMaterial color={index === 1 ? "#666d69" : "#7a807b"} roughness={0.99} /></mesh>)}</group>;
-    if (object.kind === "mushroom_patch") return <group key={object.id} position={[x, 0, z]}>{[[-0.2,0.12,-0.08,0.12],[0.12,0.16,0.05,0.15],[0.24,0.1,-0.18,0.1]].map(([mx,my,mz,size], index) => <group key={index} position={[mx,0,mz]}><mesh castShadow position={[0,my * 0.55,0]}><cylinderGeometry args={[0.025,0.035,my,6]} /><meshStandardMaterial color="#d8c6a1" roughness={1} /></mesh><mesh castShadow position={[0,my + 0.015,0]} scale={[1,0.45,1]}><sphereGeometry args={[size,8,6]} /><meshStandardMaterial color={index === 1 ? "#c68155" : "#9c6048"} roughness={0.9} /></mesh></group>)}</group>;
-    if (object.kind === "campfire") return <group key={object.id} position={[x, 0, z]}><mesh castShadow position={[0,0.1,0]} rotation={[0,0.7,Math.PI / 2]}><cylinderGeometry args={[0.07,0.08,0.62,7]} /><meshStandardMaterial color="#5d3924" roughness={1} /></mesh><mesh castShadow position={[0,0.1,0]} rotation={[0,-0.7,Math.PI / 2]}><cylinderGeometry args={[0.07,0.08,0.62,7]} /><meshStandardMaterial color="#5d3924" roughness={1} /></mesh><mesh position={[0,0.37,0]}><coneGeometry args={[0.16,0.55,8]} /><meshStandardMaterial color="#ff9a38" emissive="#e84d16" emissiveIntensity={1.8} toneMapped={false} /></mesh></group>;
-    if (object.kind === "hay_bundle") return <group key={object.id} position={[x, 0.22, z]} rotation={[0,0.25,Math.PI / 2]}><mesh castShadow><cylinderGeometry args={[0.27,0.27,0.68,10]} /><meshStandardMaterial color="#b49543" roughness={1} /></mesh>{[-0.2,0.2].map((offset) => <mesh key={offset} position={[0,offset,0]}><torusGeometry args={[0.275,0.018,5,12]} /><meshStandardMaterial color="#6f5930" roughness={1} /></mesh>)}</group>;
-    if (object.kind === "fence_post") return <group key={object.id} position={[x,0,z]}><mesh castShadow position={[0,0.52,0]}><boxGeometry args={[0.13,1.04,0.13]} /><meshStandardMaterial color="#6e482d" roughness={1} /></mesh><mesh castShadow position={[0,0.62,0]}><boxGeometry args={[0.82,0.11,0.1]} /><meshStandardMaterial color="#805638" roughness={1} /></mesh><mesh castShadow position={[0,0.34,0]}><boxGeometry args={[0.82,0.11,0.1]} /><meshStandardMaterial color="#805638" roughness={1} /></mesh></group>;
-    const isTable = object.kind === "table"; return <group key={object.id} position={[x, 0, z]}><mesh castShadow position={[0, isTable ? 0.58 : 0.35, 0]}><boxGeometry args={[isTable ? 0.78 : 0.9, 0.13, isTable ? 0.58 : 0.25]} /><meshStandardMaterial color="#80502d" roughness={0.9} /></mesh>{isTable && [-0.29, 0.29].flatMap((dx) => [-0.2, 0.2].map((dz) => <mesh key={`${dx}:${dz}`} castShadow position={[dx, 0.28, dz]}><boxGeometry args={[0.1, 0.56, 0.1]} /><meshStandardMaterial color="#61391f" roughness={1} /></mesh>))}</group>;
-  })}</group>;
+  // TIBIAGAME_STREAMING_FIX_V16
+  // Static props are converted to a small set of InstancedMesh batches instead
+  // of allocating geometry/material objects for every prop in every chunk.
+  const batches = useMemo(() => {
+    const result = new Map<string, PooledStaticBatch>();
+
+    for (const object of objects) {
+      const x = object.position.x + 0.5;
+      const z = object.position.y + 0.5;
+
+      if (object.kind === "notice_post") {
+        const parent = pooledMatrix([x, 0, z], [0, 0.28, 0]);
+        appendPooledPart(result, "notice:post", pooledWorldGeometry.box, pooledWorldMaterial.noticePost, parent, [0, 0.42, 0], [0, 0, 0], [0.08, 0.84, 0.08]);
+        appendPooledPart(result, "notice:board", pooledWorldGeometry.box, pooledWorldMaterial.noticeBoard, parent, [0, 0.67, 0.015], [0, 0, 0], [0.56, 0.38, 0.055]);
+        appendPooledPart(result, "notice:paper", pooledWorldGeometry.plane, pooledWorldMaterial.noticePaper, parent, [0, 0.68, 0.047], [0, 0, 0], [0.4, 0.25, 1]);
+        continue;
+      }
+
+      if (object.kind === "bog_slick") {
+        appendPooledPart(result, "bog", pooledWorldGeometry.bogCircle, pooledWorldMaterial.bog, pooledMatrix([x, 0, z]), [0, 0.012, 0], [-Math.PI / 2, 0, 0], [0.46, 0.46, 1]);
+        continue;
+      }
+
+      if (object.kind === "bent_reeds") {
+        const parent = pooledMatrix([x, 0, z], [0, 0.82, -0.18]);
+        [-0.23, -0.08, 0.08, 0.22].forEach((offset, index) => {
+          const reed = pooledChild(
+            parent,
+            [offset, 0, (index % 2 - 0.5) * 0.12],
+            [0, 0, 0.24 + index * 0.06],
+          );
+          appendPooledPart(result, "reed:stem", pooledWorldGeometry.reedStem, pooledWorldMaterial.reedStem, reed, [0, 0.34 + index * 0.025, 0], [0, 0, 0], [1, 0.7 + index * 0.05, 1]);
+          appendPooledPart(result, "reed:leaf", pooledWorldGeometry.plane, pooledWorldMaterial.reedLeaf, reed, [0.07, 0.61 + index * 0.04, 0], [0, 0, -0.48], [0.18, 0.045, 1]);
+        });
+        continue;
+      }
+
+      if (object.kind === "wrecked_planks") {
+        const parent = pooledMatrix([x, 0.08, z], [0, 0.36, 0]);
+        [-0.22, 0, 0.22].forEach((offset, index) => {
+          appendPooledPart(
+            result,
+            index === 1 ? "plank:dark" : "plank",
+            pooledWorldGeometry.box,
+            index === 1 ? pooledWorldMaterial.plankDark : pooledWorldMaterial.plank,
+            parent,
+            [offset, index * 0.025, (index - 1) * 0.12],
+            [0, 0.22 * (index - 1), 0.1 * (index - 1)],
+            [0.62, 0.09, 0.16],
+          );
+        });
+        continue;
+      }
+
+      if (object.kind === "well") {
+        const parent = pooledMatrix([x, 0, z]);
+        appendPooledPart(result, "well:body", pooledWorldGeometry.wellBody, pooledWorldMaterial.wellBody, parent, [0, 0.3, 0], [0, 0, 0], [1, 0.55, 1]);
+        appendPooledPart(result, "well:ring", pooledWorldGeometry.wellRing, pooledWorldMaterial.wellRing, parent, [0, 0.59, 0]);
+        continue;
+      }
+
+      if (object.kind === "wooden_crate") {
+        const parent = pooledMatrix([x, 0, z]);
+        appendPooledPart(result, "crate:body", pooledWorldGeometry.box, pooledWorldMaterial.crate, parent, [0, 0.28, 0], [0, 0, 0], [0.66, 0.56, 0.66]);
+        appendPooledPart(result, "crate:band", pooledWorldGeometry.box, pooledWorldMaterial.crateBand, parent, [0, 0.29, 0.35], [0, 0, 0], [0.72, 0.08, 0.06]);
+        appendPooledPart(result, "crate:band", pooledWorldGeometry.box, pooledWorldMaterial.crateBand, parent, [0, 0.29, -0.35], [0, 0, 0], [0.72, 0.08, 0.06]);
+        continue;
+      }
+
+      if (object.kind === "grain_sack") {
+        const parent = pooledMatrix([x, 0, z]);
+        appendPooledPart(result, "sack", pooledWorldGeometry.sphere10x8, pooledWorldMaterial.sack, parent, [0, 0.3, 0], [0, 0, 0], [0.2652, 0.3672, 0.238]);
+        appendPooledPart(result, "sack:tie", pooledWorldGeometry.sphere10x8, pooledWorldMaterial.sackTie, parent, [0, 0.64, 0], [0, 0, 0], [0.09, 0.09, 0.09]);
+        continue;
+      }
+
+      if (object.kind === "bone_pile") {
+        const parent = pooledMatrix([x, 0.08, z]);
+        [
+          [-0.18, 0.1, -0.08, 0.7],
+          [0.13, 0.12, 0.12, -0.55],
+          [-0.02, 0.15, 0.2, 1.1],
+        ].forEach(([bx, by, bz, rot]) => {
+          appendPooledPart(result, "bone", pooledWorldGeometry.bone, pooledWorldMaterial.bone, parent, [bx, by, bz], [Math.PI / 2, rot, 0], [1, 0.48, 1]);
+        });
+        appendPooledPart(result, "skull", pooledWorldGeometry.sphere8x7, pooledWorldMaterial.skull, parent, [0.22, 0.18, -0.14], [0, 0, 0], [0.14, 0.14, 0.14]);
+        continue;
+      }
+
+      if (object.kind === "rock_pile") {
+        const parent = pooledMatrix([x, 0, z]);
+        [
+          [-0.18, 0.17, 0.02, 0.24],
+          [0.16, 0.2, 0.1, 0.3],
+          [0.03, 0.28, -0.14, 0.25],
+        ].forEach(([rx, ry, rz, radius], index) => {
+          appendPooledPart(
+            result,
+            index === 1 ? "rock:dark" : "rock",
+            pooledWorldGeometry.rock,
+            index === 1 ? pooledWorldMaterial.rockDark : pooledWorldMaterial.rock,
+            parent,
+            [rx, ry, rz],
+            [0, 0, 0],
+            [radius, radius, radius],
+          );
+        });
+        continue;
+      }
+
+      if (object.kind === "mushroom_patch") {
+        const parent = pooledMatrix([x, 0, z]);
+        [
+          [-0.2, 0.12, -0.08, 0.12],
+          [0.12, 0.16, 0.05, 0.15],
+          [0.24, 0.1, -0.18, 0.1],
+        ].forEach(([mx, my, mz, size], index) => {
+          appendPooledPart(result, "mushroom:stem", pooledWorldGeometry.mushroomStem, pooledWorldMaterial.mushroomStem, parent, [mx, my * 0.55, mz], [0, 0, 0], [1, my, 1]);
+          appendPooledPart(
+            result,
+            index === 1 ? "mushroom:bright" : "mushroom",
+            pooledWorldGeometry.sphere8x6,
+            index === 1 ? pooledWorldMaterial.mushroomBright : pooledWorldMaterial.mushroom,
+            parent,
+            [mx, my + 0.015, mz],
+            [0, 0, 0],
+            [size, size * 0.45, size],
+          );
+        });
+        continue;
+      }
+
+      if (object.kind === "campfire") {
+        const parent = pooledMatrix([x, 0, z]);
+        appendPooledPart(result, "camp:log", pooledWorldGeometry.campLog, pooledWorldMaterial.log, parent, [0, 0.1, 0], [0, 0.7, Math.PI / 2], [1, 0.62, 1]);
+        appendPooledPart(result, "camp:log", pooledWorldGeometry.campLog, pooledWorldMaterial.log, parent, [0, 0.1, 0], [0, -0.7, Math.PI / 2], [1, 0.62, 1]);
+        appendPooledPart(result, "camp:flame", pooledWorldGeometry.campFlame, pooledWorldMaterial.flame, parent, [0, 0.37, 0], [0, 0, 0], [1, 0.55, 1]);
+        continue;
+      }
+
+      if (object.kind === "hay_bundle") {
+        const parent = pooledMatrix([x, 0.22, z], [0, 0.25, Math.PI / 2]);
+        appendPooledPart(result, "hay:body", pooledWorldGeometry.hayBody, pooledWorldMaterial.hay, parent, [0, 0, 0], [0, 0, 0], [1, 0.68, 1]);
+        [-0.2, 0.2].forEach((offset) => {
+          appendPooledPart(result, "hay:band", pooledWorldGeometry.hayBand, pooledWorldMaterial.hayBand, parent, [0, offset, 0]);
+        });
+        continue;
+      }
+
+      if (object.kind === "fence_post") {
+        const parent = pooledMatrix([x, 0, z]);
+        appendPooledPart(result, "fence:post", pooledWorldGeometry.box, pooledWorldMaterial.fencePost, parent, [0, 0.52, 0], [0, 0, 0], [0.13, 1.04, 0.13]);
+        appendPooledPart(result, "fence:rail", pooledWorldGeometry.box, pooledWorldMaterial.fenceRail, parent, [0, 0.62, 0], [0, 0, 0], [0.82, 0.11, 0.1]);
+        appendPooledPart(result, "fence:rail", pooledWorldGeometry.box, pooledWorldMaterial.fenceRail, parent, [0, 0.34, 0], [0, 0, 0], [0.82, 0.11, 0.1]);
+        continue;
+      }
+
+      const isTable = object.kind === "table";
+      const parent = pooledMatrix([x, 0, z]);
+      appendPooledPart(
+        result,
+        isTable ? "furniture:table" : "furniture:other",
+        pooledWorldGeometry.box,
+        pooledWorldMaterial.furnitureTop,
+        parent,
+        [0, isTable ? 0.58 : 0.35, 0],
+        [0, 0, 0],
+        [isTable ? 0.78 : 0.9, 0.13, isTable ? 0.58 : 0.25],
+      );
+      if (isTable) {
+        [-0.29, 0.29].forEach((dx) => {
+          [-0.2, 0.2].forEach((dz) => {
+            appendPooledPart(result, "furniture:leg", pooledWorldGeometry.box, pooledWorldMaterial.furnitureLeg, parent, [dx, 0.28, dz], [0, 0, 0], [0.1, 0.56, 0.1]);
+          });
+        });
+      }
+    }
+
+    return [...result.values()];
+  }, [objects]);
+
+  return <group>{batches.map((batch) => <PooledStaticBatchMesh key={batch.key} batch={batch} />)}</group>;
 }
 
 const Building = memo(function Building({ building, doors, windows, input }: { building: BuildingView; doors: readonly DoorView[]; windows: readonly WindowView[]; input: InputController }) {
