@@ -22,7 +22,7 @@ import type {
   WorldObjectKind,
   WorldObjectView,
 } from "../protocol";
-import { CLIENT_STEP_MS, type InputController } from "./InputController";
+import type { InputController } from "./InputController";
 import type { WorldState } from "./WorldState";
 
 const NATIVE_RENDER_CHUNK_SIZE = 24;
@@ -34,9 +34,8 @@ const NATIVE_CAMERA_ZOOM = 90;
 
 // TIBIAGAME_NATIVE_RENDERER_V23
 // TIBIAGAME_NATIVE_RENDERER_V24
-// TIBIAGAME_NATIVE_RENDERER_V24_1
-// Smooth tile interpolation + camera follow. Gameplay remains tile-based at
-// CLIENT_STEP_MS cadence, while the visual actor/camera travels continuously.
+// Phase 2 production migration: real imperative actors. Player/NPC models and
+// castle-rat sprite animation are owned directly by Three.js, not by React/R3F.
 
 type NativeWorldRendererProps = {
   world: WorldState;
@@ -1015,11 +1014,8 @@ class NativeCharacterActor {
   private targetX = 0;
   private targetZ = 0;
   private targetFloor = -999;
-  private moveStartX = 0;
-  private moveStartZ = 0;
-  private moveStartedAt = 0;
-  private moveDurationMs = CLIENT_STEP_MS;
   private facingAngle = 0;
+  private movingUntil = 0;
   private initialized = false;
 
   constructor(
@@ -1048,51 +1044,26 @@ class NativeCharacterActor {
     scene.add(this.root);
   }
 
-  get visualPosition() {
-    return this.root.position;
-  }
-
   setTarget(position: Position, floor: number, now: number) {
     const nextX = position.x + 0.5;
     const nextZ = position.y + 0.5;
-    const floorChanged = this.initialized && position.z !== this.targetFloor;
 
-    if (!this.initialized || floorChanged) {
-      // Floor changes/teleports must never interpolate through unrelated world
-      // space. Snap once, then resume normal tile interpolation.
+    if (!this.initialized) {
       this.root.position.set(nextX, 0.05, nextZ);
       this.targetX = nextX;
       this.targetZ = nextZ;
       this.targetFloor = position.z;
-      this.moveStartX = nextX;
-      this.moveStartZ = nextZ;
-      this.moveStartedAt = now;
-      this.moveDurationMs = 0;
       this.initialized = true;
     } else if (nextX !== this.targetX || nextZ !== this.targetZ) {
-      const logicalDx = nextX - this.targetX;
-      const logicalDz = nextZ - this.targetZ;
-      const logicalDistance = Math.hypot(logicalDx, logicalDz);
-
-      if (logicalDistance > Math.SQRT2 + 0.05) {
-        // Large authoritative corrections behave like teleports, not walks.
-        this.root.position.set(nextX, 0.05, nextZ);
-        this.moveStartX = nextX;
-        this.moveStartZ = nextZ;
-        this.moveDurationMs = 0;
-      } else {
-        this.moveStartX = this.root.position.x;
-        this.moveStartZ = this.root.position.z;
-        this.moveStartedAt = now;
-        this.moveDurationMs = CLIENT_STEP_MS * Math.max(1, logicalDistance);
-      }
-
-      if (logicalDistance > 0.001) {
-        this.facingAngle = Math.atan2(logicalDx, logicalDz);
+      const dx = nextX - this.targetX;
+      const dz = nextZ - this.targetZ;
+      if (Math.abs(dx) > 0.001 || Math.abs(dz) > 0.001) {
+        this.facingAngle = Math.atan2(dx, dz);
       }
       this.targetX = nextX;
       this.targetZ = nextZ;
       this.targetFloor = position.z;
+      this.movingUntil = now + 240;
     }
 
     this.root.visible = position.z === floor;
@@ -1105,25 +1076,17 @@ class NativeCharacterActor {
   update(delta: number, now: number) {
     if (!this.root.visible || !this.initialized) return;
 
-    const progress = this.moveDurationMs <= 0
-      ? 1
-      : THREE.MathUtils.clamp(
-          (now - this.moveStartedAt) / this.moveDurationMs,
-          0,
-          1,
-        );
-
-    // Linear tile interpolation is intentional. Exponential damp restarts its
-    // velocity on every 165 ms tile update and feels like repeated tiny lunges.
-    this.root.position.x = THREE.MathUtils.lerp(
-      this.moveStartX,
+    this.root.position.x = THREE.MathUtils.damp(
+      this.root.position.x,
       this.targetX,
-      progress,
+      16,
+      delta,
     );
-    this.root.position.z = THREE.MathUtils.lerp(
-      this.moveStartZ,
+    this.root.position.z = THREE.MathUtils.damp(
+      this.root.position.z,
       this.targetZ,
-      progress,
+      16,
+      delta,
     );
     this.root.rotation.y = THREE.MathUtils.damp(
       this.root.rotation.y,
@@ -1132,7 +1095,9 @@ class NativeCharacterActor {
       delta,
     );
 
-    const moving = progress < 1;
+    const moving = now < this.movingUntil
+      || Math.abs(this.root.position.x - this.targetX) > 0.015
+      || Math.abs(this.root.position.z - this.targetZ) > 0.015;
     const next = moving ? "walk" : "idle";
 
     if (next !== this.active) {
@@ -1212,11 +1177,7 @@ class NativeSpriteCreatureActor {
 
   private targetX = 0;
   private targetZ = 0;
-  private targetFloor = -999;
-  private moveStartX = 0;
-  private moveStartZ = 0;
-  private moveStartedAt = 0;
-  private moveDurationMs = CLIENT_STEP_MS;
+  private movingUntil = 0;
   private facing: CardinalDirection = "south";
   private previousHealth = Number.POSITIVE_INFINITY;
   private previousState = "";
@@ -1295,47 +1256,25 @@ class NativeSpriteCreatureActor {
   ) {
     const nextX = creature.position.x + 0.5;
     const nextZ = creature.position.y + 0.5;
-    const floorChanged =
-      this.initialized && creature.position.z !== this.targetFloor;
 
-    if (!this.initialized || floorChanged) {
+    if (!this.initialized) {
       this.root.position.set(nextX, 0, nextZ);
       this.targetX = nextX;
       this.targetZ = nextZ;
-      this.targetFloor = creature.position.z;
-      this.moveStartX = nextX;
-      this.moveStartZ = nextZ;
-      this.moveStartedAt = now;
-      this.moveDurationMs = 0;
       this.previousHealth = creature.health;
       this.previousState = creature.state;
       this.initialized = true;
     } else if (nextX !== this.targetX || nextZ !== this.targetZ) {
-      const logicalDx = nextX - this.targetX;
-      const logicalDz = nextZ - this.targetZ;
-      const logicalDistance = Math.hypot(logicalDx, logicalDz);
-
+      const dx = nextX - this.targetX;
+      const dz = nextZ - this.targetZ;
       this.facing = cardinalDirectionFromDelta(
-        logicalDx,
-        logicalDz,
+        dx,
+        dz,
         this.facing,
       );
-
-      if (logicalDistance > Math.SQRT2 + 0.05) {
-        this.root.position.set(nextX, 0, nextZ);
-        this.moveStartX = nextX;
-        this.moveStartZ = nextZ;
-        this.moveDurationMs = 0;
-      } else {
-        this.moveStartX = this.root.position.x;
-        this.moveStartZ = this.root.position.z;
-        this.moveStartedAt = now;
-        this.moveDurationMs = CLIENT_STEP_MS * Math.max(1, logicalDistance);
-      }
-
       this.targetX = nextX;
       this.targetZ = nextZ;
-      this.targetFloor = creature.position.z;
+      this.movingUntil = now + 240;
     }
 
     if (creature.health <= 0 && this.previousHealth > 0) {
@@ -1366,25 +1305,22 @@ class NativeSpriteCreatureActor {
   ) {
     if (!this.root.visible || !this.initialized) return;
 
-    const progress = this.moveDurationMs <= 0
-      ? 1
-      : THREE.MathUtils.clamp(
-          (now - this.moveStartedAt) / this.moveDurationMs,
-          0,
-          1,
-        );
-    this.root.position.x = THREE.MathUtils.lerp(
-      this.moveStartX,
+    this.root.position.x = THREE.MathUtils.damp(
+      this.root.position.x,
       this.targetX,
-      progress,
+      16,
+      delta,
     );
-    this.root.position.z = THREE.MathUtils.lerp(
-      this.moveStartZ,
+    this.root.position.z = THREE.MathUtils.damp(
+      this.root.position.z,
       this.targetZ,
-      progress,
+      16,
+      delta,
     );
 
-    const moving = progress < 1;
+    const moving = now < this.movingUntil
+      || Math.abs(this.root.position.x - this.targetX) > 0.015
+      || Math.abs(this.root.position.z - this.targetZ) > 0.015;
 
     if (this.controller.isFinished && this.controller.currentAnimation !== "death") {
       this.controller.play(moving && this.atlases.has("walk") ? "walk" : "idle");
@@ -1538,11 +1474,6 @@ class NativeActorManager {
     fallbackCreatureLayer.setTransforms(fallbackCreatures);
   }
 
-  playerVisualPosition(playerId: string | null) {
-    if (!playerId) return null;
-    return this.players.get(playerId)?.visualPosition ?? null;
-  }
-
   dispose() {
     for (const actor of this.players.values()) {
       actor.dispose(this.scene);
@@ -1586,7 +1517,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     const disposables: Array<{ dispose(): void }> = [];
 
     console.info(
-      "NATIVE WORLD V24.1 active · smooth tile interpolation · visual camera follow",
+      "NATIVE WORLD V24 active · raw Three.js actors · R3F world bypassed",
     );
 
     const bootstrap = async () => {
@@ -2077,25 +2008,15 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
             layers.creatures,
           );
 
-          // TIBIAGAME_NATIVE_RENDERER_V24_1
-          // Never follow the integer gameplay tile directly. That made the
-          // whole world jump one tile every CLIENT_STEP_MS even though the
-          // player mesh itself was interpolated.
-          const visualLocal = activeActorManager.playerVisualPosition(
-            world.localPlayerId,
-          );
-          const cameraX = visualLocal?.x ?? local.position.x + 0.5;
-          const cameraZ = visualLocal?.z ?? local.position.y + 0.5;
-
           camera.position.set(
-            cameraX,
+            local.position.x + 0.5,
             NATIVE_CAMERA_HEIGHT,
-            cameraZ + NATIVE_CAMERA_OFFSET,
+            local.position.y + 0.5 + NATIVE_CAMERA_OFFSET,
           );
           camera.lookAt(
-            cameraX,
+            local.position.x + 0.5,
             0,
-            cameraZ,
+            local.position.y + 0.5,
           );
 
           textures.water.offset.set(
@@ -2105,7 +2026,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
 
           if (positionRef.current) {
             positionRef.current.textContent =
-              `NATIVE V24.1 · x ${local.position.x} · y ${local.position.y} · z ${floor}`;
+              `NATIVE V24 · x ${local.position.x} · y ${local.position.y} · z ${floor}`;
           }
         }
 
@@ -2158,7 +2079,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     };
 
     void bootstrap().catch((error) => {
-      console.error("Native V24.1 renderer bootstrap failed", error);
+      console.error("Native V24 renderer bootstrap failed", error);
     });
 
     return () => {
@@ -2191,13 +2112,13 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       <canvas
         ref={canvasRef}
         className="three-world"
-        data-native-world-renderer="v24.1"
+        data-native-world-renderer="v24"
         style={{ width: "100%", height: "100%", display: "block" }}
       />
       {showDebug && (
         <div className="debug-meter" aria-label="Native renderer performance">
           <div ref={positionRef} className="position-meter">
-            NATIVE V24.1 · x -- · y -- · z --
+            NATIVE V24 · x -- · y -- · z --
           </div>
           <div ref={performanceRef} className="fps-meter">
             Native renderer loading world + actors…

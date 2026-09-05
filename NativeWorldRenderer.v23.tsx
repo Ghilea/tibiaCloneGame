@@ -1,28 +1,15 @@
 import { memo, useEffect, useRef } from "react";
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 
-import { createLitSpriteMaterial } from "../rendering/createLitSpriteMaterial";
-import { CreatureAnimationController } from "../actors/CreatureAnimationController";
-import type {
-  CardinalDirection,
-  CreatureAnimationDefinition,
-  SpriteCreatureDefinition,
-} from "../actors/spriteTypes";
 import type {
   BuildingView,
-  CharacterOutfit,
-  CreatureView,
   MapView,
-  NpcView,
-  PlayerView,
   Position,
   TerrainMaterialId,
   WorldObjectKind,
   WorldObjectView,
 } from "../protocol";
-import { CLIENT_STEP_MS, type InputController } from "./InputController";
+import type { InputController } from "./InputController";
 import type { WorldState } from "./WorldState";
 
 const NATIVE_RENDER_CHUNK_SIZE = 24;
@@ -33,10 +20,8 @@ const NATIVE_CAMERA_OFFSET = 9;
 const NATIVE_CAMERA_ZOOM = 90;
 
 // TIBIAGAME_NATIVE_RENDERER_V23
-// TIBIAGAME_NATIVE_RENDERER_V24
-// TIBIAGAME_NATIVE_RENDERER_V24_1
-// Smooth tile interpolation + camera follow. Gameplay remains tile-based at
-// CLIENT_STEP_MS cadence, while the visual actor/camera travels continuously.
+// Phase 1 production migration: real world textures + world-category parity,
+// while keeping the raw Three.js/persistent-buffer architecture proven by V22.
 
 type NativeWorldRendererProps = {
   world: WorldState;
@@ -834,731 +819,6 @@ function materialWithTexture(
   });
 }
 
-
-const CHARACTER_MODEL_ROOT = "/assets/models/kaykit-adventurers";
-
-const CHARACTER_FILES: Record<CharacterOutfit, string> = {
-  knight: "Knight.glb",
-  mage: "Mage.glb",
-  ranger: "Ranger.glb",
-  rogue: "Rogue_Hooded.glb",
-};
-
-const CHARACTER_SCALE: Record<CharacterOutfit, number> = {
-  knight: 0.727,
-  mage: 0.697,
-  ranger: 0.814,
-  rogue: 0.852,
-};
-
-type NativeCharacterAssets = {
-  templates: Record<CharacterOutfit, THREE.Group>;
-  idle: THREE.AnimationClip;
-  walk: THREE.AnimationClip;
-};
-
-type NativeCreatureAtlasPair = {
-  albedo: THREE.Texture;
-  normal: THREE.Texture | null;
-};
-
-type NativeCreatureAssets = {
-  definition: SpriteCreatureDefinition;
-  atlases: Map<string, NativeCreatureAtlasPair>;
-};
-
-async function loadNativeCharacterAssets(): Promise<NativeCharacterAssets> {
-  const loader = new GLTFLoader();
-  const templates = {} as Record<CharacterOutfit, THREE.Group>;
-
-  // Decode during the loading screen, never on first encounter while walking.
-  for (const outfit of Object.keys(CHARACTER_FILES) as CharacterOutfit[]) {
-    const gltf = await loader.loadAsync(
-      `${CHARACTER_MODEL_ROOT}/${CHARACTER_FILES[outfit]}`,
-    );
-    templates[outfit] = gltf.scene;
-  }
-
-  const general = await loader.loadAsync(
-    `${CHARACTER_MODEL_ROOT}/Rig_Medium_General.glb`,
-  );
-  const movement = await loader.loadAsync(
-    `${CHARACTER_MODEL_ROOT}/Rig_Medium_MovementBasic.glb`,
-  );
-
-  const idle = THREE.AnimationClip.findByName(general.animations, "Idle_A");
-  const walk = THREE.AnimationClip.findByName(
-    movement.animations,
-    "Walking_A",
-  );
-  if (!idle || !walk) {
-    throw new Error("Native V24: KayKit Idle_A/Walking_A animation missing");
-  }
-
-  return { templates, idle, walk };
-}
-
-async function loadNativeCreatureAssets(
-  id: string,
-): Promise<NativeCreatureAssets> {
-  const response = await fetch(`/assets/monsters/${id}/${id}.json`);
-  if (!response.ok) {
-    throw new Error(
-      `Native V24: unable to load sprite creature ${id}: ${response.status}`,
-    );
-  }
-
-  const definition = await response.json() as SpriteCreatureDefinition;
-  if (definition.id !== id || definition.type !== "spriteCreature") {
-    throw new Error(`Native V24: invalid sprite creature definition ${id}`);
-  }
-
-  const loader = new THREE.TextureLoader();
-  const atlases = new Map<string, NativeCreatureAtlasPair>();
-
-  // Load every currently required animation before the loading overlay leaves.
-  // This deliberately trades a little startup time for zero first-use decode
-  // stalls during movement/combat.
-  for (const name of ["idle", "walk", "attack", "hit", "death"]) {
-    const animation = definition.animations[name];
-    if (!animation) continue;
-
-    const albedo = await loader.loadAsync(
-      `/assets/monsters/${id}/${animation.albedo}`,
-    );
-    albedo.colorSpace = THREE.SRGBColorSpace;
-    albedo.wrapS = albedo.wrapT = THREE.ClampToEdgeWrapping;
-    albedo.generateMipmaps = false;
-    albedo.minFilter = THREE.LinearFilter;
-    albedo.magFilter = THREE.LinearFilter;
-    albedo.needsUpdate = true;
-
-    let normal: THREE.Texture | null = null;
-    if (animation.normal) {
-      normal = await loader.loadAsync(
-        `/assets/monsters/${id}/${animation.normal}`,
-      );
-      normal.colorSpace = THREE.NoColorSpace;
-      normal.wrapS = normal.wrapT = THREE.ClampToEdgeWrapping;
-      normal.generateMipmaps = false;
-      normal.minFilter = THREE.LinearFilter;
-      normal.magFilter = THREE.LinearFilter;
-      normal.needsUpdate = true;
-    }
-
-    atlases.set(name, { albedo, normal });
-  }
-
-  if (!atlases.has("idle")) {
-    throw new Error(`Native V24: ${id} has no loaded idle atlas`);
-  }
-
-  return { definition, atlases };
-}
-
-function disposeCharacterTemplates(assets: NativeCharacterAssets) {
-  const geometries = new Set<THREE.BufferGeometry>();
-  const materials = new Set<THREE.Material>();
-  const textures = new Set<THREE.Texture>();
-
-  for (const template of Object.values(assets.templates)) {
-    template.traverse((object) => {
-      if (!(object instanceof THREE.Mesh)) return;
-      if (object.geometry) geometries.add(object.geometry);
-      const entries = Array.isArray(object.material)
-        ? object.material
-        : [object.material];
-      for (const material of entries) {
-        if (!material) continue;
-        materials.add(material);
-        for (const value of Object.values(material)) {
-          if (value instanceof THREE.Texture) textures.add(value);
-        }
-      }
-    });
-  }
-
-  for (const geometry of geometries) geometry.dispose();
-  for (const material of materials) material.dispose();
-  for (const texture of textures) texture.dispose();
-}
-
-function disposeCreatureAssets(assets: NativeCreatureAssets) {
-  const textures = new Set<THREE.Texture>();
-  for (const atlas of assets.atlases.values()) {
-    textures.add(atlas.albedo);
-    if (atlas.normal) textures.add(atlas.normal);
-  }
-  for (const texture of textures) texture.dispose();
-}
-
-function npcOutfit(npc: NpcView): CharacterOutfit {
-  switch (npc.service) {
-    case "spell_trainer":
-      return "mage";
-    case "craft_trainer":
-      return "ranger";
-    case "shop":
-      return "rogue";
-    case "depot":
-    default:
-      return "knight";
-  }
-}
-
-class NativeCharacterActor {
-  readonly root: THREE.Group;
-  private readonly mixer: THREE.AnimationMixer;
-  private readonly idleAction: THREE.AnimationAction;
-  private readonly walkAction: THREE.AnimationAction;
-  private active: "idle" | "walk" = "idle";
-  private targetX = 0;
-  private targetZ = 0;
-  private targetFloor = -999;
-  private moveStartX = 0;
-  private moveStartZ = 0;
-  private moveStartedAt = 0;
-  private moveDurationMs = CLIENT_STEP_MS;
-  private facingAngle = 0;
-  private initialized = false;
-
-  constructor(
-    scene: THREE.Scene,
-    template: THREE.Group,
-    scale: number,
-    idle: THREE.AnimationClip,
-    walk: THREE.AnimationClip,
-  ) {
-    this.root = cloneSkeleton(template) as THREE.Group;
-    this.root.scale.setScalar(scale);
-    this.root.visible = false;
-    this.root.traverse((object) => {
-      if (!(object instanceof THREE.Mesh)) return;
-      object.castShadow = false;
-      object.receiveShadow = true;
-      object.frustumCulled = false;
-    });
-
-    this.mixer = new THREE.AnimationMixer(this.root);
-    this.idleAction = this.mixer.clipAction(idle);
-    this.walkAction = this.mixer.clipAction(walk);
-    this.walkAction.timeScale = 1.08;
-    this.idleAction.reset().play();
-
-    scene.add(this.root);
-  }
-
-  get visualPosition() {
-    return this.root.position;
-  }
-
-  setTarget(position: Position, floor: number, now: number) {
-    const nextX = position.x + 0.5;
-    const nextZ = position.y + 0.5;
-    const floorChanged = this.initialized && position.z !== this.targetFloor;
-
-    if (!this.initialized || floorChanged) {
-      // Floor changes/teleports must never interpolate through unrelated world
-      // space. Snap once, then resume normal tile interpolation.
-      this.root.position.set(nextX, 0.05, nextZ);
-      this.targetX = nextX;
-      this.targetZ = nextZ;
-      this.targetFloor = position.z;
-      this.moveStartX = nextX;
-      this.moveStartZ = nextZ;
-      this.moveStartedAt = now;
-      this.moveDurationMs = 0;
-      this.initialized = true;
-    } else if (nextX !== this.targetX || nextZ !== this.targetZ) {
-      const logicalDx = nextX - this.targetX;
-      const logicalDz = nextZ - this.targetZ;
-      const logicalDistance = Math.hypot(logicalDx, logicalDz);
-
-      if (logicalDistance > Math.SQRT2 + 0.05) {
-        // Large authoritative corrections behave like teleports, not walks.
-        this.root.position.set(nextX, 0.05, nextZ);
-        this.moveStartX = nextX;
-        this.moveStartZ = nextZ;
-        this.moveDurationMs = 0;
-      } else {
-        this.moveStartX = this.root.position.x;
-        this.moveStartZ = this.root.position.z;
-        this.moveStartedAt = now;
-        this.moveDurationMs = CLIENT_STEP_MS * Math.max(1, logicalDistance);
-      }
-
-      if (logicalDistance > 0.001) {
-        this.facingAngle = Math.atan2(logicalDx, logicalDz);
-      }
-      this.targetX = nextX;
-      this.targetZ = nextZ;
-      this.targetFloor = position.z;
-    }
-
-    this.root.visible = position.z === floor;
-  }
-
-  hide() {
-    this.root.visible = false;
-  }
-
-  update(delta: number, now: number) {
-    if (!this.root.visible || !this.initialized) return;
-
-    const progress = this.moveDurationMs <= 0
-      ? 1
-      : THREE.MathUtils.clamp(
-          (now - this.moveStartedAt) / this.moveDurationMs,
-          0,
-          1,
-        );
-
-    // Linear tile interpolation is intentional. Exponential damp restarts its
-    // velocity on every 165 ms tile update and feels like repeated tiny lunges.
-    this.root.position.x = THREE.MathUtils.lerp(
-      this.moveStartX,
-      this.targetX,
-      progress,
-    );
-    this.root.position.z = THREE.MathUtils.lerp(
-      this.moveStartZ,
-      this.targetZ,
-      progress,
-    );
-    this.root.rotation.y = THREE.MathUtils.damp(
-      this.root.rotation.y,
-      this.facingAngle,
-      18,
-      delta,
-    );
-
-    const moving = progress < 1;
-    const next = moving ? "walk" : "idle";
-
-    if (next !== this.active) {
-      if (this.active === "idle") this.idleAction.fadeOut(0.1);
-      else this.walkAction.fadeOut(0.1);
-
-      if (next === "idle") this.idleAction.reset().fadeIn(0.1).play();
-      else this.walkAction.reset().fadeIn(0.1).play();
-      this.active = next;
-    }
-
-    this.mixer.update(Math.min(delta, 0.05));
-  }
-
-  dispose(scene: THREE.Scene) {
-    scene.remove(this.root);
-    this.mixer.stopAllAction();
-    this.mixer.uncacheRoot(this.root);
-  }
-}
-
-function cardinalDirectionFromDelta(
-  dx: number,
-  dy: number,
-  fallback: CardinalDirection,
-): CardinalDirection {
-  if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return fallback;
-  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? "east" : "west";
-  return dy >= 0 ? "south" : "north";
-}
-
-function applyNativeSpriteFrame(
-  geometry: THREE.PlaneGeometry,
-  animation: CreatureAnimationDefinition,
-  requestedDirection: CardinalDirection,
-  frame: number,
-  mirrorEastFromWest: boolean,
-) {
-  const mirrored = requestedDirection === "east" && mirrorEastFromWest;
-  const direction = mirrored ? "west" : requestedDirection;
-  const row =
-    animation.directionRows[direction]
-    ?? animation.directionRows.south
-    ?? 0;
-
-  const atlasWidth = animation.columns * animation.frameWidth;
-  const atlasHeight = animation.rows * animation.frameHeight;
-  const column = Math.min(frame, animation.framesPerDirection - 1);
-
-  let u0 = (column * animation.frameWidth + 0.5) / atlasWidth;
-  let u1 = ((column + 1) * animation.frameWidth - 0.5) / atlasWidth;
-  if (mirrored) [u0, u1] = [u1, u0];
-
-  const vTop =
-    1 - (row * animation.frameHeight + 0.5) / atlasHeight;
-  const vBottom =
-    1 - ((row + 1) * animation.frameHeight - 0.5) / atlasHeight;
-
-  const uv = geometry.attributes.uv as THREE.BufferAttribute;
-  uv.setXY(0, u0, vTop);
-  uv.setXY(1, u1, vTop);
-  uv.setXY(2, u0, vBottom);
-  uv.setXY(3, u1, vBottom);
-  uv.needsUpdate = true;
-}
-
-class NativeSpriteCreatureActor {
-  readonly root = new THREE.Group();
-  private readonly mesh: THREE.Mesh<
-    THREE.PlaneGeometry,
-    THREE.MeshStandardMaterial
-  >;
-  private readonly shadow: THREE.Mesh;
-  private readonly controller: CreatureAnimationController;
-  private readonly definition: SpriteCreatureDefinition;
-  private readonly atlases: Map<string, NativeCreatureAtlasPair>;
-
-  private targetX = 0;
-  private targetZ = 0;
-  private targetFloor = -999;
-  private moveStartX = 0;
-  private moveStartZ = 0;
-  private moveStartedAt = 0;
-  private moveDurationMs = CLIENT_STEP_MS;
-  private facing: CardinalDirection = "south";
-  private previousHealth = Number.POSITIVE_INFINITY;
-  private previousState = "";
-  private lastAnimation = "";
-  private lastFrame = -1;
-  private lastFacing: CardinalDirection = "south";
-  private initialized = false;
-
-  constructor(
-    scene: THREE.Scene,
-    assets: NativeCreatureAssets,
-  ) {
-    this.definition = assets.definition;
-    this.atlases = assets.atlases;
-    this.controller = new CreatureAnimationController(this.definition);
-
-    const idleAtlas = this.atlases.get("idle");
-    if (!idleAtlas) {
-      throw new Error(`${this.definition.id}: native idle atlas missing`);
-    }
-
-    const geometry = new THREE.PlaneGeometry(
-      this.definition.renderSize.width,
-      this.definition.renderSize.height,
-    );
-    geometry.translate(
-      (0.5 - this.definition.anchor.x) * this.definition.renderSize.width,
-      (0.5 - this.definition.anchor.y) * this.definition.renderSize.height,
-      0,
-    );
-    applyNativeSpriteFrame(
-      geometry,
-      this.definition.animations.idle,
-      this.facing,
-      0,
-      this.definition.mirrorEastFromWest,
-    );
-
-    const material = createLitSpriteMaterial(
-      idleAtlas.albedo,
-      idleAtlas.normal,
-      this.definition.material.roughness,
-      this.definition.material.alphaTest,
-      this.definition.material.normalStrength,
-    );
-
-    this.mesh = new THREE.Mesh(geometry, material);
-    this.mesh.position.y = 0.05;
-    this.mesh.frustumCulled = false;
-    this.root.add(this.mesh);
-
-    const shadowGeometry = new THREE.PlaneGeometry(
-      this.definition.shadow.width,
-      this.definition.shadow.depth,
-    );
-    shadowGeometry.rotateX(-Math.PI / 2);
-    const shadowMaterial = new THREE.MeshBasicMaterial({
-      color: 0x000000,
-      transparent: true,
-      opacity: this.definition.shadow.opacity,
-      depthTest: true,
-      depthWrite: false,
-    });
-    this.shadow = new THREE.Mesh(shadowGeometry, shadowMaterial);
-    this.shadow.position.y = 0.006;
-    this.root.add(this.shadow);
-
-    this.root.visible = false;
-    scene.add(this.root);
-  }
-
-  setTarget(
-    creature: CreatureView,
-    floor: number,
-    now: number,
-  ) {
-    const nextX = creature.position.x + 0.5;
-    const nextZ = creature.position.y + 0.5;
-    const floorChanged =
-      this.initialized && creature.position.z !== this.targetFloor;
-
-    if (!this.initialized || floorChanged) {
-      this.root.position.set(nextX, 0, nextZ);
-      this.targetX = nextX;
-      this.targetZ = nextZ;
-      this.targetFloor = creature.position.z;
-      this.moveStartX = nextX;
-      this.moveStartZ = nextZ;
-      this.moveStartedAt = now;
-      this.moveDurationMs = 0;
-      this.previousHealth = creature.health;
-      this.previousState = creature.state;
-      this.initialized = true;
-    } else if (nextX !== this.targetX || nextZ !== this.targetZ) {
-      const logicalDx = nextX - this.targetX;
-      const logicalDz = nextZ - this.targetZ;
-      const logicalDistance = Math.hypot(logicalDx, logicalDz);
-
-      this.facing = cardinalDirectionFromDelta(
-        logicalDx,
-        logicalDz,
-        this.facing,
-      );
-
-      if (logicalDistance > Math.SQRT2 + 0.05) {
-        this.root.position.set(nextX, 0, nextZ);
-        this.moveStartX = nextX;
-        this.moveStartZ = nextZ;
-        this.moveDurationMs = 0;
-      } else {
-        this.moveStartX = this.root.position.x;
-        this.moveStartZ = this.root.position.z;
-        this.moveStartedAt = now;
-        this.moveDurationMs = CLIENT_STEP_MS * Math.max(1, logicalDistance);
-      }
-
-      this.targetX = nextX;
-      this.targetZ = nextZ;
-      this.targetFloor = creature.position.z;
-    }
-
-    if (creature.health <= 0 && this.previousHealth > 0) {
-      if (this.atlases.has("death")) this.controller.play("death", true);
-    } else if (creature.health < this.previousHealth) {
-      if (this.atlases.has("hit")) this.controller.play("hit", true);
-    } else if (
-      creature.state === "attacking"
-      && this.previousState !== "attacking"
-      && this.atlases.has("attack")
-    ) {
-      this.controller.play("attack", true);
-    }
-
-    this.previousHealth = creature.health;
-    this.previousState = creature.state;
-    this.root.visible = creature.position.z === floor;
-  }
-
-  hide() {
-    this.root.visible = false;
-  }
-
-  update(
-    delta: number,
-    now: number,
-    camera: THREE.Camera,
-  ) {
-    if (!this.root.visible || !this.initialized) return;
-
-    const progress = this.moveDurationMs <= 0
-      ? 1
-      : THREE.MathUtils.clamp(
-          (now - this.moveStartedAt) / this.moveDurationMs,
-          0,
-          1,
-        );
-    this.root.position.x = THREE.MathUtils.lerp(
-      this.moveStartX,
-      this.targetX,
-      progress,
-    );
-    this.root.position.z = THREE.MathUtils.lerp(
-      this.moveStartZ,
-      this.targetZ,
-      progress,
-    );
-
-    const moving = progress < 1;
-
-    if (this.controller.isFinished && this.controller.currentAnimation !== "death") {
-      this.controller.play(moving && this.atlases.has("walk") ? "walk" : "idle");
-    } else if (
-      ["idle", "walk"].includes(this.controller.currentAnimation)
-    ) {
-      this.controller.play(
-        moving && this.atlases.has("walk") ? "walk" : "idle",
-      );
-    }
-
-    this.controller.update(delta);
-
-    const animationName = this.controller.currentAnimation;
-    const frame = this.controller.currentFrame;
-    const animationChanged = animationName !== this.lastAnimation;
-
-    if (animationChanged) {
-      const atlas = this.atlases.get(animationName)
-        ?? this.atlases.get("idle");
-      if (!atlas) return;
-
-      const shaderShapeChanged =
-        Boolean(this.mesh.material.normalMap) !== Boolean(atlas.normal);
-      this.mesh.material.map = atlas.albedo;
-      this.mesh.material.normalMap = atlas.normal;
-      if (shaderShapeChanged) this.mesh.material.needsUpdate = true;
-      this.lastAnimation = animationName;
-    }
-
-    if (
-      animationChanged
-      || frame !== this.lastFrame
-      || this.facing !== this.lastFacing
-    ) {
-      const animation =
-        this.definition.animations[animationName]
-        ?? this.definition.animations.idle;
-      applyNativeSpriteFrame(
-        this.mesh.geometry,
-        animation,
-        this.facing,
-        frame,
-        this.definition.mirrorEastFromWest,
-      );
-      this.lastFrame = frame;
-      this.lastFacing = this.facing;
-    }
-
-    this.mesh.quaternion.copy(camera.quaternion);
-  }
-
-  dispose(scene: THREE.Scene) {
-    scene.remove(this.root);
-    this.mesh.geometry.dispose();
-    this.mesh.material.dispose();
-
-    const shadowGeometry = this.shadow.geometry;
-    const shadowMaterial = this.shadow.material;
-    shadowGeometry.dispose();
-    if (Array.isArray(shadowMaterial)) {
-      for (const material of shadowMaterial) material.dispose();
-    } else {
-      shadowMaterial.dispose();
-    }
-  }
-}
-
-class NativeActorManager {
-  private readonly players = new Map<string, NativeCharacterActor>();
-  private readonly npcs = new Map<string, NativeCharacterActor>();
-  private readonly creatures = new Map<string, NativeSpriteCreatureActor>();
-
-  constructor(
-    private readonly scene: THREE.Scene,
-    private readonly characters: NativeCharacterAssets,
-    private readonly castleRat: NativeCreatureAssets,
-  ) {}
-
-  private createCharacter(
-    outfit: CharacterOutfit,
-  ) {
-    return new NativeCharacterActor(
-      this.scene,
-      this.characters.templates[outfit],
-      CHARACTER_SCALE[outfit],
-      this.characters.idle,
-      this.characters.walk,
-    );
-  }
-
-  sync(
-    world: WorldState,
-    floor: number,
-    delta: number,
-    now: number,
-    camera: THREE.Camera,
-    fallbackCreatureLayer: NativeInstancedLayer,
-  ) {
-    for (const actor of this.players.values()) actor.hide();
-    for (const actor of this.npcs.values()) actor.hide();
-    for (const actor of this.creatures.values()) actor.hide();
-
-    for (const player of world.players.values()) {
-      let actor = this.players.get(player.id);
-      if (!actor) {
-        actor = this.createCharacter(player.outfit);
-        this.players.set(player.id, actor);
-      }
-      actor.setTarget(player.position, floor, now);
-      actor.update(delta, now);
-    }
-
-    for (const npc of world.npcs.values()) {
-      let actor = this.npcs.get(npc.id);
-      if (!actor) {
-        actor = this.createCharacter(npcOutfit(npc));
-        this.npcs.set(npc.id, actor);
-      }
-      actor.setTarget(npc.position, floor, now);
-      actor.update(delta, now);
-    }
-
-    const fallbackCreatures: Transform[] = [];
-    for (const creature of world.creatures.values()) {
-      if (creature.definitionId === this.castleRat.definition.id) {
-        let actor = this.creatures.get(creature.id);
-        if (!actor) {
-          actor = new NativeSpriteCreatureActor(
-            this.scene,
-            this.castleRat,
-          );
-          this.creatures.set(creature.id, actor);
-        }
-        actor.setTarget(creature, floor, now);
-        actor.update(delta, now, camera);
-        continue;
-      }
-
-      if (creature.position.z === floor) {
-        fallbackCreatures.push([
-          creature.position.x + 0.5,
-          0.42,
-          creature.position.y + 0.5,
-          0.66,
-          0.84,
-          0.66,
-        ]);
-      }
-    }
-    fallbackCreatureLayer.setTransforms(fallbackCreatures);
-  }
-
-  playerVisualPosition(playerId: string | null) {
-    if (!playerId) return null;
-    return this.players.get(playerId)?.visualPosition ?? null;
-  }
-
-  dispose() {
-    for (const actor of this.players.values()) {
-      actor.dispose(this.scene);
-    }
-    for (const actor of this.npcs.values()) {
-      actor.dispose(this.scene);
-    }
-    for (const actor of this.creatures.values()) {
-      actor.dispose(this.scene);
-    }
-    this.players.clear();
-    this.npcs.clear();
-    this.creatures.clear();
-  }
-}
-
 export const NativeWorldRenderer = memo(function NativeWorldRenderer({
   world,
   input,
@@ -1580,13 +840,10 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     let animationFrame = 0;
     let resizeObserver: ResizeObserver | null = null;
     let cleanupInput: (() => void) | null = null;
-    let actorManager: NativeActorManager | null = null;
-    let loadedCharacterAssets: NativeCharacterAssets | null = null;
-    let loadedCreatureAssets: NativeCreatureAssets | null = null;
     const disposables: Array<{ dispose(): void }> = [];
 
     console.info(
-      "NATIVE WORLD V24.1 active · smooth tile interpolation · visual camera follow",
+      "NATIVE WORLD V23 active · raw Three.js production migration · R3F world bypassed",
     );
 
     const bootstrap = async () => {
@@ -1603,17 +860,8 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       nextRenderer.info.autoReset = true;
 
       const textures = await loadNativeTextures(nextRenderer);
-      const characterAssets = await loadNativeCharacterAssets();
-      const castleRatAssets = await loadNativeCreatureAssets("castle_rat");
-      loadedCharacterAssets = characterAssets;
-      loadedCreatureAssets = castleRatAssets;
-
       if (disposed) {
         for (const texture of Object.values(textures)) texture.dispose();
-        disposeCharacterTemplates(characterAssets);
-        disposeCreatureAssets(castleRatAssets);
-        loadedCharacterAssets = null;
-        loadedCreatureAssets = null;
         nextRenderer.dispose();
         return;
       }
@@ -1718,10 +966,10 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         }),
         stair: new THREE.MeshStandardMaterial({ color: "#8c877d", roughness: 0.96 }),
 
-        creature: new THREE.MeshStandardMaterial({
-          color: "#a9685f",
-          roughness: 0.9,
-        }),
+        localPlayer: new THREE.MeshStandardMaterial({ color: "#e5c46d", roughness: 0.8 }),
+        player: new THREE.MeshStandardMaterial({ color: "#83a9cf", roughness: 0.8 }),
+        creature: new THREE.MeshStandardMaterial({ color: "#a9685f", roughness: 0.9 }),
+        npc: new THREE.MeshStandardMaterial({ color: "#9b83be", roughness: 0.9 }),
       };
       disposables.push(...Object.values(materials));
 
@@ -1776,22 +1024,13 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         torchFlames: new NativeInstancedLayer(torchFlameGeometry, materials.torchFlame, 2048, false, false),
         stairs: new NativeInstancedLayer(box, materials.stair, 1024),
 
-        // Unsupported creature definitions keep a cheap native fallback.
-        creatures: new NativeInstancedLayer(
-          box,
-          materials.creature,
-          512,
-        ),
+        localPlayer: new NativeInstancedLayer(box, materials.localPlayer, 1),
+        players: new NativeInstancedLayer(box, materials.player, 128),
+        creatures: new NativeInstancedLayer(box, materials.creature, 512),
+        npcs: new NativeInstancedLayer(box, materials.npc, 256),
       };
 
       for (const layer of Object.values(layers)) scene.add(layer.mesh);
-
-      actorManager = new NativeActorManager(
-        scene,
-        characterAssets,
-        castleRatAssets,
-      );
-      const activeActorManager = actorManager;
 
       let lastFrameAt = performance.now();
       let warmupUntil = lastFrameAt + 1_500;
@@ -1936,6 +1175,70 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         stagedTasks = tasks;
       };
 
+      const updateActors = (floor: number) => {
+        const local = world.localPlayerId
+          ? world.players.get(world.localPlayerId)
+          : undefined;
+
+        layers.localPlayer.setTransforms(
+          local && local.position.z === floor
+            ? [[
+                local.position.x + 0.5,
+                0.62,
+                local.position.y + 0.5,
+                0.58,
+                1.24,
+                0.58,
+              ]]
+            : [],
+        );
+
+        const playerTransforms: Transform[] = [];
+        for (const player of world.players.values()) {
+          if (
+            player.id === world.localPlayerId
+            || player.position.z !== floor
+          ) continue;
+          playerTransforms.push([
+            player.position.x + 0.5,
+            0.62,
+            player.position.y + 0.5,
+            0.58,
+            1.24,
+            0.58,
+          ]);
+        }
+        layers.players.setTransforms(playerTransforms);
+
+        const creatureTransforms: Transform[] = [];
+        for (const creature of world.creatures.values()) {
+          if (creature.position.z !== floor) continue;
+          creatureTransforms.push([
+            creature.position.x + 0.5,
+            0.42,
+            creature.position.y + 0.5,
+            0.66,
+            0.84,
+            0.66,
+          ]);
+        }
+        layers.creatures.setTransforms(creatureTransforms);
+
+        const npcTransforms: Transform[] = [];
+        for (const npc of world.npcs.values()) {
+          if (npc.position.z !== floor) continue;
+          npcTransforms.push([
+            npc.position.x + 0.5,
+            0.62,
+            npc.position.y + 0.5,
+            0.58,
+            1.24,
+            0.58,
+          ]);
+        }
+        layers.npcs.setTransforms(npcTransforms);
+      };
+
       const runStagedTasks = () => {
         const startedAt = performance.now();
 
@@ -2010,24 +1313,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         canvas.removeEventListener("contextmenu", onContextMenu);
       };
 
-      // Instantiate actors already present in the first streamed region before
-      // shader compilation, so their first material/skin/sprite programs are not
-      // paid for during movement.
-      const initialLocal = world.localPlayerId
-        ? world.players.get(world.localPlayerId)
-        : undefined;
-      if (initialLocal) {
-        activeActorManager.sync(
-          world,
-          initialLocal.position.z,
-          0,
-          performance.now(),
-          camera,
-          layers.creatures,
-        );
-      }
-
-      // Compile every world + actor material family while loading is still up.
+      // Compile every material family once while the loading overlay is still up.
       nextRenderer.compile(scene, camera);
 
       const render = (now: number) => {
@@ -2066,36 +1352,17 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
             signature,
           );
           runStagedTasks();
-
-          const actorDelta = Math.min(frameMs / 1000, 0.05);
-          activeActorManager.sync(
-            world,
-            floor,
-            actorDelta,
-            now,
-            camera,
-            layers.creatures,
-          );
-
-          // TIBIAGAME_NATIVE_RENDERER_V24_1
-          // Never follow the integer gameplay tile directly. That made the
-          // whole world jump one tile every CLIENT_STEP_MS even though the
-          // player mesh itself was interpolated.
-          const visualLocal = activeActorManager.playerVisualPosition(
-            world.localPlayerId,
-          );
-          const cameraX = visualLocal?.x ?? local.position.x + 0.5;
-          const cameraZ = visualLocal?.z ?? local.position.y + 0.5;
+          updateActors(floor);
 
           camera.position.set(
-            cameraX,
+            local.position.x + 0.5,
             NATIVE_CAMERA_HEIGHT,
-            cameraZ + NATIVE_CAMERA_OFFSET,
+            local.position.y + 0.5 + NATIVE_CAMERA_OFFSET,
           );
           camera.lookAt(
-            cameraX,
+            local.position.x + 0.5,
             0,
-            cameraZ,
+            local.position.y + 0.5,
           );
 
           textures.water.offset.set(
@@ -2105,7 +1372,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
 
           if (positionRef.current) {
             positionRef.current.textContent =
-              `NATIVE V24.1 · x ${local.position.x} · y ${local.position.y} · z ${floor}`;
+              `NATIVE V23 · x ${local.position.x} · y ${local.position.y} · z ${floor}`;
           }
         }
 
@@ -2158,7 +1425,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     };
 
     void bootstrap().catch((error) => {
-      console.error("Native V24.1 renderer bootstrap failed", error);
+      console.error("Native V23 renderer bootstrap failed", error);
     });
 
     return () => {
@@ -2167,22 +1434,10 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       resizeObserver?.disconnect();
       cleanupInput?.();
 
-      actorManager?.dispose();
-      actorManager = null;
-
       renderer?.setAnimationLoop(null);
       renderer?.dispose();
 
       for (const disposable of disposables) disposable.dispose();
-
-      if (loadedCharacterAssets) {
-        disposeCharacterTemplates(loadedCharacterAssets);
-        loadedCharacterAssets = null;
-      }
-      if (loadedCreatureAssets) {
-        disposeCreatureAssets(loadedCreatureAssets);
-        loadedCreatureAssets = null;
-      }
     };
   }, [input, world]);
 
@@ -2191,16 +1446,16 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       <canvas
         ref={canvasRef}
         className="three-world"
-        data-native-world-renderer="v24.1"
+        data-native-world-renderer="v23"
         style={{ width: "100%", height: "100%", display: "block" }}
       />
       {showDebug && (
         <div className="debug-meter" aria-label="Native renderer performance">
           <div ref={positionRef} className="position-meter">
-            NATIVE V24.1 · x -- · y -- · z --
+            NATIVE V23 · x -- · y -- · z --
           </div>
           <div ref={performanceRef} className="fps-meter">
-            Native renderer loading world + actors…
+            Native renderer loading textures…
           </div>
         </div>
       )}

@@ -246,10 +246,11 @@ function Game({ onLeave }: { onLeave: () => void }) {
   const [reducedMotion, setReducedMotion] = useState(() => loadStoredBoolean("aldoria.reduced-motion", false));
   const [sceneReady, setSceneReady] = useState(false);
   // TIBIAGAME_NATIVE_RENDERER_EXPERIMENT_V22
-  // Use ?renderer=native in production preview to bypass React Three Fiber for
-  // the world scene while keeping the existing React HUD/network/game state.
+  // TIBIAGAME_NATIVE_RENDERER_V23_DEFAULT
+  // Native raw Three.js is now the default world renderer. Keep the old R3F
+  // path only as a temporary A/B fallback with ?renderer=r3f.
   const nativeWorldRenderer =
-    new URLSearchParams(window.location.search).get("renderer") === "native";
+    new URLSearchParams(window.location.search).get("renderer") !== "r3f";
   const handleSceneReady = useCallback(() => setSceneReady(true), []);
   const [actionSkills, setActionSkills] = useState<Record<number, string | null>>(() => loadActionSkills());
   const pendingGoldPickups = useRef(new Set<string>());
