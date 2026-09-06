@@ -1205,3 +1205,723 @@ Before finishing:
 - Did I avoid typed-keyword NPC interaction?
 - Did I use targeted validation?
 - Did I stop once the task was complete?
+
+# V34 – Client UX, progression, combat, updater och world map
+
+Fortsätt från nuvarande implementation. Detta är ett sammanhängande stabiliserings- och feature-pass. Börja med att inspektera befintlig kod och följ befintlig arkitektur. Skapa inte parallella system, duplicerade registries eller nya hårdkodade specialfall när funktionaliteten redan finns någon annanstans.
+
+Viktigt från tidigare milestones:
+
+* Behåll den classless progression-modellen.
+* Behåll 2.5D/sprite-pipelinen för creatures.
+* `castle_rat` är den tekniska referensen för monster-assets.
+* Secondary skills ska ha **två separata begränsningar: max 2 Gathering och max 2 Crafting**. Det är INTE max två secondary skills totalt.
+* Förstör inte updater/signing/preflight-arbetet från V33.5.2.
+* Kör snabb preflight/typecheck/test innan någon lång Tauri-build. En lång full build ska komma sist när de billiga kontrollerna redan passerat.
+
+---
+
+# 1. BUG – UI scaling måste även omfatta alla modaler
+
+När klientfönstret blir mindre skalas delar av UI:t, men modal/dialog-fönster följer inte samma scaling.
+
+Fixa detta systemiskt.
+
+Kontrollera särskilt:
+
+* modal dialogs
+* confirmation dialogs
+* inventory/storage windows
+* character windows
+* skill windows
+* crafting/gathering dialogs
+* world map
+* tooltips
+* context menus
+* updater-dialog
+* andra komponenter renderade via React portals
+
+Misstänkt grundproblem är att portal-renderade element hamnar utanför den DOM-root/CSS-context där UI-scale appliceras.
+
+Vi ska inte lösa varje modal individuellt.
+
+Skapa en gemensam UI scale source/token som även portal-root använder.
+
+Acceptance:
+
+1. Starta klienten stort.
+2. Öppna flera olika modaltyper.
+3. Förminska klienten kraftigt.
+4. All UI ska fortfarande passa på skärmen.
+5. Text och kontroller ska fortfarande vara användbara.
+6. Ingen modal ska fortsätta använda desktop-scale när resten av HUD:en skalats ned.
+7. Tooltip/context menu får inte hamna utanför viewport.
+
+---
+
+# 2. BUG – Updater får ALDRIG öppna ett separat terminalfönster
+
+Nuvarande updater-flow får inte öppna cmd/PowerShell/terminal för spelaren.
+
+Updatern ska vara en del av själva klientupplevelsen.
+
+När klienten startar och användaren kommer till login/startflödet ska klienten automatiskt kontrollera efter uppdateringar.
+
+Om en uppdatering finns ska användaren få ett riktigt updater-UI inne i klienten med exempelvis:
+
+* aktuell version
+* ny version
+* download state
+* progressbar
+* procent
+* downloaded bytes / total bytes där det finns
+* downloading
+* verifying
+* installing
+* restarting
+* tydligt felmeddelande vid problem
+
+Själva installations-/replacement-processen får använda den befintliga updater-arkitekturen under huven, men något terminalfönster får inte visas.
+
+Undvik console-window flash även när child processes startas på Windows.
+
+Behåll signing/verifiering.
+
+VIKTIGT:
+
+Rör inte bort tidigare preflight-arbete runt updater signing. Vi ska fortfarande fånga signing/configuration-fel snabbt innan en lång Tauri-build.
+
+---
+
+# 3. BUG – Texten är fortfarande för liten
+
+Öka läsbarheten i klientens UI.
+
+Det är framför allt svårt att snabbt läsa saker som:
+
+* item weight
+* stack amount
+* stats
+* requirements
+* inventory information
+* storage information
+* skills
+* crafting information
+* tooltip values
+
+Gör inte hundratals lokala `font-size`-patchar.
+
+Skapa eller förbättra gemensamma typography tokens för UI:t.
+
+Vi behöver åtminstone tydlig skillnad mellan:
+
+* secondary/meta text
+* normal UI text
+* important values
+* headings
+
+Texten ska fortfarande fungera tillsammans med responsive UI scaling.
+
+---
+
+# 4. BUG – Storage-layout blir ojämn när ett item inte har amount-input
+
+Storage-rader använder idag olika layout beroende på om itemet har quantity/amount input.
+
+Resultatet är att text, värden och kontroller hamnar på olika horisontella positioner.
+
+Bygg storage-raden med stabila kolumner/grid.
+
+Exempel på logiska kolumner:
+
+item icon | item information | weight/metadata | quantity | action
+
+Om quantity inte är relevant ska kolumnens utrymme fortfarande hanteras så att övrig information ligger på samma position.
+
+Ingen text ska hoppa vänster/höger mellan två items bara för att amount-input saknas.
+
+Testa:
+
+* stackable item
+* non-stackable item
+* item med amount selector
+* item utan amount selector
+
+---
+
+# 5. BUG/FEAT – Gameplay rewards ska skrivas i chatten
+
+När spelaren får saker via gameplay ska relevant information även visas i chat/system-loggen.
+
+Minst:
+
+* experience
+* gold
+* gathering rewards
+* crafting results
+* relevanta item rewards
+* skill progression där det passar
+
+Exempel på beteende:
+
+`You gained 45 experience.`
+
+`You received 12 gold.`
+
+`You mined 2 Copper Ore.`
+
+Använd befintligt chat/event-system. Skapa inte en separat fake-chatlogg i klienten.
+
+Servern ska helst vara authoritative source för rewards så klienten inte själv gissar vad den fått.
+
+Undvik spam där samma reward skrivs två gånger från två olika event paths.
+
+---
+
+# 6. BUG – Veins får inte användas på avstånd
+
+Det går fortfarande att interagera med mining veins när spelaren befinner sig för långt bort.
+
+Det måste valideras både klient- och serverside.
+
+Client:
+
+* blockera interaction om target är för långt bort
+* visa gärna korrekt disabled cursor/highlight/state
+* spelaren ska förstå varför interaction inte sker
+
+Server:
+
+* validera spelarens position mot veinens position
+* kontrollera korrekt interaction range
+* ignorera/rejecta requests utanför range
+
+Client validation räcker INTE eftersom requests går att manipulera.
+
+Använd samma distance/range-princip för andra world interactions där den redan är relevant.
+
+---
+
+# 7. FEAT – Enemies ska kunna highlightas
+
+Utöka befintligt hover/selection/highlight-system så monsters/enemies också kan highlightas.
+
+Vi behöver kunna skilja på exempelvis:
+
+* normal enemy
+* hovered enemy
+* selected/targeted enemy
+
+Det ska fungera med 2.5D creature sprites.
+
+Highlighten får inte:
+
+* förstöra normal maps
+* slå ut dynamisk lighting
+* skapa en duplicerad monster-sprite
+* orsaka märkbart FPS-tapp
+
+Återanvänd befintlig interaction/highlight-arkitektur där det går.
+
+---
+
+# 8. CRITICAL BUG – Gathering och Crafting räknas fortfarande som samma två secondary skills
+
+Det här verkar fortfarande använda den gamla modellen.
+
+KRAVET ÄR:
+
+## Gathering
+
+Spelaren får ha max:
+
+**2 aktiva/valda Gathering professions**
+
+## Crafting
+
+Spelaren får separat ha max:
+
+**2 aktiva/valda Crafting professions**
+
+Det betyder exempelvis att en spelare ska kunna ha:
+
+Mining
+Fishing
+
+OCH samtidigt:
+
+Blacksmithing
+Alchemy
+
+Detta är giltigt eftersom det är:
+
+2 Gathering + 2 Crafting.
+
+Systemet får INTE behandla detta som fyra secondary skills mot en global cap på två.
+
+Kontrollera hela flödet:
+
+* database/persistence
+* server domain models
+* profession selection
+* validation
+* API/messages
+* client state
+* skills UI
+* character loading
+* reconnect
+* character creation
+* gamla characters/migration
+
+Det ska finnas en explicit category/type på skills/professions. Ingen kontroll baserad på namnet på professionen.
+
+Lägg tester som uttryckligen bevisar:
+
+* gathering 1 = OK
+* gathering 2 = OK
+* gathering 3 = reject
+* crafting 1 = OK
+* crafting 2 = OK
+* crafting 3 = reject
+* 2 gathering + 2 crafting = OK
+
+---
+
+# 9. FEAT – Lägg in resterande enemy models/assets
+
+`castle_rat` är fortfarande reference implementation.
+
+Färdigställ och koppla in resterande monster:
+
+* `mireling`
+* `mire_skulker`
+* `reed_stalker`
+* `fen_brute`
+* `crypt_guard`
+* `bone_acolyte`
+* `cellar_warden`
+
+De har tidigare bara haft `ASSET_SPEC.json` medan Castle Rat haft den kompletta tekniska pipelinen.
+
+Följ Castle Rat-strukturen för:
+
+* atlas metadata
+* animations
+* directions
+* sprite loading
+* normal map
+* foot anchor/origin
+* preload
+* animation state mapping
+* fallback handling
+* asset registry
+
+Vi ska fortsätta använda 2.5D creatures i Three.js-världen så dynamisk lighting och depth fortfarande fungerar.
+
+Använd INTE de gamla 3D-creature-modellerna som permanent fallback om respektive monster ska använda sprite-pipelinen.
+
+Ingen enemy ska visas som Castle Rat bara för att dess egna assets saknas.
+
+---
+
+# 10. CRITICAL BUG – Learned abilities/magic går inte att använda från action bar
+
+Det finns ett större arkitekturproblem här.
+
+En karaktär kan lära sig exempelvis magic abilities/spells, men klienten visar inte korrekt vilka abilities karaktären faktiskt känner till. Därför finns inget naturligt sätt att dra dem till action bar.
+
+Bygg ett riktigt character ability system i UI:t.
+
+Det ska finnas en lista/panel med karaktärens upplåsta abilities/spells.
+
+Den ska bygga på authoritative character progression data.
+
+Den får INTE bygga på en hårdkodad lista.
+
+Varje ability behöver kunna exponera relevant metadata såsom:
+
+* id
+* name
+* icon
+* description
+* type/category
+* cost
+* cooldown
+* range där relevant
+* requirements
+* learned/unlocked state
+
+Spelaren ska kunna dra eller lägga en learned ability från denna lista till en action bar slot.
+
+Locked/unlearned abilities får inte gå att använda.
+
+Detta måste fungera med vårt CLASSLESS-system.
+
+Abilities kommer från vad karaktären faktiskt lärt sig genom progressionen, inte från en vocation/class.
+
+---
+
+# 11. BUG – Action bar 1 och 2 är hårdkodade på nya characters
+
+Ta bort detta.
+
+En nyskapad character ska börja med:
+
+**tomma action bars**
+
+Det får inte finnas hårdkodade default skills i slot 1 och slot 2.
+
+Action bar state ska baseras på sparad character state.
+
+Ny character:
+
+alla slots tomma.
+
+Befintlig character:
+
+återställ sparade bindings.
+
+Server/client måste också hantera att en tidigare bunden ability inte längre är giltig.
+
+---
+
+# 12. BUG – Det går inte längre att äta
+
+Återställ food consumption.
+
+Kontrollera hela item-use pathen och ta reda på vad som brutits.
+
+Food ska använda samma generella item interaction/use-system som andra usable items där det är möjligt.
+
+Vid användning:
+
+* server validerar item
+* food-effekten appliceras
+* korrekt quantity tas bort
+* inventory uppdateras
+* relevant feedback visas
+
+Duplicera inte food logic i klienten.
+
+Testa både:
+
+* ett food item
+* stack med flera food items
+
+och kontrollera att exakt rätt amount konsumeras.
+
+---
+
+# 13. FEAT – Utöka skill-systemet, minst Shielding
+
+Lägg till **Shielding** som riktig character skill.
+
+Shielding ska inte vara en secondary profession och ska därför inte påverka 2 Gathering + 2 Crafting-regeln.
+
+Den ska finnas i samma generella skill/progression-system som andra character skills.
+
+Skillen måste:
+
+* lagras per character
+* laddas korrekt
+* visas i Skills UI
+* kunna få experience/progress
+* ha korrekt current level/progress
+* kunna användas av combat calculations
+
+Shielding ska utvecklas från relevant defensivt gameplay, inte från ett godtyckligt timer-event.
+
+Auditera samtidigt befintliga combat/magic skills.
+
+Om det redan finns backend-skills som klienten inte visar ska de exponeras genom det gemensamma skill-registret istället för att nya dubletter skapas.
+
+Systemet ska vara data-driven så fler skills senare kan läggas till utan att varje UI-komponent behöver specialkod.
+
+---
+
+# 14. CRITICAL BUG – Spelaren kan inte själv attackera enemies längre
+
+Återställ normal player-initiated combat.
+
+Spelaren ska kunna välja/attackera en enemy även om monstret inte först attackerar spelaren.
+
+Kontrollera hela pathen:
+
+input
+→ targeting
+→ combat request
+→ server validation
+→ combat state
+→ attack cadence
+→ damage
+→ animations
+→ death/reward
+
+Servern ska fortsätta validera:
+
+* target existerar
+* target är attackable
+* range
+* floor/z-level
+* line/rules där det används
+* cooldown/attack interval
+* character state
+
+Enemy targeting/highlight ska integreras med detta.
+
+Vi ska inte behöva vänta på att monstret aggrar för att kunna slå det.
+
+---
+
+# 15. FEAT – WoW-liknande item tooltips vid hover
+
+När spelaren hovrar ett item ska ett riktigt tooltip visas med item-information.
+
+Tänk World of Warcraft i principen, men använd vårt eget UI.
+
+Tooltip ska läsa från item metadata och bara visa information som faktiskt finns.
+
+Exempel:
+
+Item Name
+
+Item type
+
+Armor / Attack / Defense
+
+Required skill/level där relevant
+
+Weight
+
+Stack amount där relevant
+
+Special modifiers
+
+Description
+
+Övriga stats
+
+Tooltipen ska fungera i minst:
+
+* inventory
+* equipment
+* storage
+* loot/container
+* crafting UI
+* merchant/trade UI där dessa använder samma items
+* world item hover där det är relevant
+
+Undvik separata tooltip-implementationer per fönster.
+
+Skapa en återanvändbar `ItemTooltip`/item inspection model.
+
+Tooltipen ska även följa responsive UI scaling från punkt 1.
+
+Tooltip får inte gå utanför viewport; positionen ska flip/adjust automatiskt nära skärmkanter.
+
+---
+
+# 16. FEAT – World Map, toggle med M
+
+Lägg till en riktig world map.
+
+`M` ska toggla kartan:
+
+M → öppna
+M igen → stäng
+
+`Escape` ska också kunna stänga den.
+
+Kartan ska vara ett ordentligt klientfönster/overlay och följa UI scaling.
+
+Minimikrav:
+
+* world map
+* current player position
+* korrekt current z/floor
+* pan
+* zoom
+* fungerande resize
+* öppna/stäng med M
+* inga player movement inputs ska läcka igenom när användaren aktivt interagerar med kartan
+
+Använd den riktiga world/map-datan.
+
+Generera inte en separat fake-karta som riskerar att avvika från världen.
+
+Arkitekturen ska senare kunna stödja exempelvis:
+
+* markers
+* discovered locations
+* POIs
+* party members
+* custom player markers
+
+men bygg inte onödiga placeholder-system nu.
+
+---
+
+# 17. BUG – Ta bort Drop-knappen/Drop-containern från Character window
+
+Character/equipment-fönstret ska inte ha en separat knapp eller container vars syfte är att droppa items.
+
+Det blir inkonsekvent med inventory-systemet.
+
+Ta bort denna UI-yta.
+
+Dropping ska använda samma interaction model som inventory redan använder.
+
+Det betyder att equipment/character slots ska bete sig som riktiga item slots och följa den gemensamma drag/drop/use/context-menu-logiken.
+
+Skapa inte en separat "character drop"-mekanik.
+
+---
+
+# Arkitekturkrav
+
+Under arbetet ska följande principer följas:
+
+1. Server authoritative för combat, rewards, item use, skills och profession limits.
+2. Client får ge omedelbar UI-feedback men får inte vara ensam validator.
+3. Ett gemensamt item model/registry ska användas av inventory, storage, tooltips, crafting etc.
+4. Ett gemensamt skill/ability model ska användas av character UI och action bars.
+5. Ett gemensamt responsive UI scale-system ska användas av vanliga komponenter och portals/modals.
+6. Inga nya class/vocation-hardcodes. Systemet är classless.
+7. Ingen global `secondarySkills <= 2`-regel får finnas kvar.
+8. Ingen hårdkodad action bar för nya characters.
+9. Inga terminalfönster från updatern.
+10. Undvik klient-only fixes för gameplayregler som går att exploita.
+
+---
+
+# Regression audit
+
+När implementationen är klar, sök explicit efter gammal logik som fortfarande kan ligga kvar.
+
+Sök efter saker motsvarande:
+
+`secondarySkills`
+
+`maxSecondarySkills`
+
+`<= 2`
+
+action bar default slots
+
+default abilities
+
+hardcoded spell IDs
+
+old updater terminal commands
+
+shell/cmd/PowerShell spawning
+
+old food use handlers
+
+old attack handlers
+
+vein interaction range
+
+monster fallback assets
+
+duplicerade item tooltips
+
+duplicerade UI scale values
+
+Det räcker inte att den nya implementationen fungerar om den gamla fortfarande körs parallellt någonstans.
+
+---
+
+# Validation order
+
+Kör INTE direkt en lång Tauri release-build.
+
+Kör i denna ordning:
+
+1. relevanta unit tests
+2. server tests
+3. frontend typecheck
+4. backend/Rust compile/check där relevant
+5. lint
+6. frontend production build
+7. updater/signing preflight
+8. targeted runtime tests
+9. först därefter full Tauri build/package om alla billiga kontroller passerat
+
+Om ett tidigt steg misslyckas: fixa det innan full build.
+
+---
+
+# Manuell testmatris
+
+Verifiera minst följande i riktig klient:
+
+Small window UI:
+alla HUD-delar + modal + tooltip
+
+Updater:
+update hittas → progress visas → inget terminalfönster
+
+Storage:
+stackable + non-stackable ligger korrekt linjerade
+
+Rewards:
+XP + gold + gathering reward visas i chatten
+
+Mining:
+för långt bort = reject
+nära = fungerar
+
+Enemy:
+hover highlight
+select target
+player initiates attack
+enemy dies
+XP/reward kommer
+
+Professions:
+2 Gathering + 2 Crafting fungerar samtidigt
+
+Abilities:
+learned spell syns
+kan läggas på action bar
+kan användas
+
+New character:
+action bars helt tomma
+
+Food:
+item kan ätas och quantity minskar korrekt
+
+Shielding:
+syns, sparas och progression fungerar
+
+Tooltip:
+korrekta item stats och weight visas läsbart
+
+World map:
+M öppnar
+M stänger
+zoom/pan fungerar
+player position/floor är korrekt
+
+Character window:
+ingen Drop-knapp/container kvar
+items använder samma drag/drop-system som inventory
+
+Monsters:
+alla åtta creature IDs använder sina avsedda assets och animationsflöden.
+
+---
+
+När allt är färdigt ska du ge en teknisk slutrapport med:
+
+* root cause för varje bug
+* filer/system som ändrats
+* eventuella DB-migrations
+* nya tester
+* resultat från tester/typecheck/build
+* vilka manuella tester som genomförts
+* eventuella kvarvarande problem
+
+Markera inte milestone som klar bara för att projektet kompilerar. Varje acceptance criterion ovan ska verifieras.

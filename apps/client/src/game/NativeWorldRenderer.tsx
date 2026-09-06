@@ -3642,6 +3642,21 @@ class NativeActorManager {
     fallbackCreatureLayer.setTransforms(fallbackCreatures);
   }
 
+  pickCreature(raycaster: THREE.Raycaster) {
+    let nearest: { id: string; distance: number } | null = null;
+
+    for (const [id, actor] of this.creatures) {
+      if (!actor.root.visible) continue;
+      const hit = raycaster.intersectObject(actor.root, true)[0];
+      if (!hit) continue;
+      if (!nearest || hit.distance < nearest.distance) {
+        nearest = { id, distance: hit.distance };
+      }
+    }
+
+    return nearest?.id ?? null;
+  }
+
   playerVisualPosition(playerId: string | null) {
     if (!playerId) return null;
     return this.players.get(playerId)?.visualPosition ?? null;
@@ -7056,6 +7071,33 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         };
       };
 
+      const targetAtPointer = (
+        event: PointerEvent | MouseEvent,
+      ): PointerTarget | null => {
+        const rect = canvas.getBoundingClientRect();
+        const ndc = new THREE.Vector2(
+          ((event.clientX - rect.left) / rect.width) * 2 - 1,
+          -(((event.clientY - rect.top) / rect.height) * 2 - 1),
+        );
+        raycaster.setFromCamera(ndc, camera);
+
+        const creatureId = activeActorManager.pickCreature(raycaster);
+        if (creatureId) {
+          const creature = world.creatures.get(creatureId);
+          if (creature) {
+            return {
+              kind: "creature",
+              position: creature.position,
+              id: creature.id,
+              label: `${creature.name} · Attack`,
+            };
+          }
+        }
+
+        const position = pointerTile(event);
+        return position ? targetAt(position) : null;
+      };
+
       const activatePointerTarget = (
         target: PointerTarget,
         event: PointerEvent | MouseEvent,
@@ -7092,9 +7134,9 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       };
 
       const interactAtPointer = (event: PointerEvent | MouseEvent) => {
-        const position = pointerTile(event);
-        if (!position) return;
-        activatePointerTarget(targetAt(position), event);
+        const target = targetAtPointer(event);
+        if (!target) return;
+        activatePointerTarget(target, event);
       };
 
       const hideGatheringOverlay = () => {
@@ -7181,13 +7223,12 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       };
 
       const onPointerMove = (event: PointerEvent) => {
-        const position = pointerTile(event);
-        if (!position) {
+        const target = targetAtPointer(event);
+        if (!target) {
           hideHover();
           return;
         }
 
-        const target = targetAt(position);
         if (target.kind === "ground") {
           hideHover();
           return;

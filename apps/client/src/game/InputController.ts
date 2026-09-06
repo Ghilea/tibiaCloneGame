@@ -99,6 +99,13 @@ export class InputController {
     if (!player) return;
     const resource = [...this.world.resourceNodes.values()].find((entry) => samePosition(entry.position, target));
     if (resource) {
+      const nearby = player.position.z === resource.position.z
+        && Math.abs(player.position.x - resource.position.x) <= 1
+        && Math.abs(player.position.y - resource.position.y) <= 1;
+      if (!nearby) {
+        this.world.addSystemMessage("Move closer to gather that resource.");
+        return;
+      }
       if (!resource.available) {
         this.world.addSystemMessage("That resource is depleted.");
         return;

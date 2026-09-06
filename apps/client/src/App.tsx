@@ -17,12 +17,14 @@ import { getAudioSettings, subscribeAudioSettings, updateAudioSettings } from ".
 import { InputController } from "./game/InputController";
 // TIBIAGAME_GATHER_CANCEL_V31_C_1_1
 import { GameMinimap } from "./game/GameMinimap";
+import { WorldMap } from "./game/WorldMap";
 import { ThreeWorld } from "./game/ThreeWorld";
 import { NativeWorldRenderer } from "./game/NativeWorldRenderer";
 import { NetworkClient } from "./game/NetworkClient";
 import { WorldState } from "./game/WorldState";
 import { isWorldTimePaused, setWorldTime, setWorldTimePaused, worldEnvironment, worldTimeLabel } from "./game/worldEnvironment";
 import { PROTOCOL_VERSION, type BuildingView, type CharacterOutfit, type GroundItem, type ItemDefinition, type ItemInstance, type PlayerView, type Position, type SecondarySkill } from "./protocol";
+// TIBIAGAME_V34_FIXSET_1
 
 const world = new WorldState();
 const network = new NetworkClient(world);
@@ -176,6 +178,7 @@ function AccountLogin({
     <main className="login-shell">
       <section className="login-card">
         <ServerStatusIndicator online={serverOnline} />
+        <UpdaterStatusPanel />
         <p className="eyebrow">A world shaped by its people</p>
         <h1>Embers of Aldoria</h1>
         <p className="intro">
@@ -232,6 +235,94 @@ function AccountLogin({
   );
 }
 
+type UpdaterStatus = {
+  phase:
+    | "checking"
+    | "up_to_date"
+    | "available"
+    | "downloading"
+    | "installing"
+    | "restarting"
+    | "error";
+  currentVersion?: string;
+  version?: string;
+  downloaded?: number;
+  total?: number;
+  progress?: number;
+  message?: string;
+};
+
+type UpdaterWindow = Window & {
+  __ALDORIA_UPDATER_STATUS__?: UpdaterStatus;
+};
+
+function formatUpdateBytes(value: number | undefined) {
+  if (!value || value <= 0) return "—";
+  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  if (value >= 1024) return `${(value / 1024).toFixed(0)} KB`;
+  return `${value} B`;
+}
+
+function UpdaterStatusPanel() {
+  const [status, setStatus] = useState<UpdaterStatus | null>(
+    () => (window as UpdaterWindow).__ALDORIA_UPDATER_STATUS__ ?? null,
+  );
+
+  useEffect(() => {
+    const listener = (event: Event) => {
+      const next = (event as CustomEvent<UpdaterStatus>).detail;
+      if (next) setStatus(next);
+    };
+    window.addEventListener("aldoria-updater-status", listener);
+    setStatus((window as UpdaterWindow).__ALDORIA_UPDATER_STATUS__ ?? null);
+    return () => window.removeEventListener("aldoria-updater-status", listener);
+  }, []);
+
+  if (!status || status.phase === "up_to_date") return null;
+
+  const percent = Math.max(
+    0,
+    Math.min(
+      100,
+      status.total && status.downloaded
+        ? status.downloaded / status.total * 100
+        : status.progress ?? 0,
+    ),
+  );
+
+  const label = {
+    checking: "Checking for client update…",
+    available: status.version
+      ? `Updating to ${status.version}…`
+      : "Client update available…",
+    downloading: "Downloading client update…",
+    installing: "Verifying and installing update…",
+    restarting: "Update installed. Restarting…",
+    error: status.message ?? "Could not update the client.",
+    up_to_date: "",
+  }[status.phase];
+
+  return (
+    <section className={`updater-status updater-${status.phase}`} aria-live="polite">
+      <header>
+        <span><small>Client updater</small><strong>{label}</strong></span>
+        {status.phase === "downloading" && <b>{Math.round(percent)}%</b>}
+      </header>
+      {["available", "downloading", "installing"].includes(status.phase) && (
+        <div className="updater-progress" aria-label={`Update ${Math.round(percent)} percent`}>
+          <i style={{ width: `${status.phase === "downloading" ? percent : status.phase === "installing" ? 100 : 2}%` }} />
+        </div>
+      )}
+      {status.phase === "downloading" && (
+        <footer>
+          <span>{formatUpdateBytes(status.downloaded)} / {formatUpdateBytes(status.total)}</span>
+          {status.currentVersion && status.version && <span>{status.currentVersion} → {status.version}</span>}
+        </footer>
+      )}
+    </section>
+  );
+}
+
 function ServerStatusIndicator({ online }: { online: boolean | null }) {
   const label = online === null ? "Checking server" : online ? "Server online" : "Server offline";
   return <div className={`server-status ${online === true ? "online" : online === false ? "offline" : "checking"}`}><i aria-hidden="true" />{label}</div>;
@@ -241,6 +332,7 @@ type Panel = "inventory" | "crafting" | "skills" | "character" | "help" | "optio
 
 function Game({ onLeave }: { onLeave: () => void }) {
   const [panel, setPanel] = useState<Panel | null>(null);
+  const [worldMapOpen, setWorldMapOpen] = useState(false);
   const [showInventoryCharacter, setShowInventoryCharacter] = useState(false);
   const [escapeMenu, setEscapeMenu] = useState(false);
   const [showPerformance, setShowPerformance] = useState(() => loadStoredBoolean("aldoria.show-performance", true));
@@ -253,7 +345,10 @@ function Game({ onLeave }: { onLeave: () => void }) {
   const nativeWorldRenderer =
     new URLSearchParams(window.location.search).get("renderer") !== "r3f";
   const handleSceneReady = useCallback(() => setSceneReady(true), []);
-  const [actionSkills, setActionSkills] = useState<Record<number, string | null>>(() => loadActionSkills());
+  const actionSkillsStorageKey = `aldoria.action-skills.${world.localPlayerId ?? "unknown"}`;
+  const [actionSkills, setActionSkills] = useState<Record<number, string | null>>(
+    () => loadActionSkills(world.localPlayerId),
+  );
   const pendingGoldPickups = useRef(new Set<string>());
   // TIBIAGAME_V35A_UI_COMBAT
   // Charged stacks keep one active partially-used sigil plus full sigils behind it.
@@ -268,20 +363,16 @@ function Game({ onLeave }: { onLeave: () => void }) {
     if (emberSigil) network.useItem(emberSigil.instanceId);
     else world.addSystemMessage("You do not have a charged Ember Sigil.");
   };
-  const emberBolt = world.spells.get("ember_bolt");
-  const knowsEmberBolt = world.learnedSpellIds.has("ember_bolt");
-  const castEmberBolt = () => {
-    if (knowsEmberBolt) network.castSpell("ember_bolt");
-    else
-      world.addSystemMessage(
-        "Learn Ember Bolt from Seraphine in Greyhaven first.",
-      );
-  };
   const activateActionSlot = (slot: number) => {
     const actionId = actionSkills[slot];
-    if (actionId === "ember_sigil") useEmberSigil();
-    else if (actionId === "ember_bolt") castEmberBolt();
-    else if (actionId && actionSkillDefinition(actionId)) setPanel("skills");
+    if (!actionId) return;
+    if (actionId === "ember_sigil") {
+      useEmberSigil();
+      return;
+    }
+    if (world.learnedSpellIds.has(actionId) && world.spells.has(actionId)) {
+      network.castSpell(actionId);
+    }
   };
   const assignActionSkill = (slot: number, skillId: string) => {
     setActionSkills((current) => ({ ...current, [slot]: skillId }));
@@ -291,15 +382,16 @@ function Game({ onLeave }: { onLeave: () => void }) {
   };
   actionSkillDragHandlers = { assign: assignActionSkill, clear: clearActionSkill };
   useEffect(() => {
-    localStorage.setItem("aldoria.action-skills", JSON.stringify(actionSkills));
-  }, [actionSkills]);
+    localStorage.setItem(actionSkillsStorageKey, JSON.stringify(actionSkills));
+  }, [actionSkills, actionSkillsStorageKey]);
   useEffect(() => localStorage.setItem("aldoria.show-performance", String(showPerformance)), [showPerformance]);
   useEffect(() => localStorage.setItem("aldoria.reduced-motion", String(reducedMotion)), [reducedMotion]);
   useEffect(() => {
-    if (panel || escapeMenu || world.trade || world.incomingTrade || world.activeNpcId)
+    if (panel || worldMapOpen || escapeMenu || world.trade || world.incomingTrade || world.activeNpcId)
       input.releaseAll();
   }, [
     panel,
+    worldMapOpen,
     escapeMenu,
     Boolean(world.trade),
     Boolean(world.incomingTrade),
@@ -317,6 +409,10 @@ function Game({ onLeave }: { onLeave: () => void }) {
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
+        if (worldMapOpen) {
+          setWorldMapOpen(false);
+          return;
+        }
         if (panel) {
           setPanel(null);
           return;
@@ -364,6 +460,20 @@ function Game({ onLeave }: { onLeave: () => void }) {
           return;
         }
       }
+      if (
+        event.code === "KeyM"
+        && !escapeMenu
+        && !world.trade
+        && !world.incomingTrade
+        && !world.activeNpcId
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        setPanel(null);
+        setWorldMapOpen((current) => !current);
+        return;
+      }
+
       const actionHotkey = /^Digit([1-8])$/.exec(event.code);
       if (actionHotkey) {
         event.preventDefault();
@@ -385,7 +495,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
     };
     window.addEventListener("keydown", listener, true);
     return () => window.removeEventListener("keydown", listener, true);
-  }, [actionSkills, emberSigil?.instanceId, escapeMenu, knowsEmberBolt, panel, world.attackTargetId, world.revision]);
+  }, [actionSkills, emberSigil?.instanceId, escapeMenu, panel, world.attackTargetId, world.revision, worldMapOpen]);
   const local = world.localPlayerId
     ? world.players.get(world.localPlayerId)
     : null;
@@ -456,6 +566,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
         </span>
       </header>
       <GameMinimap world={world} />
+      {worldMapOpen && <WorldMap world={world} onClose={() => setWorldMapOpen(false)} />}
       <BattleList />
       <section className="unit-frame">
         <div className="portrait">{local?.name.slice(0, 1)}</div>
@@ -490,19 +601,24 @@ function Game({ onLeave }: { onLeave: () => void }) {
           const actionId = actionSkills[slot];
           const action = actionId ? actionBarDefinition(actionId) : null;
           const isSigil = actionId === "ember_sigil";
-          const isBolt = actionId === "ember_bolt";
+          const spell = actionId ? world.spells.get(actionId) : undefined;
+          const isSpell = Boolean(
+            actionId
+            && spell
+            && world.learnedSpellIds.has(actionId),
+          );
           const unavailable = isSigil
             ? !emberSigil || !world.attackTargetId
-            : isBolt
-              ? !knowsEmberBolt || !world.attackTargetId || (local?.mana ?? 0) < (emberBolt?.manaCost ?? 0)
+            : isSpell
+              ? !world.attackTargetId || (local?.mana ?? 0) < (spell?.manaCost ?? 0)
               : false;
           const detail = isSigil
             ? emberCharges
-            : isBolt
-              ? knowsEmberBolt ? emberBolt?.manaCost ?? 0 : "—"
+            : isSpell
+              ? `${spell?.manaCost ?? 0} mana`
               : action?.name;
           return <button
-            className={`ability-slot ${isSigil ? "ember-sigil" : isBolt ? "ember-bolt" : action ? "skill-ability" : "empty-ability"} ${unavailable ? "unavailable" : ""}`}
+            className={`ability-slot ${isSigil ? "ember-sigil" : isSpell ? "spell-action" : action ? "skill-ability" : "empty-ability"} ${unavailable ? "unavailable" : ""}`}
             key={slot}
             data-action-slot={slot}
             draggable={false}
@@ -513,10 +629,10 @@ function Game({ onLeave }: { onLeave: () => void }) {
             onPointerDown={(event) => { if (actionId) beginSkillPointerDrag(event, actionId, slot); }}
             onDragStart={(event) => { if (!actionId) { event.preventDefault(); return; } event.dataTransfer.setData("application/x-aldoria-skill", actionId); event.dataTransfer.setData("text/plain", actionId); event.dataTransfer.effectAllowed = "move"; }}
             onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; }}
-            onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const skillValue = event.dataTransfer.getData("application/x-aldoria-skill") || event.dataTransfer.getData("text/plain"); if (skillValue && actionSkillDefinitions.some((entry) => entry.id === skillValue)) assignActionSkill(slot, skillValue); }}
+            onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const skillValue = event.dataTransfer.getData("application/x-aldoria-skill") || event.dataTransfer.getData("text/plain"); if (skillValue && actionBarDefinition(skillValue)) assignActionSkill(slot, skillValue); }}
           >
             {isSigil && world.combatItemCooldownUntil > Date.now() && <i key={world.combatItemCooldownUntil} className="cooldown-sweep" style={{ animationDuration: `${world.combatItemCooldownMs}ms` }} />}
-            {isBolt && world.spellCooldownUntil > Date.now() && <i key={world.spellCooldownUntil} className="cooldown-sweep" style={{ animationDuration: `${world.spellCooldownMs}ms` }} />}
+            {isSpell && world.spellCooldownUntil > Date.now() && <i key={world.spellCooldownUntil} className="cooldown-sweep" style={{ animationDuration: `${world.spellCooldownMs}ms` }} />}
             <kbd>{slot}</kbd>
             {action ? <><span className="ability-glyph">{action.glyph}</span><small>{detail}</small></> : <span>+</span>}
           </button>;
@@ -1505,8 +1621,8 @@ function SkillPanel() {
   const player = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
   if (!player) return null;
   return <div className="standalone-skills-panel">
-    <p className="drag-hint">Drag a skill to action bar slots 1–8. Drag it out of the bar or right-click to remove it.</p>
-    <ActionSkillList player={player} />
+    <p className="drag-hint">Drag a learned ability to action bar slots 1–8. Drag it out of the bar or right-click to remove it.</p>
+    <ActionSkillList />
     <SkillRow name="Melee Skill" level={player.swordSkill} tries={player.swordTries} description="Advances through successful hits with any melee weapon." />
     <SkillRow name="Distance Skill" level={player.distanceSkill} tries={player.distanceTries} description="Advances when ammunition hits a creature." />
     <SkillRow name="Fletching Skill" level={player.fletchingSkill} tries={player.fletchingTries} description="Advances by producing physical ammunition." />
@@ -1521,23 +1637,45 @@ function SkillPanel() {
 }
 
 type ActionSkill = { id: string; name: string; glyph: string; description: string };
-const actionSkillDefinitions: ActionSkill[] = [
-  { id: "melee", name: "Melee", glyph: "M", description: "Melee weapon skill" },
-  { id: "distance", name: "Distance", glyph: "D", description: "Distance weapon skill" },
-  { id: "fletching", name: "Fletching", glyph: "F", description: "Ammunition crafting skill" },
-  { id: "magic", name: "Magic", glyph: "✦", description: "Magic level" },
-  { id: "alchemy", name: "Alchemy", glyph: "A", description: "Potions, extracts and reagents" },
-  { id: "mining", name: "Mining", glyph: "M", description: "Ore, stone and rare minerals" },
-  { id: "woodcutting", name: "Woodcutting", glyph: "W", description: "Timber and uncommon woods" },
-  { id: "fishing", name: "Fishing", glyph: "F", description: "Fish and aquatic resources" },
-  { id: "cooking", name: "Cooking", glyph: "C", description: "Meals with restorative effects" },
-  { id: "smithing", name: "Smithing", glyph: "S", description: "Weapons, armor and metalwork" },
-  { id: "leatherworking", name: "Leatherworking", glyph: "L", description: "Hide, scale and flexible armor" },
-];
+const actionSkillDefinitions: ActionSkill[] = [];
 const fixedActionDefinitions: ActionSkill[] = [
   { id: "ember_sigil", name: "Ember Sigil", glyph: "ES", description: "Deal fire damage to the selected target" },
-  { id: "ember_bolt", name: "Ember Bolt", glyph: "EB", description: "Cast a mana-powered bolt at the selected target" },
 ];
+
+function spellGlyph(name: string) {
+  const glyph = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+  return glyph || "✦";
+}
+
+function learnedSpellActionDefinition(id: string): ActionSkill | undefined {
+  if (!world.learnedSpellIds.has(id)) return undefined;
+  const spell = world.spells.get(id);
+  if (!spell) return undefined;
+  return {
+    id: spell.id,
+    name: spell.name,
+    glyph: spellGlyph(spell.name),
+    description: `${spell.description} · ${spell.manaCost} mana · range ${spell.range} · ${(spell.cooldownMs / 1000).toFixed(1)}s cooldown`,
+  };
+}
+
+function availableActionDefinitions() {
+  const actions: ActionSkill[] = [];
+  if (world.inventory.some((item) => item.definitionId === "ember_rune")) {
+    actions.push(...fixedActionDefinitions);
+  }
+  for (const spellId of world.learnedSpellIds) {
+    const action = learnedSpellActionDefinition(spellId);
+    if (action) actions.push(action);
+  }
+  return actions;
+}
 let actionSkillDragHandlers: { assign: (slot: number, skillId: string) => void; clear: (slot: number) => void } | null = null;
 let suppressActionSkillClickUntil = 0;
 
@@ -1613,23 +1751,30 @@ function actionSkillDefinition(id: string, _player?: PlayerView | null) {
 }
 
 function actionBarDefinition(id: string) {
-  return fixedActionDefinitions.find((action) => action.id === id) ?? actionSkillDefinition(id);
+  return fixedActionDefinitions.find((action) => action.id === id)
+    ?? learnedSpellActionDefinition(id)
+    ?? actionSkillDefinition(id);
 }
 
-function ActionSkillList({ player }: { player: PlayerView }) {
+function ActionSkillList() {
+  const actions = availableActionDefinitions();
   return <section className="action-skill-list">
-    <header><small>Action bar</small><span>Drag skills to slots 1–8 · Drag out or right-click to remove</span></header>
-    <div>{actionSkillDefinitions.map((skill) => <div
-      key={skill.id}
-      className="action-skill-source"
-      draggable={false}
-      title={skill.description}
-      onPointerDown={(event) => beginSkillPointerDrag(event, skill.id)}
-      onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.setData("application/x-aldoria-skill", skill.id); event.dataTransfer.setData("text/plain", skill.id); event.dataTransfer.effectAllowed = "copy"; }}
-    >
-      <i>{skill.glyph}</i><span><strong>{skill.name}</strong><small>{skill.description}</small></span>
-      <b>{skill.id === "melee" ? player.swordSkill : skill.id === "distance" ? player.distanceSkill : skill.id === "fletching" ? player.fletchingSkill : skill.id === "magic" ? player.magicLevel : world.professionSkills.get(skill.id)?.level ?? 0}</b>
-    </div>)}</div>
+    <header><small>Abilities</small><span>Only learned/usable actions can be placed on slots 1–8</span></header>
+    {actions.length > 0 ? (
+      <div>{actions.map((action) => <div
+        key={action.id}
+        className="action-skill-source"
+        draggable={false}
+        title={action.description}
+        onPointerDown={(event) => beginSkillPointerDrag(event, action.id)}
+        onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.setData("application/x-aldoria-skill", action.id); event.dataTransfer.setData("text/plain", action.id); event.dataTransfer.effectAllowed = "copy"; }}
+      >
+        <i>{action.glyph}</i><span><strong>{action.name}</strong><small>{action.description}</small></span>
+        <b>{world.spells.get(action.id)?.manaCost ?? "item"}</b>
+      </div>)}</div>
+    ) : (
+      <p className="action-skill-empty">You have not learned any action-bar abilities yet.</p>
+    )}
   </section>;
 }
 
@@ -2687,7 +2832,15 @@ function InventorySlot({ item, onOpenContextMenu, onPointerDrop, dropKind, dropI
       onPointerCancel={cancelPointerItemDrag}
       onDragOver={allowItemDrop}
       onDrop={definition?.containerSlots ? receive : onDropToArea}
-      onContextMenu={(event) => onOpenContextMenu(event, item.instanceId)}
+      onContextMenu={(event) => {
+        if (definition?.foodEffect) {
+          event.preventDefault();
+          event.stopPropagation();
+          network.eat(item.instanceId);
+          return;
+        }
+        onOpenContextMenu(event, item.instanceId);
+      }}
       title={`${definition?.name ?? item.definitionId}${definition?.containerSlots ? ` · ${children.length}/${definition.containerSlots} slots` : ""}`}
     >
       <ItemIcon definitionId={item.definitionId} />
@@ -3049,19 +3202,33 @@ function loadInventoryLayout(storageKey: string): (string | null)[] {
   }
 }
 
-function loadActionSkills(): Record<number, string | null> {
-  const defaults: Record<number, string | null> = { 1: "ember_sigil", 2: "ember_bolt" };
+function emptyActionSkills(): Record<number, string | null> {
+  return { 1: null, 2: null, 3: null, 4: null, 5: null, 6: null, 7: null, 8: null };
+}
+
+function loadActionSkills(characterId: string | null): Record<number, string | null> {
+  const empty = emptyActionSkills();
+  if (!characterId) return empty;
   try {
-    const value = JSON.parse(localStorage.getItem("aldoria.action-skills") ?? "{}");
-    if (!value || typeof value !== "object") return defaults;
+    const value = JSON.parse(
+      localStorage.getItem(`aldoria.action-skills.${characterId}`) ?? "{}",
+    );
+    if (!value || typeof value !== "object") return empty;
     return {
-      ...defaults,
-      ...Object.fromEntries(Object.entries(value).filter(([slot, skill]) =>
-        /^[1-8]$/.test(slot) && (skill === null || typeof skill === "string") && (!skill || Boolean(actionBarDefinition(skill))),
+      ...empty,
+      ...Object.fromEntries(Object.entries(value).filter(([slot, action]) =>
+        /^[1-8]$/.test(slot)
+        && (
+          action === null
+          || (
+            typeof action === "string"
+            && Boolean(actionBarDefinition(action))
+          )
+        ),
       )),
     } as Record<number, string | null>;
   } catch {
-    return defaults;
+    return empty;
   }
 }
 

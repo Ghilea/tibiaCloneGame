@@ -1,0 +1,197 @@
+/* TIBIAGAME_V34_FIXSET_1 */
+:root {
+  --aldoria-modal-scale: 1;
+  --aldoria-readable-small: 12px;
+  --aldoria-readable-body: 13px;
+  --aldoria-readable-value: 14px;
+}
+
+@media (max-width: 1280px), (max-height: 760px) {
+  :root { --aldoria-modal-scale: .84; }
+}
+@media (max-width: 1050px), (max-height: 650px) {
+  :root { --aldoria-modal-scale: .74; }
+}
+@media (max-width: 650px) {
+  :root { --aldoria-modal-scale: .70; }
+}
+
+.modal-layer > .game-modal,
+.world-map-card {
+  zoom: var(--aldoria-modal-scale);
+}
+
+.game-modal { font-size: var(--aldoria-readable-body); }
+.game-modal small,
+.game-modal p,
+.game-modal label,
+.game-modal dt,
+.game-modal dd,
+.game-modal .inventory-slot-name,
+.game-modal .action-skill-source strong,
+.game-modal .action-skill-source small {
+  font-size: var(--aldoria-readable-small) !important;
+  line-height: 1.35;
+}
+.game-modal h3,
+.game-modal strong,
+.game-modal b {
+  font-size: var(--aldoria-readable-value);
+}
+.game-modal button,
+.game-modal input,
+.game-modal select {
+  font-size: var(--aldoria-readable-small);
+}
+
+.depot-columns article {
+  display: grid !important;
+  grid-template-columns: 38px minmax(0, 1fr) minmax(190px, auto);
+  align-items: center;
+  justify-content: initial !important;
+}
+.depot-columns article > .item-icon { grid-column: 1; }
+.depot-columns article > span { grid-column: 2; }
+.depot-row-actions {
+  grid-column: 3;
+  display: grid !important;
+  grid-template-columns: 74px 108px;
+  justify-content: end;
+  align-items: end;
+  gap: 8px;
+  min-width: 190px;
+}
+.depot-row-actions > label { grid-column: 1; min-width: 0; }
+.depot-row-actions > button { grid-column: 2; margin: 0; }
+
+.action-skill-empty {
+  margin: 0;
+  padding: 10px;
+  color: #89978f;
+  font-size: 12px;
+  border: 1px dashed #34433a;
+  border-radius: 5px;
+}
+.action-dock .spell-action {
+  background: radial-gradient(circle at 50% 38%, #56406b, #18121f 72%);
+  border-color: #9277aa;
+}
+.action-dock .spell-action small { color: #d8c2ee; }
+
+.updater-status {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 4px;
+  padding: 11px 12px;
+  background: #0d1511e8;
+  border: 1px solid #4f6658;
+  border-radius: 8px;
+}
+.updater-status header,
+.updater-status footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.updater-status header > span { display: grid; gap: 2px; }
+.updater-status small {
+  color: #9eaf9f;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.updater-status strong { color: #e8ddc2; font-size: 12px; }
+.updater-status b { color: #e0b96c; font-size: 12px; }
+.updater-status footer { color: #8e9b93; font-size: 10px; }
+.updater-progress {
+  height: 8px;
+  overflow: hidden;
+  background: #070b09;
+  border: 1px solid #34433a;
+  border-radius: 999px;
+}
+.updater-progress > i {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  background: linear-gradient(90deg, #8a6938, #d4ac61);
+  transition: width 120ms linear;
+}
+.updater-error { border-color: #854b45; }
+.updater-error strong { color: #e3aaa1; }
+
+.world-map-layer {
+  position: fixed;
+  z-index: 45;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #020403a8;
+  backdrop-filter: blur(3px);
+}
+.world-map-card {
+  display: grid;
+  width: min(94vw, 980px);
+  max-height: 92vh;
+  overflow: hidden;
+  background: linear-gradient(145deg, #171d18, #090d0a);
+  border: 1px solid #9d7d49;
+  border-radius: 12px;
+  box-shadow: 0 24px 80px #000d, inset 0 1px #ffffff12;
+}
+.world-map-card > header,
+.world-map-card > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 15px;
+}
+.world-map-card > header { border-bottom: 1px solid #ffffff16; }
+.world-map-card > header > span { display: grid; gap: 2px; }
+.world-map-card > header small {
+  color: #b69a64;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+}
+.world-map-card > header strong {
+  color: #f0dfba;
+  font: 600 18px Cinzel, serif;
+}
+.world-map-card > header > div { display: flex; gap: 8px; }
+.world-map-card > header button { font-size: 11px; }
+.world-map-close { width: 34px; padding-inline: 0 !important; }
+.world-map-card canvas {
+  display: block;
+  width: 100%;
+  min-height: 360px;
+  max-height: calc(92vh - 120px);
+  aspect-ratio: 900 / 620;
+  cursor: grab;
+  touch-action: none;
+  background: #070a08;
+}
+.world-map-card canvas:active { cursor: grabbing; }
+.world-map-card > footer {
+  color: #89968e;
+  font-size: 11px;
+  border-top: 1px solid #ffffff12;
+}
+.world-map-card > footer b {
+  color: #d5ba7b;
+  font: 600 11px ui-monospace, monospace;
+}
+
+@media (max-width: 720px) {
+  .depot-columns article {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+  .depot-row-actions {
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(74px, .8fr) minmax(108px, 1fr);
+    width: 100%;
+  }
+}
