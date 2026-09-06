@@ -50,6 +50,7 @@ export class WorldState {
   combatItemCooldownMs = 0;
   spellCooldownUntil = 0;
   spellCooldownMs = 0;
+  readonly abilityCooldowns = new Map<string, { until: number; durationMs: number }>();
   nourishmentUntil = 0;
   nourishmentDurationMs = 0;
   incomingTrade: IncomingTrade | null = null;
@@ -156,6 +157,7 @@ export class WorldState {
         this.combatItemCooldownMs = 0;
         this.spellCooldownUntil = 0;
         this.spellCooldownMs = 0;
+        this.abilityCooldowns.clear();
         this.nourishmentUntil = 0;
         this.nourishmentDurationMs = 0;
         this.incomingTrade = null;
@@ -387,6 +389,14 @@ export class WorldState {
           ? "world"
           : "visual";
         break;
+      case "ability_used":
+        if (message.player_id === this.localPlayerId) {
+          this.abilityCooldowns.set(message.ability_id, {
+            until: Date.now() + message.cooldown_ms,
+            durationMs: message.cooldown_ms,
+          });
+        }
+        break;
       case "area_telegraph":
         this.areaWarnings.push({ id: crypto.randomUUID(), sourceId: message.source_id, position: message.position, effectId: message.effect_id, radius: message.radius, durationMs: message.duration_ms, createdAt: performance.now() });
         if (this.areaWarnings.length > 20) this.areaWarnings.shift();
@@ -436,7 +446,7 @@ export class WorldState {
         break;
       case "player_stats_changed": {
         const player = this.players.get(message.player_id);
-        if (player) this.players.set(player.id, { ...player, health: message.health, maxHealth: message.max_health, level: message.level, experience: message.experience, mana: message.mana, maxMana: message.max_mana, swordSkill: message.sword_skill, swordTries: message.sword_tries, distanceSkill: message.distance_skill, distanceTries: message.distance_tries, fletchingSkill: message.fletching_skill, fletchingTries: message.fletching_tries, magicLevel: message.magic_level, magicTries: message.magic_tries });
+        if (player) this.players.set(player.id, { ...player, health: message.health, maxHealth: message.max_health, level: message.level, experience: message.experience, mana: message.mana, maxMana: message.max_mana, swordSkill: message.sword_skill, swordTries: message.sword_tries, distanceSkill: message.distance_skill, distanceTries: message.distance_tries, shieldingSkill: message.shielding_skill, shieldingTries: message.shielding_tries, fletchingSkill: message.fletching_skill, fletchingTries: message.fletching_tries, magicLevel: message.magic_level, magicTries: message.magic_tries });
         if (message.player_id === this.localPlayerId) this.maxCapacity = message.max_capacity;
         break;
       }

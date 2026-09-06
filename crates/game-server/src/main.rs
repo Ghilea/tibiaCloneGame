@@ -531,6 +531,8 @@ async fn session(mut socket: WebSocket, state: AppState) {
         distance_tries,
         mut fletching_skill,
         fletching_tries,
+        mut shielding_skill,
+        shielding_tries,
         mut magic_level,
         magic_tries,
     ) = if state.auth.database_enabled() {
@@ -589,6 +591,8 @@ async fn session(mut socket: WebSocket, state: AppState) {
             u32::try_from(character.distance_tries).unwrap_or(0),
             u16::try_from(character.fletching_skill).unwrap_or(0),
             u32::try_from(character.fletching_tries).unwrap_or(0),
+            u16::try_from(character.shielding_skill).unwrap_or(10),
+            u32::try_from(character.shielding_tries).unwrap_or(0),
             u16::try_from(character.magic_level).unwrap_or(0),
             u32::try_from(character.magic_tries).unwrap_or(0),
         )
@@ -627,14 +631,22 @@ async fn session(mut socket: WebSocket, state: AppState) {
             0,
             0,
             0,
+            10,
+            0,
             0,
             0,
         )
     };
 
-    let mut skill_levels = [sword_skill, distance_skill, fletching_skill, magic_level];
+    let mut skill_levels = [
+        sword_skill,
+        distance_skill,
+        shielding_skill,
+        fletching_skill,
+        magic_level,
+    ];
     game_types::normalize_mastery(&mut skill_levels);
-    [sword_skill, distance_skill, fletching_skill, magic_level] = skill_levels;
+    [sword_skill, distance_skill, shielding_skill, fletching_skill, magic_level] = skill_levels;
 
     if state.world.read().await.contains_player(id) {
         send(
@@ -675,6 +687,8 @@ async fn session(mut socket: WebSocket, state: AppState) {
             sword_tries,
             distance_skill,
             distance_tries,
+            shielding_skill,
+            shielding_tries,
             fletching_skill,
             fletching_tries,
             magic_level,
@@ -721,6 +735,8 @@ async fn session(mut socket: WebSocket, state: AppState) {
         last_attack: Instant::now() - Duration::from_millis(700),
         last_item_use: Instant::now() - Duration::from_millis(900),
         last_spell_cast: Instant::now() - Duration::from_millis(900),
+        ability_cooldowns: std::collections::HashMap::new(),
+        shield_guard_until: None,
         learned_spells: match &state.database {
             Some(database) => match database.load_spells(id).await {
                 Ok(spells) => spells.into_iter().collect(),
@@ -1192,6 +1208,31 @@ async fn session(mut socket: WebSocket, state: AppState) {
             Ok(ClientMessage::AttackRequest { target_id }) => {
                 attack_target(&state, id, target_id).await
             }
+            Ok(ClientMessage::UseAbility {
+                ability_id,
+                target_id,
+            }) => {
+                let result = {
+                    let mut world = state.world.write().await;
+                    world.try_use_ability(id, &ability_id, target_id)
+                };
+                match result {
+                    Ok(events) => dispatch_world_events(&state, events).await,
+                    Err(reason) => state.private(
+                        id,
+                        ServerMessage::Error {
+                            code: reason.into(),
+                            message: match reason {
+                                "ability_cooldown" => "That ability is still cooling down.",
+                                "shield_required" => "Equip a defensive off-hand to use Shield Guard.",
+                                "already_full_health" => "You are already at full health.",
+                                _ => "That ability cannot be used right now.",
+                            }
+                            .into(),
+                        },
+                    ),
+                }
+            }
             Ok(ClientMessage::UseItem {
                 instance_id,
                 target_id,
@@ -1282,6 +1323,8 @@ async fn session(mut socket: WebSocket, state: AppState) {
                     player.sword_tries,
                     player.distance_skill,
                     player.distance_tries,
+                    player.shielding_skill,
+                    player.shielding_tries,
                     player.fletching_skill,
                     player.fletching_tries,
                     player.magic_level,
@@ -2335,6 +2378,8 @@ async fn send_crafting_update(state: &AppState, update: world::CraftingUpdate) {
             sword_tries: update.player.sword_tries,
             distance_skill: update.player.distance_skill,
             distance_tries: update.player.distance_tries,
+            shielding_skill: update.player.shielding_skill,
+            shielding_tries: update.player.shielding_tries,
             fletching_skill: update.player.fletching_skill,
             fletching_tries: update.player.fletching_tries,
             magic_level: update.player.magic_level,
@@ -2467,6 +2512,20 @@ async fn world_loop(state: AppState) {
 async fn dispatch_world_events(state: &AppState, events: Vec<WorldEvent>) {
     for event in events {
         match event {
+            WorldEvent::AbilityUsed {
+                player_id,
+                ability_id,
+                cooldown_ms,
+                duration_ms,
+            } => state.private(
+                player_id,
+                ServerMessage::AbilityUsed {
+                    player_id,
+                    ability_id,
+                    cooldown_ms,
+                    duration_ms,
+                },
+            ),
             WorldEvent::CombatEffect {
                 source_id,
                 target_id,
@@ -2550,6 +2609,8 @@ async fn dispatch_world_events(state: &AppState, events: Vec<WorldEvent>) {
                             player.sword_tries,
                             player.distance_skill,
                             player.distance_tries,
+                            player.shielding_skill,
+                            player.shielding_tries,
                             player.fletching_skill,
                             player.fletching_tries,
                             player.magic_level,
@@ -2576,6 +2637,8 @@ async fn dispatch_world_events(state: &AppState, events: Vec<WorldEvent>) {
                     sword_tries: player.sword_tries,
                     distance_skill: player.distance_skill,
                     distance_tries: player.distance_tries,
+                    shielding_skill: player.shielding_skill,
+                    shielding_tries: player.shielding_tries,
                     fletching_skill: player.fletching_skill,
                     fletching_tries: player.fletching_tries,
                     magic_level: player.magic_level,

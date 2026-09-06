@@ -389,6 +389,15 @@ function Game({ onLeave }: { onLeave: () => void }) {
       useEmberSigil();
       return;
     }
+    if (actionId === "basic_attack") {
+      if (world.attackTargetId) network.attack(world.attackTargetId);
+      else world.addSystemMessage("Select a living target first.");
+      return;
+    }
+    if (actionId === "second_wind" || actionId === "shield_guard") {
+      network.useAbility(actionId);
+      return;
+    }
     if (world.learnedSpellIds.has(actionId) && world.spells.has(actionId)) {
       network.castSpell(actionId);
     }
@@ -627,11 +636,15 @@ function Game({ onLeave }: { onLeave: () => void }) {
             && spell
             && world.learnedSpellIds.has(actionId),
           );
+          const abilityCooldown = actionId ? world.abilityCooldowns.get(actionId) : undefined;
+          const isCoreAbility = Boolean(actionId && actionSkillDefinition(actionId));
           const unavailable = isSigil
             ? !emberSigil || !world.attackTargetId
             : isSpell
               ? !world.attackTargetId || (local?.mana ?? 0) < (spell?.manaCost ?? 0)
-              : false;
+              : isCoreAbility
+                ? !actionSkillAvailable(actionId!, local) || Boolean(abilityCooldown && abilityCooldown.until > Date.now())
+                : false;
           const detail = isSigil
             ? emberCharges
             : isSpell
@@ -653,6 +666,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
           >
             {isSigil && world.combatItemCooldownUntil > Date.now() && <i key={world.combatItemCooldownUntil} className="cooldown-sweep" style={{ animationDuration: `${world.combatItemCooldownMs}ms` }} />}
             {isSpell && world.spellCooldownUntil > Date.now() && <i key={world.spellCooldownUntil} className="cooldown-sweep" style={{ animationDuration: `${world.spellCooldownMs}ms` }} />}
+            {isCoreAbility && abilityCooldown && abilityCooldown.until > Date.now() && <i key={abilityCooldown.until} className="cooldown-sweep" style={{ animationDuration: `${abilityCooldown.durationMs}ms` }} />}
             <kbd>{slot}</kbd>
             {action ? <><span className="ability-glyph">{action.glyph}</span><small>{detail}</small></> : <span>+</span>}
           </button>;
@@ -1252,6 +1266,135 @@ function ItemIconArtwork({ definitionId }: { definitionId: string }) {
   );
 }
 
+const NPC_VENDOR_SELL_PRICES: Record<string, number> = {
+  "blank_rune": 1,
+  "traveler_blade": 12,
+  "ashwood_bow": 24,
+  "field_backpack": 18,
+  "mire_fiber": 1,
+  "field_bread": 1,
+  "smoked_mire_meat": 3,
+  "bog_ichor": 5,
+  "reed_hide": 3,
+  "fen_tusk": 6,
+  "worn_cap": 2,
+  "patched_tunic": 5,
+  "frayed_trousers": 3,
+  "work_boots": 3,
+  "wooden_buckler": 5,
+  "iron_pickaxe": 14,
+  "copper_ore": 2,
+  "iron_ore": 4,
+  "coal_chunk": 2,
+  "healing_herbs": 2,
+  "rope_bundle": 2,
+  "shovel": 7,
+  "leather_satchel": 7,
+  "iron_short_sword": 32,
+  "red_apple": 1,
+  "iron_battle_axe": 42,
+  "iron_war_hammer": 55,
+  "ironbound_shield": 45,
+  "iron_helmet": 34,
+  "studded_armor": 44,
+  "reinforced_boots": 18,
+  "emerald_ring": 18,
+  "ember_amulet": 20,
+  "mana_tonic": 5,
+  "iron_dagger": 12,
+  "rusty_mace": 8,
+  "hunting_spear": 9,
+  "woodsman_hatchet": 9,
+  "oak_staff": 8,
+  "traveler_cloak": 7,
+  "chain_coif": 14,
+  "leather_jerkin": 26,
+  "stitched_leggings": 21,
+  "round_kite_shield": 16,
+  "bronze_ring": 4,
+  "bone_amulet": 6,
+  "health_tonic": 5,
+  "antidote_vial": 4,
+  "bandage_roll": 3,
+  "dried_rations": 2,
+  "tin_ore": 3,
+  "copper_ingot": 5,
+  "tin_ingot": 6,
+  "iron_ingot": 9,
+  "beast_claw": 4,
+  "spider_silk": 4,
+  "mandrake_root": 5,
+  "wolf_pelt": 6,
+  "lantern_oil": 2,
+  "raw_hide": 4,
+  "duelist_blade": 15,
+  "parrying_dagger": 8,
+  "corsair_cutlass": 21,
+  "stiletto": 5,
+  "raider_hatchet": 18,
+  "hook_sabre": 20,
+  "fishing_rod": 8,
+  "miner_pickhammer": 12,
+  "smith_tongs": 5,
+  "skinning_knife": 5,
+  "grappling_hook": 8,
+  "hooded_lantern": 7,
+  "rope_coil": 5,
+  "repair_kit": 6,
+  "whetstone": 2,
+  "rat_tail": 1,
+  "rat_pelt": 2,
+  "mire_gland": 3,
+  "mire_spore_cluster": 2,
+  "skulker_venom_sac": 7,
+  "skulker_scale": 3,
+  "reed_sinew": 3,
+  "stalker_claw": 7,
+  "fen_brute_hide": 8,
+  "fen_brute_bone": 7,
+  "crypt_bone_shard": 5,
+  "grave_dust": 4,
+  "acolyte_focus_shard": 9,
+  "warden_core": 30,
+  "warden_plate_fragment": 16,
+  "mire_recovery_tonic": 7,
+  "purifying_tonic": 9,
+  "fen_marrow_stew": 8,
+  "graveward_tonic": 12,
+  "focus_draught": 14,
+  "warden_glow_charm": 42,
+  "rat_pelt_cap": 9,
+  "mireweave_cloak": 18,
+  "skulker_scale_vest": 36,
+  "fenhide_leggings": 30,
+  "fenhide_boots": 24,
+  "cryptbone_buckler": 40,
+  "warden_plate_helmet": 95,
+  "warden_plate_armor": 200,
+  "warden_plate_shield": 150,
+  "stalker_claw_blade": 38,
+  "fenbone_maul": 52,
+  "reed_sinew_bow": 48,
+  "acolyte_focus_amulet": 45,
+  "warden_core_hammer": 110
+};
+
+function npcSellUnitPrice(
+  npc: { offers: { itemDefinitionId: string; quantity: number; price: number }[] },
+  definition: ItemDefinition | undefined,
+) {
+  if (!definition) return 0;
+  const explicit = NPC_VENDOR_SELL_PRICES[definition.id] ?? 0;
+  if (explicit > 0) return explicit;
+  const offer = npc.offers.find(
+    (entry) =>
+      entry.itemDefinitionId === definition.id
+      && entry.quantity === 1
+      && entry.price >= 3,
+  );
+  return offer ? Math.max(1, Math.floor(offer.price * 0.4)) : 0;
+}
+
 function NpcShop({ npcId }: { npcId: string }) {
   const npc = world.npcs.get(npcId);
   const [buyQuantities, setBuyQuantities] = useState<Record<string, number>>({});
@@ -1262,7 +1405,8 @@ function NpcShop({ npcId }: { npcId: string }) {
   const sellableItems = world.inventory.filter((item) =>
     !item.equippedSlot
     && item.definitionId !== "gold_coin"
-    && !world.inventory.some((child) => child.containerId === item.instanceId),
+    && !world.inventory.some((child) => child.containerId === item.instanceId)
+    && npcSellUnitPrice(npc, world.itemDefinitions.get(item.definitionId)) > 0,
   );
   const categories = ["all", ...SHOP_CATEGORIES.filter((entry) => (shopMode === "buy"
     ? npc.offers.some((offer) => shopCategory(world.itemDefinitions.get(offer.itemDefinitionId)) === entry)
@@ -1336,8 +1480,7 @@ function NpcShop({ npcId }: { npcId: string }) {
           {shopMode === "sell" && visibleSellableItems.map((item) => {
             const quantity = Math.min(sellQuantities[item.instanceId] ?? 1, item.quantity);
             const definition = world.itemDefinitions.get(item.definitionId);
-            const matchingOffer = npc.offers.find((offer) => offer.itemDefinitionId === item.definitionId);
-            const sellPrice = Math.max(1, Math.floor(matchingOffer ? matchingOffer.price / 2 : Math.ceil(definition?.weight ?? 0)));
+            const sellPrice = npcSellUnitPrice(npc, definition);
             const totalPrice = sellPrice * quantity;
             return <article key={item.instanceId} data-item-definition-id={item.definitionId} data-item-instance-id={item.instanceId}>
               <ItemIcon definitionId={item.definitionId} />
@@ -1697,7 +1840,11 @@ function SkillPanel() {
 }
 
 type ActionSkill = { id: string; name: string; glyph: string; description: string };
-const actionSkillDefinitions: ActionSkill[] = [];
+const actionSkillDefinitions: ActionSkill[] = [
+  { id: "basic_attack", name: "Attack", glyph: "AT", description: "Start attacking the selected target with your equipped weapon." },
+  { id: "second_wind", name: "Second Wind", glyph: "SW", description: "Recover 20% of maximum health · 45s cooldown." },
+  { id: "shield_guard", name: "Shield Guard", glyph: "SG", description: "Reduce incoming damage by 35% for 4s · requires a defensive off-hand · 12s cooldown." },
+];
 const fixedActionDefinitions: ActionSkill[] = [
   { id: "ember_sigil", name: "Ember Sigil", glyph: "ES", description: "Deal fire damage to the selected target" },
 ];
@@ -1725,6 +1872,20 @@ function learnedSpellActionDefinition(id: string): ActionSkill | undefined {
   };
 }
 
+function hasDefensiveOffhand() {
+  return world.inventory.some((item) => {
+    if (item.equippedSlot !== "offhand") return false;
+    return (world.itemDefinitions.get(item.definitionId)?.defense ?? 0) > 0;
+  });
+}
+
+function actionSkillAvailable(id: string, player?: PlayerView | null) {
+  if (id === "basic_attack") return Boolean(world.attackTargetId);
+  if (id === "second_wind") return Boolean(player && player.health < player.maxHealth);
+  if (id === "shield_guard") return hasDefensiveOffhand();
+  return true;
+}
+
 function availableActionDefinitions() {
   const actions: ActionSkill[] = [];
   if (world.inventory.some((item) => item.definitionId === "ember_rune")) {
@@ -1734,6 +1895,7 @@ function availableActionDefinitions() {
     const action = learnedSpellActionDefinition(spellId);
     if (action) actions.push(action);
   }
+  actions.push(...actionSkillDefinitions);
   return actions;
 }
 let actionSkillDragHandlers: { assign: (slot: number, skillId: string) => void; clear: (slot: number) => void } | null = null;
@@ -2098,6 +2260,7 @@ function CharacterPanel() {
   const skillRanks: [string, number][] = [
     ["Melee", player.swordSkill],
     ["Distance", player.distanceSkill],
+    ["Shielding", player.shieldingSkill],
     ["Fletching", player.fletchingSkill],
     ["Magic", player.magicLevel],
   ];
@@ -2138,7 +2301,12 @@ function CharacterPanel() {
           tries={player.magicTries}
           description="Advances through sigil crafting and magic use."
         />
-        <UntrainedSkillRow name="Defense" description="Blocking, shields and armor control." />
+        <SkillRow
+          name="Shielding"
+          level={player.shieldingSkill}
+          tries={player.shieldingTries}
+          description="Advances when a defensive off-hand absorbs creature attacks. Higher Shielding improves mitigation."
+        />
         <SecondarySkillsPicker selected={player.secondarySkills} />
         {player.secondarySkills.map((id) => {
           const skill = world.professionSkills.get(id);
@@ -3129,6 +3297,8 @@ function itemTooltipSlotLabel(slot: string | undefined) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+// TIBIAGAME_V35_7_CLEAN_ITEM_TOOLTIPS
+// TIBIAGAME_V35_10_SHIELDING_UI_ECONOMY
 function ItemHoverTooltip() {
   const [target, setTarget] = useState<ItemTooltipTarget | null>(null);
   const tooltipRef = useRef<HTMLElement>(null);
@@ -3192,19 +3362,33 @@ function ItemHoverTooltip() {
   const quantity = item?.quantity ?? 1;
   const rows: Array<[string, string, string?]> = [];
 
-  if (definition.attack !== undefined) rows.push(["Attack", String(definition.attack), "positive"]);
-  if (definition.defense !== undefined) rows.push(["Defense", String(definition.defense), "positive"]);
+  if ((definition.attack ?? 0) > 0) rows.push(["Attack", String(definition.attack), "positive"]);
+  if ((definition.defense ?? 0) > 0) rows.push(["Defense", String(definition.defense), "positive"]);
   if (definition.combatEffect) {
-    rows.push(["Damage", String(definition.combatEffect.damage), "damage"]);
-    rows.push(["Range", String(definition.combatEffect.range)]);
-    rows.push(["Cooldown", `${(definition.combatEffect.cooldownMs / 1000).toFixed(2)} sec`]);
+    if ((definition.combatEffect.damage ?? 0) > 0) {
+      rows.push(["Damage", String(definition.combatEffect.damage), "damage"]);
+    }
+    if ((definition.combatEffect.range ?? 0) > 0) {
+      rows.push(["Range", String(definition.combatEffect.range)]);
+    }
+    if ((definition.combatEffect.cooldownMs ?? 0) > 0) {
+      rows.push(["Cooldown", `${(definition.combatEffect.cooldownMs / 1000).toFixed(2)} sec`]);
+    }
   }
   if (definition.distanceWeapon) {
-    rows.push(["Damage", `+${definition.distanceWeapon.damage}`, "damage"]);
-    rows.push(["Range", String(definition.distanceWeapon.range)]);
-    rows.push(["Attack speed", `${(definition.distanceWeapon.cooldownMs / 1000).toFixed(2)} sec`]);
-    const ammunition = world.itemDefinitions.get(definition.distanceWeapon.ammunitionId);
-    rows.push(["Ammunition", ammunition?.name ?? definition.distanceWeapon.ammunitionId]);
+    if ((definition.distanceWeapon.damage ?? 0) > 0) {
+      rows.push(["Damage", `+${definition.distanceWeapon.damage}`, "damage"]);
+    }
+    if ((definition.distanceWeapon.range ?? 0) > 0) {
+      rows.push(["Range", String(definition.distanceWeapon.range)]);
+    }
+    if ((definition.distanceWeapon.cooldownMs ?? 0) > 0) {
+      rows.push(["Attack speed", `${(definition.distanceWeapon.cooldownMs / 1000).toFixed(2)} sec`]);
+    }
+    if (definition.distanceWeapon.ammunitionId) {
+      const ammunition = world.itemDefinitions.get(definition.distanceWeapon.ammunitionId);
+      rows.push(["Ammunition", ammunition?.name ?? definition.distanceWeapon.ammunitionId]);
+    }
   }
   if (definition.foodEffect) {
     if (definition.foodEffect.healthPerTick) {
@@ -3213,33 +3397,41 @@ function ItemHoverTooltip() {
     if (definition.foodEffect.manaPerTick) {
       rows.push(["Mana regen", `+${definition.foodEffect.manaPerTick} / tick`, "mana"]);
     }
-    rows.push(["Nourishment", `${definition.foodEffect.durationSeconds} sec`]);
+    if ((definition.foodEffect.durationSeconds ?? 0) > 0) {
+      if ((definition.foodEffect.durationSeconds ?? 0) > 0) {
+      rows.push(["Nourishment", `${definition.foodEffect.durationSeconds} sec`]);
+    }
+    }
   }
-  if (definition.charges !== undefined || item?.charges !== undefined) {
+  if ((definition.charges ?? 0) > 0 || (item?.charges ?? 0) > 0) {
     const tooltipItem: ItemInstance = item ?? {
       instanceId: "tooltip",
       definitionId: definition.id,
       quantity: 1,
       charges: definition.charges,
     };
-    rows.push(["Uses", String(chargedStackUses(tooltipItem, definition))]);
+    const uses = chargedStackUses(tooltipItem, definition);
+    if (uses > 0) rows.push(["Uses", String(uses)]);
   }
-  if (definition.containerSlots) {
+  if ((definition.containerSlots ?? 0) > 0) {
     const used = item
       ? world.inventory.filter((entry) => entry.containerId === item.instanceId).length
       : 0;
     rows.push(["Container", item ? `${used} / ${definition.containerSlots} slots` : `${definition.containerSlots} slots`]);
   }
-  if (definition.lightSource) {
-    rows.push(["Light radius", String(definition.lightSource.radius)]);
+  if ((definition.lightSource?.radius ?? 0) > 0) {
+    rows.push(["Light radius", String(definition.lightSource!.radius)]);
   }
-  if (definition.teachesRecipeId) {
+  if (definition.teachesRecipeId?.trim()) {
     rows.push(["Teaches recipe", definition.teachesRecipeId.replaceAll("_", " ")]);
   }
-  if (definition.stackable) rows.push(["Stack limit", String(definition.maxStack)]);
+  if (definition.stackable && (definition.maxStack ?? 0) > 1) {
+    rows.push(["Stack limit", String(definition.maxStack)]);
+  }
 
-  const unitWeight = definition.weight.toFixed(1);
-  const totalWeight = (definition.weight * quantity).toFixed(1);
+  const hasWeight = Number.isFinite(definition.weight) && definition.weight > 0;
+  const unitWeight = hasWeight ? definition.weight.toFixed(1) : "";
+  const totalWeight = hasWeight ? (definition.weight * quantity).toFixed(1) : "";
 
   return (
     <aside
@@ -3265,10 +3457,12 @@ function ItemHoverTooltip() {
           ))}
         </dl>
       )}
-      <footer>
-        <span>Weight</span>
-        <b>{quantity > 1 ? `${unitWeight} oz each · ${totalWeight} oz total` : `${unitWeight} oz`}</b>
-      </footer>
+      {hasWeight && (
+        <footer>
+          <span>Weight</span>
+          <b>{quantity > 1 ? `${unitWeight} oz each · ${totalWeight} oz total` : `${unitWeight} oz`}</b>
+        </footer>
+      )}
       {quantity > 1 && <small className="tooltip-stack">Stack ×{quantity}</small>}
     </aside>
   );

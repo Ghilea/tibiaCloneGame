@@ -32,6 +32,8 @@ struct CharacterRow {
     sword_tries: i32,
     distance_skill: i32,
     distance_tries: i32,
+    shielding_skill: i32,
+    shielding_tries: i32,
     fletching_skill: i32,
     fletching_tries: i32,
     magic_level: i32,
@@ -82,6 +84,8 @@ pub struct CharacterRecord {
     pub sword_tries: i32,
     pub distance_skill: i32,
     pub distance_tries: i32,
+    pub shielding_skill: i32,
+    pub shielding_tries: i32,
     pub fletching_skill: i32,
     pub fletching_tries: i32,
     pub magic_level: i32,
@@ -158,7 +162,7 @@ impl Database {
         account_id: EntityId,
     ) -> Result<Vec<CharacterRecord>, sqlx::Error> {
         let rows: Vec<CharacterRow> = sqlx::query_as(
-            "SELECT id, account_id, name, vocation, outfit, secondary_skills, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized \
+            "SELECT id, account_id, name, vocation, outfit, secondary_skills, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, shielding_skill, shielding_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized \
              FROM characters WHERE account_id = $1 ORDER BY created_at, name",
         )
         .bind(account_id)
@@ -178,7 +182,7 @@ impl Database {
         let mut transaction = self.pool.begin().await?;
         let row: CharacterRow = sqlx::query_as(
             "INSERT INTO characters (id, account_id, name, vocation, outfit, health, mana, max_mana, sword_skill, distance_skill, magic_level, position_x, position_y, position_z, spawn_initialized) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, TRUE) \
-             RETURNING id, account_id, name, vocation, outfit, secondary_skills, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized",
+             RETURNING id, account_id, name, vocation, outfit, secondary_skills, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, shielding_skill, shielding_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized",
         )
         .bind(id)
         .bind(account_id)
@@ -243,7 +247,7 @@ impl Database {
         character_id: EntityId,
     ) -> Result<Option<CharacterRecord>, sqlx::Error> {
         let row: Option<CharacterRow> = sqlx::query_as(
-            "SELECT id, account_id, name, vocation, outfit, secondary_skills, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized \
+            "SELECT id, account_id, name, vocation, outfit, secondary_skills, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, shielding_skill, shielding_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized \
              FROM characters WHERE id = $1 AND account_id = $2",
         )
         .bind(character_id)
@@ -310,12 +314,14 @@ impl Database {
         sword_tries: u32,
         distance_skill: u16,
         distance_tries: u32,
+        shielding_skill: u16,
+        shielding_tries: u32,
         fletching_skill: u16,
         fletching_tries: u32,
         magic_level: u16,
         magic_tries: u32,
     ) -> Result<(), sqlx::Error> {
-        sqlx::query("UPDATE characters SET level = $2, experience = $3, health = $4, mana = $5, max_mana = $6, sword_skill = $7, sword_tries = $8, distance_skill = $9, distance_tries = $10, fletching_skill = $11, fletching_tries = $12, magic_level = $13, magic_tries = $14, updated_at = NOW() WHERE id = $1")
+        sqlx::query("UPDATE characters SET level = $2, experience = $3, health = $4, mana = $5, max_mana = $6, sword_skill = $7, sword_tries = $8, distance_skill = $9, distance_tries = $10, shielding_skill = $11, shielding_tries = $12, fletching_skill = $13, fletching_tries = $14, magic_level = $15, magic_tries = $16, updated_at = NOW() WHERE id = $1")
             .bind(character_id)
             .bind(i32::try_from(level).unwrap_or(i32::MAX))
             .bind(i64::try_from(experience).unwrap_or(i64::MAX))
@@ -326,6 +332,8 @@ impl Database {
             .bind(i32::try_from(sword_tries).unwrap_or(i32::MAX))
             .bind(i32::from(distance_skill))
             .bind(i32::try_from(distance_tries).unwrap_or(i32::MAX))
+            .bind(i32::from(shielding_skill))
+            .bind(i32::try_from(shielding_tries).unwrap_or(i32::MAX))
             .bind(i32::from(fletching_skill))
             .bind(i32::try_from(fletching_tries).unwrap_or(i32::MAX))
             .bind(i32::from(magic_level))
@@ -623,7 +631,7 @@ impl Database {
         let (remaining_ms, health_per_tick, mana_per_tick) =
             food.unwrap_or((0, 0, 0));
         let mut transaction = self.pool.begin().await?;
-        sqlx::query("UPDATE characters SET level = $2, experience = $3, health = $4, mana = $5, max_mana = $6, sword_skill = $7, sword_tries = $8, distance_skill = $9, distance_tries = $10, fletching_skill = $11, fletching_tries = $12, magic_level = $13, magic_tries = $14, nourishment_remaining_ms = $15, food_health_per_tick = $16, food_mana_per_tick = $17, updated_at = NOW() WHERE id = $1")
+        sqlx::query("UPDATE characters SET level = $2, experience = $3, health = $4, mana = $5, max_mana = $6, sword_skill = $7, sword_tries = $8, distance_skill = $9, distance_tries = $10, shielding_skill = $11, shielding_tries = $12, fletching_skill = $13, fletching_tries = $14, magic_level = $15, magic_tries = $16, nourishment_remaining_ms = $17, food_health_per_tick = $18, food_mana_per_tick = $19, updated_at = NOW() WHERE id = $1")
             .bind(player.id)
             .bind(i32::try_from(player.level).unwrap_or(i32::MAX))
             .bind(i64::try_from(player.experience).unwrap_or(i64::MAX))
@@ -634,6 +642,8 @@ impl Database {
             .bind(i32::try_from(player.sword_tries).unwrap_or(i32::MAX))
             .bind(i32::from(player.distance_skill))
             .bind(i32::try_from(player.distance_tries).unwrap_or(i32::MAX))
+            .bind(i32::from(player.shielding_skill))
+            .bind(i32::try_from(player.shielding_tries).unwrap_or(i32::MAX))
             .bind(i32::from(player.fletching_skill))
             .bind(i32::try_from(player.fletching_tries).unwrap_or(i32::MAX))
             .bind(i32::from(player.magic_level))
@@ -655,9 +665,9 @@ impl Database {
         ground_items: &[GroundItem],
     ) -> Result<(), sqlx::Error> {
         let mut transaction = self.pool.begin().await?;
-        sqlx::query("UPDATE characters SET level = $2, experience = $3, health = $4, mana = $5, max_mana = $6, sword_skill = $7, sword_tries = $8, distance_skill = $9, distance_tries = $10, fletching_skill = $11, fletching_tries = $12, magic_level = $13, magic_tries = $14, updated_at = NOW() WHERE id = $1")
+        sqlx::query("UPDATE characters SET level = $2, experience = $3, health = $4, mana = $5, max_mana = $6, sword_skill = $7, sword_tries = $8, distance_skill = $9, distance_tries = $10, shielding_skill = $11, shielding_tries = $12, fletching_skill = $13, fletching_tries = $14, magic_level = $15, magic_tries = $16, updated_at = NOW() WHERE id = $1")
             .bind(player.id).bind(i32::try_from(player.level).unwrap_or(i32::MAX)).bind(i64::try_from(player.experience).unwrap_or(i64::MAX)).bind(i32::from(player.health)).bind(i32::from(player.mana)).bind(i32::from(player.max_mana))
-            .bind(i32::from(player.sword_skill)).bind(i32::try_from(player.sword_tries).unwrap_or(i32::MAX)).bind(i32::from(player.distance_skill)).bind(i32::try_from(player.distance_tries).unwrap_or(i32::MAX)).bind(i32::from(player.fletching_skill)).bind(i32::try_from(player.fletching_tries).unwrap_or(i32::MAX)).bind(i32::from(player.magic_level)).bind(i32::try_from(player.magic_tries).unwrap_or(i32::MAX))
+            .bind(i32::from(player.sword_skill)).bind(i32::try_from(player.sword_tries).unwrap_or(i32::MAX)).bind(i32::from(player.distance_skill)).bind(i32::try_from(player.distance_tries).unwrap_or(i32::MAX)).bind(i32::from(player.shielding_skill)).bind(i32::try_from(player.shielding_tries).unwrap_or(i32::MAX)).bind(i32::from(player.fletching_skill)).bind(i32::try_from(player.fletching_tries).unwrap_or(i32::MAX)).bind(i32::from(player.magic_level)).bind(i32::try_from(player.magic_tries).unwrap_or(i32::MAX))
             .execute(&mut *transaction).await?;
         write_items(&mut transaction, player.id, inventory, ground_items).await?;
         transaction.commit().await?;
@@ -672,7 +682,7 @@ impl Database {
         profession_skills: &[ProfessionSkillView],
     ) -> Result<(), sqlx::Error> {
         let mut transaction = self.pool.begin().await?;
-        sqlx::query("UPDATE characters SET mana = $2, max_mana = $3, sword_skill = $4, sword_tries = $5, distance_skill = $6, distance_tries = $7, fletching_skill = $8, fletching_tries = $9, magic_level = $10, magic_tries = $11, updated_at = NOW() WHERE id = $1")
+        sqlx::query("UPDATE characters SET mana = $2, max_mana = $3, sword_skill = $4, sword_tries = $5, distance_skill = $6, distance_tries = $7, shielding_skill = $8, shielding_tries = $9, fletching_skill = $10, fletching_tries = $11, magic_level = $12, magic_tries = $13, updated_at = NOW() WHERE id = $1")
             .bind(player.id)
             .bind(i32::from(player.mana))
             .bind(i32::from(player.max_mana))
@@ -867,6 +877,8 @@ fn character_from_row(row: CharacterRow) -> CharacterRecord {
         sword_tries: row.sword_tries,
         distance_skill: row.distance_skill,
         distance_tries: row.distance_tries,
+        shielding_skill: row.shielding_skill,
+        shielding_tries: row.shielding_tries,
         fletching_skill: row.fletching_skill,
         fletching_tries: row.fletching_tries,
         magic_level: row.magic_level,

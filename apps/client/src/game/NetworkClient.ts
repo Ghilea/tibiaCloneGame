@@ -150,6 +150,13 @@ export class NetworkClient {
   moveToContainer(instanceId: string, containerId: string) { this.send({ type: "move_item", instance_id: instanceId, destination: { kind: "container", container_id: containerId } }); }
   equip(instanceId: string, slot: string) { this.send({ type: "move_item", instance_id: instanceId, destination: { kind: "equipment", slot } }); }
   split(instanceId: string, quantity: number) { this.send({ type: "split_item", instance_id: instanceId, quantity }); }
+  useAbility(abilityId: string) {
+    this.send({
+      type: "use_ability",
+      ability_id: abilityId,
+      target_id: this.world.attackTargetId ?? undefined,
+    });
+  }
   startRuneCrafting(recipeId: string, quantity: number) { this.send({ type: "start_rune_crafting", recipe_id: recipeId, quantity }); }
   cancelRuneCrafting() { this.send({ type: "cancel_rune_crafting" }); }
   requestTrade(targetId: string) { this.send({ type: "request_trade", target_id: targetId }); }

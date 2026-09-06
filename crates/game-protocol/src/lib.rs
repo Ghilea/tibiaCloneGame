@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 // TIBIAGAME_STREAMING_FIX_V9
 // TIBIAGAME_V34_FRIEND_FEEDBACK
-pub const PROTOCOL_VERSION: u16 = 29;
+pub const PROTOCOL_VERSION: u16 = 30;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -56,6 +56,10 @@ pub enum ClientMessage {
     },
     AttackRequest {
         target_id: game_types::EntityId,
+    },
+    UseAbility {
+        ability_id: String,
+        target_id: Option<game_types::EntityId>,
     },
     StartRuneCrafting {
         recipe_id: String,
@@ -266,6 +270,12 @@ pub enum ServerMessage {
         damage: u16,
         cooldown_ms: u64,
     },
+    AbilityUsed {
+        player_id: game_types::EntityId,
+        ability_id: String,
+        cooldown_ms: u64,
+        duration_ms: u64,
+    },
     AreaTelegraph {
         source_id: game_types::EntityId,
         position: Position,
@@ -333,6 +343,8 @@ pub enum ServerMessage {
         sword_tries: u32,
         distance_skill: u16,
         distance_tries: u32,
+        shielding_skill: u16,
+        shielding_tries: u32,
         fletching_skill: u16,
         fletching_tries: u32,
         magic_level: u16,

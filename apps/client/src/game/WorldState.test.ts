@@ -9,7 +9,7 @@ function player(at: Position): PlayerView {
     id: "local", name: "Traveler", outfit: "knight", secondarySkills: [], position: at,
     health: 100, maxHealth: 100, level: 1, experience: 0,
     mana: 20, maxMana: 20, swordSkill: 0, swordTries: 0,
-    distanceSkill: 0, distanceTries: 0, fletchingSkill: 0,
+    distanceSkill: 0, distanceTries: 0, shieldingSkill: 10, shieldingTries: 0, fletchingSkill: 0,
     fletchingTries: 0, magicLevel: 0, magicTries: 0,
   };
 }

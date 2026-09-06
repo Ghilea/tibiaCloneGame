@@ -1,6 +1,6 @@
 // TIBIAGAME_STREAMING_FIX_V9
 // TIBIAGAME_V34_FRIEND_FEEDBACK
-export const PROTOCOL_VERSION = 29;
+export const PROTOCOL_VERSION = 30;
 export const CLIENT_VERSION = "0.1.2";
 
 export type Position = { x: number; y: number; z: number };
@@ -20,6 +20,8 @@ export type PlayerView = {
   swordTries: number;
   distanceSkill: number;
   distanceTries: number;
+  shieldingSkill: number;
+  shieldingTries: number;
   fletchingSkill: number;
   fletchingTries: number;
   magicLevel: number;
@@ -80,6 +82,7 @@ export type ClientMessage =
   | { type: "move_item"; instance_id: string; destination: { kind: "root" } | { kind: "container"; container_id: string } | { kind: "equipment"; slot: string } }
   | { type: "split_item"; instance_id: string; quantity: number }
   | { type: "attack_request"; target_id: string }
+  | { type: "use_ability"; ability_id: string; target_id?: string }
   | { type: "start_rune_crafting"; recipe_id: string; quantity: number }
   | { type: "cancel_rune_crafting" }
   | { type: "use_item"; instance_id: string; target_id: string }
@@ -123,6 +126,7 @@ export type ServerMessage =
   | { type: "ground_items_changed"; ground_items: GroundItem[] }
   | { type: "food_status"; player_id: string; remaining_ms: number }
   | { type: "combat_effect"; source_id: string; target_id: string; effect_id: string; damage: number; cooldown_ms: number }
+  | { type: "ability_used"; player_id: string; ability_id: string; cooldown_ms: number; duration_ms: number }
   | { type: "area_telegraph"; source_id: string; position: Position; effect_id: string; radius: number; duration_ms: number }
   | { type: "trade_requested"; trade_id: string; requester: PlayerView }
   | { type: "trade_state"; trade_id: string; partner: PlayerView; your_offer: ItemInstance[]; their_offer: ItemInstance[]; you_confirmed: boolean; partner_confirmed: boolean; status: "pending" | "active" }
@@ -132,7 +136,7 @@ export type ServerMessage =
   | { type: "creature_state_changed"; creature_id: string; state: string; immune: boolean; health: number; max_health: number }
   | { type: "creature_damaged"; creature_id: string; health: number; max_health: number; damage: number }
   | { type: "creature_died"; creature_id: string; killer_id: string; experience: number }
-  | { type: "player_stats_changed"; player_id: string; health: number; max_health: number; level: number; experience: number; mana: number; max_mana: number; sword_skill: number; sword_tries: number; distance_skill: number; distance_tries: number; fletching_skill: number; fletching_tries: number; magic_level: number; magic_tries: number; max_capacity: number }
+  | { type: "player_stats_changed"; player_id: string; health: number; max_health: number; level: number; experience: number; mana: number; max_mana: number; sword_skill: number; sword_tries: number; distance_skill: number; distance_tries: number; shielding_skill: number; shielding_tries: number; fletching_skill: number; fletching_tries: number; magic_level: number; magic_tries: number; max_capacity: number }
   | { type: "rune_crafting_changed"; player_id: string; recipe_id: string | null; remaining: number; status: string }
   | { type: "player_died"; player_id: string; killer_id: string }
   | { type: "error"; code: string; message: string };

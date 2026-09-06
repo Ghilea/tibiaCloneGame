@@ -112,22 +112,48 @@ function discoverPatch() {
   return candidates[0];
 }
 
-function executable(name) {
-  if (process.platform === "win32" && name === "npm") return "npm.cmd";
-  if (process.platform === "win32" && name === "npx") return "npx.cmd";
-  return name;
+// TIBIAGAME_PATCH_RUNNER_V1_1_WINDOWS_CMD
+function commandInvocation(command, commandArgs) {
+  if (
+    process.platform === "win32"
+    && (command.toLowerCase() === "npm" || command.toLowerCase() === "npx")
+  ) {
+    const shell = process.env.ComSpec || "cmd.exe";
+    return {
+      executable: shell,
+      args: ["/d", "/s", "/c", [command, ...commandArgs].join(" ")],
+    };
+  }
+
+  return { executable: command, args: commandArgs };
 }
 
 function run(command, commandArgs, label) {
   console.log("\n> " + command + " " + commandArgs.join(" "));
+  const invocation = commandInvocation(command, commandArgs);
+
   try {
-    execFileSync(executable(command), commandArgs, {
+    execFileSync(invocation.executable, invocation.args, {
       cwd: root,
       stdio: "inherit",
       windowsHide: false,
     });
   } catch (error) {
-    fail(label + " failed. No later validation steps were run.");
+    const detail =
+      error && typeof error === "object"
+        ? [
+            "code" in error && error.code ? "code=" + error.code : "",
+            "errno" in error && error.errno ? "errno=" + error.errno : "",
+            "syscall" in error && error.syscall ? "syscall=" + error.syscall : "",
+          ].filter(Boolean).join(" · ")
+        : "";
+
+    fail(
+      label
+      + " failed."
+      + (detail ? " (" + detail + ")" : "")
+      + " No later validation steps were run.",
+    );
   }
 }
 

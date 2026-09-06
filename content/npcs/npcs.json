@@ -15,295 +15,385 @@
         "id": "blank_sigil",
         "itemDefinitionId": "blank_rune",
         "quantity": 1,
-        "price": 2
+        "price": 3
       },
       {
         "id": "rough_arrows",
         "itemDefinitionId": "rough_arrow",
         "quantity": 10,
-        "price": 3
+        "price": 6
       },
       {
         "id": "field_bread",
         "itemDefinitionId": "field_bread",
         "quantity": 2,
-        "price": 3
+        "price": 4
       },
       {
         "id": "worn_cap",
         "itemDefinitionId": "worn_cap",
         "quantity": 1,
-        "price": 3
+        "price": 6
       },
       {
         "id": "patched_tunic",
         "itemDefinitionId": "patched_tunic",
         "quantity": 1,
-        "price": 6
+        "price": 12
       },
       {
         "id": "frayed_trousers",
         "itemDefinitionId": "frayed_trousers",
         "quantity": 1,
-        "price": 4
+        "price": 9
       },
       {
         "id": "work_boots",
         "itemDefinitionId": "work_boots",
         "quantity": 1,
-        "price": 4
+        "price": 9
       },
       {
         "id": "wooden_buckler",
         "itemDefinitionId": "wooden_buckler",
         "quantity": 1,
-        "price": 5
+        "price": 12
       },
       {
         "id": "iron_pickaxe",
         "itemDefinitionId": "iron_pickaxe",
         "quantity": 1,
-        "price": 12
+        "price": 30
       },
       {
         "id": "health_tonic_offer",
         "itemDefinitionId": "health_tonic",
         "quantity": 1,
-        "price": 7
+        "price": 12
       },
       {
         "id": "antidote_vial_offer",
         "itemDefinitionId": "antidote_vial",
         "quantity": 1,
-        "price": 6
+        "price": 10
       },
       {
         "id": "bandage_roll_offer",
         "itemDefinitionId": "bandage_roll",
         "quantity": 1,
-        "price": 5
+        "price": 8
       },
       {
         "id": "dried_rations_offer",
         "itemDefinitionId": "dried_rations",
         "quantity": 2,
-        "price": 5
+        "price": 6
       },
       {
         "id": "iron_dagger_offer",
         "itemDefinitionId": "iron_dagger",
         "quantity": 1,
-        "price": 9
+        "price": 16
       },
       {
         "id": "hunting_spear_offer",
         "itemDefinitionId": "hunting_spear",
         "quantity": 1,
-        "price": 10
+        "price": 22
       },
       {
         "id": "woodsman_hatchet_offer",
         "itemDefinitionId": "woodsman_hatchet",
         "quantity": 1,
-        "price": 11
+        "price": 22
       },
       {
         "id": "oak_staff_offer",
         "itemDefinitionId": "oak_staff",
         "quantity": 1,
-        "price": 11
+        "price": 20
       },
       {
         "id": "traveler_cloak_offer",
         "itemDefinitionId": "traveler_cloak",
         "quantity": 1,
-        "price": 10
+        "price": 18
       },
       {
         "id": "leather_jerkin_offer",
         "itemDefinitionId": "leather_jerkin",
         "quantity": 1,
-        "price": 14
+        "price": 34
       },
       {
         "id": "stitched_leggings_offer",
         "itemDefinitionId": "stitched_leggings",
         "quantity": 1,
-        "price": 9
+        "price": 24
       },
       {
         "id": "round_kite_shield_offer",
         "itemDefinitionId": "round_kite_shield",
         "quantity": 1,
-        "price": 14
+        "price": 36
       },
       {
         "id": "chain_coif_offer",
         "itemDefinitionId": "chain_coif",
         "quantity": 1,
-        "price": 16
+        "price": 30
       },
       {
         "id": "bronze_ring_offer",
         "itemDefinitionId": "bronze_ring",
         "quantity": 1,
-        "price": 10
+        "price": 12
       },
       {
         "id": "bone_amulet_offer",
         "itemDefinitionId": "bone_amulet",
         "quantity": 1,
-        "price": 12
+        "price": 18
       },
       {
         "id": "lantern_oil_offer",
         "itemDefinitionId": "lantern_oil",
         "quantity": 1,
-        "price": 6
+        "price": 5
       },
       {
         "id": "fishhook_bundle_offer",
         "itemDefinitionId": "fishhook_bundle",
         "quantity": 5,
-        "price": 3
+        "price": 4
       },
       {
         "id": "lockpick_set_offer",
         "itemDefinitionId": "lockpick_set",
         "quantity": 1,
-        "price": 15
+        "price": 20
       },
       {
         "id": "duelist_blade_offer",
         "itemDefinitionId": "duelist_blade",
         "quantity": 1,
-        "price": 18
+        "price": 36
       },
       {
         "id": "parrying_dagger_offer",
         "itemDefinitionId": "parrying_dagger",
         "quantity": 1,
-        "price": 11
+        "price": 20
       },
       {
         "id": "corsair_cutlass_offer",
         "itemDefinitionId": "corsair_cutlass",
         "quantity": 1,
-        "price": 22
+        "price": 50
       },
       {
         "id": "stiletto_offer",
         "itemDefinitionId": "stiletto",
         "quantity": 1,
-        "price": 9
+        "price": 14
       },
       {
         "id": "raider_hatchet_offer",
         "itemDefinitionId": "raider_hatchet",
         "quantity": 1,
-        "price": 19
+        "price": 42
       },
       {
         "id": "hook_sabre_offer",
         "itemDefinitionId": "hook_sabre",
         "quantity": 1,
-        "price": 21
+        "price": 48
       },
       {
         "id": "fishing_rod_offer",
         "itemDefinitionId": "fishing_rod",
         "quantity": 1,
-        "price": 16
+        "price": 24
       },
       {
         "id": "tackle_box_offer",
         "itemDefinitionId": "tackle_box",
         "quantity": 1,
-        "price": 18
+        "price": 20
       },
       {
         "id": "bait_bucket_offer",
         "itemDefinitionId": "bait_bucket",
         "quantity": 1,
-        "price": 10
+        "price": 12
       },
       {
         "id": "miner_pickhammer_offer",
         "itemDefinitionId": "miner_pickhammer",
         "quantity": 1,
-        "price": 20
+        "price": 34
       },
       {
         "id": "smith_tongs_offer",
         "itemDefinitionId": "smith_tongs",
         "quantity": 1,
-        "price": 9
+        "price": 16
       },
       {
         "id": "skinning_knife_offer",
         "itemDefinitionId": "skinning_knife",
         "quantity": 1,
-        "price": 8
+        "price": 14
       },
       {
         "id": "flint_and_steel_offer",
         "itemDefinitionId": "flint_and_steel",
         "quantity": 1,
-        "price": 5
+        "price": 6
       },
       {
         "id": "grappling_hook_offer",
         "itemDefinitionId": "grappling_hook",
         "quantity": 1,
-        "price": 18
+        "price": 24
       },
       {
         "id": "hand_torch_offer",
         "itemDefinitionId": "hand_torch",
         "quantity": 1,
-        "price": 7
+        "price": 8
       },
       {
         "id": "hooded_lantern_offer",
         "itemDefinitionId": "hooded_lantern",
         "quantity": 1,
-        "price": 15
+        "price": 18
       },
       {
         "id": "rope_coil_offer",
         "itemDefinitionId": "rope_coil",
         "quantity": 1,
-        "price": 11
+        "price": 14
       },
       {
         "id": "repair_kit_offer",
         "itemDefinitionId": "repair_kit",
         "quantity": 1,
-        "price": 14
+        "price": 18
       },
       {
         "id": "whetstone_offer",
         "itemDefinitionId": "whetstone",
         "quantity": 1,
-        "price": 6
+        "price": 7
       },
       {
         "id": "bedroll_offer",
         "itemDefinitionId": "bedroll",
         "quantity": 1,
-        "price": 12
+        "price": 14
       },
       {
         "id": "waterskin_offer",
         "itemDefinitionId": "waterskin",
         "quantity": 1,
-        "price": 8
+        "price": 9
       },
       {
         "id": "candle_bundle_offer",
         "itemDefinitionId": "candle_bundle",
         "quantity": 1,
+        "price": 5
+      },
+      {
+        "id": "v3510_field_backpack",
+        "itemDefinitionId": "field_backpack",
+        "quantity": 1,
+        "price": 28
+      },
+      {
+        "id": "v3510_mana_tonic",
+        "itemDefinitionId": "mana_tonic",
+        "quantity": 1,
+        "price": 12
+      },
+      {
+        "id": "v3510_shovel",
+        "itemDefinitionId": "shovel",
+        "quantity": 1,
+        "price": 18
+      },
+      {
+        "id": "v3510_leather_satchel",
+        "itemDefinitionId": "leather_satchel",
+        "quantity": 1,
+        "price": 16
+      },
+      {
+        "id": "v3510_traveler_blade",
+        "itemDefinitionId": "traveler_blade",
+        "quantity": 1,
+        "price": 26
+      },
+      {
+        "id": "v3510_ashwood_bow",
+        "itemDefinitionId": "ashwood_bow",
+        "quantity": 1,
+        "price": 48
+      },
+      {
+        "id": "v3510_iron_short_sword",
+        "itemDefinitionId": "iron_short_sword",
+        "quantity": 1,
+        "price": 46
+      },
+      {
+        "id": "v3510_iron_battle_axe",
+        "itemDefinitionId": "iron_battle_axe",
+        "quantity": 1,
+        "price": 64
+      },
+      {
+        "id": "v3510_iron_war_hammer",
+        "itemDefinitionId": "iron_war_hammer",
+        "quantity": 1,
+        "price": 82
+      },
+      {
+        "id": "v3510_ironbound_shield",
+        "itemDefinitionId": "ironbound_shield",
+        "quantity": 1,
+        "price": 66
+      },
+      {
+        "id": "v3510_iron_helmet",
+        "itemDefinitionId": "iron_helmet",
+        "quantity": 1,
+        "price": 50
+      },
+      {
+        "id": "v3510_studded_armor",
+        "itemDefinitionId": "studded_armor",
+        "quantity": 1,
+        "price": 88
+      },
+      {
+        "id": "v3510_reinforced_boots",
+        "itemDefinitionId": "reinforced_boots",
+        "quantity": 1,
+        "price": 36
+      },
+      {
+        "id": "v3510_red_apple",
+        "itemDefinitionId": "red_apple",
+        "quantity": 3,
         "price": 4
+      },
+      {
+        "id": "v3510_smoked_mire_meat",
+        "itemDefinitionId": "smoked_mire_meat",
+        "quantity": 1,
+        "price": 7
       }
     ],
     "spellIds": [],
@@ -388,7 +478,20 @@
       "forge_warden_plate_armor",
       "forge_warden_core_hammer",
       "bind_reed_sinew_bow",
-      "bind_acolyte_focus_amulet"
+      "bind_acolyte_focus_amulet",
+      "forge_iron_dagger",
+      "forge_iron_short_sword",
+      "forge_iron_helmet",
+      "forge_iron_battle_axe",
+      "forge_ironbound_shield",
+      "forge_iron_war_hammer",
+      "stitch_leather_jerkin",
+      "stitch_work_leggings",
+      "stitch_reinforced_boots",
+      "stitch_field_backpack",
+      "brew_health_tonic",
+      "brew_mana_tonic",
+      "cook_dried_rations"
     ]
   }
 ]

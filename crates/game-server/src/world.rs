@@ -84,6 +84,8 @@ pub struct Player {
     pub last_attack: Instant,
     pub last_item_use: Instant,
     pub last_spell_cast: Instant,
+    pub ability_cooldowns: HashMap<String, Instant>,
+    pub shield_guard_until: Option<Instant>,
     pub learned_spells: HashSet<String>,
     pub learned_recipes: HashSet<String>,
     pub profession_skills: HashMap<String, (u16, u32)>,
@@ -151,6 +153,7 @@ pub struct CraftingUpdate {
 }
 
 // TIBIAGAME_V35B_PROGRESSION_PERSISTENCE_SIGILS
+// TIBIAGAME_V35_8_CAPACITY_REBALANCE
 /// Classless baseline resources grow evenly with character level.
 pub fn max_health_for_level(level: u32) -> u16 {
     let bonus = level.saturating_sub(1).saturating_mul(5);
@@ -162,9 +165,12 @@ pub fn max_mana_for_level(level: u32) -> u16 {
     50_u32.saturating_add(bonus).min(u32::from(u16::MAX)) as u16
 }
 
-/// Carry capacity starts at 100 and grows by 10 weight per level.
+/// Classless carry capacity starts roomy enough for a complete early gear
+/// set plus supplies, then grows steadily with every character level.
+///
+/// Backpack capacity remains a separate bonus in carry_capacity().
 pub fn capacity_for_level(level: u32) -> f32 {
-    100.0 + level.saturating_sub(1) as f32 * 10.0
+    200.0 + level.saturating_sub(1) as f32 * 12.0
 }
 
 // TIBIAGAME_RESOURCE_GATHERING_V31_C
@@ -1367,6 +1373,12 @@ pub enum WorldEvent {
         damage: u16,
         cooldown_ms: u64,
     },
+    AbilityUsed {
+        player_id: EntityId,
+        ability_id: String,
+        cooldown_ms: u64,
+        duration_ms: u64,
+    },
     AreaTelegraph {
         source_id: EntityId,
         position: Position,
@@ -2214,13 +2226,19 @@ impl World {
             .item(&item.definition_id)
             .cloned()
             .ok_or("sale_item_not_found")?;
-        let unit_price = npc
-            .offers
-            .iter()
-            .find(|offer| offer.item_definition_id == item.definition_id)
-            .map(|offer| u32::from(offer.price) / 2)
-            .unwrap_or_else(|| (definition.weight.ceil() as u32).max(1));
-        let total = unit_price.saturating_mul(u32::from(quantity)).max(1);
+        let unit_price = npc_vendor_sell_price(&item.definition_id)
+            .or_else(|| {
+                npc.offers
+                    .iter()
+                    .find(|offer| {
+                        offer.item_definition_id == item.definition_id
+                            && offer.quantity == 1
+                            && offer.price >= 3
+                    })
+                    .map(|offer| (u32::from(offer.price) * 2 / 5).max(1))
+            })
+            .ok_or("item_not_sellable")?;
+        let total = unit_price.saturating_mul(u32::from(quantity));
         let mut inventory = player.inventory.clone();
         let item_index = inventory
             .iter()
@@ -3920,6 +3938,94 @@ impl World {
         Ok(split_id)
     }
 
+    // TIBIAGAME_V35_9_SKILLS_SHIELDING_ABILITIES
+    pub fn try_use_ability(
+        &mut self,
+        player_id: EntityId,
+        ability_id: &str,
+        _target_id: Option<EntityId>,
+    ) -> Result<Vec<WorldEvent>, &'static str> {
+        let now = Instant::now();
+
+        match ability_id {
+            "second_wind" => {
+                let player = self.players.get_mut(&player_id).ok_or("unknown_player")?;
+                if player
+                    .ability_cooldowns
+                    .get(ability_id)
+                    .is_some_and(|until| *until > now)
+                {
+                    return Err("ability_cooldown");
+                }
+                if player.view.health >= player.view.max_health {
+                    return Err("already_full_health");
+                }
+
+                let heal = (player.view.max_health / 5).max(15);
+                player.view.health = player
+                    .view
+                    .health
+                    .saturating_add(heal)
+                    .min(player.view.max_health);
+
+                const COOLDOWN_MS: u64 = 45_000;
+                player.ability_cooldowns.insert(
+                    ability_id.to_owned(),
+                    now + Duration::from_millis(COOLDOWN_MS),
+                );
+
+                Ok(vec![
+                    WorldEvent::AbilityUsed {
+                        player_id,
+                        ability_id: ability_id.to_owned(),
+                        cooldown_ms: COOLDOWN_MS,
+                        duration_ms: 0,
+                    },
+                    WorldEvent::PlayerStats(player.view.clone()),
+                ])
+            }
+            "shield_guard" => {
+                let has_shield = self
+                    .players
+                    .get(&player_id)
+                    .ok_or("unknown_player")?
+                    .inventory
+                    .iter()
+                    .filter(|item| item.equipped_slot.as_deref() == Some("offhand"))
+                    .filter_map(|item| self.content.item(&item.definition_id))
+                    .any(|definition| definition.defense.unwrap_or(0) > 0);
+                if !has_shield {
+                    return Err("shield_required");
+                }
+
+                let player = self.players.get_mut(&player_id).ok_or("unknown_player")?;
+                if player
+                    .ability_cooldowns
+                    .get(ability_id)
+                    .is_some_and(|until| *until > now)
+                {
+                    return Err("ability_cooldown");
+                }
+
+                const COOLDOWN_MS: u64 = 12_000;
+                const DURATION_MS: u64 = 4_000;
+                player.shield_guard_until = Some(now + Duration::from_millis(DURATION_MS));
+                player.ability_cooldowns.insert(
+                    ability_id.to_owned(),
+                    now + Duration::from_millis(COOLDOWN_MS),
+                );
+
+                Ok(vec![WorldEvent::AbilityUsed {
+                    player_id,
+                    ability_id: ability_id.to_owned(),
+                    cooldown_ms: COOLDOWN_MS,
+                    duration_ms: DURATION_MS,
+                }])
+            }
+            _ => Err("unknown_ability"),
+        }
+    }
+
     pub fn try_attack(
         &mut self,
         player_id: EntityId,
@@ -4656,29 +4762,53 @@ impl World {
         events: &mut Vec<WorldEvent>,
     ) -> u16 {
         let respawn_position = self.player_spawn();
-        let total_defense: u16 = self
+        let now = Instant::now();
+        let (total_defense, has_shield, shielding_skill, guard_active) = self
             .players
             .get(&player_id)
             .map(|player| {
-                player
-                    .inventory
-                    .iter()
-                    .filter(|item| item.equipped_slot.is_some())
-                    .filter_map(|item| {
-                        self.content
-                            .item(&item.definition_id)
-                            .and_then(|definition| definition.defense)
-                    })
-                    .sum()
+                let mut total_defense = 0_u16;
+                let mut has_shield = false;
+                for item in &player.inventory {
+                    if item.equipped_slot.is_none() {
+                        continue;
+                    }
+                    let Some(definition) = self.content.item(&item.definition_id) else {
+                        continue;
+                    };
+                    let defense = definition.defense.unwrap_or(0);
+                    total_defense = total_defense.saturating_add(defense);
+                    if item.equipped_slot.as_deref() == Some("offhand") && defense > 0 {
+                        has_shield = true;
+                    }
+                }
+                (
+                    total_defense,
+                    has_shield,
+                    player.view.shielding_skill,
+                    player.shield_guard_until.is_some_and(|until| until > now),
+                )
             })
-            .unwrap_or(0);
-        // Four defense points reduce incoming creature damage by one.
-        // A hit always deals at least one damage, so armor never grants immunity.
-        let damage = damage.saturating_sub(total_defense / 4).max(1);
+            .unwrap_or((0, false, 0, false));
+
+        // Armor remains the baseline. A real defensive off-hand also benefits
+        // from Shielding, and Shield Guard briefly multiplies the remaining hit.
+        let shielding_reduction = if has_shield { shielding_skill / 20 } else { 0 };
+        let mut damage = damage
+            .saturating_sub(total_defense / 4)
+            .saturating_sub(shielding_reduction)
+            .max(1);
+        if has_shield && guard_active {
+            damage = (((u32::from(damage) * 65) + 99) / 100).max(1) as u16;
+        }
+
         let (previous_position, current_position, view) = {
             let Some(player) = self.players.get_mut(&player_id) else {
                 return 0;
             };
+            if has_shield {
+                advance_player_skill(&mut player.view, TrainedSkill::Shielding, 1);
+            }
             let previous_position = player.view.position;
             if damage >= player.view.health {
                 player.view.health = player.view.max_health;
@@ -5005,6 +5135,7 @@ fn advance_skill(level: &mut u16, tries: &mut u32, amount: u32) -> bool {
 enum TrainedSkill {
     Melee,
     Distance,
+    Shielding,
     Fletching,
     Magic,
 }
@@ -5018,6 +5149,10 @@ fn advance_player_skill(player: &mut PlayerView, skill: TrainedSkill, amount: u3
         TrainedSkill::Distance => (
             player.distance_skill,
             player.distance_tries.saturating_add(amount),
+        ),
+        TrainedSkill::Shielding => (
+            player.shielding_skill,
+            player.shielding_tries.saturating_add(amount),
         ),
         TrainedSkill::Fletching => (
             player.fletching_skill,
@@ -5037,6 +5172,7 @@ fn advance_player_skill(player: &mut PlayerView, skill: TrainedSkill, amount: u3
         let spent = mastery_spent([
             player.sword_skill,
             player.distance_skill,
+            player.shielding_skill,
             player.fletching_skill,
             player.magic_level,
         ]);
@@ -5060,6 +5196,10 @@ fn advance_player_skill(player: &mut PlayerView, skill: TrainedSkill, amount: u3
         TrainedSkill::Distance => {
             player.distance_skill = next_level;
             player.distance_tries = next_tries;
+        }
+        TrainedSkill::Shielding => {
+            player.shielding_skill = next_level;
+            player.shielding_tries = next_tries;
         }
         TrainedSkill::Fletching => {
             player.fletching_skill = next_level;
@@ -5280,6 +5420,123 @@ fn deterministic_hash(id: EntityId, salt: u64) -> u64 {
 
 fn deterministic_roll(id: EntityId, salt: u64) -> f32 {
     (deterministic_hash(id, salt) % 10_000) as f32 / 10_000.0
+}
+
+// TIBIAGAME_V35_10_SHIELDING_UI_ECONOMY
+fn npc_vendor_sell_price(definition_id: &str) -> Option<u32> {
+    Some(match definition_id {
+        "blank_rune" => 1,
+        "traveler_blade" => 12,
+        "ashwood_bow" => 24,
+        "field_backpack" => 18,
+        "mire_fiber" => 1,
+        "field_bread" => 1,
+        "smoked_mire_meat" => 3,
+        "bog_ichor" => 5,
+        "reed_hide" => 3,
+        "fen_tusk" => 6,
+        "worn_cap" => 2,
+        "patched_tunic" => 5,
+        "frayed_trousers" => 3,
+        "work_boots" => 3,
+        "wooden_buckler" => 5,
+        "iron_pickaxe" => 14,
+        "copper_ore" => 2,
+        "iron_ore" => 4,
+        "coal_chunk" => 2,
+        "healing_herbs" => 2,
+        "rope_bundle" => 2,
+        "shovel" => 7,
+        "leather_satchel" => 7,
+        "iron_short_sword" => 32,
+        "red_apple" => 1,
+        "iron_battle_axe" => 42,
+        "iron_war_hammer" => 55,
+        "ironbound_shield" => 45,
+        "iron_helmet" => 34,
+        "studded_armor" => 44,
+        "reinforced_boots" => 18,
+        "emerald_ring" => 18,
+        "ember_amulet" => 20,
+        "mana_tonic" => 5,
+        "iron_dagger" => 12,
+        "rusty_mace" => 8,
+        "hunting_spear" => 9,
+        "woodsman_hatchet" => 9,
+        "oak_staff" => 8,
+        "traveler_cloak" => 7,
+        "chain_coif" => 14,
+        "leather_jerkin" => 26,
+        "stitched_leggings" => 21,
+        "round_kite_shield" => 16,
+        "bronze_ring" => 4,
+        "bone_amulet" => 6,
+        "health_tonic" => 5,
+        "antidote_vial" => 4,
+        "bandage_roll" => 3,
+        "dried_rations" => 2,
+        "tin_ore" => 3,
+        "copper_ingot" => 5,
+        "tin_ingot" => 6,
+        "iron_ingot" => 9,
+        "beast_claw" => 4,
+        "spider_silk" => 4,
+        "mandrake_root" => 5,
+        "wolf_pelt" => 6,
+        "lantern_oil" => 2,
+        "raw_hide" => 4,
+        "duelist_blade" => 15,
+        "parrying_dagger" => 8,
+        "corsair_cutlass" => 21,
+        "stiletto" => 5,
+        "raider_hatchet" => 18,
+        "hook_sabre" => 20,
+        "fishing_rod" => 8,
+        "miner_pickhammer" => 12,
+        "smith_tongs" => 5,
+        "skinning_knife" => 5,
+        "grappling_hook" => 8,
+        "hooded_lantern" => 7,
+        "rope_coil" => 5,
+        "repair_kit" => 6,
+        "whetstone" => 2,
+        "rat_tail" => 1,
+        "rat_pelt" => 2,
+        "mire_gland" => 3,
+        "mire_spore_cluster" => 2,
+        "skulker_venom_sac" => 7,
+        "skulker_scale" => 3,
+        "reed_sinew" => 3,
+        "stalker_claw" => 7,
+        "fen_brute_hide" => 8,
+        "fen_brute_bone" => 7,
+        "crypt_bone_shard" => 5,
+        "grave_dust" => 4,
+        "acolyte_focus_shard" => 9,
+        "warden_core" => 30,
+        "warden_plate_fragment" => 16,
+        "mire_recovery_tonic" => 7,
+        "purifying_tonic" => 9,
+        "fen_marrow_stew" => 8,
+        "graveward_tonic" => 12,
+        "focus_draught" => 14,
+        "warden_glow_charm" => 42,
+        "rat_pelt_cap" => 9,
+        "mireweave_cloak" => 18,
+        "skulker_scale_vest" => 36,
+        "fenhide_leggings" => 30,
+        "fenhide_boots" => 24,
+        "cryptbone_buckler" => 40,
+        "warden_plate_helmet" => 95,
+        "warden_plate_armor" => 200,
+        "warden_plate_shield" => 150,
+        "stalker_claw_blade" => 38,
+        "fenbone_maul" => 52,
+        "reed_sinew_bow" => 48,
+        "acolyte_focus_amulet" => 45,
+        "warden_core_hammer" => 110,
+        _ => return None,
+    })
 }
 
 fn within_reach(origin: Position, target: Position) -> bool {
@@ -5623,9 +5880,9 @@ mod tests {
 
     #[test]
     fn carry_capacity_grows_with_level() {
-        assert_eq!(capacity_for_level(1), 100.0);
-        assert_eq!(capacity_for_level(10), 190.0);
-        assert_eq!(capacity_for_level(50), 590.0);
+        assert_eq!(capacity_for_level(1), 200.0);
+        assert_eq!(capacity_for_level(10), 308.0);
+        assert_eq!(capacity_for_level(50), 788.0);
     }
     use game_types::{CreatureAttack, CreatureDefinition, LootEntry, RuneRecipe};
     use uuid::Uuid;
@@ -5672,6 +5929,8 @@ mod tests {
                 sword_tries: 0,
                 distance_skill: 10,
                 distance_tries: 0,
+                shielding_skill: 10,
+                shielding_tries: 0,
                 fletching_skill: 0,
                 fletching_tries: 0,
                 magic_level: 0,
@@ -5684,6 +5943,8 @@ mod tests {
             last_attack: Instant::now() - PLAYER_ATTACK_COOLDOWN,
             last_item_use: Instant::now() - Duration::from_secs(1),
             last_spell_cast: Instant::now() - Duration::from_secs(1),
+            ability_cooldowns: HashMap::new(),
+            shield_guard_until: None,
             learned_spells: HashSet::new(),
             learned_recipes: ["mark_ember_sigil".into(), "fletch_rough_arrows".into()]
                 .into_iter()

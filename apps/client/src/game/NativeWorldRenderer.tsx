@@ -71,6 +71,7 @@ const NATIVE_CAMERA_ZOOM = 90;
 // TIBIAGAME_NATIVE_RENDERER_V31_B_4_2
 // TIBIAGAME_NATIVE_RENDERER_V31_C
 // TIBIAGAME_NATIVE_RENDERER_V31_C_1_1
+// TIBIAGAME_V35_6_GPU_WARMUP_STAGING
 // Authored low-poly world-prop and copper-vein GLBs. Static prop families stay
 // instanced; resource GLBs use persistent dynamic instance sets.
 // Native day/night atmosphere using the existing shared worldEnvironment()
@@ -2948,9 +2949,12 @@ function initializeNativeLoadedAssetTextures(
     if (atlas.normal) textures.add(atlas.normal);
   }
 
-  for (const texture of textures) {
-    renderer.initTexture(texture);
-  }
+  // V35.6: do not synchronously upload every loaded texture here.
+  // Shader programs are still precompiled below, while texture upload is
+  // naturally staged by the first visible uses of each material family.
+  // Keeping this helper's texture collection gives us an accurate diagnostic
+  // count without forcing 42+ GPU uploads into one blocking startup task.
+  void renderer;
 
   return textures.size;
 }
@@ -7334,8 +7338,10 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       copperVeinDepletedLayer.setTransforms([nativeWarmupTransform]);
 
       nextRenderer.compile(scene, camera);
-      nextRenderer.render(scene, camera);
 
+      // V35.6: compile programs only. A hidden full render here used to bind
+      // and upload every dummy layer texture in one enormous startup burst.
+      // Visible scene construction below is already staged across frames.
       for (const layer of Object.values(layers)) {
         layer.setTransforms([]);
       }
@@ -7358,9 +7364,9 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       copperVeinDepletedLayer.setTransforms([]);
 
       console.info(
-        `NATIVE V31B.2 GPU warmup: ${
+        `NATIVE V35.6 shader warmup: ${
           (performance.now() - nativeGpuWarmupStartedAt).toFixed(1)
-        }ms · ${nativeWarmupTextureCount} textures`,
+        }ms · ${nativeWarmupTextureCount} textures deferred`,
       );
 
       // Instantiate actors already present in the first streamed region before

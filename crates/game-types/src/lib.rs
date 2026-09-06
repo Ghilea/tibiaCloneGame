@@ -24,11 +24,11 @@ pub fn skill_mastery_cost(level: u16) -> u16 {
     first.saturating_add(second).saturating_add(final_tier)
 }
 
-pub fn mastery_spent(skill_levels: [u16; 4]) -> u16 {
+pub fn mastery_spent<const N: usize>(skill_levels: [u16; N]) -> u16 {
     skill_levels.into_iter().map(skill_mastery_cost).sum()
 }
 
-pub fn normalize_mastery(skill_levels: &mut [u16; 4]) {
+pub fn normalize_mastery<const N: usize>(skill_levels: &mut [u16; N]) {
     for level in skill_levels.iter_mut() {
         *level = (*level).min(MAX_SKILL_LEVEL);
     }
@@ -115,6 +115,7 @@ pub struct AdventurerProfile {
     pub capacity: u16,
     pub sword_skill: u16,
     pub distance_skill: u16,
+    pub shielding_skill: u16,
     pub magic_level: u16,
 }
 
@@ -122,9 +123,10 @@ pub fn adventurer_profile() -> AdventurerProfile {
     AdventurerProfile {
         max_health: 150,
         max_mana: 50,
-        capacity: 100,
+        capacity: 200,
         sword_skill: 10,
         distance_skill: 10,
+        shielding_skill: 10,
         magic_level: 0,
     }
 }
@@ -309,6 +311,8 @@ pub struct PlayerView {
     pub sword_tries: u32,
     pub distance_skill: u16,
     pub distance_tries: u32,
+    pub shielding_skill: u16,
+    pub shielding_tries: u32,
     pub fletching_skill: u16,
     pub fletching_tries: u32,
     pub magic_level: u16,
@@ -432,7 +436,7 @@ mod tests {
         let profile = adventurer_profile();
         assert_eq!(profile.max_health, 150);
         assert_eq!(profile.max_mana, 50);
-        assert_eq!(profile.capacity, 100);
+        assert_eq!(profile.capacity, 200);
     }
 
     #[test]
