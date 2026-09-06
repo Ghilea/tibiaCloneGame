@@ -1,4 +1,5 @@
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+// TIBIAGAME_V35_3_IDLE_MAINTHREAD_FIXES
 import type { WorldState } from "../game/WorldState";
 import { effectiveMusicVolume, getAudioSettings, subscribeAudioSettings } from "./audioSettings";
 
@@ -61,16 +62,7 @@ export function MenuMusic() {
   return <MusicPlayer mood="menu" />;
 }
 
-export function WorldMusic({ world }: { world: WorldState }) {
-  useSyncExternalStore(
-    (listener) => {
-      const stopWorld = world.subscribe(listener);
-      const stopVisual = world.subscribeVisual(listener);
-      return () => { stopWorld(); stopVisual(); };
-    },
-    () => world.revision + world.visualRevision,
-  );
-
+function resolveWorldMusicMood(world: WorldState): MusicMood {
   const player = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
   const isInTown = player && (
     [...world.npcs.values()].some((npc) => npc.position.z === player.position.z
@@ -88,13 +80,27 @@ export function WorldMusic({ world }: { world: WorldState }) {
     && Math.abs(creature.position.x - player.position.x) <= 18
     && Math.abs(creature.position.y - player.position.y) <= 18
   );
-  const mood: MusicMood = world.attackTargetId
+  return world.attackTargetId
     ? "battle"
     : isInSwamp
       ? "swamp"
       : isInTown
         ? "town"
         : "wilderness";
+}
+
+export function WorldMusic({ world }: { world: WorldState }) {
+  const [mood, setMood] = useState<MusicMood>(() => resolveWorldMusicMood(world));
+
+  useEffect(() => {
+    const refresh = () => {
+      const next = resolveWorldMusicMood(world);
+      setMood((current) => current === next ? current : next);
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 400);
+    return () => window.clearInterval(timer);
+  }, [world]);
 
   return <MusicPlayer mood={mood} />;
 }

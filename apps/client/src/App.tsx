@@ -11,7 +11,7 @@ import {
   type PointerEvent,
 } from "react";
 import { ApiFailure, authenticate, checkServer, listCharacters } from "./api";
-import { CharacterLobby, CharacterPreview } from "./CharacterLobby";
+import { CharacterLobby } from "./CharacterLobby";
 import { MenuMusic, WorldMusic } from "./audio/WorldMusic";
 import { getAudioSettings, subscribeAudioSettings, updateAudioSettings } from "./audio/audioSettings";
 import { InputController } from "./game/InputController";
@@ -25,6 +25,10 @@ import { WorldState } from "./game/WorldState";
 import { isWorldTimePaused, setWorldTime, setWorldTimePaused, worldEnvironment, worldTimeLabel } from "./game/worldEnvironment";
 import { PROTOCOL_VERSION, type BuildingView, type CharacterOutfit, type GroundItem, type ItemDefinition, type ItemInstance, type PlayerView, type Position, type SecondarySkill } from "./protocol";
 // TIBIAGAME_V34_FIXSET_1
+// TIBIAGAME_V35_4_CHARACTER_PAPERDOLL
+// TIBIAGAME_V35_2_MAINTHREAD_OPTIMIZATION
+// TIBIAGAME_V35_3_IDLE_MAINTHREAD_FIXES
+// TIBIAGAME_V35_1_COMBAT_UI_FIXES
 
 const world = new WorldState();
 const network = new NetworkClient(world);
@@ -335,7 +339,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
   const [worldMapOpen, setWorldMapOpen] = useState(false);
   const [showInventoryCharacter, setShowInventoryCharacter] = useState(false);
   const [escapeMenu, setEscapeMenu] = useState(false);
-  const [showPerformance, setShowPerformance] = useState(() => loadStoredBoolean("aldoria.show-performance", true));
+  const [showPerformance, setShowPerformance] = useState(() => loadStoredBoolean("aldoria.show-performance", false));
   const [reducedMotion, setReducedMotion] = useState(() => loadStoredBoolean("aldoria.reduced-motion", false));
   const [sceneReady, setSceneReady] = useState(false);
   // TIBIAGAME_NATIVE_RENDERER_EXPERIMENT_V22
@@ -495,7 +499,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
     };
     window.addEventListener("keydown", listener, true);
     return () => window.removeEventListener("keydown", listener, true);
-  }, [actionSkills, emberSigil?.instanceId, escapeMenu, panel, world.attackTargetId, world.revision, worldMapOpen]);
+  }, [actionSkills, emberSigil?.instanceId, escapeMenu, panel, world.attackTargetId, worldMapOpen]);
   const local = world.localPlayerId
     ? world.players.get(world.localPlayerId)
     : null;
@@ -559,6 +563,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
       </section>
       <AreaTransition world={world} />
       <ReceivedItemToast />
+      <ItemHoverTooltip />
       <header className="world-header">
         <strong>Embers of Aldoria</strong>
         <span>
@@ -753,7 +758,14 @@ function AreaTransition({ world: gameWorld }: { world: WorldState }) {
       const stopVisual = gameWorld.subscribeVisual(listener);
       return () => { stopWorld(); stopVisual(); };
     },
-    () => `${gameWorld.revision}:${gameWorld.visualRevision}`,
+    () => {
+      const current = gameWorld.localPlayerId
+        ? gameWorld.players.get(gameWorld.localPlayerId)
+        : null;
+      return current
+        ? `${current.id}:${current.position.x}:${current.position.y}:${current.position.z}:${gameWorld.streamRegionRevision}`
+        : `none:${gameWorld.streamRegionRevision}`;
+    },
   );
   const player = gameWorld.localPlayerId ? gameWorld.players.get(gameWorld.localPlayerId) : null;
   const area = player && gameWorld.map ? resolveArea(player.position, gameWorld.map.buildings) : null;
@@ -829,7 +841,26 @@ function distanceToBuilding(position: Position, building: BuildingView) {
 }
 
 function NpcProximityGuard() {
-  useSyncExternalStore(subscribeWorldVisual, worldVisualSnapshot);
+  useSyncExternalStore(
+    (listener) => {
+      const stopWorld = world.subscribe(listener);
+      const stopVisual = world.subscribeVisual(listener);
+      return () => { stopWorld(); stopVisual(); };
+    },
+    () => {
+      const currentNpc = world.activeNpcId ? world.npcs.get(world.activeNpcId) : null;
+      const currentPlayer = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
+      return [
+        currentNpc?.id ?? "",
+        currentNpc?.position.x ?? -1,
+        currentNpc?.position.y ?? -1,
+        currentNpc?.position.z ?? -1,
+        currentPlayer?.position.x ?? -1,
+        currentPlayer?.position.y ?? -1,
+        currentPlayer?.position.z ?? -1,
+      ].join(":");
+    },
+  );
   const npc = world.activeNpcId ? world.npcs.get(world.activeNpcId) : null;
   const player = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
   useEffect(() => {
@@ -907,6 +938,21 @@ function NourishmentBar() {
   </div>;
 }
 function TargetFrame() {
+  useSyncExternalStore(
+    (listener) => {
+      const stopWorld = world.subscribe(listener);
+      const stopVisual = world.subscribeVisual(listener);
+      return () => { stopWorld(); stopVisual(); };
+    },
+    () => {
+      const creature = world.attackTargetId ? world.creatures.get(world.attackTargetId) : null;
+      const player = world.selectedPlayerId ? world.players.get(world.selectedPlayerId) : null;
+      const target = creature ?? player;
+      return target
+        ? [target.id, target.health, target.maxHealth, creature?.state ?? "player", creature?.immune ?? false].join(":")
+        : "none";
+    },
+  );
   const creature = world.attackTargetId
     ? world.creatures.get(world.attackTargetId)
     : null;
@@ -1151,6 +1197,14 @@ const itemSpriteOrder = [
 ];
 const standaloneItemSpriteIds = new Set(["iron_ore", "coal_chunk", "healing_herbs", "rope_bundle", "rusty_key", "shovel", "leather_satchel", "torch_bundle", "iron_short_sword", "red_apple", "blank_rune", "ember_rune", "traveler_blade", "ashwood_bow", "rough_arrow", "frost_rune", "venom_rune", "iron_battle_axe", "iron_war_hammer", "ironbound_shield", "iron_helmet", "studded_armor", "reinforced_boots", "emerald_ring", "ember_amulet", "mana_tonic", "copper_ore", "mire_fiber", "bog_ichor", "gold_coin", "reed_hide", "fen_tusk", "field_bread", "smoked_mire_meat", "field_backpack", "ember_sigil_formula", "iron_pickaxe", "wooden_buckler", "worn_cap", "patched_tunic", "frayed_trousers", "work_boots", "mireling_remains", "mire_skulker_remains", "reed_stalker_remains", "fen_brute_remains", "castle_rat_remains", "crypt_guard_remains", "bone_acolyte_remains", "cellar_warden_remains", "iron_dagger", "rusty_mace", "hunting_spear", "woodsman_hatchet", "oak_staff", "traveler_cloak", "chain_coif", "leather_jerkin", "stitched_leggings", "round_kite_shield", "bronze_ring", "bone_amulet", "spark_rune", "stone_rune", "storm_rune", "shadow_rune", "health_tonic", "antidote_vial", "bandage_roll", "dried_rations", "tin_ore", "iron_ingot", "beast_claw", "spider_silk", "mandrake_root", "wolf_pelt", "lantern_oil", "lockpick_set", "fishhook_bundle", "raw_hide", "duelist_blade", "parrying_dagger", "corsair_cutlass", "stiletto", "raider_hatchet", "hook_sabre", "fishing_rod", "tackle_box", "bait_bucket", "miner_pickhammer", "smith_tongs", "skinning_knife", "flint_and_steel", "grappling_hook", "hand_torch", "hooded_lantern", "rope_coil", "repair_kit", "whetstone", "bedroll", "waterskin", "candle_bundle", "offhand_stiletto", "twinfang_blades", "paired_hatchets", "rat_tail", "rat_pelt", "mire_gland", "mire_spore_cluster", "skulker_venom_sac", "skulker_scale", "reed_sinew", "stalker_claw", "fen_brute_hide", "fen_brute_bone", "crypt_bone_shard", "grave_dust", "acolyte_focus_shard", "warden_core", "warden_plate_fragment", "mire_recovery_tonic", "purifying_tonic", "fen_marrow_stew", "graveward_tonic", "focus_draught", "warden_glow_charm", "rat_pelt_cap", "mireweave_cloak", "skulker_scale_vest", "fenhide_leggings", "fenhide_boots", "cryptbone_buckler", "warden_plate_helmet", "warden_plate_armor", "warden_plate_shield", "stalker_claw_blade", "fenbone_maul", "reed_sinew_bow", "acolyte_focus_amulet", "warden_core_hammer"]);
 function ItemIcon({ definitionId }: { definitionId: string }) {
+  return (
+    <span className="item-icon-tooltip-target" data-item-definition-id={definitionId}>
+      <ItemIconArtwork definitionId={definitionId} />
+    </span>
+  );
+}
+
+function ItemIconArtwork({ definitionId }: { definitionId: string }) {
   // TIBIAGAME_V34_FRIEND_FEEDBACK: reuse the existing iron-ingot art until dedicated bar art lands.
   if (definitionId === "copper_ingot" || definitionId === "tin_ingot") {
     const filter = definitionId === "copper_ingot"
@@ -1233,7 +1287,7 @@ function NpcShop({ npcId }: { npcId: string }) {
             const quantity = buyQuantities[offer.id] ?? 1;
             const totalPrice = offer.price * quantity;
             return (
-              <article key={offer.id}>
+              <article key={offer.id} data-item-definition-id={offer.itemDefinitionId}>
                 <ItemIcon definitionId={offer.itemDefinitionId} />
                 <span>
                   <strong>{item?.name ?? offer.itemDefinitionId}</strong>
@@ -1270,7 +1324,7 @@ function NpcShop({ npcId }: { npcId: string }) {
             const matchingOffer = npc.offers.find((offer) => offer.itemDefinitionId === item.definitionId);
             const sellPrice = Math.max(1, Math.floor(matchingOffer ? matchingOffer.price / 2 : Math.ceil(definition?.weight ?? 0)));
             const totalPrice = sellPrice * quantity;
-            return <article key={item.instanceId}>
+            return <article key={item.instanceId} data-item-definition-id={item.definitionId} data-item-instance-id={item.instanceId}>
               <ItemIcon definitionId={item.definitionId} />
               <span><strong>{definition?.name ?? item.definitionId}</strong><small>{item.quantity} available · {sellPrice} gold each</small></span>
               <b>{totalPrice} gold</b>
@@ -1602,15 +1656,6 @@ function CompactCharacterPanel() {
           <span><small>Level {player.level}</small><h3>{player.name}</h3><b>Drag equipment between windows</b></span>
         </header>
         <EquipmentPaperdoll interactive />
-        <button
-          type="button"
-          className="equipment-ground-drop"
-          data-inventory-drop="ground"
-          title="Drag equipped items here to drop them at your feet"
-        >
-          <span aria-hidden="true">↓</span>
-          Drop equipped item on ground
-        </button>
         <OutfitPicker outfit={player.outfit} />
       </div>
     </div>
@@ -1932,9 +1977,30 @@ function EquipmentPaperdoll({ interactive }: { interactive: boolean }) {
   const equipped = world.inventory.filter((item) => item.equippedSlot);
   return <>
     <div className={`equipment-paperdoll ${interactive ? "interactive-paperdoll" : ""}`} data-inventory-drop="equipment">
-      <div className="character-model-preview" aria-label={`${player.name} character preview`}>
-        <CharacterPreview outfit={player.outfit} />
-        <span>{player.name}</span>
+            <div className="character-model-preview character-paperdoll-silhouette" aria-label={`${player.name} equipment silhouette`}>
+        <svg viewBox="0 0 180 320" aria-hidden="true" focusable="false">
+          <ellipse className="paperdoll-aura" cx="90" cy="296" rx="52" ry="13" />
+          <path className="paperdoll-backplate" d="M45 101 Q90 74 135 101 L145 214 Q90 246 35 214 Z" />
+          <circle className="paperdoll-part paperdoll-head" cx="90" cy="47" r="21" />
+          <path className="paperdoll-part paperdoll-neck" d="M80 65 H100 L105 84 H75 Z" />
+          <path className="paperdoll-part paperdoll-torso" d="M61 84 Q90 75 119 84 L130 174 Q90 188 50 174 Z" />
+          <path className="paperdoll-part paperdoll-arm paperdoll-arm-left" d="M60 91 Q43 94 34 112 L21 190 Q26 198 35 194 L52 131 Z" />
+          <path className="paperdoll-part paperdoll-arm paperdoll-arm-right" d="M120 91 Q137 94 146 112 L159 190 Q154 198 145 194 L128 131 Z" />
+          <circle className="paperdoll-part paperdoll-hand paperdoll-hand-left" cx="27" cy="202" r="10" />
+          <circle className="paperdoll-part paperdoll-hand paperdoll-hand-right" cx="153" cy="202" r="10" />
+          <path className="paperdoll-part paperdoll-leg paperdoll-leg-left" d="M55 169 Q72 176 88 174 L84 276 H55 L48 208 Z" />
+          <path className="paperdoll-part paperdoll-leg paperdoll-leg-right" d="M92 174 Q108 176 125 169 L132 208 L125 276 H96 Z" />
+          <path className="paperdoll-part paperdoll-foot paperdoll-foot-left" d="M53 273 H84 L82 294 H43 Q40 284 53 273 Z" />
+          <path className="paperdoll-part paperdoll-foot paperdoll-foot-right" d="M96 273 H127 Q140 284 137 294 H98 Z" />
+          <path className="paperdoll-detail" d="M72 108 H108 M69 132 H111 M66 156 H114" />
+          <path className="paperdoll-detail paperdoll-amulet-mark" d="M90 82 V109 M83 104 L90 112 L97 104" />
+          <circle className="paperdoll-anchor paperdoll-anchor-head" cx="90" cy="23" r="2.5" />
+          <circle className="paperdoll-anchor paperdoll-anchor-chest" cx="90" cy="126" r="2.5" />
+          <circle className="paperdoll-anchor paperdoll-anchor-left" cx="26" cy="154" r="2.5" />
+          <circle className="paperdoll-anchor paperdoll-anchor-right" cx="154" cy="154" r="2.5" />
+          <circle className="paperdoll-anchor paperdoll-anchor-legs" cx="90" cy="229" r="2.5" />
+        </svg>
+        <span className="paperdoll-caption"><b>{player.name}</b><small>{player.outfit}</small></span>
       </div>
       {equipmentLayout.map(({ id, label, aliases }) => {
         const item = equipped.find((entry) => entry.equippedSlot && aliases.includes(entry.equippedSlot));
@@ -1944,6 +2010,8 @@ function EquipmentPaperdoll({ interactive }: { interactive: boolean }) {
             className={`equipment-slot slot-${id} ${item ? "filled" : ""}`}
             data-inventory-drop="equipment"
             data-equipment-slot={id === "left-hand" ? "offhand" : id === "right-hand" ? "weapon" : aliases[0]}
+            data-item-definition-id={item?.definitionId}
+            data-item-instance-id={item?.instanceId}
             key={id}
             title={itemName}
             onDoubleClick={interactive && item ? () => network.moveToRoot(item.instanceId) : undefined}
@@ -1964,7 +2032,7 @@ function EquipmentPaperdoll({ interactive }: { interactive: boolean }) {
         {professionToolLayout.map(({ id, label, glyph }) => {
           const item = equipped.find((entry) => entry.equippedSlot === id);
           const itemName = item ? world.itemDefinitions.get(item.definitionId)?.name ?? item.definitionId : label;
-          return <button type="button" className={`profession-tool-slot ${item ? "filled" : ""}`} data-inventory-drop="equipment" data-equipment-slot={id} key={id} title={itemName}
+          return <button type="button" className={`profession-tool-slot ${item ? "filled" : ""}`} data-inventory-drop="equipment" data-equipment-slot={id} data-item-definition-id={item?.definitionId} data-item-instance-id={item?.instanceId} key={id} title={itemName}
             onDoubleClick={interactive && item ? () => network.moveToRoot(item.instanceId) : undefined}
             onPointerDown={interactive && item ? (event) => beginPointerItemDrag(event, item.instanceId) : undefined}
             onPointerMove={interactive && item ? movePointerItemDrag : undefined}
@@ -1982,6 +2050,10 @@ function EquipmentPaperdoll({ interactive }: { interactive: boolean }) {
 
 function moveEquippedItem(itemId: string, target: HTMLElement | null) {
   const destination = target?.dataset.inventoryDrop;
+  if (!destination) {
+    if (!target?.closest(".game-modal")) network.drop(itemId);
+    return;
+  }
   if (destination === "root") network.moveToRoot(itemId);
   else if (destination === "ground") network.drop(itemId);
   else if (destination === "container") {
@@ -2293,7 +2365,32 @@ function TradeItem({ item }: { item: ItemInstance }) {
   );
 }
 function NearbyLootWindow() {
-  useSyncExternalStore(subscribeWorldVisual, worldVisualSnapshot);
+  useSyncExternalStore(
+    (listener) => {
+      const stopWorld = world.subscribe(listener);
+      const stopVisual = world.subscribeVisual(listener);
+      return () => { stopWorld(); stopVisual(); };
+    },
+    () => {
+      const player = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
+      if (!player) return "none";
+      const nearby = world.groundItems
+        .filter((entry) =>
+          entry.position.z === player.position.z
+          && Math.abs(entry.position.x - player.position.x) <= 1
+          && Math.abs(entry.position.y - player.position.y) <= 1
+        )
+        .map((entry) => [
+          entry.item.instanceId,
+          entry.item.quantity,
+          entry.contents.length,
+          entry.position.x,
+          entry.position.y,
+        ].join(":"))
+        .join(";");
+      return `${player.position.x}:${player.position.y}:${player.position.z}|${nearby}`;
+    },
+  );
   const groundItems = nearbyLootGround();
   return groundItems.length > 0 ? <LootWindow groundItems={groundItems} onLootAll={() => groundItems.flatMap(lootableGroundItems).forEach((item) => network.pickup(item.instanceId))} /> : null;
 }
@@ -2496,6 +2593,23 @@ function CraftingEmpty({ message }: { message: string }) {
 }
 
 
+function loadBattleListPosition() {
+  try {
+    const raw = localStorage.getItem("aldoria.battle-list-position");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { x?: number; y?: number };
+    if (
+      typeof parsed.x !== "number"
+      || typeof parsed.y !== "number"
+      || !Number.isFinite(parsed.x)
+      || !Number.isFinite(parsed.y)
+    ) return null;
+    return { x: Number(parsed.x), y: Number(parsed.y) };
+  } catch {
+    return null;
+  }
+}
+
 function BattleList() {
   useSyncExternalStore(
     (listener) => {
@@ -2505,8 +2619,42 @@ function BattleList() {
     },
     () => `${world.revision}:${world.visualRevision}`,
   );
+  const [viewport, setViewport] = useState(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }));
+  const [battlePosition, setBattlePosition] = useState<{ x: number; y: number } | null>(
+    () => loadBattleListPosition(),
+  );
+  const dragRef = useRef<{
+    pointerId: number;
+    offsetX: number;
+    offsetY: number;
+    width: number;
+    height: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const resized = () => setViewport({
+      width: window.innerWidth,
+      height: window.innerHeight,
+    });
+    window.addEventListener("resize", resized);
+    return () => window.removeEventListener("resize", resized);
+  }, []);
+
   const local = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
   if (!local) return null;
+
+  // NativeWorldRenderer uses an orthographic camera at zoom 90. Match its
+  // actual screen footprint instead of the old 18-tile simulation radius, so
+  // Battle does not reveal actors before they enter the visible viewport.
+  const visibleHalfX = viewport.width / (2 * 90) + 0.35;
+  const visibleHalfY = viewport.height / (2 * 90 * 0.8944) + 0.35;
+  const visibleOnScreen = (position: Position) =>
+    position.z === local.position.z
+    && Math.abs(position.x - local.position.x) <= visibleHalfX
+    && Math.abs(position.y - local.position.y) <= visibleHalfY;
 
   const distance = (position: Position) =>
     Math.max(
@@ -2515,14 +2663,13 @@ function BattleList() {
     );
 
   const creatures = [...world.creatures.values()]
-    .filter((entry) => entry.position.z === local.position.z && distance(entry.position) <= 18)
+    .filter((entry) => visibleOnScreen(entry.position))
     .sort((left, right) => distance(left.position) - distance(right.position));
 
   const players = [...world.players.values()]
     .filter((entry) =>
       entry.id !== world.localPlayerId
-      && entry.position.z === local.position.z
-      && distance(entry.position) <= 18
+      && visibleOnScreen(entry.position)
     )
     .sort((left, right) => distance(left.position) - distance(right.position));
 
@@ -2531,9 +2678,64 @@ function BattleList() {
   const percent = (health: number, maxHealth: number) =>
     Math.max(0, Math.min(100, health / Math.max(1, maxHealth) * 100));
 
+  const nextDragPosition = (event: PointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return null;
+    return {
+      x: Math.max(8, Math.min(event.clientX - drag.offsetX, window.innerWidth - drag.width - 8)),
+      y: Math.max(8, Math.min(event.clientY - drag.offsetY, window.innerHeight - drag.height - 8)),
+    };
+  };
+
+  const beginDrag = (event: PointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    const windowElement = event.currentTarget.parentElement;
+    if (!windowElement) return;
+    const rect = windowElement.getBoundingClientRect();
+    dragRef.current = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+      width: rect.width,
+      height: rect.height,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+
+  const moveDrag = (event: PointerEvent<HTMLElement>) => {
+    const next = nextDragPosition(event);
+    if (!next) return;
+    setBattlePosition(next);
+  };
+
+  const finishDrag = (event: PointerEvent<HTMLElement>) => {
+    const next = nextDragPosition(event);
+    if (next) {
+      setBattlePosition(next);
+      localStorage.setItem("aldoria.battle-list-position", JSON.stringify(next));
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    dragRef.current = null;
+  };
+
   return (
-    <section className="battle-list" aria-label="Battle list">
-      <header><strong>Battle</strong><small>{creatures.length + players.length}</small></header>
+    <section
+      className={`battle-list ${battlePosition ? "battle-list-moved" : ""}`}
+      aria-label="Battle list"
+      style={battlePosition ? { left: battlePosition.x, top: battlePosition.y, right: "auto" } : undefined}
+    >
+      <header
+        title="Drag to move Battle"
+        onPointerDown={beginDrag}
+        onPointerMove={moveDrag}
+        onPointerUp={finishDrag}
+        onPointerCancel={finishDrag}
+      >
+        <strong>Battle</strong><small>{creatures.length + players.length}</small>
+      </header>
       <div>
         {creatures.map((creature) => {
           const health = percent(creature.health, creature.maxHealth);
@@ -2820,6 +3022,8 @@ function InventorySlot({ item, onOpenContextMenu, onPointerDrop, dropKind, dropI
       data-inventory-drop={definition?.containerSlots ? "container" : dropKind}
       data-container-id={definition?.containerSlots ? item.instanceId : undefined}
       data-item-id={item.instanceId}
+      data-item-definition-id={item.definitionId}
+      data-item-instance-id={item.instanceId}
       data-backpack-index={dropKind === "root" ? dropIndex : undefined}
       className={`inventory-grid-slot filled ${definition?.containerSlots ? "container-drop-target" : ""}`}
       onDoubleClick={() => {
@@ -2896,6 +3100,165 @@ function itemDetailSummary(
   return details.join(" · ");
 }
 
+type ItemTooltipTarget = {
+  definitionId: string;
+  instanceId?: string;
+  x: number;
+  y: number;
+};
+
+function itemTooltipSlotLabel(slot: string | undefined) {
+  if (!slot) return "Item";
+  return slot
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function ItemHoverTooltip() {
+  const [target, setTarget] = useState<ItemTooltipTarget | null>(null);
+  const tooltipRef = useRef<HTMLElement>(null);
+  const activeKeyRef = useRef("");
+
+  useEffect(() => {
+    const tooltipPosition = (event: globalThis.PointerEvent) => {
+      const width = 292;
+      const x = Math.max(8, Math.min(event.clientX + 18, window.innerWidth - width - 8));
+      const y = event.clientY > window.innerHeight * 0.62
+        ? Math.max(8, event.clientY - 250)
+        : Math.min(window.innerHeight - 80, event.clientY + 18);
+      return { x, y };
+    };
+
+    const hide = () => {
+      if (!activeKeyRef.current) return;
+      activeKeyRef.current = "";
+      setTarget(null);
+    };
+
+    const move = (event: globalThis.PointerEvent) => {
+      const source = event.target instanceof Element ? event.target : null;
+      const instanceNode = source?.closest<HTMLElement>("[data-item-instance-id]") ?? null;
+      const definitionNode = instanceNode
+        ?? source?.closest<HTMLElement>("[data-item-definition-id]")
+        ?? null;
+      const definitionId = definitionNode?.dataset.itemDefinitionId;
+      if (!definitionId) {
+        hide();
+        return;
+      }
+
+      const instanceId = instanceNode?.dataset.itemInstanceId;
+      const key = `${definitionId}:${instanceId ?? ""}`;
+      const point = tooltipPosition(event);
+      if (activeKeyRef.current !== key) {
+        activeKeyRef.current = key;
+        setTarget({ definitionId, instanceId, ...point });
+      } else if (tooltipRef.current) {
+        tooltipRef.current.style.transform =
+          `translate3d(${point.x}px, ${point.y}px, 0)`;
+      }
+    };
+
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("blur", hide);
+    return () => {
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("blur", hide);
+    };
+  }, []);
+
+  if (!target) return null;
+  const definition = world.itemDefinitions.get(target.definitionId);
+  if (!definition) return null;
+  const item = target.instanceId
+    ? world.inventory.find((entry) => entry.instanceId === target.instanceId)
+      ?? world.depot.find((entry) => entry.instanceId === target.instanceId)
+    : undefined;
+  const quantity = item?.quantity ?? 1;
+  const rows: Array<[string, string, string?]> = [];
+
+  if (definition.attack !== undefined) rows.push(["Attack", String(definition.attack), "positive"]);
+  if (definition.defense !== undefined) rows.push(["Defense", String(definition.defense), "positive"]);
+  if (definition.combatEffect) {
+    rows.push(["Damage", String(definition.combatEffect.damage), "damage"]);
+    rows.push(["Range", String(definition.combatEffect.range)]);
+    rows.push(["Cooldown", `${(definition.combatEffect.cooldownMs / 1000).toFixed(2)} sec`]);
+  }
+  if (definition.distanceWeapon) {
+    rows.push(["Damage", `+${definition.distanceWeapon.damage}`, "damage"]);
+    rows.push(["Range", String(definition.distanceWeapon.range)]);
+    rows.push(["Attack speed", `${(definition.distanceWeapon.cooldownMs / 1000).toFixed(2)} sec`]);
+    const ammunition = world.itemDefinitions.get(definition.distanceWeapon.ammunitionId);
+    rows.push(["Ammunition", ammunition?.name ?? definition.distanceWeapon.ammunitionId]);
+  }
+  if (definition.foodEffect) {
+    if (definition.foodEffect.healthPerTick) {
+      rows.push(["Health regen", `+${definition.foodEffect.healthPerTick} / tick`, "positive"]);
+    }
+    if (definition.foodEffect.manaPerTick) {
+      rows.push(["Mana regen", `+${definition.foodEffect.manaPerTick} / tick`, "mana"]);
+    }
+    rows.push(["Nourishment", `${definition.foodEffect.durationSeconds} sec`]);
+  }
+  if (definition.charges !== undefined || item?.charges !== undefined) {
+    const tooltipItem: ItemInstance = item ?? {
+      instanceId: "tooltip",
+      definitionId: definition.id,
+      quantity: 1,
+      charges: definition.charges,
+    };
+    rows.push(["Uses", String(chargedStackUses(tooltipItem, definition))]);
+  }
+  if (definition.containerSlots) {
+    const used = item
+      ? world.inventory.filter((entry) => entry.containerId === item.instanceId).length
+      : 0;
+    rows.push(["Container", item ? `${used} / ${definition.containerSlots} slots` : `${definition.containerSlots} slots`]);
+  }
+  if (definition.lightSource) {
+    rows.push(["Light radius", String(definition.lightSource.radius)]);
+  }
+  if (definition.teachesRecipeId) {
+    rows.push(["Teaches recipe", definition.teachesRecipeId.replaceAll("_", " ")]);
+  }
+  if (definition.stackable) rows.push(["Stack limit", String(definition.maxStack)]);
+
+  const unitWeight = definition.weight.toFixed(1);
+  const totalWeight = (definition.weight * quantity).toFixed(1);
+
+  return (
+    <aside
+      ref={tooltipRef}
+      className="item-hover-tooltip"
+      style={{ transform: `translate3d(${target.x}px, ${target.y}px, 0)` }}
+      aria-hidden="true"
+    >
+      <header>
+        <ItemIcon definitionId={definition.id} />
+        <span>
+          <strong>{definition.name}</strong>
+          <small>{itemTooltipSlotLabel(definition.equipmentSlot)}</small>
+        </span>
+      </header>
+      {rows.length > 0 && (
+        <dl>
+          {rows.map(([label, value, tone], index) => (
+            <div key={`${label}-${index}`} className={tone ? `tooltip-${tone}` : ""}>
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      <footer>
+        <span>Weight</span>
+        <b>{quantity > 1 ? `${unitWeight} oz each · ${totalWeight} oz total` : `${unitWeight} oz`}</b>
+      </footer>
+      {quantity > 1 && <small className="tooltip-stack">Stack ×{quantity}</small>}
+    </aside>
+  );
+}
+
 function InventoryDetails({ item, position, onClose, onSplit }: { item: ItemInstance; position: { x: number; y: number }; onClose: () => void; onSplit: () => void }) {
   const definition = world.itemDefinitions.get(item.definitionId);
   const children = world.inventory.filter((child) => child.containerId === item.instanceId);
@@ -2939,6 +3302,8 @@ function InventoryEntry({
       <div
         draggable
         className={`inventory-row ${definition?.containerSlots ? "container-drop-target" : ""}`}
+        data-item-definition-id={item.definitionId}
+        data-item-instance-id={item.instanceId}
         onDragStart={(event) => startItemDrag(event, item.instanceId)}
         onDragOver={definition?.containerSlots ? allowItemDrop : undefined}
         onDrop={receive}

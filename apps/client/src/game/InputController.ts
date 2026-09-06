@@ -43,6 +43,7 @@ export class InputController {
   }
 
   targetCreature(creatureId: string) { this.world.closePlayerContext(); this.network.attack(creatureId); }
+  clearAttackTarget() { this.world.closePlayerContext(); this.network.clearAttackTarget(); }
   interactPlayer(playerId: string, x: number, y: number) { this.world.openPlayerContext(playerId, x, y); }
   interactNpc(npcId: string) {
     const npc = this.world.npcs.get(npcId);

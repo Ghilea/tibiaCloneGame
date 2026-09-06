@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { Position, WorldObjectView } from "../protocol";
+import type { MapView, Position, WorldObjectView } from "../protocol";
 import type { WorldState } from "./WorldState";
 import { worldEnvironment, worldTimeLabel } from "./worldEnvironment";
 
 // TIBIAGAME_V35C_MINIMAP_DISCOVERY
+// TIBIAGAME_V35_2_MAINTHREAD_OPTIMIZATION
 const CANVAS_SIZE = 220;
 const DISCOVERY_CHUNK_SIZE = 4;
 const DISCOVERY_REVEAL_RADIUS = 8;
+const MINIMAP_DRAW_INTERVAL_MS = 100;
+const DISCOVERY_SAVE_DEBOUNCE_MS = 1_200;
+const MINIMAP_CACHE_CELL_SIZE = 8;
 
 function discoveryKey(position: Position) {
   return `${position.z}:${Math.floor(position.x / DISCOVERY_CHUNK_SIZE)}:${Math.floor(position.y / DISCOVERY_CHUNK_SIZE)}`;
@@ -31,68 +35,125 @@ export function GameMinimap({ world }: { world: WorldState }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [radius, setRadius] = useState(22);
   const [environment, setEnvironment] = useState(() => worldEnvironment());
-  const [discovered, setDiscovered] = useState<Set<string>>(() => new Set());
   const discoveryOwner = useRef<string | null>(null);
-  const revision = useSyncExternalStore(
+  const discoveredRef = useRef<Set<string>>(new Set());
+  const radiusRef = useRef(radius);
+  const discoverySaveTimer = useRef<number | null>(null);
+  const discoveryIdleHandle = useRef<number | null>(null);
+
+  // React only needs local-player movement/facing. Other world/visual updates are
+  // read directly by the low-frequency canvas loop below.
+  const playerSnapshot = useSyncExternalStore(
     (listener) => {
       const stopWorld = world.subscribe(listener);
       const stopVisual = world.subscribeVisual(listener);
       return () => { stopWorld(); stopVisual(); };
     },
-    () => `${world.revision}:${world.visualRevision}`,
+    () => {
+      const current = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
+      return current
+        ? [current.id, current.position.x, current.position.y, current.position.z, world.localPlayerFacing].join(":")
+        : "none";
+    },
   );
+  void playerSnapshot;
+
   const player = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
 
+  const cancelQueuedDiscoverySave = () => {
+    if (discoverySaveTimer.current !== null) {
+      window.clearTimeout(discoverySaveTimer.current);
+      discoverySaveTimer.current = null;
+    }
+    if (discoveryIdleHandle.current !== null) {
+      const idleWindow = window as Window & {
+        cancelIdleCallback?: (handle: number) => void;
+      };
+      if (idleWindow.cancelIdleCallback) idleWindow.cancelIdleCallback(discoveryIdleHandle.current);
+      else window.clearTimeout(discoveryIdleHandle.current);
+      discoveryIdleHandle.current = null;
+    }
+  };
+
+  const persistDiscoveryNow = () => {
+    const owner = discoveryOwner.current;
+    if (!owner) return;
+    try {
+      localStorage.setItem(
+        `aldoria.minimap-discovery.${owner}`,
+        JSON.stringify([...discoveredRef.current]),
+      );
+    } catch {
+      // Discovery is only a convenience cache. Storage failure must not affect play.
+    }
+  };
+
+  const queueDiscoverySave = () => {
+    if (discoverySaveTimer.current !== null) window.clearTimeout(discoverySaveTimer.current);
+    discoverySaveTimer.current = window.setTimeout(() => {
+      discoverySaveTimer.current = null;
+      const commit = () => {
+        discoveryIdleHandle.current = null;
+        persistDiscoveryNow();
+      };
+      const idleWindow = window as Window & {
+        requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      };
+      discoveryIdleHandle.current = idleWindow.requestIdleCallback
+        ? idleWindow.requestIdleCallback(commit, { timeout: 2_500 })
+        : window.setTimeout(commit, 0);
+    }, DISCOVERY_SAVE_DEBOUNCE_MS);
+  };
+
   useEffect(() => {
-    const timer = window.setInterval(() => setEnvironment(worldEnvironment()), 500);
+    radiusRef.current = radius;
+  }, [radius]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setEnvironment(worldEnvironment()), 1000);
     return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
-    if (!player) return;
-    if (discoveryOwner.current === player.id) return;
+    if (!player || discoveryOwner.current === player.id) return;
+    cancelQueuedDiscoverySave();
     discoveryOwner.current = player.id;
-    setDiscovered(loadDiscovery(player.id));
+    discoveredRef.current = loadDiscovery(player.id);
   }, [player?.id]);
 
   useEffect(() => {
-    // TIBIAGAME_V35_0_1_MINIMAP_NULLABILITY
-    // Capture the narrowed map reference before entering the setState callback.
-    // TypeScript cannot safely retain a mutable property narrowing for world.map
-    // across the closure boundary.
     const map = world.map;
     if (!player || !map || discoveryOwner.current !== player.id) return;
-    setDiscovered((current) => {
-      const next = new Set(current);
-      let changed = false;
-      for (let dy = -DISCOVERY_REVEAL_RADIUS; dy <= DISCOVERY_REVEAL_RADIUS; dy += 1) {
-        for (let dx = -DISCOVERY_REVEAL_RADIUS; dx <= DISCOVERY_REVEAL_RADIUS; dx += 1) {
-          if (dx * dx + dy * dy > DISCOVERY_REVEAL_RADIUS * DISCOVERY_REVEAL_RADIUS) continue;
-          const position = {
-            x: player.position.x + dx,
-            y: player.position.y + dy,
-            z: player.position.z,
-          };
-          if (
-            position.x < 0
-            || position.y < 0
-            || position.x >= map.width
-            || position.y >= map.height
-          ) continue;
-          const key = discoveryKey(position);
-          if (!next.has(key)) {
-            next.add(key);
-            changed = true;
-          }
+
+    const current = discoveredRef.current;
+    let next: Set<string> | null = null;
+    const has = (key: string) => (next ?? current).has(key);
+
+    for (let dy = -DISCOVERY_REVEAL_RADIUS; dy <= DISCOVERY_REVEAL_RADIUS; dy += 1) {
+      for (let dx = -DISCOVERY_REVEAL_RADIUS; dx <= DISCOVERY_REVEAL_RADIUS; dx += 1) {
+        if (dx * dx + dy * dy > DISCOVERY_REVEAL_RADIUS * DISCOVERY_REVEAL_RADIUS) continue;
+        const position = {
+          x: player.position.x + dx,
+          y: player.position.y + dy,
+          z: player.position.z,
+        };
+        if (
+          position.x < 0
+          || position.y < 0
+          || position.x >= map.width
+          || position.y >= map.height
+        ) continue;
+        const key = discoveryKey(position);
+        if (!has(key)) {
+          if (!next) next = new Set(current);
+          next.add(key);
         }
       }
-      if (!changed) return current;
-      localStorage.setItem(
-        `aldoria.minimap-discovery.${player.id}`,
-        JSON.stringify([...next]),
-      );
-      return next;
-    });
+    }
+
+    if (!next) return;
+    discoveredRef.current = next;
+    queueDiscoverySave();
   }, [
     player?.id,
     player?.position.x,
@@ -102,20 +163,55 @@ export function GameMinimap({ world }: { world: WorldState }) {
     world.map?.height,
   ]);
 
+  // Normal movement never writes discovery synchronously. We flush on pagehide
+  // so the final few seconds are not lost when leaving the client.
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const context = canvas?.getContext("2d");
-    if (!canvas || !context || !player) return;
-    drawMinimap(context, world, player.position, radius, discovered);
-  }, [
-    player?.position.x,
-    player?.position.y,
-    player?.position.z,
-    radius,
-    revision,
-    world,
-    discovered,
-  ]);
+    const flush = () => {
+      cancelQueuedDiscoverySave();
+      persistDiscoveryNow();
+    };
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, []);
+
+  // The minimap is HUD information, not the 60 FPS world renderer. Draw it at
+  // 10 FPS and read mutable world state directly so map/creature events do not
+  // force React commits or full static-map scans every visual tick.
+  useEffect(() => {
+    let active = true;
+    let timer: number | null = null;
+    let frame: number | null = null;
+
+    const draw = () => {
+      if (!active) return;
+      const canvas = canvasRef.current;
+      const context = canvas?.getContext("2d");
+      const currentPlayer = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
+      if (canvas && context && currentPlayer) {
+        drawMinimap(
+          context,
+          world,
+          currentPlayer.position,
+          radiusRef.current,
+          discoveredRef.current,
+        );
+      }
+      timer = window.setTimeout(() => {
+        timer = null;
+        frame = window.requestAnimationFrame(draw);
+      }, MINIMAP_DRAW_INTERVAL_MS);
+    };
+
+    frame = window.requestAnimationFrame(draw);
+    return () => {
+      active = false;
+      if (timer !== null) window.clearTimeout(timer);
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
+  }, [world]);
 
   const zoom = (direction: -1 | 1) => {
     const levels = [14, 22, 32];
@@ -148,6 +244,91 @@ export function GameMinimap({ world }: { world: WorldState }) {
   );
 }
 
+type MinimapStaticSlice = {
+  blocked: Position[];
+  terrainMaterials: MapView["terrainMaterials"];
+  floors: Position[];
+  roads: Position[];
+  water: Position[];
+  bridges: Position[];
+  buildings: MapView["buildings"];
+  houseWalls: Position[];
+  castleWalls: Position[];
+  trees: Position[];
+  doors: MapView["doors"];
+  objects: WorldObjectView[];
+};
+
+type MinimapStaticCache = {
+  owner: WorldState;
+  key: string;
+  slice: MinimapStaticSlice;
+};
+
+let minimapStaticCache: MinimapStaticCache | null = null;
+
+function minimapStaticSlice(
+  world: WorldState,
+  map: MapView,
+  center: Position,
+  radius: number,
+): MinimapStaticSlice {
+  const cellX = Math.floor(center.x / MINIMAP_CACHE_CELL_SIZE);
+  const cellY = Math.floor(center.y / MINIMAP_CACHE_CELL_SIZE);
+  const anchorX = cellX * MINIMAP_CACHE_CELL_SIZE + MINIMAP_CACHE_CELL_SIZE / 2;
+  const anchorY = cellY * MINIMAP_CACHE_CELL_SIZE + MINIMAP_CACHE_CELL_SIZE / 2;
+  const key = [
+    world.streamRegionRevision,
+    world.dynamicMapRevision,
+    center.z,
+    radius,
+    cellX,
+    cellY,
+  ].join(":");
+
+  if (
+    minimapStaticCache
+    && minimapStaticCache.owner === world
+    && minimapStaticCache.key === key
+  ) return minimapStaticCache.slice;
+
+  // Enough padding to reuse this slice for every player position in one 8-tile cell.
+  const padding = radius + MINIMAP_CACHE_CELL_SIZE + 3;
+  const minX = anchorX - padding;
+  const maxX = anchorX + padding;
+  const minY = anchorY - padding;
+  const maxY = anchorY + padding;
+  const near = (position: Position) =>
+    position.z === center.z
+    && position.x >= minX
+    && position.x <= maxX
+    && position.y >= minY
+    && position.y <= maxY;
+  const buildingNear = (building: MapView["buildings"][number]) =>
+    building.floor === center.z
+    && building.x + building.width >= minX
+    && building.x <= maxX
+    && building.y + building.height >= minY
+    && building.y <= maxY;
+
+  const slice: MinimapStaticSlice = {
+    blocked: map.blocked.filter(near),
+    terrainMaterials: map.terrainMaterials.filter((entry) => near(entry.position)),
+    floors: map.floors.filter(near),
+    roads: map.roads.filter(near),
+    water: map.water.filter(near),
+    bridges: map.bridges.filter(near),
+    buildings: map.buildings.filter(buildingNear),
+    houseWalls: map.houseWalls.filter(near),
+    castleWalls: map.castleWalls.filter(near),
+    trees: map.trees.filter(near),
+    doors: map.doors.filter((entry) => near(entry.position)),
+    objects: (map.objects ?? []).filter((entry) => near(entry.position)),
+  };
+  minimapStaticCache = { owner: world, key, slice };
+  return slice;
+}
+
 function drawMinimap(
   context: CanvasRenderingContext2D,
   world: WorldState,
@@ -156,6 +337,7 @@ function drawMinimap(
   discovered: ReadonlySet<string>,
 ) {
   const map = world.map;
+  const staticSlice = map ? minimapStaticSlice(world, map, center, radius) : null;
   const scale = CANVAS_SIZE / (radius * 2 + 1);
   const half = CANVAS_SIZE / 2;
   const toCanvas = (position: Position) => ({
@@ -190,9 +372,7 @@ function drawMinimap(
   context.fillStyle = "#050705";
   context.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
-  if (map) {
-    // Explicitly paint every minimap cell first. This makes both fog-of-war and
-    // the real finite world boundary impossible to confuse with grass.
+  if (map && staticSlice) {
     for (let y = center.y - radius - 2; y <= center.y + radius + 2; y += 1) {
       for (let x = center.x - radius - 2; x <= center.x + radius + 2; x += 1) {
         const position = { x, y, z: center.z };
@@ -212,8 +392,8 @@ function drawMinimap(
       }
     }
 
-    for (const position of map.blocked) tile(position, "#263128");
-    for (const entry of map.terrainMaterials) {
+    for (const position of staticSlice.blocked) tile(position, "#263128");
+    for (const entry of staticSlice.terrainMaterials) {
       const color = entry.material === "packed_earth"
         ? "#76583b"
         : entry.material === "moss_stone"
@@ -221,15 +401,22 @@ function drawMinimap(
           : "#b6915d";
       tile(entry.position, color);
     }
-    for (const position of map.floors) tile(position, "#735337");
-    for (const position of map.roads) tile(position, "#8f8775");
-    for (const position of map.water) tile(position, "#246779");
-    for (const position of map.bridges) tile(position, "#a16d3d");
+    for (const position of staticSlice.floors) tile(position, "#735337");
+    for (const position of staticSlice.roads) tile(position, "#8f8775");
+    for (const position of staticSlice.water) tile(position, "#246779");
+    for (const position of staticSlice.bridges) tile(position, "#a16d3d");
 
-    for (const building of map.buildings) {
-      if (building.floor !== center.z) continue;
-      for (let y = building.y; y < building.y + building.height; y += 1) {
-        for (let x = building.x; x < building.x + building.width; x += 1) {
+    const drawMinX = center.x - radius - 2;
+    const drawMaxX = center.x + radius + 2;
+    const drawMinY = center.y - radius - 2;
+    const drawMaxY = center.y + radius + 2;
+    for (const building of staticSlice.buildings) {
+      const fromY = Math.max(building.y, drawMinY);
+      const toY = Math.min(building.y + building.height - 1, drawMaxY);
+      const fromX = Math.max(building.x, drawMinX);
+      const toX = Math.min(building.x + building.width - 1, drawMaxX);
+      for (let y = fromY; y <= toY; y += 1) {
+        for (let x = fromX; x <= toX; x += 1) {
           tile(
             { x, y, z: building.floor },
             building.kind === "keep" ? "#949b98" : "#b38258",
@@ -238,13 +425,12 @@ function drawMinimap(
       }
     }
 
-    for (const position of map.houseWalls) tile(position, "#d7ae72", scale * 0.7);
-    for (const position of map.castleWalls) tile(position, "#d0d7d3", scale * 0.75);
-    for (const position of map.trees) dot(position, "#153f21", Math.max(1.5, scale * 0.55));
-    for (const door of map.doors) dot(door.position, door.open ? "#8ee0b0" : "#ffd166", 2.7);
-    for (const object of map.objects ?? []) drawObject(dot, object);
+    for (const position of staticSlice.houseWalls) tile(position, "#d7ae72", scale * 0.7);
+    for (const position of staticSlice.castleWalls) tile(position, "#d0d7d3", scale * 0.75);
+    for (const position of staticSlice.trees) dot(position, "#153f21", Math.max(1.5, scale * 0.55));
+    for (const door of staticSlice.doors) dot(door.position, door.open ? "#8ee0b0" : "#ffd166", 2.7);
+    for (const object of staticSlice.objects) drawObject(dot, object);
 
-    // Draw the exact finite map boundary when any edge enters this minimap view.
     context.strokeStyle = "#d0a45e";
     context.lineWidth = Math.max(1.25, scale * 0.24);
     context.beginPath();

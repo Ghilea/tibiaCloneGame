@@ -3548,6 +3548,7 @@ class NativeActorManager {
   private readonly playerHealthBars = new Map<string, NativePlayerHealthBar>();
   private readonly npcs = new Map<string, NativeCharacterActor>();
   private readonly creatures = new Map<string, NativeSpriteCreatureActor>();
+  private fallbackCreatureIds: string[] = [];
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -3613,6 +3614,7 @@ class NativeActorManager {
     }
 
     const fallbackCreatures: Transform[] = [];
+    const fallbackCreatureIds: string[] = [];
     for (const creature of world.creatures.values()) {
       if (creature.definitionId === this.castleRat.definition.id) {
         let actor = this.creatures.get(creature.id);
@@ -3629,6 +3631,7 @@ class NativeActorManager {
       }
 
       if (creature.position.z === floor) {
+        fallbackCreatureIds.push(creature.id);
         fallbackCreatures.push([
           creature.position.x + 0.5,
           0.42,
@@ -3640,9 +3643,10 @@ class NativeActorManager {
       }
     }
     fallbackCreatureLayer.setTransforms(fallbackCreatures);
+    this.fallbackCreatureIds = fallbackCreatureIds;
   }
 
-  pickCreature(raycaster: THREE.Raycaster) {
+  pickCreature(raycaster: THREE.Raycaster, fallbackCreatureLayer: NativeInstancedLayer) {
     let nearest: { id: string; distance: number } | null = null;
 
     for (const [id, actor] of this.creatures) {
@@ -3651,6 +3655,14 @@ class NativeActorManager {
       if (!hit) continue;
       if (!nearest || hit.distance < nearest.distance) {
         nearest = { id, distance: hit.distance };
+      }
+    }
+
+    const fallbackHit = raycaster.intersectObject(fallbackCreatureLayer.mesh, false)[0];
+    if (fallbackHit?.instanceId !== undefined) {
+      const fallbackId = this.fallbackCreatureIds[fallbackHit.instanceId];
+      if (fallbackId && (!nearest || fallbackHit.distance < nearest.distance)) {
+        nearest = { id: fallbackId, distance: fallbackHit.distance };
       }
     }
 
@@ -5461,6 +5473,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     console.info(
       "NATIVE WORLD V31C.1.1 active · movement-cancelled gathering · raw Three.js",
     );
+// TIBIAGAME_V35_3_IDLE_MAINTHREAD_FIXES
 
     const bootstrap = async () => {
       const nextRenderer = new THREE.WebGLRenderer({
@@ -6644,6 +6657,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       let sampleFrames = 0;
       let sampleTotal = 0;
       let sampleMax = 0;
+      let lastLongFrameLogAt = Number.NEGATIVE_INFINITY;
 
       const resize = () => {
         const parent = canvas.parentElement;
@@ -7081,7 +7095,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         );
         raycaster.setFromCamera(ndc, camera);
 
-        const creatureId = activeActorManager.pickCreature(raycaster);
+        const creatureId = activeActorManager.pickCreature(raycaster, layers.creatures);
         if (creatureId) {
           const creature = world.creatures.get(creatureId);
           if (creature) {
@@ -7249,7 +7263,9 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
 
       const onPointerDown = (event: PointerEvent) => {
         if (event.button !== 0) return;
-        interactAtPointer(event);
+        const target = targetAtPointer(event);
+        if (!target || target.kind !== "creature") input.clearAttackTarget();
+        if (target) activatePointerTarget(target, event);
       };
       const onContextMenu = (event: MouseEvent) => {
         event.preventDefault();
@@ -7707,7 +7723,13 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           sampleTotal += frameMs;
           sampleMax = Math.max(sampleMax, frameMs);
 
-          if (frameMs >= 50 && local) {
+          if (
+            showDebug
+            && frameMs >= 50
+            && local
+            && now - lastLongFrameLogAt >= 2_000
+          ) {
+            lastLongFrameLogAt = now;
             console.info(
               `NATIVE LONG FRAME ${frameMs.toFixed(1)}ms · pos `
               + `${local.position.x}:${local.position.y}:${local.position.z} · `
@@ -7733,7 +7755,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
               + `calls=${nextRenderer.info.render.calls} `
               + `triangles=${nextRenderer.info.render.triangles}`;
 
-            console.info(message);
+            if (showDebug) console.info(message);
             if (performanceRef.current) {
               performanceRef.current.textContent =
                 `${fps.toFixed(0)} FPS · avg ${average.toFixed(1)}ms · max ${sampleMax.toFixed(1)}ms`;

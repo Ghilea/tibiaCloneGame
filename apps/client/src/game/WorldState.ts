@@ -13,6 +13,7 @@ export type ReceivedItemNotice = { definitionId: string; quantity: number; key: 
 const MAP_INDEX_CHUNK_SIZE = 16;
 
 export class WorldState {
+// TIBIAGAME_V35_3_IDLE_MAINTHREAD_FIXES
   readonly players = new Map<string, PlayerView>();
   readonly chat: ChatLine[] = [];
   readonly itemDefinitions = new Map<string, ItemDefinition>();
@@ -372,10 +373,16 @@ export class WorldState {
             this.combatItemCooldownUntil = Date.now() + message.cooldown_ms;
           }
         }
+        // NativeWorldRenderer consumes ordinary melee/enemy effects directly from
+        // mutable world state. Only local spell/sigil cooldowns need a full UI update.
+        notification = message.source_id === this.localPlayerId && message.effect_id !== "melee_hit"
+          ? "world"
+          : "visual";
         break;
       case "area_telegraph":
         this.areaWarnings.push({ id: crypto.randomUUID(), sourceId: message.source_id, position: message.position, effectId: message.effect_id, radius: message.radius, durationMs: message.duration_ms, createdAt: performance.now() });
         if (this.areaWarnings.length > 20) this.areaWarnings.shift();
+        notification = "visual";
         break;
       case "trade_requested":
         this.incomingTrade = { tradeId: message.trade_id, requester: message.requester };
@@ -391,6 +398,7 @@ export class WorldState {
         break;
       case "creature_spawned":
         this.creatures.set(message.creature.id, message.creature);
+        notification = "visual";
         break;
       case "creature_moved": {
         notification = "none";
@@ -404,11 +412,13 @@ export class WorldState {
       case "creature_state_changed": {
         const creature = this.creatures.get(message.creature_id);
         if (creature) this.creatures.set(creature.id, { ...creature, state: message.state, immune: message.immune, health: message.health, maxHealth: message.max_health });
+        notification = "visual";
         break;
       }
       case "creature_damaged": {
         const creature = this.creatures.get(message.creature_id);
         if (creature) this.creatures.set(creature.id, { ...creature, health: message.health, maxHealth: message.max_health });
+        notification = "visual";
         break;
       }
       case "creature_died":

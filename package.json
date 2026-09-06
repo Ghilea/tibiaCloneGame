@@ -18,6 +18,8 @@
     "server:friends": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-friend-server.ps1",
     "client:build:friends": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-friend-client.ps1",
     "client:updater:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-updater-signing.ps1",
-    "client:version": "node scripts/set-client-version.mjs"
+    "client:version": "node scripts/set-client-version.mjs",
+    "patch": "node scripts/apply-latest-patch.mjs",
+    "patch:check": "node scripts/apply-latest-patch.mjs --check"
   }
 }

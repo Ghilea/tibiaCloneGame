@@ -12,3 +12,4 @@ apps/client/vite.config.d.ts
 .aldoria-updater/
 .aldoria-content-backups/
 apps/client/src-tauri/tauri.friend.generated.json
+.vscode/settings.json

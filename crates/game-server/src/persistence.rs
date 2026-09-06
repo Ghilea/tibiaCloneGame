@@ -305,6 +305,7 @@ impl Database {
         experience: u64,
         health: u16,
         mana: u16,
+        max_mana: u16,
         sword_skill: u16,
         sword_tries: u32,
         distance_skill: u16,
@@ -314,10 +315,23 @@ impl Database {
         magic_level: u16,
         magic_tries: u32,
     ) -> Result<(), sqlx::Error> {
-        sqlx::query("UPDATE characters SET level = $2, experience = $3, health = $4, mana = $5, sword_skill = $6, sword_tries = $7, distance_skill = $8, distance_tries = $9, fletching_skill = $10, fletching_tries = $11, magic_level = $12, magic_tries = $13, updated_at = NOW() WHERE id = $1")
-            .bind(character_id).bind(i32::try_from(level).unwrap_or(i32::MAX)).bind(i64::try_from(experience).unwrap_or(i64::MAX)).bind(i32::from(health)).bind(i32::from(mana))
-            .bind(i32::from(sword_skill)).bind(i32::try_from(sword_tries).unwrap_or(i32::MAX)).bind(i32::from(distance_skill)).bind(i32::try_from(distance_tries).unwrap_or(i32::MAX)).bind(i32::from(fletching_skill)).bind(i32::try_from(fletching_tries).unwrap_or(i32::MAX)).bind(i32::from(magic_level)).bind(i32::try_from(magic_tries).unwrap_or(i32::MAX))
-            .execute(&self.pool).await?;
+        sqlx::query("UPDATE characters SET level = $2, experience = $3, health = $4, mana = $5, max_mana = $6, sword_skill = $7, sword_tries = $8, distance_skill = $9, distance_tries = $10, fletching_skill = $11, fletching_tries = $12, magic_level = $13, magic_tries = $14, updated_at = NOW() WHERE id = $1")
+            .bind(character_id)
+            .bind(i32::try_from(level).unwrap_or(i32::MAX))
+            .bind(i64::try_from(experience).unwrap_or(i64::MAX))
+            .bind(i32::from(health))
+            .bind(i32::from(mana))
+            .bind(i32::from(max_mana))
+            .bind(i32::from(sword_skill))
+            .bind(i32::try_from(sword_tries).unwrap_or(i32::MAX))
+            .bind(i32::from(distance_skill))
+            .bind(i32::try_from(distance_tries).unwrap_or(i32::MAX))
+            .bind(i32::from(fletching_skill))
+            .bind(i32::try_from(fletching_tries).unwrap_or(i32::MAX))
+            .bind(i32::from(magic_level))
+            .bind(i32::try_from(magic_tries).unwrap_or(i32::MAX))
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -609,12 +623,13 @@ impl Database {
         let (remaining_ms, health_per_tick, mana_per_tick) =
             food.unwrap_or((0, 0, 0));
         let mut transaction = self.pool.begin().await?;
-        sqlx::query("UPDATE characters SET level = $2, experience = $3, health = $4, mana = $5, sword_skill = $6, sword_tries = $7, distance_skill = $8, distance_tries = $9, fletching_skill = $10, fletching_tries = $11, magic_level = $12, magic_tries = $13, nourishment_remaining_ms = $14, food_health_per_tick = $15, food_mana_per_tick = $16, updated_at = NOW() WHERE id = $1")
+        sqlx::query("UPDATE characters SET level = $2, experience = $3, health = $4, mana = $5, max_mana = $6, sword_skill = $7, sword_tries = $8, distance_skill = $9, distance_tries = $10, fletching_skill = $11, fletching_tries = $12, magic_level = $13, magic_tries = $14, nourishment_remaining_ms = $15, food_health_per_tick = $16, food_mana_per_tick = $17, updated_at = NOW() WHERE id = $1")
             .bind(player.id)
             .bind(i32::try_from(player.level).unwrap_or(i32::MAX))
             .bind(i64::try_from(player.experience).unwrap_or(i64::MAX))
             .bind(i32::from(player.health))
             .bind(i32::from(player.mana))
+            .bind(i32::from(player.max_mana))
             .bind(i32::from(player.sword_skill))
             .bind(i32::try_from(player.sword_tries).unwrap_or(i32::MAX))
             .bind(i32::from(player.distance_skill))
@@ -640,8 +655,8 @@ impl Database {
         ground_items: &[GroundItem],
     ) -> Result<(), sqlx::Error> {
         let mut transaction = self.pool.begin().await?;
-        sqlx::query("UPDATE characters SET level = $2, experience = $3, health = $4, mana = $5, sword_skill = $6, sword_tries = $7, distance_skill = $8, distance_tries = $9, fletching_skill = $10, fletching_tries = $11, magic_level = $12, magic_tries = $13, updated_at = NOW() WHERE id = $1")
-            .bind(player.id).bind(i32::try_from(player.level).unwrap_or(i32::MAX)).bind(i64::try_from(player.experience).unwrap_or(i64::MAX)).bind(i32::from(player.health)).bind(i32::from(player.mana))
+        sqlx::query("UPDATE characters SET level = $2, experience = $3, health = $4, mana = $5, max_mana = $6, sword_skill = $7, sword_tries = $8, distance_skill = $9, distance_tries = $10, fletching_skill = $11, fletching_tries = $12, magic_level = $13, magic_tries = $14, updated_at = NOW() WHERE id = $1")
+            .bind(player.id).bind(i32::try_from(player.level).unwrap_or(i32::MAX)).bind(i64::try_from(player.experience).unwrap_or(i64::MAX)).bind(i32::from(player.health)).bind(i32::from(player.mana)).bind(i32::from(player.max_mana))
             .bind(i32::from(player.sword_skill)).bind(i32::try_from(player.sword_tries).unwrap_or(i32::MAX)).bind(i32::from(player.distance_skill)).bind(i32::try_from(player.distance_tries).unwrap_or(i32::MAX)).bind(i32::from(player.fletching_skill)).bind(i32::try_from(player.fletching_tries).unwrap_or(i32::MAX)).bind(i32::from(player.magic_level)).bind(i32::try_from(player.magic_tries).unwrap_or(i32::MAX))
             .execute(&mut *transaction).await?;
         write_items(&mut transaction, player.id, inventory, ground_items).await?;
@@ -657,9 +672,10 @@ impl Database {
         profession_skills: &[ProfessionSkillView],
     ) -> Result<(), sqlx::Error> {
         let mut transaction = self.pool.begin().await?;
-        sqlx::query("UPDATE characters SET mana = $2, sword_skill = $3, sword_tries = $4, distance_skill = $5, distance_tries = $6, fletching_skill = $7, fletching_tries = $8, magic_level = $9, magic_tries = $10, updated_at = NOW() WHERE id = $1")
+        sqlx::query("UPDATE characters SET mana = $2, max_mana = $3, sword_skill = $4, sword_tries = $5, distance_skill = $6, distance_tries = $7, fletching_skill = $8, fletching_tries = $9, magic_level = $10, magic_tries = $11, updated_at = NOW() WHERE id = $1")
             .bind(player.id)
             .bind(i32::from(player.mana))
+            .bind(i32::from(player.max_mana))
             .bind(i32::from(player.sword_skill))
             .bind(i32::try_from(player.sword_tries).unwrap_or(i32::MAX))
             .bind(i32::from(player.distance_skill))
