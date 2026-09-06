@@ -8,3 +8,6 @@ target/
 apps/client/vite.config.js
 apps/client/vite.config.d.ts
 .DS_Store
+.aldoria-generated/
+.aldoria-updater/
+apps/client/src-tauri/tauri.friend.generated.json

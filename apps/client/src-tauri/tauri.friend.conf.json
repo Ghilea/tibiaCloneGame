@@ -1,0 +1,17 @@
+{
+  "bundle": {
+    "createUpdaterArtifacts": true,
+    "targets": ["nsis"]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "__ALDORIA_UPDATER_PUBKEY__",
+      "endpoints": [
+        "https://github.com/Ghilea/tibiaCloneGame/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

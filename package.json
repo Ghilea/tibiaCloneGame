@@ -13,6 +13,11 @@
     "check": "npm --prefix apps/client run check",
     "content:update": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/aldoria-update.ps1",
     "content:update:dry": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/aldoria-update.ps1 --dry-run",
-    "content:rollback": "node scripts/aldoria-rollback.mjs"
+    "content:rollback": "node scripts/aldoria-rollback.mjs",
+    "server": "cargo run -p game-server",
+    "server:friends": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-friend-server.ps1",
+    "client:build:friends": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-friend-client.ps1",
+    "client:updater:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-updater-signing.ps1",
+    "client:version": "node scripts/set-client-version.mjs"
   }
 }

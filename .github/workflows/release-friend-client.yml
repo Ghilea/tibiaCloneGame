@@ -1,0 +1,63 @@
+name: Release friend client
+
+on:
+  push:
+    tags:
+      - "client-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/client/package-lock.json
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install client dependencies
+        run: npm ci --prefix apps/client
+
+      - name: Verify updater public key
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "apps/client/src-tauri/updater.pub")) {
+            throw "Missing updater.pub. Run npm run client:updater:setup locally and commit ONLY the public key."
+          }
+
+      - name: Generate friend Tauri config
+        shell: pwsh
+        run: |
+          $templatePath = "apps/client/src-tauri/tauri.friend.conf.json"
+          $generatedPath = "apps/client/src-tauri/tauri.friend.generated.json"
+          $publicKey = (Get-Content -Raw "apps/client/src-tauri/updater.pub").Trim()
+          $template = Get-Content -Raw $templatePath
+          $publicKeyJson = $publicKey | ConvertTo-Json -Compress
+          $generated = $template.Replace('"__ALDORIA_UPDATER_PUBKEY__"', $publicKeyJson)
+          Set-Content -Path $generatedPath -Value $generated -Encoding UTF8
+
+      - name: Build, sign and publish Windows friend client
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/client
+          tagName: ${{ github.ref_name }}
+          releaseName: "Embers of Aldoria v__VERSION__"
+          releaseBody: "Friend test client. Existing installations update automatically."
+          releaseDraft: false
+          prerelease: false
+          uploadUpdaterJson: true
+          args: --features friend-updater --config src-tauri/tauri.friend.generated.json
