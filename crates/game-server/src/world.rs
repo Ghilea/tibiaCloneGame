@@ -123,10 +123,29 @@ pub fn capacity_for_level(level: u32) -> f32 {
     100.0 + level.saturating_sub(1) as f32 * 10.0
 }
 
+// TIBIAGAME_RESOURCE_GATHERING_V31_C
 #[derive(Debug, Clone)]
 pub struct MiningUpdate {
     pub node: ResourceNodeView,
     pub skill: ProfessionSkillView,
+}
+
+fn copper_mining_quantity(level: u16) -> u16 {
+    let (minimum, maximum) = match level {
+        0..=24 => (1_u16, 2_u16),
+        25..=49 => (1, 3),
+        50..=74 => (2, 3),
+        75..=99 => (2, 4),
+        _ => (3, 5),
+    };
+    let span = maximum - minimum + 1;
+
+    // Two samples with the lower result selected: low rolls remain common,
+    // while Mining skill raises both the floor and the possible maximum.
+    let entropy = uuid::Uuid::new_v4().as_u128();
+    let first = (entropy % u128::from(span)) as u16;
+    let second = ((entropy >> 32) % u128::from(span)) as u16;
+    minimum + first.min(second)
 }
 
 #[derive(Debug, Clone)]
@@ -1980,7 +1999,7 @@ impl World {
         if level < node.document.required_skill_level {
             return Err("mining_skill_too_low");
         }
-        let quantity = 1 + level / 25;
+        let quantity = copper_mining_quantity(level);
         let definition = self
             .content
             .item("copper_ore")
@@ -7447,14 +7466,15 @@ mod tests {
 
         assert_eq!(update.skill.tries, 1);
         assert!(!update.node.available);
-        assert!(
-            world
-                .player(player_id)
-                .unwrap()
-                .inventory
-                .iter()
-                .any(|item| item.definition_id == "copper_ore" && item.quantity == 1)
-        );
+        let ore_quantity = world
+            .player(player_id)
+            .unwrap()
+            .inventory
+            .iter()
+            .find(|item| item.definition_id == "copper_ore")
+            .expect("mining adds copper ore")
+            .quantity;
+        assert!((1..=2).contains(&ore_quantity));
         assert!(matches!(
             world.mine_resource(player_id, "copper_vein_greyhaven_1"),
             Err("resource_depleted")

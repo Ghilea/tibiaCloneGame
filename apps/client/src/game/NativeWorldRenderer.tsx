@@ -69,6 +69,7 @@ const NATIVE_CAMERA_ZOOM = 90;
 // TIBIAGAME_NATIVE_RENDERER_V31_B_4
 // TIBIAGAME_NATIVE_RENDERER_V31_B_4_1
 // TIBIAGAME_NATIVE_RENDERER_V31_B_4_2
+// TIBIAGAME_NATIVE_RENDERER_V31_C
 // Authored low-poly world-prop and copper-vein GLBs. Static prop families stay
 // instanced; resource GLBs use persistent dynamic instance sets.
 // Native day/night atmosphere using the existing shared worldEnvironment()
@@ -108,6 +109,11 @@ type NativeGatheringPreview = {
   label: string;
   startedAt: number;
   durationMs: number;
+  startingCopperQuantity: number;
+  startingServerChatId: string | null;
+  feedbackText?: string;
+  feedbackKind?: "success" | "error";
+  feedbackStartedAt?: number;
 };
 
 const NATIVE_AUTHORED_WORLD_PROP_KINDS = [
@@ -5357,7 +5363,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     const disposables: Array<{ dispose(): void }> = [];
 
     console.info(
-      "NATIVE WORLD V31B.4.2 active · larger copper clusters for vein readability · raw Three.js",
+      "NATIVE WORLD V31C active · black world void + variable mining yield · raw Three.js",
     );
 
     const bootstrap = async () => {
@@ -6034,7 +6040,17 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         } · alpha ${indoorRoofAlpha.toFixed(2)}`,
       );
 
-      disposables.push(...Object.values(materials));
+      const voidMaterial = new THREE.MeshBasicMaterial({
+        color: 0x000000,
+        toneMapped: false,
+      });
+      voidMaterial.fog = false;
+      disposables.push(...Object.values(materials), voidMaterial);
+
+      const voidGround = new THREE.Mesh(box, voidMaterial);
+      voidGround.position.y = -0.16;
+      voidGround.renderOrder = -20;
+      scene.add(voidGround);
 
       const ground = new THREE.Mesh(box, materials.grass);
       ground.receiveShadow = true;
@@ -6596,10 +6612,44 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         ) => tasks.push({ generation, label, run });
 
         stage("ground", () => {
-          const size = NATIVE_RENDER_RADIUS * 2 + 4;
-          ground.position.set(playerX + 0.5, -0.12, playerY + 0.5);
-          ground.scale.set(size, 0.2, size);
-          ground.updateMatrix();
+          const voidSize = NATIVE_RENDER_RADIUS * 4 + 32;
+          voidGround.position.set(
+            playerX + 0.5,
+            -0.16,
+            playerY + 0.5,
+          );
+          voidGround.scale.set(voidSize, 0.2, voidSize);
+          voidGround.updateMatrix();
+
+          const minX = Math.max(
+            0,
+            playerX - NATIVE_RENDER_RADIUS - 2,
+          );
+          const maxX = Math.min(
+            map.width,
+            playerX + NATIVE_RENDER_RADIUS + 3,
+          );
+          const minZ = Math.max(
+            0,
+            playerY - NATIVE_RENDER_RADIUS - 2,
+          );
+          const maxZ = Math.min(
+            map.height,
+            playerY + NATIVE_RENDER_RADIUS + 3,
+          );
+          const width = Math.max(0, maxX - minX);
+          const depth = Math.max(0, maxZ - minZ);
+
+          ground.visible = width > 0 && depth > 0;
+          if (ground.visible) {
+            ground.position.set(
+              (minX + maxX) / 2,
+              -0.12,
+              (minZ + maxZ) / 2,
+            );
+            ground.scale.set(width, 0.2, depth);
+            ground.updateMatrix();
+          }
         });
 
         stage("roads", () => layers.roads.setTransforms(snapshot.roads));
@@ -6756,15 +6806,20 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         if (!raycaster.ray.intersectPlane(interactionPlane, interactionPoint))
           return null;
 
+        const tileX = Math.floor(interactionPoint.x);
+        const tileY = Math.floor(interactionPoint.z);
+        if (
+          tileX < 0
+          || tileY < 0
+          || tileX >= map.width
+          || tileY >= map.height
+        ) {
+          return null;
+        }
+
         return {
-          x: Math.max(
-            0,
-            Math.min(map.width - 1, Math.floor(interactionPoint.x)),
-          ),
-          y: Math.max(
-            0,
-            Math.min(map.height - 1, Math.floor(interactionPoint.z)),
-          ),
+          x: tileX,
+          y: tileY,
           z: localPlayer.position.z,
         };
       };
@@ -7000,6 +7055,10 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           label,
           startedAt,
           durationMs: target.resourceKind === "copper_vein" ? 1350 : 950,
+          startingCopperQuantity: world.inventory
+            .filter((item) => item.definitionId === "copper_ore")
+            .reduce((sum, item) => sum + item.quantity, 0),
+          startingServerChatId: world.chat.at(-1)?.id ?? null,
         };
       };
 
@@ -7368,20 +7427,71 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
               1.18,
               gatheringPreview.position.y + 0.5,
             ).project(camera);
+            const currentCopperQuantity = world.inventory
+              .filter((item) => item.definitionId === "copper_ore")
+              .reduce((sum, item) => sum + item.quantity, 0);
+
+            if (progress >= 1 && !gatheringPreview.feedbackText) {
+              const gainedCopper =
+                currentCopperQuantity
+                - gatheringPreview.startingCopperQuantity;
+
+              if (gainedCopper > 0) {
+                gatheringPreview.feedbackText =
+                  `+${gainedCopper} Copper Ore`;
+                gatheringPreview.feedbackKind = "success";
+                gatheringPreview.feedbackStartedAt = now;
+              } else {
+                const latestChat = world.chat.at(-1);
+                if (
+                  latestChat
+                  && latestChat.id
+                    !== gatheringPreview.startingServerChatId
+                  && latestChat.speaker === "Server"
+                ) {
+                  gatheringPreview.feedbackText = latestChat.text;
+                  gatheringPreview.feedbackKind = "error";
+                  gatheringPreview.feedbackStartedAt = now;
+                }
+              }
+            }
+
+            const feedback = gatheringPreview.feedbackText;
             if (screenPosition.z > -1 && screenPosition.z < 1) {
               overlay.style.display = "block";
               overlay.style.left = `${rect.left + (screenPosition.x * 0.5 + 0.5) * rect.width}px`;
               overlay.style.top = `${rect.top + (-screenPosition.y * 0.5 + 0.5) * rect.height - 18}px`;
-              gatheringFillRef.current.style.width = `${Math.round(progress * 100)}%`;
-              gatheringLabelRef.current.textContent = gatheringPreview.label;
+
+              if (feedback) {
+                gatheringFillRef.current.style.width = "100%";
+                gatheringLabelRef.current.textContent = feedback;
+                gatheringFillRef.current.style.background =
+                  gatheringPreview.feedbackKind === "error"
+                    ? "linear-gradient(90deg, #7c2424 0%, #ba3c32 55%, #e36b58 100%)"
+                    : "linear-gradient(90deg, #a95a24 0%, #d28a49 50%, #f0ba6d 100%)";
+              } else {
+                gatheringFillRef.current.style.width =
+                  `${Math.round(progress * 100)}%`;
+                gatheringLabelRef.current.textContent =
+                  gatheringPreview.label;
+                gatheringFillRef.current.style.background =
+                  "linear-gradient(90deg, #a95a24 0%, #d28a49 50%, #f0ba6d 100%)";
+              }
             } else {
               overlay.style.display = "none";
             }
 
-            const liveNode = world.resourceNodes.get(gatheringPreview.nodeId);
+            const feedbackAge = gatheringPreview.feedbackStartedAt
+              ? now - gatheringPreview.feedbackStartedAt
+              : 0;
+
             if (
-              progress >= 1
-              && (!liveNode || !liveNode.available || elapsed >= gatheringPreview.durationMs + 260)
+              (feedback && feedbackAge >= 1350)
+              || (
+                progress >= 1
+                && !feedback
+                && elapsed >= gatheringPreview.durationMs + 1000
+              )
             ) {
               gatheringRef.current = null;
               hideGatheringOverlay();
@@ -7508,7 +7618,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       <canvas
         ref={canvasRef}
         className="three-world"
-        data-native-world-renderer="v31b.4.2"
+        data-native-world-renderer="v31c"
         style={{ width: "100%", height: "100%", display: "block" }}
       />
       <div
