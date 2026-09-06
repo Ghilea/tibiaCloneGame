@@ -2221,11 +2221,10 @@ impl World {
         if quantity > item.quantity {
             return Err("invalid_sale_quantity");
         }
-        let definition = self
-            .content
-            .item(&item.definition_id)
-            .cloned()
-            .ok_or("sale_item_not_found")?;
+        // TIBIAGAME_V35_12_4_ICON_ATLAS_SERVER_WARNING
+        if self.content.item(&item.definition_id).is_none() {
+            return Err("sale_item_not_found");
+        }
         let unit_price = npc_vendor_sell_price(&item.definition_id)
             .or_else(|| {
                 npc.offers

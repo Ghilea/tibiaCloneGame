@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { MapView, Position, WorldObjectView } from "../protocol";
 import type { WorldState } from "./WorldState";
+import { queueWorldMapAtlasCapture, flushWorldMapAtlasCapture } from "./WorldMapAtlas";
 import { worldEnvironment, worldTimeLabel } from "./worldEnvironment";
 
 // TIBIAGAME_V35C_MINIMAP_DISCOVERY
@@ -154,6 +155,7 @@ export function GameMinimap({ world }: { world: WorldState }) {
     if (!next) return;
     discoveredRef.current = next;
     queueDiscoverySave();
+    queueWorldMapAtlasCapture(world, player.id, next);
   }, [
     player?.id,
     player?.position.x,
@@ -163,12 +165,19 @@ export function GameMinimap({ world }: { world: WorldState }) {
     world.map?.height,
   ]);
 
+  // TIBIAGAME_V35_13_ATLAS_REGION_CAPTURE
+  useEffect(() => {
+    if (!player || !world.map || discoveryOwner.current !== player.id) return;
+    queueWorldMapAtlasCapture(world, player.id, discoveredRef.current);
+  }, [player?.id, world.streamRegionRevision, world.dynamicMapRevision]);
+
   // Normal movement never writes discovery synchronously. We flush on pagehide
   // so the final few seconds are not lost when leaving the client.
   useEffect(() => {
     const flush = () => {
       cancelQueuedDiscoverySave();
       persistDiscoveryNow();
+      flushWorldMapAtlasCapture();
     };
     window.addEventListener("pagehide", flush);
     return () => {

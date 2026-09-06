@@ -1,3 +1,4 @@
+// TIBIAGAME_V35_11_MODERN_SKILLS_SHOP
 import {
   FormEvent,
   ReactNode,
@@ -10,6 +11,7 @@ import {
   type MouseEvent,
   type PointerEvent,
 } from "react";
+import { AbilityIcon, getAbilityIconKey } from "./game/abilityIcons";
 import { ApiFailure, authenticate, checkServer, listCharacters } from "./api";
 import { CharacterLobby } from "./CharacterLobby";
 import { MenuMusic, WorldMusic } from "./audio/WorldMusic";
@@ -30,6 +32,7 @@ import { PROTOCOL_VERSION, type BuildingView, type CharacterOutfit, type GroundI
 // TIBIAGAME_V35_2_MAINTHREAD_OPTIMIZATION
 // TIBIAGAME_V35_3_IDLE_MAINTHREAD_FIXES
 // TIBIAGAME_V35_1_COMBAT_UI_FIXES
+// TIBIAGAME_V35_12_2_ACTIONBAR_ICONS_UI_CLEANUP
 
 const world = new WorldState();
 const network = new NetworkClient(world);
@@ -668,7 +671,15 @@ function Game({ onLeave }: { onLeave: () => void }) {
             {isSpell && world.spellCooldownUntil > Date.now() && <i key={world.spellCooldownUntil} className="cooldown-sweep" style={{ animationDuration: `${world.spellCooldownMs}ms` }} />}
             {isCoreAbility && abilityCooldown && abilityCooldown.until > Date.now() && <i key={abilityCooldown.until} className="cooldown-sweep" style={{ animationDuration: `${abilityCooldown.durationMs}ms` }} />}
             <kbd>{slot}</kbd>
-            {action ? <><span className="ability-glyph">{action.glyph}</span><small>{detail}</small></> : <span>+</span>}
+            {action ? <>
+              <AbilityIcon
+                iconKey={getAbilityIconKey(action.id) ?? getAbilityIconKey(action.name)}
+                title={action.name}
+                size={34}
+                className="v3512-hotbar-icon"
+              />
+              <small>{detail}</small>
+            </> : <span>+</span>}
           </button>;
         })}
       </nav>
@@ -1820,23 +1831,133 @@ function CompactCharacterPanel() {
   );
 }
 
+function CoreSkillCard({
+  id,
+  name,
+  glyph,
+  level,
+  tries,
+  description,
+}: {
+  id: string;
+  name: string;
+  glyph: string;
+  level: number;
+  tries: number;
+  description: string;
+}) {
+  const required = 5 + level * 2;
+  const progress = Math.min(required, Math.max(0, tries));
+  const remaining = Math.max(0, required - progress);
+  const percent = required > 0 ? Math.min(100, progress / required * 100) : 0;
+
+  return (
+    <article className={"v3511-core-skill " + id}>
+      <i className="v3511-skill-icon" aria-hidden="true">{glyph}</i>
+      <span className="v3511-skill-main">
+        <strong>{name}</strong>
+        <small>{description}</small>
+      </span>
+      <b className="v3511-skill-level">{level}<small>level</small></b>
+      <span
+        className="v3511-skill-progress"
+        aria-label={progress + " of " + required + " uses"}
+      >
+        <i style={{ width: percent + "%" }} />
+      </span>
+      <small className="v3511-skill-foot">
+        <span>{progress} / {required} uses</span>
+        <b>{remaining} to next level</b>
+      </small>
+    </article>
+  );
+}
+
 function SkillPanel() {
   const player = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
   if (!player) return null;
-  return <div className="standalone-skills-panel">
-    <p className="drag-hint">Drag a learned ability to action bar slots 1–8. Drag it out of the bar or right-click to remove it.</p>
-    <ActionSkillList />
-    <SkillRow name="Melee Skill" level={player.swordSkill} tries={player.swordTries} description="Advances through successful hits with any melee weapon." />
-    <SkillRow name="Distance Skill" level={player.distanceSkill} tries={player.distanceTries} description="Advances when ammunition hits a creature." />
-    <SkillRow name="Fletching Skill" level={player.fletchingSkill} tries={player.fletchingTries} description="Advances by producing physical ammunition." />
-    <SkillRow name="Magic Level" level={player.magicLevel} tries={player.magicTries} description="Advances through sigil crafting and magic use." />
-    <SecondarySkillsPicker selected={player.secondarySkills} />
-    {player.secondarySkills.map((id) => {
-      const skill = world.professionSkills.get(id);
-      const definition = secondarySkillOptions.find((entry) => entry.id === id);
-      return <SkillRow key={id} name={definition?.name ?? id} level={skill?.level ?? 0} tries={skill?.tries ?? 0} description={definition?.description ?? "Profession skill."} />;
-    })}
-  </div>;
+
+  const coreSkills = [
+    {
+      id: "melee",
+      name: "Melee",
+      glyph: "⚔",
+      level: player.swordSkill,
+      tries: player.swordTries,
+      description: "Any melee weapon",
+    },
+    {
+      id: "distance",
+      name: "Distance",
+      glyph: "➶",
+      level: player.distanceSkill,
+      tries: player.distanceTries,
+      description: "Bows and ammunition",
+    },
+    {
+      id: "shielding",
+      name: "Shielding",
+      glyph: "◆",
+      level: player.shieldingSkill,
+      tries: player.shieldingTries,
+      description: "Defensive off-hand mastery",
+    },
+    {
+      id: "fletching",
+      name: "Fletching",
+      glyph: "➹",
+      level: player.fletchingSkill,
+      tries: player.fletchingTries,
+      description: "Physical ammunition",
+    },
+    {
+      id: "magic",
+      name: "Magic",
+      glyph: "✦",
+      level: player.magicLevel,
+      tries: player.magicTries,
+      description: "Spells and sigils",
+    },
+  ];
+
+  return (
+    <div className="standalone-skills-panel v3511-skills">
+      <section className="v3511-skill-section">
+        <header className="v3511-section-title">
+          <span>
+            <small>Combat & core</small>
+            <strong>Character skills</strong>
+          </span>
+          <b>Classless progression · use what you want to improve</b>
+        </header>
+        <div className="v3511-core-grid">
+          {coreSkills.map((skill) => <CoreSkillCard key={skill.id} {...skill} />)}
+        </div>
+      </section>
+
+      <section className="v3511-skill-section">
+        <header className="v3511-section-title">
+          <span>
+            <small>Action bar</small>
+            <strong>Abilities</strong>
+          </span>
+          <b>Drag usable abilities to slots 1–8</b>
+        </header>
+        <ActionSkillList />
+      </section>
+
+      <section className="v3511-skill-section v3511-professions">
+        <header className="v3511-section-title">
+          <span>
+            <small>Professions</small>
+            <strong>Secondary skills</strong>
+          </span>
+          <b>Up to 2 gathering + 2 crafting</b>
+        </header>
+        <SecondarySkillsPicker selected={player.secondarySkills} />
+      </section>
+    </div>
+  );
 }
 
 type ActionSkill = { id: string; name: string; glyph: string; description: string };
@@ -1924,7 +2045,7 @@ function beginSkillPointerDrag(event: PointerEvent<HTMLElement>, skillId: string
       dragging = true;
       source.classList.add("skill-dragging");
       ghost = document.createElement("div");
-      ghost.className = "skill-drag-ghost";
+      ghost.className = "skill-drag-ghost v3512-skill-drag-ghost";
       const glyph = document.createElement("i");
       glyph.textContent = skill?.glyph ?? "?";
       const label = document.createElement("span");
@@ -1991,8 +2112,24 @@ function ActionSkillList() {
         onPointerDown={(event) => beginSkillPointerDrag(event, action.id)}
         onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.setData("application/x-aldoria-skill", action.id); event.dataTransfer.setData("text/plain", action.id); event.dataTransfer.effectAllowed = "copy"; }}
       >
-        <i>{action.glyph}</i><span><strong>{action.name}</strong><small>{action.description}</small></span>
-        <b>{world.spells.get(action.id)?.manaCost ?? "item"}</b>
+        <AbilityIcon
+          iconKey={getAbilityIconKey(action.id) ?? getAbilityIconKey(action.name)}
+          title={action.name}
+          size={36}
+        /><span><strong>{action.name}</strong><small>{action.description}</small></span>
+        <b>{
+          world.spells.get(action.id)
+            ? String(world.spells.get(action.id)!.manaCost) + " mana"
+            : action.id === "basic_attack"
+              ? "Weapon"
+              : action.id === "second_wind"
+                ? "45s CD"
+                : action.id === "shield_guard"
+                  ? "12s CD"
+                  : action.id === "ember_sigil"
+                    ? "Sigil"
+                    : "Ability"
+        }</b>
       </div>)}</div>
     ) : (
       <p className="action-skill-empty">You have not learned any action-bar abilities yet.</p>

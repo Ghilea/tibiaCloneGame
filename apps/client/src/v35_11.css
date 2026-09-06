@@ -1,0 +1,300 @@
+/* TIBIAGAME_V35_11_MODERN_SKILLS */
+.panel-skills {
+  width: min(900px, calc(100vw - 32px)) !important;
+}
+
+.v3511-skills {
+  display: grid;
+  gap: 14px;
+  padding: 2px;
+}
+
+.v3511-skills .drag-hint {
+  margin: 0;
+  padding: 9px 11px;
+  color: #86958b;
+  background: #0b120e;
+  border: 1px solid #28372f;
+  border-radius: 8px;
+}
+
+.v3511-skill-section {
+  display: grid;
+  gap: 9px;
+}
+
+.v3511-section-title {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 2px 7px;
+  border-bottom: 1px solid #463c29;
+}
+
+.v3511-section-title > span {
+  display: grid;
+  gap: 2px;
+}
+
+.v3511-section-title small {
+  color: #b28d4d;
+  font: 600 10px Cinzel, Georgia, serif;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.v3511-section-title strong {
+  color: #e5dcc7;
+  font-size: 14px;
+}
+
+.v3511-section-title > b {
+  color: #8c9b91;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.v3511-core-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.v3511-core-skill {
+  position: relative;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  grid-template-areas:
+    "icon main level"
+    "icon progress progress"
+    "icon foot foot";
+  gap: 5px 10px;
+  min-height: 84px;
+  padding: 10px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 0 0, #b88a3e16, transparent 42%),
+    linear-gradient(145deg, #121b16, #09100c);
+  border: 1px solid #34483c;
+  border-radius: 9px;
+  box-shadow: inset 0 1px #ffffff08, 0 6px 15px #0002;
+}
+
+.v3511-core-skill:hover {
+  border-color: #7d6740;
+  background:
+    radial-gradient(circle at 0 0, #d9a74b22, transparent 45%),
+    linear-gradient(145deg, #16221b, #0a120e);
+}
+
+.v3511-skill-icon {
+  grid-area: icon;
+  display: grid;
+  place-items: center;
+  align-self: center;
+  width: 46px;
+  height: 46px;
+  color: #e1c47f;
+  background:
+    radial-gradient(circle at 45% 35%, #66512e, #19180f 68%);
+  border: 1px solid #8d7040;
+  border-radius: 8px;
+  box-shadow: inset 0 1px #ffffff1c, 0 3px 9px #0008;
+  font: 700 20px Georgia, serif;
+}
+
+.v3511-skill-main {
+  grid-area: main;
+  display: grid;
+  align-content: center;
+  min-width: 0;
+}
+
+.v3511-skill-main strong {
+  overflow: hidden;
+  color: #e3e7e3;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v3511-skill-main small {
+  color: #77867d;
+  font-size: 9px !important;
+}
+
+.v3511-skill-level {
+  grid-area: level;
+  align-self: start;
+  min-width: 38px;
+  padding: 3px 6px;
+  color: #edc76f;
+  background: #19170f;
+  border: 1px solid #51452d;
+  border-radius: 6px;
+  text-align: center;
+  font: 700 15px Georgia, serif;
+}
+
+.v3511-skill-level small {
+  display: block;
+  margin-top: 1px;
+  color: #75684b;
+  font: 700 7px system-ui, sans-serif !important;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.v3511-skill-progress {
+  grid-area: progress;
+  height: 7px;
+  overflow: hidden;
+  background: #050806;
+  border: 1px solid #2d3b33;
+  border-radius: 999px;
+  box-shadow: inset 0 1px 3px #000b;
+}
+
+.v3511-skill-progress > i {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  background: linear-gradient(90deg, #486f62, #85bfa9);
+  box-shadow: 0 0 7px #6db19c66;
+}
+
+.v3511-core-skill.shielding .v3511-skill-progress > i {
+  background: linear-gradient(90deg, #5b6782, #91a8d0);
+}
+
+.v3511-core-skill.magic .v3511-skill-progress > i {
+  background: linear-gradient(90deg, #67517f, #ab82ce);
+}
+
+.v3511-skill-foot {
+  grid-area: foot;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  color: #7c8b82;
+  font-size: 9px;
+}
+
+.v3511-skill-foot > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v3511-skill-foot b {
+  flex: 0 0 auto;
+  color: #a6b3ab;
+  font-size: 9px;
+}
+
+.v3511-skills .action-skill-list {
+  display: grid;
+  gap: 8px;
+}
+
+.v3511-skills .action-skill-list > header {
+  margin: 0;
+}
+
+.v3511-skills .action-skill-list > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.v3511-skills .action-skill-source {
+  min-height: 58px;
+  margin: 0 !important;
+  padding: 7px 9px !important;
+  border-radius: 8px;
+}
+
+.v3511-professions .secondary-skills-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin: 0;
+  padding-top: 0;
+}
+
+.v3511-professions .secondary-skills-picker > header {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+  padding: 9px 11px;
+  background: #0c130f;
+  border: 1px solid #2e4035;
+  border-radius: 8px;
+}
+
+.v3511-professions .secondary-skill-group {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  margin: 0;
+  padding: 9px;
+  background: #0b120e;
+  border: 1px solid #293a31;
+  border-radius: 9px;
+}
+
+.v3511-professions .secondary-skill-group h4 {
+  margin: 0 0 2px;
+  color: #b7985c;
+  font-size: 10px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.v3511-professions .secondary-skill-group > div {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.v3511-professions .secondary-skill-group button {
+  min-height: 54px;
+  padding: 7px 9px;
+  border-radius: 7px;
+}
+
+.v3511-professions .secondary-skill-group button > span {
+  font-size: 11px;
+}
+
+.v3511-professions .secondary-skill-group button > small {
+  font-size: 8px !important;
+}
+
+.v3511-professions .secondary-skill-meter {
+  height: 5px;
+  margin-top: 5px;
+}
+
+@media (min-width: 1160px) and (min-height: 760px) {
+  .v3511-core-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .panel-skills {
+    width: calc(100vw - 16px) !important;
+  }
+
+  .v3511-core-grid,
+  .v3511-skills .action-skill-list > div,
+  .v3511-professions .secondary-skills-picker {
+    grid-template-columns: 1fr;
+  }
+
+  .v3511-professions .secondary-skills-picker > header {
+    grid-column: 1;
+  }
+}
