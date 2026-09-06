@@ -59,11 +59,6 @@ const NATIVE_CAMERA_ZOOM = 90;
 // TIBIAGAME_NATIVE_RENDERER_V30_2
 // TIBIAGAME_NATIVE_RENDERER_V30_2_1
 // TIBIAGAME_NATIVE_RENDERER_V31_A
-// TIBIAGAME_NATIVE_RENDERER_V31_B
-// TIBIAGAME_NATIVE_RENDERER_V31_B_1
-// TIBIAGAME_NATIVE_RENDERER_V31_B_2
-// Authored low-poly world-prop and copper-vein GLBs. Static prop families stay
-// instanced; resource GLBs use persistent dynamic instance sets.
 // Native day/night atmosphere using the existing shared worldEnvironment()
 // clock. Fog/background/light objects stay persistent; only values change.
 // Indoor roof + chimney fade, indoor wall-cutaway suppression, and clearer
@@ -94,30 +89,6 @@ type NativeRoofRegion = {
   maxX: number;
   maxZ: number;
 };
-
-const NATIVE_AUTHORED_WORLD_PROP_KINDS = [
-  "chair",
-  "table",
-  "bench",
-  "well",
-  "barrel",
-  "notice_post",
-  "wrecked_planks",
-  "wooden_crate",
-  "grain_sack",
-  "bone_pile",
-  "rock_pile",
-  "mushroom_patch",
-  "campfire",
-  "hay_bundle",
-  "fence_post",
-] as const satisfies readonly WorldObjectKind[];
-
-type NativeAuthoredWorldPropKind =
-  (typeof NATIVE_AUTHORED_WORLD_PROP_KINDS)[number];
-
-const NATIVE_AUTHORED_WORLD_PROP_KIND_SET =
-  new Set<WorldObjectKind>(NATIVE_AUTHORED_WORLD_PROP_KINDS);
 
 type StaticSnapshot = {
   signature: string;
@@ -191,7 +162,6 @@ type StaticSnapshot = {
   woodenProps: Transform[];
   stoneProps: Transform[];
   organicProps: Transform[];
-  authoredProps: Record<NativeAuthoredWorldPropKind, Transform[]>;
   torches: Transform[];
   torchFlames: Transform[];
   stairs: Transform[];
@@ -448,36 +418,6 @@ type NativeGltfPart = {
   localMatrix: THREE.Matrix4;
 };
 
-type NativeAuthoredModelAsset = {
-  scenes: readonly THREE.Group[];
-  parts: readonly NativeGltfPart[];
-};
-
-type NativeWorldPropAssets = {
-  props: Record<NativeAuthoredWorldPropKind, NativeAuthoredModelAsset>;
-  copperVein: NativeAuthoredModelAsset;
-  copperVeinDepleted: NativeAuthoredModelAsset;
-};
-
-const NATIVE_WORLD_PROP_MODEL_PATHS:
-  Record<NativeAuthoredWorldPropKind, string> = {
-    chair: "/assets/models/world-props/chair.glb",
-    table: "/assets/models/world-props/table.glb",
-    bench: "/assets/models/world-props/bench.glb",
-    well: "/assets/models/world-props/well.glb",
-    barrel: "/assets/models/world-props/barrel.glb",
-    notice_post: "/assets/models/world-props/notice_post.glb",
-    wrecked_planks: "/assets/models/world-props/wrecked_planks.glb",
-    wooden_crate: "/assets/models/world-props/wooden_crate.glb",
-    grain_sack: "/assets/models/world-props/grain_sack.glb",
-    bone_pile: "/assets/models/world-props/bone_pile.glb",
-    rock_pile: "/assets/models/world-props/rock_pile.glb",
-    mushroom_patch: "/assets/models/world-props/mushroom_patch.glb",
-    campfire: "/assets/models/world-props/campfire.glb",
-    hay_bundle: "/assets/models/world-props/hay_bundle.glb",
-    fence_post: "/assets/models/world-props/fence_post.glb",
-  };
-
 type NativeMedievalAssets = {
   scenes: readonly THREE.Group[];
   wallParts: readonly NativeGltfPart[];
@@ -555,25 +495,6 @@ class NativeGltfInstancedSet {
         mesh.instanceMatrix.needsUpdate = true;
       }
     }
-  }
-}
-
-class NativeAuthoredInstancedLayer {
-  readonly set: NativeGltfInstancedSet;
-
-  constructor(
-    readonly asset: NativeAuthoredModelAsset,
-    capacity: number,
-  ) {
-    this.set = new NativeGltfInstancedSet(asset.parts, capacity);
-  }
-
-  get meshes() {
-    return this.set.meshes;
-  }
-
-  setTransforms(transforms: readonly Transform[]) {
-    this.set.setTransforms(this.asset.parts, transforms);
   }
 }
 
@@ -670,181 +591,6 @@ function extractNativeGltfParts(
     throw new Error(`Native V25.1: ${nodeName} contains no mesh parts`);
   }
   return parts;
-}
-
-function extractNativeGltfPartsFromRoot(
-  root: THREE.Object3D,
-): readonly NativeGltfPart[] {
-  root.updateWorldMatrix(true, true);
-  const inverse = root.matrixWorld.clone().invert();
-  const parts: NativeGltfPart[] = [];
-
-  root.traverse((child) => {
-    if (!(child instanceof THREE.Mesh)) return;
-    parts.push({
-      geometry: child.geometry,
-      material: child.material,
-      localMatrix: inverse.clone().multiply(child.matrixWorld),
-    });
-  });
-
-  if (!parts.length) {
-    throw new Error("Native V31B: authored GLB contains no mesh parts");
-  }
-  return parts;
-}
-
-function normalizeNativeAuthoredParts(
-  parts: readonly NativeGltfPart[],
-  targetFootprint = 0.88,
-  targetHeight = 1.35,
-): readonly NativeGltfPart[] {
-  const bounds = new THREE.Box3();
-  const transformed = new THREE.Box3();
-
-  for (const part of parts) {
-    part.geometry.computeBoundingBox();
-    const box = part.geometry.boundingBox;
-    if (!box) continue;
-    transformed.copy(box).applyMatrix4(part.localMatrix);
-    bounds.union(transformed);
-  }
-
-  if (bounds.isEmpty()) return parts;
-
-  const size = bounds.getSize(new THREE.Vector3());
-  const center = bounds.getCenter(new THREE.Vector3());
-  const footprint = Math.max(size.x, size.z, 0.0001);
-  const height = Math.max(size.y, 0.0001);
-  const scale = Math.min(
-    targetFootprint / footprint,
-    targetHeight / height,
-  );
-
-  const normalize = new THREE.Matrix4()
-    .makeScale(scale, scale, scale)
-    .multiply(
-      new THREE.Matrix4().makeTranslation(
-        -center.x,
-        -bounds.min.y,
-        -center.z,
-      ),
-    );
-
-  return parts.map((part) => ({
-    ...part,
-    localMatrix: normalize.clone().multiply(part.localMatrix),
-  }));
-}
-
-async function loadNativeAuthoredModel(
-  path: string,
-  targetFootprint: number,
-  targetHeight: number,
-): Promise<NativeAuthoredModelAsset> {
-  const gltf = await new GLTFLoader().loadAsync(path);
-  const scenes = gltf.scenes.length > 0
-    ? gltf.scenes
-    : [gltf.scene];
-  const root = gltf.scene;
-  const parts = normalizeNativeAuthoredParts(
-    extractNativeGltfPartsFromRoot(root),
-    targetFootprint,
-    targetHeight,
-  );
-  return { scenes, parts };
-}
-
-const NATIVE_WORLD_PROP_FIT:
-  Record<NativeAuthoredWorldPropKind, readonly [number, number]> = {
-    chair: [0.72, 1.15],
-    table: [0.92, 0.84],
-    bench: [0.96, 1.00],
-    well: [0.96, 1.75],
-    barrel: [0.64, 0.74],
-    notice_post: [0.78, 1.55],
-    wrecked_planks: [0.92, 0.28],
-    wooden_crate: [0.68, 0.62],
-    grain_sack: [0.58, 0.72],
-    bone_pile: [0.78, 0.34],
-    rock_pile: [0.82, 0.58],
-    mushroom_patch: [0.76, 0.62],
-    campfire: [0.76, 0.48],
-    hay_bundle: [0.82, 0.62],
-    fence_post: [0.92, 1.12],
-  };
-
-async function loadNativeWorldPropAssets(): Promise<NativeWorldPropAssets> {
-  const entries = await Promise.all(
-    NATIVE_AUTHORED_WORLD_PROP_KINDS.map(async (kind) => {
-      const [footprint, height] = NATIVE_WORLD_PROP_FIT[kind];
-      const asset = await loadNativeAuthoredModel(
-        NATIVE_WORLD_PROP_MODEL_PATHS[kind],
-        footprint,
-        height,
-      );
-      return [kind, asset] as const;
-    }),
-  );
-
-  const [
-    copperVein,
-    copperVeinDepleted,
-  ] = await Promise.all([
-    loadNativeAuthoredModel(
-      "/assets/models/world-props/copper_vein.glb",
-      0.84,
-      0.86,
-    ),
-    loadNativeAuthoredModel(
-      "/assets/models/world-props/copper_vein_depleted.glb",
-      0.84,
-      0.58,
-    ),
-  ]);
-
-  return {
-    props: Object.fromEntries(entries) as Record<
-      NativeAuthoredWorldPropKind,
-      NativeAuthoredModelAsset
-    >,
-    copperVein,
-    copperVeinDepleted,
-  };
-}
-
-function disposeNativeAuthoredModelAsset(asset: NativeAuthoredModelAsset) {
-  const geometries = new Set<THREE.BufferGeometry>();
-  const materials = new Set<THREE.Material>();
-  const textures = new Set<THREE.Texture>();
-
-  for (const scene of asset.scenes) {
-    scene.traverse((object) => {
-      if (!(object instanceof THREE.Mesh)) return;
-      geometries.add(object.geometry);
-      const materialEntries = Array.isArray(object.material)
-        ? object.material
-        : [object.material];
-      for (const material of materialEntries) {
-        materials.add(material);
-        for (const value of Object.values(material)) {
-          if (value instanceof THREE.Texture) textures.add(value);
-        }
-      }
-    });
-  }
-
-  for (const geometry of geometries) geometry.dispose();
-  for (const material of materials) material.dispose();
-  for (const texture of textures) texture.dispose();
-}
-
-function disposeNativeWorldPropAssets(assets: NativeWorldPropAssets) {
-  for (const asset of Object.values(assets.props)) {
-    disposeNativeAuthoredModelAsset(asset);
-  }
-  disposeNativeAuthoredModelAsset(assets.copperVein);
-  disposeNativeAuthoredModelAsset(assets.copperVeinDepleted);
 }
 
 async function loadNativeMedievalAssets(): Promise<NativeMedievalAssets> {
@@ -1138,78 +884,6 @@ function nativeTile(
     height,
     scale,
   ];
-}
-
-function appendNativeConnectedWalls(
-  positions: readonly Position[],
-  floor: number,
-  centerX: number,
-  centerY: number,
-  height: number,
-  thickness: number,
-  target: Transform[],
-  skip?: (position: Position) => boolean,
-) {
-  const wallSet = new Set(
-    positions
-      .filter((position) => position.z === floor)
-      .map(tileKey),
-  );
-  const wallLength = 1.08;
-
-  for (const position of positions) {
-    if (!nativeInside(position, floor, centerX, centerY)) continue;
-    if (skip?.(position)) continue;
-
-    const west = wallSet.has(
-      `${position.x - 1}:${position.y}:${position.z}`,
-    );
-    const east = wallSet.has(
-      `${position.x + 1}:${position.y}:${position.z}`,
-    );
-    const north = wallSet.has(
-      `${position.x}:${position.y - 1}:${position.z}`,
-    );
-    const south = wallSet.has(
-      `${position.x}:${position.y + 1}:${position.z}`,
-    );
-
-    const horizontal = west || east;
-    const vertical = north || south;
-    const x = position.x + 0.5;
-    const z = position.y + 0.5;
-
-    if (horizontal) {
-      target.push([
-        x,
-        height / 2,
-        z,
-        wallLength,
-        height,
-        thickness,
-      ]);
-    }
-    if (vertical) {
-      target.push([
-        x,
-        height / 2,
-        z,
-        thickness,
-        height,
-        wallLength,
-      ]);
-    }
-    if (!horizontal && !vertical) {
-      target.push([
-        x,
-        height / 2,
-        z,
-        wallLength,
-        height,
-        thickness,
-      ]);
-    }
-  }
 }
 
 function appendBridge(
@@ -1600,23 +1274,6 @@ function prepareNativeSnapshot(
     woodenProps: [],
     stoneProps: [],
     organicProps: [],
-    authoredProps: {
-      chair: [],
-      table: [],
-      bench: [],
-      well: [],
-      barrel: [],
-      notice_post: [],
-      wrecked_planks: [],
-      wooden_crate: [],
-      grain_sack: [],
-      bone_pile: [],
-      rock_pile: [],
-      mushroom_patch: [],
-      campfire: [],
-      hay_bundle: [],
-      fence_post: [],
-    },
     torches: [],
     torchFlames: [],
     stairs: [],
@@ -1699,27 +1356,30 @@ function prepareNativeSnapshot(
     }
   }
 
-  appendNativeConnectedWalls(
-    map.houseWalls,
-    floor,
-    centerX,
-    centerY,
-    HOUSE_WALL_HEIGHT,
-    0.24,
-    snapshot.looseHouseWalls,
-    (position) => buildingWallOwnsPosition(position, map.buildings),
-  );
+  for (const position of map.houseWalls) {
+    if (!nativeInside(position, floor, centerX, centerY)) continue;
+    if (buildingWallOwnsPosition(position, map.buildings)) continue;
+    snapshot.looseHouseWalls.push([
+      position.x + 0.5,
+      HOUSE_WALL_HEIGHT / 2,
+      position.y + 0.5,
+      0.24,
+      HOUSE_WALL_HEIGHT,
+      0.24,
+    ]);
+  }
 
-  appendNativeConnectedWalls(
-    map.castleWalls,
-    floor,
-    centerX,
-    centerY,
-    KEEP_WALL_HEIGHT,
-    0.3,
-    snapshot.castleWalls,
-    (position) => buildingWallOwnsPosition(position, map.buildings),
-  );
+  for (const position of map.castleWalls) {
+    if (!nativeInside(position, floor, centerX, centerY)) continue;
+    snapshot.castleWalls.push([
+      position.x + 0.5,
+      2.05,
+      position.y + 0.5,
+      0.3,
+      4.1,
+      0.3,
+    ]);
+  }
 
   for (const building of map.buildings) {
     if (building.floor !== floor) continue;
@@ -2168,29 +1828,14 @@ function prepareNativeSnapshot(
       ]);
       continue;
     }
-    if (NATIVE_AUTHORED_WORLD_PROP_KIND_SET.has(object.kind)) {
-      const kind = object.kind as NativeAuthoredWorldPropKind;
-      const naturalRotation = [
-        "wrecked_planks",
-        "grain_sack",
-        "bone_pile",
-        "rock_pile",
-        "mushroom_patch",
-        "campfire",
-        "hay_bundle",
-      ].includes(kind)
-        ? ((object.position.x * 13 + object.position.y * 7) % 4)
-          * Math.PI / 2
-        : 0;
-
-      snapshot.authoredProps[kind].push([
+    if (object.kind === "barrel") {
+      snapshot.barrels.push([
         object.position.x + 0.5,
-        0,
+        0.28,
         object.position.y + 0.5,
         1,
         1,
         1,
-        naturalRotation,
       ]);
       continue;
     }
@@ -2746,55 +2391,6 @@ async function loadNativeCreatureAssets(
   }
 
   return { definition, atlases };
-}
-
-function initializeNativeLoadedAssetTextures(
-  renderer: THREE.WebGLRenderer,
-  characters: NativeCharacterAssets,
-  creatures: NativeCreatureAssets,
-  medieval: NativeMedievalAssets,
-  worldProps: NativeWorldPropAssets,
-) {
-  const textures = new Set<THREE.Texture>();
-
-  const collectRoots = (roots: readonly THREE.Object3D[]) => {
-    for (const root of roots) {
-      root.traverse((object) => {
-        if (!(object instanceof THREE.Mesh)) return;
-        const materials = Array.isArray(object.material)
-          ? object.material
-          : [object.material];
-
-        for (const material of materials) {
-          if (!material) continue;
-          for (const value of Object.values(material)) {
-            if (value instanceof THREE.Texture) {
-              textures.add(value);
-            }
-          }
-        }
-      });
-    }
-  };
-
-  collectRoots(Object.values(characters.templates));
-  collectRoots(medieval.scenes);
-  for (const asset of Object.values(worldProps.props)) {
-    collectRoots(asset.scenes);
-  }
-  collectRoots(worldProps.copperVein.scenes);
-  collectRoots(worldProps.copperVeinDepleted.scenes);
-
-  for (const atlas of creatures.atlases.values()) {
-    textures.add(atlas.albedo);
-    if (atlas.normal) textures.add(atlas.normal);
-  }
-
-  for (const texture of textures) {
-    renderer.initTexture(texture);
-  }
-
-  return textures.size;
 }
 
 function disposeCharacterTemplates(assets: NativeCharacterAssets) {
@@ -3459,8 +3055,6 @@ type NativeDynamicLayers = {
   resourceAvailable: NativeInstancedLayer;
   resourceDepleted: NativeInstancedLayer;
   resourceCopper: NativeInstancedLayer;
-  resourceCopperAuthored: NativeAuthoredInstancedLayer;
-  resourceCopperDepletedAuthored: NativeAuthoredInstancedLayer;
   resourceWood: NativeInstancedLayer;
   resourceHerb: NativeInstancedLayer;
   resourceWater: NativeInstancedLayer;
@@ -4331,8 +3925,6 @@ class NativeDynamicSceneManager {
     const availableResources: Transform[] = [];
     const depletedResources: Transform[] = [];
     const copper: Transform[] = [];
-    const copperAuthored: Transform[] = [];
-    const copperDepletedAuthored: Transform[] = [];
     const wood: Transform[] = [];
     const herbs: Transform[] = [];
     const waterResources: Transform[] = [];
@@ -4352,26 +3944,20 @@ class NativeDynamicSceneManager {
         (node.position.x * 0.73 + node.position.y * 0.31) % Math.PI,
       ];
 
-      if (node.kind === "copper_vein") {
-        const target = node.available
-          ? copperAuthored
-          : copperDepletedAuthored;
-        target.push([
-          x,
-          0,
-          z,
-          1,
-          1,
-          1,
-          transform[6],
-        ]);
-        continue;
-      }
-
       if (node.available) {
         switch (nativeResourceFamily(node.kind)) {
           case "ore":
             availableResources.push(transform);
+            if (node.kind === "copper_vein") {
+              copper.push([
+                x + 0.08,
+                0.48,
+                z - 0.05,
+                1,
+                1,
+                1,
+              ]);
+            }
             break;
           case "wood":
             wood.push([
@@ -4427,10 +4013,6 @@ class NativeDynamicSceneManager {
     this.layers.resourceAvailable.setTransforms(availableResources);
     this.layers.resourceDepleted.setTransforms(depletedResources);
     this.layers.resourceCopper.setTransforms(copper);
-    this.layers.resourceCopperAuthored.setTransforms(copperAuthored);
-    this.layers.resourceCopperDepletedAuthored.setTransforms(
-      copperDepletedAuthored,
-    );
     this.layers.resourceWood.setTransforms(wood);
     this.layers.resourceHerb.setTransforms(herbs);
     this.layers.resourceWater.setTransforms(waterResources);
@@ -5097,11 +4679,10 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     let loadedCharacterAssets: NativeCharacterAssets | null = null;
     let loadedCreatureAssets: NativeCreatureAssets | null = null;
     let loadedMedievalAssets: NativeMedievalAssets | null = null;
-    let loadedWorldPropAssets: NativeWorldPropAssets | null = null;
     const disposables: Array<{ dispose(): void }> = [];
 
     console.info(
-      "NATIVE WORLD V31B.2 active · connected underground walls + GPU warmup · raw Three.js",
+      "NATIVE WORLD V31A active · native day/night atmosphere · raw Three.js",
     );
 
     const bootstrap = async () => {
@@ -5121,22 +4702,18 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       const characterAssets = await loadNativeCharacterAssets();
       const castleRatAssets = await loadNativeCreatureAssets("castle_rat");
       const medievalAssets = await loadNativeMedievalAssets();
-      const worldPropAssets = await loadNativeWorldPropAssets();
       loadedCharacterAssets = characterAssets;
       loadedCreatureAssets = castleRatAssets;
       loadedMedievalAssets = medievalAssets;
-      loadedWorldPropAssets = worldPropAssets;
 
       if (disposed) {
         for (const texture of Object.values(textures)) texture.dispose();
         disposeCharacterTemplates(characterAssets);
         disposeCreatureAssets(castleRatAssets);
         disposeNativeMedievalAssets(medievalAssets);
-        disposeNativeWorldPropAssets(worldPropAssets);
         loadedCharacterAssets = null;
         loadedCreatureAssets = null;
         loadedMedievalAssets = null;
-        loadedWorldPropAssets = null;
         nextRenderer.dispose();
         return;
       }
@@ -6159,37 +5736,6 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         for (const mesh of set.meshes) scene.add(mesh);
       }
 
-      const worldPropLayers = Object.fromEntries(
-        NATIVE_AUTHORED_WORLD_PROP_KINDS.map((kind) => [
-          kind,
-          new NativeAuthoredInstancedLayer(
-            worldPropAssets.props[kind],
-            1024,
-          ),
-        ]),
-      ) as Record<
-        NativeAuthoredWorldPropKind,
-        NativeAuthoredInstancedLayer
-      >;
-      for (const layer of Object.values(worldPropLayers)) {
-        for (const mesh of layer.meshes) scene.add(mesh);
-      }
-
-      const copperVeinLayer = new NativeAuthoredInstancedLayer(
-        worldPropAssets.copperVein,
-        512,
-      );
-      const copperVeinDepletedLayer = new NativeAuthoredInstancedLayer(
-        worldPropAssets.copperVeinDepleted,
-        512,
-      );
-      for (const mesh of [
-        ...copperVeinLayer.meshes,
-        ...copperVeinDepletedLayer.meshes,
-      ]) {
-        scene.add(mesh);
-      }
-
       openingAnimationManager = new NativeOpeningAnimationManager(
         layers.doorLeaves,
         layers.doorKnobs,
@@ -6225,8 +5771,6 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           resourceAvailable: layers.resourceAvailable,
           resourceDepleted: layers.resourceDepleted,
           resourceCopper: layers.resourceCopper,
-          resourceCopperAuthored: copperVeinLayer,
-          resourceCopperDepletedAuthored: copperVeinDepletedLayer,
           resourceWood: layers.resourceWood,
           resourceHerb: layers.resourceHerb,
           resourceWater: layers.resourceWater,
@@ -6252,12 +5796,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       const activeDynamicSceneManager = dynamicSceneManager;
 
       console.info(
-        `NATIVE V31B dynamic lights: ${dynamicLightsEnabled ? "enabled" : "disabled"}`,
-      );
-      console.info(
-        `NATIVE V31B authored world models: ${
-          NATIVE_AUTHORED_WORLD_PROP_KINDS.length
-        } props + copper vein states`,
+        `NATIVE V29 dynamic lights: ${dynamicLightsEnabled ? "enabled" : "disabled"}`,
       );
 
       let lastFrameAt = performance.now();
@@ -6428,13 +5967,6 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         stage("wooden props", () => layers.woodenProps.setTransforms(snapshot.woodenProps));
         stage("stone props", () => layers.stoneProps.setTransforms(snapshot.stoneProps));
         stage("organic props", () => layers.organicProps.setTransforms(snapshot.organicProps));
-        for (const kind of NATIVE_AUTHORED_WORLD_PROP_KINDS) {
-          stage(`authored prop ${kind}`, () => {
-            worldPropLayers[kind].setTransforms(
-              snapshot.authoredProps[kind],
-            );
-          });
-        }
         stage("torches", () => layers.torches.setTransforms(snapshot.torches));
         stage("torch flames", () => layers.torchFlames.setTransforms(snapshot.torchFlames));
         stage("stairs", () => layers.stairs.setTransforms(snapshot.stairs));
@@ -6740,80 +6272,6 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         canvas.removeEventListener("contextmenu", onContextMenu);
       };
 
-      // V31B.2: force persistent geometry/materials and already-decoded actor
-      // atlas textures onto the GPU while the loading overlay is still visible.
-      const nativeGpuWarmupStartedAt = performance.now();
-      const nativeWarmupTransform: Transform = [
-        -10_000,
-        -10_000,
-        -10_000,
-        1,
-        1,
-        1,
-      ];
-
-      const nativeWarmupTextureCount =
-        initializeNativeLoadedAssetTextures(
-          nextRenderer,
-          characterAssets,
-          castleRatAssets,
-          medievalAssets,
-          worldPropAssets,
-        );
-
-      for (const layer of Object.values(layers)) {
-        layer.setTransforms([nativeWarmupTransform]);
-      }
-
-      medievalLayers.houseWalls.setTransforms(
-        medievalAssets.wallParts,
-        [nativeWarmupTransform],
-      );
-      medievalLayers.shuttersOpen.setTransforms(
-        medievalAssets.shutterOpenParts,
-        [nativeWarmupTransform],
-      );
-      medievalLayers.shuttersClosed.setTransforms(
-        medievalAssets.shutterClosedParts,
-        [nativeWarmupTransform],
-      );
-
-      for (const kind of NATIVE_AUTHORED_WORLD_PROP_KINDS) {
-        worldPropLayers[kind].setTransforms([nativeWarmupTransform]);
-      }
-      copperVeinLayer.setTransforms([nativeWarmupTransform]);
-      copperVeinDepletedLayer.setTransforms([nativeWarmupTransform]);
-
-      nextRenderer.compile(scene, camera);
-      nextRenderer.render(scene, camera);
-
-      for (const layer of Object.values(layers)) {
-        layer.setTransforms([]);
-      }
-      medievalLayers.houseWalls.setTransforms(
-        medievalAssets.wallParts,
-        [],
-      );
-      medievalLayers.shuttersOpen.setTransforms(
-        medievalAssets.shutterOpenParts,
-        [],
-      );
-      medievalLayers.shuttersClosed.setTransforms(
-        medievalAssets.shutterClosedParts,
-        [],
-      );
-      for (const kind of NATIVE_AUTHORED_WORLD_PROP_KINDS) {
-        worldPropLayers[kind].setTransforms([]);
-      }
-      copperVeinLayer.setTransforms([]);
-      copperVeinDepletedLayer.setTransforms([]);
-
-      console.info(
-        `NATIVE V31B.2 GPU warmup: ${
-          (performance.now() - nativeGpuWarmupStartedAt).toFixed(1)
-        }ms · ${nativeWarmupTextureCount} textures`,
-      );
-
       // Instantiate actors already present in the first streamed region before
       // shader compilation, so their first material/skin/sprite programs are not
       // paid for during movement.
@@ -7020,7 +6478,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
 
           if (positionRef.current) {
             positionRef.current.textContent =
-              `NATIVE V31B · ${worldTimeLabel(environment)} ${environment.period} · `
+              `NATIVE V31A · ${worldTimeLabel(environment)} ${environment.period} · `
               + `x ${local.position.x} · y ${local.position.y} · z ${floor}`;
           }
         }
@@ -7074,7 +6532,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     };
 
     void bootstrap().catch((error) => {
-      console.error("Native V31B renderer bootstrap failed", error);
+      console.error("Native V31A renderer bootstrap failed", error);
     });
 
     return () => {
@@ -7112,10 +6570,6 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         disposeNativeMedievalAssets(loadedMedievalAssets);
         loadedMedievalAssets = null;
       }
-      if (loadedWorldPropAssets) {
-        disposeNativeWorldPropAssets(loadedWorldPropAssets);
-        loadedWorldPropAssets = null;
-      }
     };
   }, [input, world]);
 
@@ -7124,7 +6578,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       <canvas
         ref={canvasRef}
         className="three-world"
-        data-native-world-renderer="v31b.2"
+        data-native-world-renderer="v31a"
         style={{ width: "100%", height: "100%", display: "block" }}
       />
       <div
@@ -7140,7 +6594,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       {showDebug && (
         <div className="debug-meter" aria-label="Native renderer performance">
           <div ref={positionRef} className="position-meter">
-            NATIVE V31B · --:-- · x -- · y -- · z --
+            NATIVE V31A · --:-- · x -- · y -- · z --
           </div>
           <div ref={performanceRef} className="fps-meter">
             Native renderer loading world + actors…

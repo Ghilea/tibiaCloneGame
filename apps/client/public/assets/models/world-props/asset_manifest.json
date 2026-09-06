@@ -1,0 +1,25 @@
+{
+  "version": "V31B",
+  "description": "Project-authored low-poly world prop/resource GLBs for the native renderer.",
+  "props": {
+    "chair": "chair.glb",
+    "table": "table.glb",
+    "bench": "bench.glb",
+    "well": "well.glb",
+    "barrel": "barrel.glb",
+    "notice_post": "notice_post.glb",
+    "wrecked_planks": "wrecked_planks.glb",
+    "wooden_crate": "wooden_crate.glb",
+    "grain_sack": "grain_sack.glb",
+    "bone_pile": "bone_pile.glb",
+    "rock_pile": "rock_pile.glb",
+    "mushroom_patch": "mushroom_patch.glb",
+    "campfire": "campfire.glb",
+    "hay_bundle": "hay_bundle.glb",
+    "fence_post": "fence_post.glb"
+  },
+  "resources": {
+    "copper_vein": "copper_vein.glb",
+    "copper_vein_depleted": "copper_vein_depleted.glb"
+  }
+}
