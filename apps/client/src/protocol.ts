@@ -1,7 +1,7 @@
 // TIBIAGAME_STREAMING_FIX_V9
 // TIBIAGAME_V34_FRIEND_FEEDBACK
 export const PROTOCOL_VERSION = 29;
-export const CLIENT_VERSION = "0.1.1";
+export const CLIENT_VERSION = "0.1.2";
 
 export type Position = { x: number; y: number; z: number };
 export type PlayerView = {

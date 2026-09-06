@@ -101,6 +101,38 @@ pub struct ActiveFood {
     mana_per_tick: u16,
 }
 
+impl ActiveFood {
+    pub fn from_persisted(
+        remaining_ms: u64,
+        health_per_tick: u16,
+        mana_per_tick: u16,
+    ) -> Option<Self> {
+        if remaining_ms == 0 {
+            return None;
+        }
+        Some(Self {
+            until: Instant::now() + Duration::from_millis(remaining_ms),
+            health_per_tick,
+            mana_per_tick,
+        })
+    }
+}
+
+impl Player {
+    pub fn food_state(&self) -> Option<(u64, u16, u16)> {
+        let food = self.active_food.as_ref()?;
+        let remaining_ms = u64::try_from(
+            food.until.saturating_duration_since(Instant::now()).as_millis(),
+        )
+        .unwrap_or(u64::MAX);
+        (remaining_ms > 0).then_some((
+            remaining_ms,
+            food.health_per_tick,
+            food.mana_per_tick,
+        ))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CraftingQueue {
     recipe_id: String,
@@ -116,6 +148,18 @@ pub struct CraftingUpdate {
     pub remaining: u16,
     pub status: &'static str,
     pub inventory_changed: bool,
+}
+
+// TIBIAGAME_V35B_PROGRESSION_PERSISTENCE_SIGILS
+/// Classless baseline resources grow evenly with character level.
+pub fn max_health_for_level(level: u32) -> u16 {
+    let bonus = level.saturating_sub(1).saturating_mul(5);
+    150_u32.saturating_add(bonus).min(u32::from(u16::MAX)) as u16
+}
+
+pub fn max_mana_for_level(level: u32) -> u16 {
+    let bonus = level.saturating_sub(1).saturating_mul(5);
+    50_u32.saturating_add(bonus).min(u32::from(u16::MAX)) as u16
 }
 
 /// Carry capacity starts at 100 and grows by 10 weight per level.
@@ -3859,11 +3903,15 @@ impl World {
             return Err("cannot_split_equipped");
         }
         source.quantity -= quantity;
+        let split_charges = match (source.charges, definition.charges) {
+            (Some(current), Some(full)) if current < full => Some(full),
+            _ => source.charges,
+        };
         let split = ItemInstance {
             instance_id: uuid::Uuid::new_v4(),
             definition_id: source.definition_id.clone(),
             quantity,
-            charges: source.charges,
+            charges: split_charges,
             container_id: source.container_id,
             equipped_slot: None,
         };
@@ -4106,13 +4154,21 @@ impl World {
         }
         let (damage, stats) = {
             let player = self.players.get_mut(&player_id).expect("checked above");
-            let charges = player.inventory[item_index]
+            let full_charges = definition.charges.ok_or("item_has_no_charges")?;
+            let current_charges = player.inventory[item_index]
                 .charges
-                .ok_or("item_has_no_charges")?;
-            if charges <= 1 {
-                player.inventory.remove(item_index);
+                .unwrap_or(full_charges)
+                .min(full_charges);
+            let quantity = player.inventory[item_index].quantity;
+            if current_charges <= 1 {
+                if quantity <= 1 {
+                    player.inventory.remove(item_index);
+                } else {
+                    player.inventory[item_index].quantity -= 1;
+                    player.inventory[item_index].charges = Some(full_charges);
+                }
             } else {
-                player.inventory[item_index].charges = Some(charges - 1);
+                player.inventory[item_index].charges = Some(current_charges - 1);
             }
             player.last_item_use = Instant::now();
             advance_player_skill(&mut player.view, TrainedSkill::Magic, 1);
@@ -4235,8 +4291,26 @@ impl World {
         spawn.active_id = None;
         spawn.respawn_at = Instant::now() + CREATURE_RESPAWN;
         let player = self.players.get_mut(&player_id).expect("checked above");
+        let previous_level = player.view.level;
         player.view.experience = player.view.experience.saturating_add(definition.experience);
         player.view.level = level_for_experience(player.view.experience);
+        if player.view.level > previous_level {
+            let gained_levels = player.view.level - previous_level;
+            let resource_gain = u16::try_from(gained_levels.saturating_mul(5))
+                .unwrap_or(u16::MAX);
+            player.view.max_health = max_health_for_level(player.view.level);
+            player.view.max_mana = max_mana_for_level(player.view.level);
+            player.view.health = player
+                .view
+                .health
+                .saturating_add(resource_gain)
+                .min(player.view.max_health);
+            player.view.mana = player
+                .view
+                .mana
+                .saturating_add(resource_gain)
+                .min(player.view.max_mana);
+        }
         player.max_capacity = capacity_for_level(player.view.level);
         let stats = player.view.clone();
         let corpse_id = uuid::Uuid::new_v4();

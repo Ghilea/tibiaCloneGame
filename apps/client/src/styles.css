@@ -548,3 +548,81 @@ body.inventory-pointer-dragging, body.inventory-pointer-dragging * { cursor: gra
     grid-template-columns: 1fr;
   }
 }
+
+
+/* TIBIAGAME_V35A_UI_COMBAT */
+.battle-list {
+  position: absolute;
+  z-index: 7;
+  top: 246px;
+  right: 18px;
+  display: grid;
+  width: 220px;
+  max-height: 245px;
+  overflow: hidden;
+  color: #d8c89e;
+  background: #101713e8;
+  border: 1px solid #5a675f;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px #0009, inset 0 1px #ffffff0c;
+  backdrop-filter: blur(12px);
+}
+.battle-list > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 9px;
+  border-bottom: 1px solid #ffffff12;
+}
+.battle-list > header strong { font: 700 10px Cinzel, serif; letter-spacing: .08em; }
+.battle-list > header small { color: #8e9a91; font-size: 8px; }
+.battle-list > div { overflow-y: auto; }
+.battle-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 58px 32px;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 42px;
+  padding: 6px 8px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #ffffff0b;
+  border-radius: 0;
+}
+.battle-entry:hover, .battle-entry.targeted, .battle-entry.selected { background: #ffffff0a; }
+.battle-entry.targeted { box-shadow: inset 3px 0 #cf704f; }
+.battle-entry.player.selected { box-shadow: inset 3px 0 #5d96cf; }
+.battle-entry > span { display: grid; min-width: 0; gap: 1px; }
+.battle-entry strong { overflow: hidden; color: #e2ded0; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.battle-entry small { color: #78867d; font-size: 7px; }
+.battle-entry > b { color: #9aa79e; font-size: 7px; text-align: right; }
+.battle-health { display: block; height: 5px; overflow: hidden; background: #251b19; border: 1px solid #4d403b; border-radius: 4px; }
+.battle-health em { display: block; height: 100%; background: #5aa968; }
+.equipment-ground-drop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 7px 9px;
+  color: #bba984;
+  background: #1a1512;
+  border: 1px dashed #765942;
+  border-radius: 6px;
+  font-size: 8px;
+}
+.equipment-ground-drop:hover,
+.inventory-pointer-dragging .equipment-ground-drop {
+  color: #ead8b5;
+  border-color: #b77a54;
+  background: #261914;
+}
+@media (max-width: 900px) {
+  .battle-list { top: 188px; right: 18px; width: 172px; max-height: 185px; transform: scale(.9); transform-origin: top right; }
+}
+@media (max-width: 1050px), (max-height: 650px) {
+  .battle-list { top: 174px; transform: scale(.76); transform-origin: top right; }
+}

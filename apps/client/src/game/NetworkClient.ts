@@ -237,6 +237,23 @@ export class NetworkClient {
       ? this.world.players.get(this.world.localPlayerId)?.position.z
       : undefined;
     this.world.applyBatch(messages);
+
+    // TIBIAGAME_V35A_UI_COMBAT: automatically retaliate without overriding
+    // an explicit/ongoing target chosen by the player.
+    if (this.world.attackTargetId === null && this.world.localPlayerId) {
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const message = messages[index];
+        if (
+          message.type === "combat_effect"
+          && message.target_id === this.world.localPlayerId
+          && this.world.creatures.has(message.source_id)
+        ) {
+          this.attack(message.source_id);
+          break;
+        }
+      }
+    }
+
     const currentFloor = this.world.localPlayerId
       ? this.world.players.get(this.world.localPlayerId)?.position.z
       : undefined;

@@ -3484,10 +3484,68 @@ class NativeSpriteCreatureActor {
   }
 }
 
+
+class NativePlayerHealthBar {
+  readonly root = new THREE.Group();
+  private readonly background: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  private readonly fill: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+
+  constructor(scene: THREE.Scene) {
+    const backgroundMaterial = new THREE.MeshBasicMaterial({
+      color: 0x151815,
+      transparent: true,
+      opacity: 0.88,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const fillMaterial = new THREE.MeshBasicMaterial({
+      color: 0x4fb65f,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    this.background = new THREE.Mesh(new THREE.PlaneGeometry(0.92, 0.105), backgroundMaterial);
+    this.fill = new THREE.Mesh(new THREE.PlaneGeometry(0.86, 0.065), fillMaterial);
+    this.background.renderOrder = 80;
+    this.fill.renderOrder = 81;
+    this.root.add(this.background, this.fill);
+    this.root.visible = false;
+    scene.add(this.root);
+  }
+
+  update(
+    health: number,
+    maxHealth: number,
+    visualPosition: THREE.Vector3,
+    camera: THREE.Camera,
+  ) {
+    const ratio = THREE.MathUtils.clamp(health / Math.max(1, maxHealth), 0, 1);
+    this.root.visible = true;
+    this.root.position.set(visualPosition.x, 2.12, visualPosition.z);
+    this.root.quaternion.copy(camera.quaternion);
+    this.fill.scale.x = Math.max(0.001, ratio);
+    this.fill.position.x = -0.43 * (1 - ratio);
+  }
+
+  hide() {
+    this.root.visible = false;
+  }
+
+  dispose(scene: THREE.Scene) {
+    scene.remove(this.root);
+    this.background.geometry.dispose();
+    this.background.material.dispose();
+    this.fill.geometry.dispose();
+    this.fill.material.dispose();
+  }
+}
+
 class NativeActorManager {
   // TIBIAGAME_V34_FRIEND_FEEDBACK: an actor created for one outfit must be rebuilt when outfit changes.
   private readonly players = new Map<string, NativeCharacterActor>();
   private readonly playerOutfits = new Map<string, CharacterOutfit>();
+  private readonly playerHealthBars = new Map<string, NativePlayerHealthBar>();
   private readonly npcs = new Map<string, NativeCharacterActor>();
   private readonly creatures = new Map<string, NativeSpriteCreatureActor>();
 
@@ -3518,6 +3576,7 @@ class NativeActorManager {
     fallbackCreatureLayer: NativeInstancedLayer,
   ) {
     for (const actor of this.players.values()) actor.hide();
+    for (const bar of this.playerHealthBars.values()) bar.hide();
     for (const actor of this.npcs.values()) actor.hide();
     for (const actor of this.creatures.values()) actor.hide();
 
@@ -3532,6 +3591,15 @@ class NativeActorManager {
       }
       actor.setTarget(player.position, floor, now);
       actor.update(delta, now);
+
+      if (player.id !== world.localPlayerId && player.position.z === floor) {
+        let bar = this.playerHealthBars.get(player.id);
+        if (!bar) {
+          bar = new NativePlayerHealthBar(this.scene);
+          this.playerHealthBars.set(player.id, bar);
+        }
+        bar.update(player.health, player.maxHealth, actor.visualPosition, camera);
+      }
     }
 
     for (const npc of world.npcs.values()) {
@@ -3591,6 +3659,9 @@ class NativeActorManager {
     for (const actor of this.players.values()) {
       actor.dispose(this.scene);
     }
+    for (const bar of this.playerHealthBars.values()) {
+      bar.dispose(this.scene);
+    }
     for (const actor of this.npcs.values()) {
       actor.dispose(this.scene);
     }
@@ -3599,6 +3670,7 @@ class NativeActorManager {
     }
     this.players.clear();
     this.playerOutfits.clear();
+    this.playerHealthBars.clear();
     this.npcs.clear();
     this.creatures.clear();
   }
@@ -6620,7 +6692,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           run: () => void,
         ) => tasks.push({ generation, label, run });
 
-        stage("ground", () => {
+        stage("ground surfaces", () => {
           const voidSize = NATIVE_RENDER_RADIUS * 4 + 32;
           voidGround.position.set(
             playerX + 0.5,
@@ -6630,22 +6702,10 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           voidGround.scale.set(voidSize, 0.2, voidSize);
           voidGround.updateMatrix();
 
-          const minX = Math.max(
-            0,
-            playerX - NATIVE_RENDER_RADIUS - 2,
-          );
-          const maxX = Math.min(
-            map.width,
-            playerX + NATIVE_RENDER_RADIUS + 3,
-          );
-          const minZ = Math.max(
-            0,
-            playerY - NATIVE_RENDER_RADIUS - 2,
-          );
-          const maxZ = Math.min(
-            map.height,
-            playerY + NATIVE_RENDER_RADIUS + 3,
-          );
+          const minX = Math.max(0, playerX - NATIVE_RENDER_RADIUS - 2);
+          const maxX = Math.min(map.width, playerX + NATIVE_RENDER_RADIUS + 3);
+          const minZ = Math.max(0, playerY - NATIVE_RENDER_RADIUS - 2);
+          const maxZ = Math.min(map.height, playerY + NATIVE_RENDER_RADIUS + 3);
           const width = Math.max(0, maxX - minX);
           const depth = Math.max(0, maxZ - minZ);
 
@@ -6659,25 +6719,27 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
             ground.scale.set(width, 0.2, depth);
             ground.updateMatrix();
           }
+
+          // Commit every ground-facing material family in the same render frame.
+          // The old multi-frame staging could briefly show old grass/floor under
+          // new roads (or vice versa), perceived as a texture shift while running.
+          layers.roads.setTransforms(snapshot.roads);
+          layers.floors.setTransforms(snapshot.floors);
+          layers.water.setTransforms(snapshot.water);
+          layers.bridges.setTransforms(snapshot.bridges);
+          layers.bridgeRails.setTransforms(snapshot.bridgeRails);
+          layers.bridgePosts.setTransforms(snapshot.bridgePosts);
+          layers.rocks.setTransforms(snapshot.rocks);
+          layers.packedEarth.setTransforms(snapshot.terrain.packed_earth);
+          layers.mossStone.setTransforms(snapshot.terrain.moss_stone);
+          layers.sandstone.setTransforms(snapshot.terrain.sandstone);
+          layers.mud.setTransforms(snapshot.terrain.mud);
+          layers.gravel.setTransforms(snapshot.terrain.gravel);
+          layers.cryptStone.setTransforms(snapshot.terrain.crypt_stone);
+          layers.woodPlanks.setTransforms(snapshot.terrain.wood_planks);
+          layers.marshGrass.setTransforms(snapshot.terrain.marsh_grass);
+          layers.ashSoil.setTransforms(snapshot.terrain.ash_soil);
         });
-
-        stage("roads", () => layers.roads.setTransforms(snapshot.roads));
-        stage("floors", () => layers.floors.setTransforms(snapshot.floors));
-        stage("water", () => layers.water.setTransforms(snapshot.water));
-        stage("bridges", () => layers.bridges.setTransforms(snapshot.bridges));
-        stage("bridge rails", () => layers.bridgeRails.setTransforms(snapshot.bridgeRails));
-        stage("bridge posts", () => layers.bridgePosts.setTransforms(snapshot.bridgePosts));
-        stage("rocks", () => layers.rocks.setTransforms(snapshot.rocks));
-
-        stage("packed earth", () => layers.packedEarth.setTransforms(snapshot.terrain.packed_earth));
-        stage("moss stone", () => layers.mossStone.setTransforms(snapshot.terrain.moss_stone));
-        stage("sandstone", () => layers.sandstone.setTransforms(snapshot.terrain.sandstone));
-        stage("mud", () => layers.mud.setTransforms(snapshot.terrain.mud));
-        stage("gravel", () => layers.gravel.setTransforms(snapshot.terrain.gravel));
-        stage("crypt stone", () => layers.cryptStone.setTransforms(snapshot.terrain.crypt_stone));
-        stage("wood planks", () => layers.woodPlanks.setTransforms(snapshot.terrain.wood_planks));
-        stage("marsh grass", () => layers.marshGrass.setTransforms(snapshot.terrain.marsh_grass));
-        stage("ash soil", () => layers.ashSoil.setTransforms(snapshot.terrain.ash_soil));
 
         stage("building floors", () => layers.buildingFloors.setTransforms(snapshot.buildingFloors));
         stage("authored house walls", () => medievalLayers.houseWalls.setTransforms(
@@ -7317,20 +7379,28 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           const chunkY = Math.floor(
             local.position.y / NATIVE_RENDER_CHUNK_SIZE,
           );
+          // TIBIAGAME_V35C_RENDER_STABILITY
+          // Static window is anchored to the render chunk center. Region refreshes
+          // can update data without sliding/rebuilding the visible ground footprint.
+          // Door/window state is animated independently and does not belong in
+          // the static terrain signature.
+          const staticCenterX =
+            chunkX * NATIVE_RENDER_CHUNK_SIZE + NATIVE_RENDER_CHUNK_SIZE / 2;
+          const staticCenterY =
+            chunkY * NATIVE_RENDER_CHUNK_SIZE + NATIVE_RENDER_CHUNK_SIZE / 2;
           const signature = [
             floor,
             chunkX,
             chunkY,
             world.streamRegionRevision,
-            world.dynamicMapRevision,
           ].join(":");
 
           const staticWorkStartedAt = performance.now();
           queueStaticSnapshot(
             map,
             floor,
-            local.position.x,
-            local.position.y,
+            staticCenterX,
+            staticCenterY,
             signature,
           );
           runStagedTasks();

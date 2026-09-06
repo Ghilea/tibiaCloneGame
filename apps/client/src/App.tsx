@@ -22,7 +22,7 @@ import { NativeWorldRenderer } from "./game/NativeWorldRenderer";
 import { NetworkClient } from "./game/NetworkClient";
 import { WorldState } from "./game/WorldState";
 import { isWorldTimePaused, setWorldTime, setWorldTimePaused, worldEnvironment, worldTimeLabel } from "./game/worldEnvironment";
-import { PROTOCOL_VERSION, type BuildingView, type CharacterOutfit, type GroundItem, type ItemInstance, type PlayerView, type Position, type SecondarySkill } from "./protocol";
+import { PROTOCOL_VERSION, type BuildingView, type CharacterOutfit, type GroundItem, type ItemDefinition, type ItemInstance, type PlayerView, type Position, type SecondarySkill } from "./protocol";
 
 const world = new WorldState();
 const network = new NetworkClient(world);
@@ -255,12 +255,15 @@ function Game({ onLeave }: { onLeave: () => void }) {
   const handleSceneReady = useCallback(() => setSceneReady(true), []);
   const [actionSkills, setActionSkills] = useState<Record<number, string | null>>(() => loadActionSkills());
   const pendingGoldPickups = useRef(new Set<string>());
-  const emberSigil = world.inventory.find(
-    (item) => item.definitionId === "ember_rune" && (item.charges ?? 0) > 0,
-  );
+  // TIBIAGAME_V35A_UI_COMBAT
+  // Charged stacks keep one active partially-used sigil plus full sigils behind it.
+  const emberDefinition = world.itemDefinitions.get("ember_rune");
+  const emberSigil = world.inventory
+    .filter((item) => item.definitionId === "ember_rune" && (item.charges ?? 0) > 0)
+    .sort((left, right) => (left.charges ?? 0) - (right.charges ?? 0))[0];
   const emberCharges = world.inventory
     .filter((item) => item.definitionId === "ember_rune")
-    .reduce((sum, item) => sum + (item.charges ?? 0), 0);
+    .reduce((sum, item) => sum + chargedStackUses(item, emberDefinition), 0);
   const useEmberSigil = () => {
     if (emberSigil) network.useItem(emberSigil.instanceId);
     else world.addSystemMessage("You do not have a charged Ember Sigil.");
@@ -321,6 +324,21 @@ function Game({ onLeave }: { onLeave: () => void }) {
         setEscapeMenu((current) => !current);
         world.closePlayerContext();
         world.closeNpc();
+        return;
+      }
+      if (
+        event.key === "Enter"
+        && !(event.target instanceof HTMLInputElement)
+        && !(event.target instanceof HTMLTextAreaElement)
+        && !panel
+        && !escapeMenu
+        && !world.trade
+        && !world.incomingTrade
+        && !world.activeNpcId
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        window.dispatchEvent(new Event("aldoria-focus-chat"));
         return;
       }
       if (
@@ -438,6 +456,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
         </span>
       </header>
       <GameMinimap world={world} />
+      <BattleList />
       <section className="unit-frame">
         <div className="portrait">{local?.name.slice(0, 1)}</div>
         <div>
@@ -1050,7 +1069,8 @@ function ItemIcon({ definitionId }: { definitionId: string }) {
 
 function NpcShop({ npcId }: { npcId: string }) {
   const npc = world.npcs.get(npcId);
-  const [quantity, setQuantity] = useState(1);
+  const [buyQuantities, setBuyQuantities] = useState<Record<string, number>>({});
+  const [sellQuantities, setSellQuantities] = useState<Record<string, number>>({});
   const [category, setCategory] = useState<ShopCategory>("all");
   const [shopMode, setShopMode] = useState<"buy" | "sell">("buy");
   if (!npc) return null;
@@ -1080,8 +1100,8 @@ function NpcShop({ npcId }: { npcId: string }) {
         </section>
         <div className="shop-browser">
           <nav className="shop-mode" aria-label="Shop action">
-            <button className={shopMode === "buy" ? "selected" : ""} onClick={() => { setShopMode("buy"); setCategory("all"); setQuantity(1); }}>Buy</button>
-            <button className={shopMode === "sell" ? "selected" : ""} onClick={() => { setShopMode("sell"); setCategory("all"); setQuantity(1); }}>Sell</button>
+            <button className={shopMode === "buy" ? "selected" : ""} onClick={() => { setShopMode("buy"); setCategory("all"); }}>Buy</button>
+            <button className={shopMode === "sell" ? "selected" : ""} onClick={() => { setShopMode("sell"); setCategory("all"); }}>Sell</button>
           </nav>
           <nav className="shop-categories" aria-label="Shop categories">
             {categories.map((entry) => (
@@ -1094,6 +1114,7 @@ function NpcShop({ npcId }: { npcId: string }) {
           <div className="shop-offers">
           {shopMode === "buy" && visibleOffers.map((offer) => {
             const item = world.itemDefinitions.get(offer.itemDefinitionId);
+            const quantity = buyQuantities[offer.id] ?? 1;
             const totalPrice = offer.price * quantity;
             return (
               <article key={offer.id}>
@@ -1113,14 +1134,7 @@ function NpcShop({ npcId }: { npcId: string }) {
                     min={1}
                     max={20}
                     value={quantity}
-                    onChange={(event) =>
-                      setQuantity(
-                        Math.max(
-                          1,
-                          Math.min(20, Number(event.target.value) || 1),
-                        ),
-                      )
-                    }
+                    onChange={(event) => setBuyQuantities((current) => ({ ...current, [offer.id]: Math.max(1, Math.min(20, Number(event.target.value) || 1)) }))}
                   />
                   <button
                     disabled={gold < totalPrice}
@@ -1135,6 +1149,7 @@ function NpcShop({ npcId }: { npcId: string }) {
             );
           })}
           {shopMode === "sell" && visibleSellableItems.map((item) => {
+            const quantity = Math.min(sellQuantities[item.instanceId] ?? 1, item.quantity);
             const definition = world.itemDefinitions.get(item.definitionId);
             const matchingOffer = npc.offers.find((offer) => offer.itemDefinitionId === item.definitionId);
             const sellPrice = Math.max(1, Math.floor(matchingOffer ? matchingOffer.price / 2 : Math.ceil(definition?.weight ?? 0)));
@@ -1143,7 +1158,7 @@ function NpcShop({ npcId }: { npcId: string }) {
               <ItemIcon definitionId={item.definitionId} />
               <span><strong>{definition?.name ?? item.definitionId}</strong><small>{item.quantity} available · {sellPrice} gold each</small></span>
               <b>{totalPrice} gold</b>
-              <div><input aria-label="Items to sell" type="number" min={1} max={Math.min(20, item.quantity)} value={Math.min(quantity, item.quantity)} onChange={(event) => setQuantity(Math.max(1, Math.min(20, item.quantity, Number(event.target.value) || 1)))} /><button onClick={() => network.sellToNpc(npc.id, item.instanceId, Math.min(quantity, item.quantity))}>Sell for {totalPrice}</button></div>
+              <div><input aria-label="Items to sell" type="number" min={1} max={Math.min(20, item.quantity)} value={Math.min(quantity, item.quantity)} onChange={(event) => setSellQuantities((current) => ({ ...current, [item.instanceId]: Math.max(1, Math.min(20, item.quantity, Number(event.target.value) || 1)) }))} /><button onClick={() => network.sellToNpc(npc.id, item.instanceId, Math.min(quantity, item.quantity))}>Sell for {totalPrice}</button></div>
             </article>;
           })}
           {((shopMode === "buy" && visibleOffers.length === 0) || (shopMode === "sell" && visibleSellableItems.length === 0)) && <p className="shop-empty">No items in this category.</p>}
@@ -1471,6 +1486,15 @@ function CompactCharacterPanel() {
           <span><small>Level {player.level}</small><h3>{player.name}</h3><b>Drag equipment between windows</b></span>
         </header>
         <EquipmentPaperdoll interactive />
+        <button
+          type="button"
+          className="equipment-ground-drop"
+          data-inventory-drop="ground"
+          title="Drag equipped items here to drop them at your feet"
+        >
+          <span aria-hidden="true">↓</span>
+          Drop equipped item on ground
+        </button>
         <OutfitPicker outfit={player.outfit} />
       </div>
     </div>
@@ -2326,8 +2350,95 @@ function CraftingEmpty({ message }: { message: string }) {
   return <div className="crafting-empty"><span>◇</span><strong>No recipes learned</strong><small>{message}</small></div>;
 }
 
+
+function BattleList() {
+  useSyncExternalStore(
+    (listener) => {
+      const stopWorld = world.subscribe(listener);
+      const stopVisual = world.subscribeVisual(listener);
+      return () => { stopWorld(); stopVisual(); };
+    },
+    () => `${world.revision}:${world.visualRevision}`,
+  );
+  const local = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
+  if (!local) return null;
+
+  const distance = (position: Position) =>
+    Math.max(
+      Math.abs(position.x - local.position.x),
+      Math.abs(position.y - local.position.y),
+    );
+
+  const creatures = [...world.creatures.values()]
+    .filter((entry) => entry.position.z === local.position.z && distance(entry.position) <= 18)
+    .sort((left, right) => distance(left.position) - distance(right.position));
+
+  const players = [...world.players.values()]
+    .filter((entry) =>
+      entry.id !== world.localPlayerId
+      && entry.position.z === local.position.z
+      && distance(entry.position) <= 18
+    )
+    .sort((left, right) => distance(left.position) - distance(right.position));
+
+  if (creatures.length === 0 && players.length === 0) return null;
+
+  const percent = (health: number, maxHealth: number) =>
+    Math.max(0, Math.min(100, health / Math.max(1, maxHealth) * 100));
+
+  return (
+    <section className="battle-list" aria-label="Battle list">
+      <header><strong>Battle</strong><small>{creatures.length + players.length}</small></header>
+      <div>
+        {creatures.map((creature) => {
+          const health = percent(creature.health, creature.maxHealth);
+          const targeted = world.attackTargetId === creature.id;
+          return (
+            <button
+              type="button"
+              className={`battle-entry hostile ${targeted ? "targeted" : ""}`}
+              key={creature.id}
+              onClick={() => input.targetCreature(creature.id)}
+            >
+              <span><strong>{creature.name}</strong><small>{creature.immune ? "Evading" : "Creature"}</small></span>
+              <i className="battle-health"><em style={{ width: `${health}%` }} /></i>
+              <b>{Math.ceil(health)}%</b>
+            </button>
+          );
+        })}
+        {players.map((player) => {
+          const health = percent(player.health, player.maxHealth);
+          const selected = world.selectedPlayerId === player.id;
+          return (
+            <button
+              type="button"
+              className={`battle-entry player ${selected ? "selected" : ""}`}
+              key={player.id}
+              onClick={() => {
+                world.selectedPlayerId = player.id;
+                world.closePlayerContext();
+                world.notify();
+              }}
+            >
+              <span><strong>{player.name}</strong><small>Player · Lv {player.level}</small></span>
+              <i className="battle-health"><em style={{ width: `${health}%` }} /></i>
+              <b>{Math.ceil(health)}%</b>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function Chat() {
   const [text, setText] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const focus = () => inputRef.current?.focus();
+    window.addEventListener("aldoria-focus-chat", focus);
+    return () => window.removeEventListener("aldoria-focus-chat", focus);
+  }, []);
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (text.trim()) network.say(text);
@@ -2348,8 +2459,15 @@ function Chat() {
       <form onSubmit={submit}>
         <span>Say</span>
         <input
+          ref={inputRef}
           value={text}
           onChange={(event) => setText(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
+          }}
           placeholder="Type a message…"
           maxLength={160}
         />
@@ -2582,12 +2700,55 @@ function InventorySlot({ item, onOpenContextMenu, onPointerDrop, dropKind, dropI
   );
 }
 
+
+function chargedStackUses(item: ItemInstance, definition?: ItemDefinition) {
+  const current = item.charges ?? definition?.charges ?? 0;
+  if (current <= 0) return 0;
+  const full = definition?.charges ?? current;
+  return current + Math.max(0, item.quantity - 1) * full;
+}
+
+function itemDetailSummary(
+  definition: ItemDefinition | undefined,
+  item: ItemInstance,
+  containedItems = 0,
+) {
+  if (!definition) return `${item.quantity} item${item.quantity === 1 ? "" : "s"}`;
+  const details: string[] = [
+    `${(definition.weight * item.quantity).toFixed(1)} oz`,
+  ];
+  if (definition.attack !== undefined) details.push(`Attack ${definition.attack}`);
+  if (definition.defense !== undefined) details.push(`Defense ${definition.defense}`);
+  if (definition.combatEffect) {
+    details.push(`Damage ${definition.combatEffect.damage}`);
+    details.push(`Range ${definition.combatEffect.range}`);
+    details.push(`${(definition.combatEffect.cooldownMs / 1000).toFixed(2)}s cooldown`);
+  }
+  if (definition.distanceWeapon) {
+    details.push(`Damage +${definition.distanceWeapon.damage}`);
+    details.push(`Range ${definition.distanceWeapon.range}`);
+    const ammo = world.itemDefinitions.get(definition.distanceWeapon.ammunitionId);
+    details.push(`Ammo: ${ammo?.name ?? definition.distanceWeapon.ammunitionId}`);
+  }
+  if (definition.foodEffect) {
+    if (definition.foodEffect.healthPerTick) details.push(`HP regen +${definition.foodEffect.healthPerTick}/tick`);
+    if (definition.foodEffect.manaPerTick) details.push(`Mana regen +${definition.foodEffect.manaPerTick}/tick`);
+    details.push(`Nourishment ${definition.foodEffect.durationSeconds}s`);
+  }
+  if (definition.charges !== undefined || item.charges !== undefined) {
+    details.push(`${chargedStackUses(item, definition)} uses total`);
+  }
+  if (definition.containerSlots) details.push(`${containedItems}/${definition.containerSlots} slots`);
+  if (definition.lightSource) details.push(`Light radius ${definition.lightSource.radius}`);
+  return details.join(" · ");
+}
+
 function InventoryDetails({ item, position, onClose, onSplit }: { item: ItemInstance; position: { x: number; y: number }; onClose: () => void; onSplit: () => void }) {
   const definition = world.itemDefinitions.get(item.definitionId);
   const children = world.inventory.filter((child) => child.containerId === item.instanceId);
   return <section className="inventory-item-details inventory-context-menu" style={{ left: position.x, top: position.y }} onClick={(event) => { if ((event.target as HTMLElement).closest("button")) onClose(); }}>
     <ItemIcon definitionId={item.definitionId} />
-    <span><small>{item.equippedSlot ? "Equipped" : item.containerId ? "Inside backpack" : "Inventory item"}</small><strong>{definition?.name ?? item.definitionId}</strong><p>{((definition?.weight ?? 0) * item.quantity).toFixed(1)} oz{definition?.containerSlots ? ` · ${children.length}/${definition.containerSlots} slots` : ""}{definition?.distanceWeapon ? ` · range ${definition.distanceWeapon.range}` : ""}</p></span>
+    <span><small>{item.equippedSlot ? "Equipped" : item.containerId ? "Inside backpack" : "Inventory item"}</small><strong>{definition?.name ?? item.definitionId}</strong><p>{itemDetailSummary(definition, item, children.length)}</p></span>
     <div className="item-actions">
       {definition?.foodEffect && <button onClick={() => network.eat(item.instanceId)}>Eat</button>}
       {definition?.teachesRecipeId && <button disabled={world.learnedRecipeIds.has(definition.teachesRecipeId)} onClick={() => network.learnRecipeFromItem(item.instanceId)}>{world.learnedRecipeIds.has(definition.teachesRecipeId) ? "Recipe learned" : "Learn recipe"}</button>}

@@ -636,8 +636,6 @@ async fn session(mut socket: WebSocket, state: AppState) {
     game_types::normalize_mastery(&mut skill_levels);
     [sword_skill, distance_skill, fletching_skill, magic_level] = skill_levels;
 
-    let adventurer_profile = game_types::adventurer_profile();
-
     if state.world.read().await.contains_player(id) {
         send(
             &mut socket,
@@ -649,6 +647,17 @@ async fn session(mut socket: WebSocket, state: AppState) {
         .await;
         return;
     }
+    let persisted_food = match &state.database {
+        Some(database) => match database.load_food_state(id).await {
+            Ok(food) => food,
+            Err(error) => {
+                warn!(%id, %error, "failed to load nourishment state");
+                None
+            }
+        },
+        None => None,
+    };
+
     let player = world::Player {
         view: PlayerView {
             id,
@@ -656,12 +665,12 @@ async fn session(mut socket: WebSocket, state: AppState) {
             outfit,
             secondary_skills,
             position,
-            health: health.min(adventurer_profile.max_health),
-            max_health: adventurer_profile.max_health,
+            health: health.min(world::max_health_for_level(level)),
+            max_health: world::max_health_for_level(level),
             level,
             experience,
-            mana: mana.min(adventurer_profile.max_mana),
-            max_mana: max_mana.min(adventurer_profile.max_mana),
+            mana: mana.min(world::max_mana_for_level(level)),
+            max_mana: world::max_mana_for_level(level),
             sword_skill,
             sword_tries,
             distance_skill,
@@ -786,7 +795,13 @@ async fn session(mut socket: WebSocket, state: AppState) {
         },
         crafting_queue: None,
         last_mana_regen: Instant::now(),
-        active_food: None,
+        active_food: persisted_food.and_then(|(remaining_ms, health_per_tick, mana_per_tick)| {
+            world::ActiveFood::from_persisted(
+                remaining_ms,
+                health_per_tick,
+                mana_per_tick,
+            )
+        }),
         last_food_regen: Instant::now(),
     };
     let (
@@ -878,6 +893,16 @@ async fn session(mut socket: WebSocket, state: AppState) {
         },
     )
     .await;
+    if let Some((remaining_ms, _, _)) = player.food_state() {
+        send(
+            &mut socket,
+            &ServerMessage::FoodStatus {
+                player_id: id,
+                remaining_ms,
+            },
+        )
+        .await;
+    }
     state
         .broadcast_near(
             position,
@@ -1235,12 +1260,13 @@ async fn session(mut socket: WebSocket, state: AppState) {
 
     writer.abort();
     state.events.unregister(id);
-    let final_player = state
-        .world
-        .read()
-        .await
-        .player(id)
-        .map(|player| player.view.clone());
+    let (final_player, final_food_state) = {
+        let world = state.world.read().await;
+        (
+            world.player(id).map(|player| player.view.clone()),
+            world.player(id).and_then(|player| player.food_state()),
+        )
+    };
     if let Some(player) = &final_player {
         state.auth.save_position(id, player.position).await;
         if let Some(database) = &state.database
@@ -1263,6 +1289,11 @@ async fn session(mut socket: WebSocket, state: AppState) {
                 .await
         {
             warn!(%id, %error, "failed to save progression on disconnect");
+        }
+        if let Some(database) = &state.database
+            && let Err(error) = database.save_food_state(id, final_food_state).await
+        {
+            warn!(%id, %error, "failed to save nourishment on disconnect");
         }
     }
     let cancelled_trade = state.world.write().await.cancel_trade_for_player(id);
@@ -1621,9 +1652,17 @@ async fn eat_item(state: &AppState, player_id: Uuid, instance_id: Uuid) {
     let (inventory, inventory_weight, max_capacity) = world
         .inventory_state(player_id)
         .expect("active player after eating");
+    let food_state = world
+        .player(player_id)
+        .and_then(|active_player| active_player.food_state());
     if let Some(database) = &state.database
         && let Err(error) = database
-            .persist_combat_state(&player, &inventory, world.ground_items())
+            .persist_food_consumption(
+                &player,
+                &inventory,
+                world.ground_items(),
+                food_state,
+            )
             .await
     {
         *world = backup;

@@ -321,6 +321,48 @@ impl Database {
         Ok(())
     }
 
+
+    pub async fn load_food_state(
+        &self,
+        character_id: EntityId,
+    ) -> Result<Option<(u64, u16, u16)>, sqlx::Error> {
+        let row: Option<(i64, i32, i32)> = sqlx::query_as(
+            "SELECT nourishment_remaining_ms, food_health_per_tick, food_mana_per_tick FROM characters WHERE id = $1",
+        )
+        .bind(character_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.and_then(|(remaining_ms, health_per_tick, mana_per_tick)| {
+            let remaining_ms = u64::try_from(remaining_ms).ok()?;
+            let health_per_tick = u16::try_from(health_per_tick).ok()?;
+            let mana_per_tick = u16::try_from(mana_per_tick).ok()?;
+            (remaining_ms > 0).then_some((
+                remaining_ms,
+                health_per_tick,
+                mana_per_tick,
+            ))
+        }))
+    }
+
+    pub async fn save_food_state(
+        &self,
+        character_id: EntityId,
+        food: Option<(u64, u16, u16)>,
+    ) -> Result<(), sqlx::Error> {
+        let (remaining_ms, health_per_tick, mana_per_tick) =
+            food.unwrap_or((0, 0, 0));
+        sqlx::query(
+            "UPDATE characters SET nourishment_remaining_ms = $2, food_health_per_tick = $3, food_mana_per_tick = $4, updated_at = NOW() WHERE id = $1",
+        )
+        .bind(character_id)
+        .bind(i64::try_from(remaining_ms).unwrap_or(i64::MAX))
+        .bind(i32::from(health_per_tick))
+        .bind(i32::from(mana_per_tick))
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn load_inventory(
         &self,
         character_id: EntityId,
@@ -552,6 +594,41 @@ impl Database {
         insert_inventory(&mut transaction, player_a, inventory_a).await?;
         insert_inventory(&mut transaction, player_b, inventory_b).await?;
         insert_ground_items(&mut transaction, ground_items).await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
+
+    pub async fn persist_food_consumption(
+        &self,
+        player: &game_types::PlayerView,
+        inventory: &[ItemInstance],
+        ground_items: &[GroundItem],
+        food: Option<(u64, u16, u16)>,
+    ) -> Result<(), sqlx::Error> {
+        let (remaining_ms, health_per_tick, mana_per_tick) =
+            food.unwrap_or((0, 0, 0));
+        let mut transaction = self.pool.begin().await?;
+        sqlx::query("UPDATE characters SET level = $2, experience = $3, health = $4, mana = $5, sword_skill = $6, sword_tries = $7, distance_skill = $8, distance_tries = $9, fletching_skill = $10, fletching_tries = $11, magic_level = $12, magic_tries = $13, nourishment_remaining_ms = $14, food_health_per_tick = $15, food_mana_per_tick = $16, updated_at = NOW() WHERE id = $1")
+            .bind(player.id)
+            .bind(i32::try_from(player.level).unwrap_or(i32::MAX))
+            .bind(i64::try_from(player.experience).unwrap_or(i64::MAX))
+            .bind(i32::from(player.health))
+            .bind(i32::from(player.mana))
+            .bind(i32::from(player.sword_skill))
+            .bind(i32::try_from(player.sword_tries).unwrap_or(i32::MAX))
+            .bind(i32::from(player.distance_skill))
+            .bind(i32::try_from(player.distance_tries).unwrap_or(i32::MAX))
+            .bind(i32::from(player.fletching_skill))
+            .bind(i32::try_from(player.fletching_tries).unwrap_or(i32::MAX))
+            .bind(i32::from(player.magic_level))
+            .bind(i32::try_from(player.magic_tries).unwrap_or(i32::MAX))
+            .bind(i64::try_from(remaining_ms).unwrap_or(i64::MAX))
+            .bind(i32::from(health_per_tick))
+            .bind(i32::from(mana_per_tick))
+            .execute(&mut *transaction)
+            .await?;
+        write_items(&mut transaction, player.id, inventory, ground_items).await?;
         transaction.commit().await?;
         Ok(())
     }
