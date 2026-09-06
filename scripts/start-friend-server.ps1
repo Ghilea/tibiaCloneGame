@@ -33,7 +33,9 @@ try {
 }
 
 Write-Host "Bind address : 0.0.0.0:4000"
-Write-Host "Local IPv4   : $($localIp ?? '<not detected>')"
+# TIBIAGAME_V33_1_POWERSHELL_51
+$localIpDisplay = if ($localIp) { $localIp } else { "<not detected>" }
+Write-Host "Local IPv4   : $localIpDisplay"
 Write-Host "Expected WAN : $ExpectedPublicIp"
 
 if ($detectedPublicIp) {
@@ -51,8 +53,33 @@ if ($localIp) {
 }
 
 Write-Host ""
-Write-Host "Windows firewall (run once from elevated PowerShell if needed):" -ForegroundColor Yellow
-Write-Host '  New-NetFirewallRule -DisplayName "Aldoria Game Server 4000" -Direction Inbound -Protocol TCP -LocalPort 4000 -Action Allow'
+Write-Host "Windows firewall:" -ForegroundColor Yellow
+$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator
+)
+
+if ($isAdmin) {
+    $existingRule = Get-NetFirewallRule -DisplayName "Aldoria Game Server 4000" -ErrorAction SilentlyContinue
+    if (-not $existingRule) {
+        try {
+            New-NetFirewallRule `
+                -DisplayName "Aldoria Game Server 4000" `
+                -Direction Inbound `
+                -Protocol TCP `
+                -LocalPort 4000 `
+                -Action Allow | Out-Null
+            Write-Host "  Firewall rule created automatically." -ForegroundColor Green
+        } catch {
+            Write-Warning "Could not create firewall rule automatically: $($_.Exception.Message)"
+        }
+    } else {
+        Write-Host "  Firewall rule already exists." -ForegroundColor Green
+    }
+} else {
+    Write-Host "  This terminal is not running as Administrator."
+    Write-Host "  If friends cannot connect, open PowerShell as Administrator and run:"
+    Write-Host '    New-NetFirewallRule -DisplayName "Aldoria Game Server 4000" -Direction Inbound -Protocol TCP -LocalPort 4000 -Action Allow'
+}
 Write-Host ""
 Write-Host "Friend endpoints:"
 Write-Host ("  API: http://{0}:4000/api" -f $ExpectedPublicIp)

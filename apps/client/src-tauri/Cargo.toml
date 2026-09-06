@@ -16,5 +16,6 @@ default = []
 friend-updater = ["dep:tauri-plugin-updater"]
 
 [dependencies]
+tauri-plugin-updater = { version = "2", optional = true }
 tauri = { version = "2", features = [] }
 
