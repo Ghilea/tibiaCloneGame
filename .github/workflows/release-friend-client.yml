@@ -46,12 +46,44 @@ jobs:
           $generated = $template.Replace('"__ALDORIA_UPDATER_PUBKEY__"', $publicKeyJson)
           Set-Content -Path $generatedPath -Value $generated -Encoding UTF8
 
+      # TIBIAGAME_FRIEND_UPDATER_V33_4_KEY_PATH
+      - name: Prepare updater signing key
+        shell: pwsh
+        env:
+          ALDORIA_UPDATER_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:ALDORIA_UPDATER_PRIVATE_KEY)) {
+            throw "Missing repository secret TAURI_SIGNING_PRIVATE_KEY."
+          }
+
+          $privateKey = $env:ALDORIA_UPDATER_PRIVATE_KEY.Trim()
+
+          try {
+            $decoded = [Text.Encoding]::UTF8.GetString(
+              [Convert]::FromBase64String($privateKey)
+            )
+          } catch {
+            throw "TAURI_SIGNING_PRIVATE_KEY is not valid base64 key content."
+          }
+
+          if (-not $decoded.StartsWith("untrusted comment: rsign encrypted secret key")) {
+            throw "TAURI_SIGNING_PRIVATE_KEY does not decode to the expected Tauri rsign secret-key format."
+          }
+
+          $keyPath = Join-Path $env:RUNNER_TEMP "aldoria-updater.key"
+          [IO.File]::WriteAllText(
+            $keyPath,
+            $privateKey,
+            [Text.UTF8Encoding]::new($false)
+          )
+
+          "TAURI_SIGNING_PRIVATE_KEY=$keyPath" >> $env:GITHUB_ENV
+          Write-Host "Updater private key prepared as a temporary file."
+
       - name: Build, sign and publish Windows friend client
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: apps/client
           tagName: ${{ github.ref_name }}
