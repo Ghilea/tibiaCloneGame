@@ -77,7 +77,7 @@ jobs:
             [Text.UTF8Encoding]::new($false)
           )
 
-          "TAURI_SIGNING_PRIVATE_KEY=$keyPath" >> $env:GITHUB_ENV
+          "ALDORIA_UPDATER_KEY_PATH=$keyPath" >> $env:GITHUB_ENV
           Write-Host "Updater private key prepared as a temporary file."
 
       # TIBIAGAME_FRIEND_UPDATER_V33_5_SIGNING_PREFLIGHT
@@ -86,7 +86,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          $keyPath = $env:TAURI_SIGNING_PRIVATE_KEY
+          $keyPath = $env:ALDORIA_UPDATER_KEY_PATH
           if ([string]::IsNullOrWhiteSpace($keyPath) -or -not (Test-Path $keyPath)) {
             throw "Updater signing preflight: temporary private key file is missing."
           }
@@ -130,6 +130,7 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ env.ALDORIA_UPDATER_KEY_PATH }}
           # Keep this explicit: the current Aldoria signing key uses an empty password.
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
