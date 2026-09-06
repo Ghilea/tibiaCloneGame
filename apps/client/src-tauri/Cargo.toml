@@ -1,6 +1,6 @@
 [package]
 name = "aldoria-client"
-version = "0.1.2"
+version = "0.1.4"
 description = "Desktop client for Embers of Aldoria"
 edition = "2024"
 
