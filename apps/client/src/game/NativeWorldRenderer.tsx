@@ -64,6 +64,7 @@ const NATIVE_CAMERA_ZOOM = 90;
 // TIBIAGAME_NATIVE_RENDERER_V31_B_2
 // TIBIAGAME_NATIVE_RENDERER_V31_B_3_1
 // TIBIAGAME_NATIVE_RENDERER_V31_B_3_2
+// TIBIAGAME_NATIVE_RENDERER_V31_B_3_3
 // Authored low-poly world-prop and copper-vein GLBs. Static prop families stay
 // instanced; resource GLBs use persistent dynamic instance sets.
 // Native day/night atmosphere using the existing shared worldEnvironment()
@@ -958,7 +959,18 @@ function createUnitGabledRoofGeometry(ridgeAlongZ: boolean) {
 
   const uvs: number[] = [];
   for (let index = 0; index < vertices.length; index += 3) {
-    uvs.push(vertices[index] + 0.5, vertices[index + 1]);
+    const x = vertices[index];
+    const y = vertices[index + 1];
+    const z = vertices[index + 2];
+
+    // Keep roof-tile texture orientation consistent with the ridge direction.
+    // X-ridge roofs already used X as texture U. Z-ridge roofs previously used
+    // X too, which rotated/stretched the shingles into long vertical bands.
+    // Using Z for U on those roofs is the exact 90-degree UV rotation needed.
+    const u = ridgeAlongZ
+      ? z + 0.5
+      : x + 0.5;
+    uvs.push(u, y);
   }
   geometry.setAttribute(
     "uv",
@@ -5221,7 +5233,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     const disposables: Array<{ dispose(): void }> = [];
 
     console.info(
-      "NATIVE WORLD V31B.3.2 active · wall-edge floor coverage · raw Three.js",
+      "NATIVE WORLD V31B.3.3 active · orientation-correct roof UVs · raw Three.js",
     );
 
     const bootstrap = async () => {
@@ -7244,7 +7256,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       <canvas
         ref={canvasRef}
         className="three-world"
-        data-native-world-renderer="v31b.3.2"
+        data-native-world-renderer="v31b.3.3"
         style={{ width: "100%", height: "100%", display: "block" }}
       />
       <div
