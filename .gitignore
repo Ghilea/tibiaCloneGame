@@ -10,4 +10,5 @@ apps/client/vite.config.d.ts
 .DS_Store
 .aldoria-generated/
 .aldoria-updater/
+.aldoria-content-backups/
 apps/client/src-tauri/tauri.friend.generated.json
