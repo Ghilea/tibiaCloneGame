@@ -65,6 +65,10 @@ const NATIVE_CAMERA_ZOOM = 90;
 // TIBIAGAME_NATIVE_RENDERER_V31_B_3_1
 // TIBIAGAME_NATIVE_RENDERER_V31_B_3_2
 // TIBIAGAME_NATIVE_RENDERER_V31_B_3_3
+// TIBIAGAME_NATIVE_RENDERER_V31_B_3_4
+// TIBIAGAME_NATIVE_RENDERER_V31_B_4
+// TIBIAGAME_NATIVE_RENDERER_V31_B_4_1
+// TIBIAGAME_NATIVE_RENDERER_V31_B_4_2
 // Authored low-poly world-prop and copper-vein GLBs. Static prop families stay
 // instanced; resource GLBs use persistent dynamic instance sets.
 // Native day/night atmosphere using the existing shared worldEnvironment()
@@ -96,6 +100,14 @@ type NativeRoofRegion = {
   minZ: number;
   maxX: number;
   maxZ: number;
+};
+
+type NativeGatheringPreview = {
+  nodeId: string;
+  position: Position;
+  label: string;
+  startedAt: number;
+  durationMs: number;
 };
 
 const NATIVE_AUTHORED_WORLD_PROP_KINDS = [
@@ -2882,12 +2894,17 @@ async function loadNativeCreatureAssets(
 
 function initializeNativeLoadedAssetTextures(
   renderer: THREE.WebGLRenderer,
+  nativeTextures: NativeTextures,
   characters: NativeCharacterAssets,
   creatures: NativeCreatureAssets,
   medieval: NativeMedievalAssets,
   worldProps: NativeWorldPropAssets,
 ) {
   const textures = new Set<THREE.Texture>();
+
+  for (const texture of Object.values(nativeTextures)) {
+    textures.add(texture);
+  }
 
   const collectRoots = (roots: readonly THREE.Object3D[]) => {
     for (const root of roots) {
@@ -4329,11 +4346,18 @@ class NativeDynamicSceneManager {
     world: WorldState,
     floor: number,
     local: Position,
+    now: number,
+    gathering: NativeGatheringPreview | null,
   ) {
+    const activeGatheringKey =
+      gathering && now < gathering.startedAt + gathering.durationMs
+        ? gathering.nodeId
+        : "";
     const signature = [
       world.revision,
       world.streamRegionRevision,
       floor,
+      activeGatheringKey,
     ].join(":");
     if (signature === this.lastDynamicSignature) return;
     this.lastDynamicSignature = signature;
@@ -4484,8 +4508,15 @@ class NativeDynamicSceneManager {
         (node.position.x * 0.73 + node.position.y * 0.31) % Math.PI,
       ];
 
+      const gatheringActive = Boolean(
+        gathering
+        && gathering.nodeId === node.id
+        && now < gathering.startedAt + gathering.durationMs,
+      );
+
       if (node.kind === "copper_vein") {
-        const target = node.available
+        const renderAvailable = node.available || gatheringActive;
+        const target = renderAvailable
           ? copperAuthored
           : copperDepletedAuthored;
         target.push([
@@ -4497,6 +4528,94 @@ class NativeDynamicSceneManager {
           1,
           transform[6],
         ]);
+
+        if (renderAvailable) {
+          const pulse = gatheringActive
+            ? 1 + Math.sin(now * 0.014) * 0.08
+            : 1;
+          const baseRotation = transform[6] ?? 0;
+          copper.push([
+            x - 0.26,
+            0.18,
+            z + 0.2,
+            0.82 * pulse,
+            1.22 * pulse,
+            0.82 * pulse,
+            baseRotation + 0.18,
+          ]);
+          copper.push([
+            x - 0.08,
+            0.3,
+            z + 0.1,
+            0.76 * pulse,
+            1.16 * pulse,
+            0.76 * pulse,
+            baseRotation + 0.62,
+          ]);
+          copper.push([
+            x + 0.18,
+            0.26,
+            z - 0.16,
+            0.74 * pulse,
+            1.08 * pulse,
+            0.74 * pulse,
+            baseRotation + 1.18,
+          ]);
+          copper.push([
+            x + 0.28,
+            0.22,
+            z + 0.02,
+            0.68 * pulse,
+            1.02 * pulse,
+            0.68 * pulse,
+            baseRotation + 1.54,
+          ]);
+          copper.push([
+            x + 0.08,
+            0.42,
+            z + 0.22,
+            0.66 * pulse,
+            1.02 * pulse,
+            0.66 * pulse,
+            baseRotation + 2.02,
+          ]);
+          copper.push([
+            x - 0.18,
+            0.44,
+            z - 0.06,
+            0.62 * pulse,
+            0.96 * pulse,
+            0.62 * pulse,
+            baseRotation + 2.36,
+          ]);
+          copper.push([
+            x + 0.02,
+            0.5,
+            z - 0.22,
+            0.58 * pulse,
+            0.92 * pulse,
+            0.58 * pulse,
+            baseRotation + 2.84,
+          ]);
+          copper.push([
+            x - 0.3,
+            0.28,
+            z - 0.18,
+            0.56 * pulse,
+            0.88 * pulse,
+            0.56 * pulse,
+            baseRotation + 3.18,
+          ]);
+          copper.push([
+            x + 0.24,
+            0.48,
+            z + 0.18,
+            0.52 * pulse,
+            0.84 * pulse,
+            0.52 * pulse,
+            baseRotation + 3.66,
+          ]);
+        }
         continue;
       }
 
@@ -4936,8 +5055,9 @@ class NativeDynamicSceneManager {
     actorManager: NativeActorManager,
     daylight: number,
     now: number,
+    gathering: NativeGatheringPreview | null,
   ) {
-    this.updateGroundAndResources(world, floor, local);
+    this.updateGroundAndResources(world, floor, local, now, gathering);
     this.updateEffects(world, floor, now);
     this.updateNpcMarkers(world, floor, actorManager, now);
     this.updateMarkers(world, floor, actorManager, now);
@@ -5209,6 +5329,10 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
   const performanceRef = useRef<HTMLDivElement>(null);
   const positionRef = useRef<HTMLDivElement>(null);
   const hoverRef = useRef<HTMLDivElement>(null);
+  const gatheringRef = useRef<NativeGatheringPreview | null>(null);
+  const gatheringOverlayRef = useRef<HTMLDivElement>(null);
+  const gatheringFillRef = useRef<HTMLDivElement>(null);
+  const gatheringLabelRef = useRef<HTMLDivElement>(null);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
 
@@ -5233,7 +5357,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     const disposables: Array<{ dispose(): void }> = [];
 
     console.info(
-      "NATIVE WORLD V31B.3.3 active · orientation-correct roof UVs · raw Three.js",
+      "NATIVE WORLD V31B.4.2 active · larger copper clusters for vein readability · raw Three.js",
     );
 
     const bootstrap = async () => {
@@ -5329,7 +5453,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       lootRingGeometry.rotateX(-Math.PI / 2);
 
       const resourceRockGeometry = new THREE.DodecahedronGeometry(0.38, 0);
-      const resourceCopperGeometry = new THREE.OctahedronGeometry(0.2, 0);
+      const resourceCopperGeometry = new THREE.OctahedronGeometry(0.25, 0);
 
       const combatBurstGeometry = new THREE.IcosahedronGeometry(0.25, 1);
       const combatRingGeometry = new THREE.RingGeometry(0.16, 0.23, 24);
@@ -5637,11 +5761,12 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           roughness: 1,
         }),
         resourceCopper: new THREE.MeshStandardMaterial({
-          color: "#b86b3c",
-          emissive: "#5c2413",
-          emissiveIntensity: 0.34,
-          metalness: 0.28,
-          roughness: 0.58,
+          color: "#dd8b4f",
+          emissive: "#9b431b",
+          emissiveIntensity: 0.88,
+          metalness: 0.42,
+          roughness: 0.4,
+          toneMapped: false,
         }),
         resourceWood: new THREE.MeshStandardMaterial({
           color: "#79502f",
@@ -6648,12 +6773,32 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         | { kind: "npc"; position: Position; id: string; label: string }
         | { kind: "creature"; position: Position; id: string; label: string }
         | { kind: "player"; position: Position; id: string; label: string }
-        | { kind: "resource"; position: Position; id: string; label: string; available: boolean }
+        | { kind: "resource"; position: Position; id: string; label: string; available: boolean; resourceKind: string }
         | { kind: "door"; position: Position; id: string; label: string }
         | { kind: "window"; position: Position; id: string; label: string }
         | { kind: "object"; position: Position; id: string; label: string }
         | { kind: "loot"; position: Position; label: string }
         | { kind: "ground"; position: Position; label: string };
+
+      const firstEntityAtPosition = <
+        T extends { id: string; position: Position },
+      >(
+        values: Iterable<T>,
+        position: Position,
+        skipId?: string,
+      ): T | undefined => {
+        for (const entry of values) {
+          if (skipId && entry.id === skipId) continue;
+          if (
+            entry.position.x === position.x
+            && entry.position.y === position.y
+            && entry.position.z === position.z
+          ) {
+            return entry;
+          }
+        }
+        return undefined;
+      };
 
       const humanizeId = (value: string) => value
         .replaceAll("_", " ")
@@ -6665,8 +6810,9 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           && entry.y === position.y
           && entry.z === position.z;
 
-        const npc = [...world.npcs.values()].find((entry) =>
-          sameTile(entry.position)
+        const npc = firstEntityAtPosition(
+          world.npcs.values(),
+          position,
         );
         if (npc) {
           return {
@@ -6679,8 +6825,9 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           };
         }
 
-        const creature = [...world.creatures.values()].find((entry) =>
-          sameTile(entry.position)
+        const creature = firstEntityAtPosition(
+          world.creatures.values(),
+          position,
         );
         if (creature) {
           return {
@@ -6691,8 +6838,10 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           };
         }
 
-        const player = [...world.players.values()].find((entry) =>
-          entry.id !== world.localPlayerId && sameTile(entry.position)
+        const player = firstEntityAtPosition(
+          world.players.values(),
+          position,
+          world.localPlayerId ?? undefined,
         );
         if (player) {
           return {
@@ -6703,17 +6852,20 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           };
         }
 
-        const resource = [...world.resourceNodes.values()].find((entry) =>
-          sameTile(entry.position)
+        const resource = firstEntityAtPosition(
+          world.resourceNodes.values(),
+          position,
         );
         if (resource) {
           const name = humanizeId(resource.kind);
+          const action = resource.kind === "copper_vein" ? "Mine" : "Use";
           return {
             kind: "resource",
             position: resource.position,
             id: resource.id,
-            label: resource.available ? `Use ${name}` : `${name} · Depleted`,
+            label: resource.available ? `${action} ${name}` : `${name} · Depleted`,
             available: resource.available,
+            resourceKind: resource.kind,
           };
         }
 
@@ -6793,6 +6945,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
             input.interactPlayer(target.id, event.clientX, event.clientY);
             return;
           case "resource":
+            beginGatheringPreview(target);
             input.interactAt(target.position);
             return;
           case "door":
@@ -6817,6 +6970,37 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         const position = pointerTile(event);
         if (!position) return;
         activatePointerTarget(targetAt(position), event);
+      };
+
+      const hideGatheringOverlay = () => {
+        if (gatheringOverlayRef.current) {
+          gatheringOverlayRef.current.style.display = "none";
+        }
+      };
+
+      const beginGatheringPreview = (
+        target: Extract<PointerTarget, { kind: "resource" }>,
+      ) => {
+        if (!target.available) return;
+        const current = gatheringRef.current;
+        const startedAt = performance.now();
+        if (
+          current
+          && current.nodeId === target.id
+          && startedAt < current.startedAt + current.durationMs
+        ) {
+          return;
+        }
+        const label = target.resourceKind === "copper_vein"
+          ? "Mining copper vein..."
+          : `Gathering ${humanizeId(target.resourceKind)}...`;
+        gatheringRef.current = {
+          nodeId: target.id,
+          position: target.position,
+          label,
+          startedAt,
+          durationMs: target.resourceKind === "copper_vein" ? 1350 : 950,
+        };
       };
 
       const hideHover = () => {
@@ -6887,6 +7071,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       const nativeWarmupTextureCount =
         initializeNativeLoadedAssetTextures(
           nextRenderer,
+          textures,
           characterAssets,
           castleRatAssets,
           medievalAssets,
@@ -6986,6 +7171,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
             activeActorManager,
             initialEnvironment.daylight,
             initialNow,
+            gatheringRef.current,
           );
         }
       }
@@ -6997,6 +7183,11 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       const render = (now: number) => {
         if (disposed) return;
         animationFrame = window.requestAnimationFrame(render);
+
+        const frameWorkStartedAt = performance.now();
+        let staticWorkMs = 0;
+        let actorWorkMs = 0;
+        let dynamicWorkMs = 0;
 
         const frameMs = Math.max(0, now - lastFrameAt);
         lastFrameAt = now;
@@ -7025,6 +7216,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
             world.dynamicMapRevision,
           ].join(":");
 
+          const staticWorkStartedAt = performance.now();
           queueStaticSnapshot(
             map,
             floor,
@@ -7033,8 +7225,10 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
             signature,
           );
           runStagedTasks();
+          staticWorkMs = performance.now() - staticWorkStartedAt;
 
           const actorDelta = Math.min(frameMs / 1000, 0.05);
+          const actorWorkStartedAt = performance.now();
           activeActorManager.sync(
             world,
             floor,
@@ -7043,6 +7237,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
             camera,
             layers.creatures,
           );
+          actorWorkMs = performance.now() - actorWorkStartedAt;
 
           // TIBIAGAME_NATIVE_RENDERER_V24_1
           // Never follow the integer gameplay tile directly. That made the
@@ -7116,6 +7311,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           const cameraX = visualLocal?.x ?? local.position.x + 0.5;
           const cameraZ = visualLocal?.z ?? local.position.y + 0.5;
 
+          const dynamicWorkStartedAt = performance.now();
           activeOpeningAnimationManager.update(
             map,
             floor,
@@ -7132,7 +7328,9 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
             activeActorManager,
             environment.daylight,
             now,
+            gatheringRef.current,
           );
+          dynamicWorkMs = performance.now() - dynamicWorkStartedAt;
 
           camera.position.set(
             cameraX,
@@ -7150,14 +7348,63 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
             now * 0.000019,
           );
 
+          const gatheringPreview = gatheringRef.current;
+          if (
+            gatheringPreview
+            && gatheringOverlayRef.current
+            && gatheringFillRef.current
+            && gatheringLabelRef.current
+          ) {
+            const elapsed = now - gatheringPreview.startedAt;
+            const progress = THREE.MathUtils.clamp(
+              elapsed / gatheringPreview.durationMs,
+              0,
+              1,
+            );
+            const overlay = gatheringOverlayRef.current;
+            const rect = canvas.getBoundingClientRect();
+            const screenPosition = new THREE.Vector3(
+              gatheringPreview.position.x + 0.5,
+              1.18,
+              gatheringPreview.position.y + 0.5,
+            ).project(camera);
+            if (screenPosition.z > -1 && screenPosition.z < 1) {
+              overlay.style.display = "block";
+              overlay.style.left = `${rect.left + (screenPosition.x * 0.5 + 0.5) * rect.width}px`;
+              overlay.style.top = `${rect.top + (-screenPosition.y * 0.5 + 0.5) * rect.height - 18}px`;
+              gatheringFillRef.current.style.width = `${Math.round(progress * 100)}%`;
+              gatheringLabelRef.current.textContent = gatheringPreview.label;
+            } else {
+              overlay.style.display = "none";
+            }
+
+            const liveNode = world.resourceNodes.get(gatheringPreview.nodeId);
+            if (
+              progress >= 1
+              && (!liveNode || !liveNode.available || elapsed >= gatheringPreview.durationMs + 260)
+            ) {
+              gatheringRef.current = null;
+              hideGatheringOverlay();
+            }
+          } else {
+            hideGatheringOverlay();
+          }
+
           if (positionRef.current) {
             positionRef.current.textContent =
               `NATIVE V31B · ${worldTimeLabel(environment)} ${environment.period} · `
               + `x ${local.position.x} · y ${local.position.y} · z ${floor}`;
           }
+        } else {
+          hideGatheringOverlay();
         }
 
+        const rendererWorkStartedAt = performance.now();
         nextRenderer.render(scene, camera);
+        const rendererWorkMs =
+          performance.now() - rendererWorkStartedAt;
+        const totalWorkMs =
+          performance.now() - frameWorkStartedAt;
 
         if (now >= warmupUntil) {
           sampleFrames += 1;
@@ -7172,7 +7419,12 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
               + `tris ${nextRenderer.info.render.triangles} · `
               + `programs ${nextRenderer.info.programs?.length ?? 0} · `
               + `textures ${nextRenderer.info.memory.textures} · `
-              + `geometries ${nextRenderer.info.memory.geometries}`,
+              + `geometries ${nextRenderer.info.memory.geometries} · `
+              + `work ${totalWorkMs.toFixed(1)}ms `
+              + `(static ${staticWorkMs.toFixed(1)} · `
+              + `actors ${actorWorkMs.toFixed(1)} · `
+              + `dynamic ${dynamicWorkMs.toFixed(1)} · `
+              + `render ${rendererWorkMs.toFixed(1)})`,
             );
           }
 
@@ -7256,7 +7508,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       <canvas
         ref={canvasRef}
         className="three-world"
-        data-native-world-renderer="v31b.3.3"
+        data-native-world-renderer="v31b.4.2"
         style={{ width: "100%", height: "100%", display: "block" }}
       />
       <div
@@ -7269,6 +7521,58 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           zIndex: 50,
         }}
       />
+      <div
+        ref={gatheringOverlayRef}
+        style={{
+          display: "none",
+          position: "fixed",
+          transform: "translate(-50%, -100%)",
+          pointerEvents: "none",
+          zIndex: 55,
+          minWidth: 132,
+          padding: "6px 8px",
+          borderRadius: 10,
+          background: "rgba(8, 12, 10, 0.88)",
+          border: "1px solid rgba(212, 167, 94, 0.75)",
+          boxShadow: "0 6px 18px rgba(0, 0, 0, 0.35)",
+          backdropFilter: "blur(2px)",
+        }}
+      >
+        <div
+          ref={gatheringLabelRef}
+          style={{
+            marginBottom: 4,
+            color: "#f3dec0",
+            fontSize: 12,
+            lineHeight: 1.2,
+            textAlign: "center",
+            whiteSpace: "nowrap",
+          }}
+        >
+          Mining...
+        </div>
+        <div
+          style={{
+            width: 132,
+            height: 8,
+            borderRadius: 999,
+            overflow: "hidden",
+            background: "rgba(255, 255, 255, 0.12)",
+            border: "1px solid rgba(255, 255, 255, 0.09)",
+          }}
+        >
+          <div
+            ref={gatheringFillRef}
+            style={{
+              width: "0%",
+              height: "100%",
+              borderRadius: 999,
+              background: "linear-gradient(90deg, #a95a24 0%, #d28a49 50%, #f0ba6d 100%)",
+              boxShadow: "0 0 10px rgba(230, 150, 72, 0.5)",
+            }}
+          />
+        </div>
+      </div>
       {showDebug && (
         <div className="debug-meter" aria-label="Native renderer performance">
           <div ref={positionRef} className="position-meter">
