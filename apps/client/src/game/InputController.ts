@@ -10,6 +10,7 @@ export const DIAGONAL_STEP_FACTOR = Math.SQRT2;
 export const INTERACTION_RANGE_TILES = 2;
 
 export class InputController {
+  // TIBIAGAME_GATHER_CANCEL_V31_C_1_1
   private lastMove = 0;
   private heldKeys = new Set<string>();
   private movementTimer: number | null = null;
@@ -98,7 +99,22 @@ export class InputController {
     if (!player) return;
     const resource = [...this.world.resourceNodes.values()].find((entry) => samePosition(entry.position, target));
     if (resource) {
-      this.network.mineResource(resource.id);
+      if (!resource.available) {
+        this.world.addSystemMessage("That resource is depleted.");
+        return;
+      }
+      const nativeCanvas = document.querySelector<HTMLCanvasElement>(
+        "[data-native-world-renderer]",
+      );
+      if (nativeCanvas) {
+        nativeCanvas.dispatchEvent(new CustomEvent(
+          "aldoria-resource-gather",
+          { detail: { nodeId: resource.id } },
+        ));
+      } else {
+        // Preserve the old comparison renderer / fallback path.
+        this.network.mineResource(resource.id);
+      }
       return;
     }
     const door = this.world.doorAt(target);
@@ -117,6 +133,19 @@ export class InputController {
       return;
     }
     if (this.world.groundItems.some((entry) => samePosition(entry.position, target))) this.lootAt(target);
+  }
+
+  completeResourceGather(nodeId: string) {
+    this.network.mineResource(nodeId);
+  }
+
+  private cancelNativeResourceGather() {
+    const nativeCanvas = document.querySelector<HTMLCanvasElement>(
+      "[data-native-world-renderer]",
+    );
+    nativeCanvas?.dispatchEvent(
+      new CustomEvent("aldoria-resource-gather-cancel"),
+    );
   }
 
   lootAt(target: Position) {
@@ -206,6 +235,7 @@ export class InputController {
     this.moveIntervalMs = movementStepMs(target.x - player.position.x, target.y - player.position.y);
     if (now - this.lastMove < this.moveIntervalMs) return false;
     this.lastMove = now;
+    this.cancelNativeResourceGather();
     this.network.move(target);
     return true;
   }

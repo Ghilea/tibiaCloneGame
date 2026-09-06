@@ -15,6 +15,7 @@ import { CharacterLobby, CharacterPreview } from "./CharacterLobby";
 import { MenuMusic, WorldMusic } from "./audio/WorldMusic";
 import { getAudioSettings, subscribeAudioSettings, updateAudioSettings } from "./audio/audioSettings";
 import { InputController } from "./game/InputController";
+// TIBIAGAME_GATHER_CANCEL_V31_C_1_1
 import { GameMinimap } from "./game/GameMinimap";
 import { ThreeWorld } from "./game/ThreeWorld";
 import { NativeWorldRenderer } from "./game/NativeWorldRenderer";
@@ -341,7 +342,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
           && Math.abs(node.position.y - localPlayer.position.y) <= 1) : null;
         if (resource) {
           event.preventDefault();
-          if (!event.repeat) network.mineResource(resource.id);
+          if (!event.repeat) input.interactAt(resource.position);
           return;
         }
       }

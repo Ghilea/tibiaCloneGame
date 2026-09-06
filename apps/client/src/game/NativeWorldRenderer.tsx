@@ -70,6 +70,7 @@ const NATIVE_CAMERA_ZOOM = 90;
 // TIBIAGAME_NATIVE_RENDERER_V31_B_4_1
 // TIBIAGAME_NATIVE_RENDERER_V31_B_4_2
 // TIBIAGAME_NATIVE_RENDERER_V31_C
+// TIBIAGAME_NATIVE_RENDERER_V31_C_1_1
 // Authored low-poly world-prop and copper-vein GLBs. Static prop families stay
 // instanced; resource GLBs use persistent dynamic instance sets.
 // Native day/night atmosphere using the existing shared worldEnvironment()
@@ -114,6 +115,8 @@ type NativeGatheringPreview = {
   feedbackText?: string;
   feedbackKind?: "success" | "error";
   feedbackStartedAt?: number;
+  playerStartPosition: Position;
+  requestSent: boolean;
 };
 
 const NATIVE_AUTHORED_WORLD_PROP_KINDS = [
@@ -5363,7 +5366,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     const disposables: Array<{ dispose(): void }> = [];
 
     console.info(
-      "NATIVE WORLD V31C active · black world void + variable mining yield · raw Three.js",
+      "NATIVE WORLD V31C.1.1 active · movement-cancelled gathering · raw Three.js",
     );
 
     const bootstrap = async () => {
@@ -7000,7 +7003,6 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
             input.interactPlayer(target.id, event.clientX, event.clientY);
             return;
           case "resource":
-            beginGatheringPreview(target);
             input.interactAt(target.position);
             return;
           case "door":
@@ -7037,6 +7039,10 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         target: Extract<PointerTarget, { kind: "resource" }>,
       ) => {
         if (!target.available) return;
+        const localGatherPlayer = world.localPlayerId
+          ? world.players.get(world.localPlayerId)
+          : null;
+        if (!localGatherPlayer) return;
         const current = gatheringRef.current;
         const startedAt = performance.now();
         if (
@@ -7059,8 +7065,46 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
             .filter((item) => item.definitionId === "copper_ore")
             .reduce((sum, item) => sum + item.quantity, 0),
           startingServerChatId: world.chat.at(-1)?.id ?? null,
+          playerStartPosition: { ...localGatherPlayer.position },
+          requestSent: false,
         };
       };
+
+      const onResourceGather = (event: Event) => {
+        const detail = (
+          event as CustomEvent<{ nodeId?: string }>
+        ).detail;
+        if (!detail?.nodeId) return;
+        const resource = world.resourceNodes.get(detail.nodeId);
+        if (!resource || !resource.available) return;
+        const name = humanizeId(resource.kind);
+        beginGatheringPreview({
+          kind: "resource",
+          position: resource.position,
+          id: resource.id,
+          label: resource.kind === "copper_vein"
+            ? `Mine ${name}`
+            : `Use ${name}`,
+          available: resource.available,
+          resourceKind: resource.kind,
+        });
+      };
+
+      const onResourceGatherCancel = () => {
+        const gathering = gatheringRef.current;
+        if (!gathering || gathering.requestSent) return;
+        gatheringRef.current = null;
+        hideGatheringOverlay();
+      };
+
+      canvas.addEventListener(
+        "aldoria-resource-gather",
+        onResourceGather,
+      );
+      canvas.addEventListener(
+        "aldoria-resource-gather-cancel",
+        onResourceGatherCancel,
+      );
 
       const hideHover = () => {
         activeDynamicSceneManager.setHover(null, null);
@@ -7407,7 +7451,23 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
             now * 0.000019,
           );
 
-          const gatheringPreview = gatheringRef.current;
+          let gatheringPreview = gatheringRef.current;
+          if (gatheringPreview && !gatheringPreview.requestSent) {
+            const gatherPlayer = world.localPlayerId
+              ? world.players.get(world.localPlayerId)
+              : null;
+            const started = gatheringPreview.playerStartPosition;
+            const moved = !gatherPlayer
+              || gatherPlayer.position.x !== started.x
+              || gatherPlayer.position.y !== started.y
+              || gatherPlayer.position.z !== started.z;
+
+            if (moved) {
+              gatheringRef.current = null;
+              gatheringPreview = null;
+              hideGatheringOverlay();
+            }
+          }
           if (
             gatheringPreview
             && gatheringOverlayRef.current
@@ -7427,11 +7487,20 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
               1.18,
               gatheringPreview.position.y + 0.5,
             ).project(camera);
+            if (progress >= 1 && !gatheringPreview.requestSent) {
+              gatheringPreview.requestSent = true;
+              input.completeResourceGather(gatheringPreview.nodeId);
+            }
+
             const currentCopperQuantity = world.inventory
               .filter((item) => item.definitionId === "copper_ore")
               .reduce((sum, item) => sum + item.quantity, 0);
 
-            if (progress >= 1 && !gatheringPreview.feedbackText) {
+            if (
+              progress >= 1
+              && gatheringPreview.requestSent
+              && !gatheringPreview.feedbackText
+            ) {
               const gainedCopper =
                 currentCopperQuantity
                 - gatheringPreview.startingCopperQuantity;
@@ -7618,7 +7687,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       <canvas
         ref={canvasRef}
         className="three-world"
-        data-native-world-renderer="v31c"
+        data-native-world-renderer="v31c.1.1"
         style={{ width: "100%", height: "100%", display: "block" }}
       />
       <div
