@@ -1016,6 +1016,13 @@ const itemSpriteOrder = [
 ];
 const standaloneItemSpriteIds = new Set(["iron_ore", "coal_chunk", "healing_herbs", "rope_bundle", "rusty_key", "shovel", "leather_satchel", "torch_bundle", "iron_short_sword", "red_apple", "blank_rune", "ember_rune", "traveler_blade", "ashwood_bow", "rough_arrow", "frost_rune", "venom_rune", "iron_battle_axe", "iron_war_hammer", "ironbound_shield", "iron_helmet", "studded_armor", "reinforced_boots", "emerald_ring", "ember_amulet", "mana_tonic", "copper_ore", "mire_fiber", "bog_ichor", "gold_coin", "reed_hide", "fen_tusk", "field_bread", "smoked_mire_meat", "field_backpack", "ember_sigil_formula", "iron_pickaxe", "wooden_buckler", "worn_cap", "patched_tunic", "frayed_trousers", "work_boots", "mireling_remains", "mire_skulker_remains", "reed_stalker_remains", "fen_brute_remains", "castle_rat_remains", "crypt_guard_remains", "bone_acolyte_remains", "cellar_warden_remains", "iron_dagger", "rusty_mace", "hunting_spear", "woodsman_hatchet", "oak_staff", "traveler_cloak", "chain_coif", "leather_jerkin", "stitched_leggings", "round_kite_shield", "bronze_ring", "bone_amulet", "spark_rune", "stone_rune", "storm_rune", "shadow_rune", "health_tonic", "antidote_vial", "bandage_roll", "dried_rations", "tin_ore", "iron_ingot", "beast_claw", "spider_silk", "mandrake_root", "wolf_pelt", "lantern_oil", "lockpick_set", "fishhook_bundle", "raw_hide", "duelist_blade", "parrying_dagger", "corsair_cutlass", "stiletto", "raider_hatchet", "hook_sabre", "fishing_rod", "tackle_box", "bait_bucket", "miner_pickhammer", "smith_tongs", "skinning_knife", "flint_and_steel", "grappling_hook", "hand_torch", "hooded_lantern", "rope_coil", "repair_kit", "whetstone", "bedroll", "waterskin", "candle_bundle", "offhand_stiletto", "twinfang_blades", "paired_hatchets", "rat_tail", "rat_pelt", "mire_gland", "mire_spore_cluster", "skulker_venom_sac", "skulker_scale", "reed_sinew", "stalker_claw", "fen_brute_hide", "fen_brute_bone", "crypt_bone_shard", "grave_dust", "acolyte_focus_shard", "warden_core", "warden_plate_fragment", "mire_recovery_tonic", "purifying_tonic", "fen_marrow_stew", "graveward_tonic", "focus_draught", "warden_glow_charm", "rat_pelt_cap", "mireweave_cloak", "skulker_scale_vest", "fenhide_leggings", "fenhide_boots", "cryptbone_buckler", "warden_plate_helmet", "warden_plate_armor", "warden_plate_shield", "stalker_claw_blade", "fenbone_maul", "reed_sinew_bow", "acolyte_focus_amulet", "warden_core_hammer"]);
 function ItemIcon({ definitionId }: { definitionId: string }) {
+  // TIBIAGAME_V34_FRIEND_FEEDBACK: reuse the existing iron-ingot art until dedicated bar art lands.
+  if (definitionId === "copper_ingot" || definitionId === "tin_ingot") {
+    const filter = definitionId === "copper_ingot"
+      ? "sepia(1) saturate(1.8) hue-rotate(330deg) brightness(.9) drop-shadow(0 3px 3px #0009)"
+      : "grayscale(.8) brightness(1.25) drop-shadow(0 3px 3px #0009)";
+    return <i className="item-icon" style={{ backgroundImage: "url('/assets/sprites/items/iron_ingot.png')", backgroundSize: "contain", backgroundPosition: "center", backgroundRepeat: "no-repeat", filter }} />;
+  }
   if (standaloneItemSpriteIds.has(definitionId)) return <i className="item-icon" style={{ backgroundImage: `url('/assets/sprites/items/${definitionId}.png')`, backgroundSize: "contain", backgroundPosition: "center", backgroundRepeat: "no-repeat" }} />;
   if (definitionId === "iron_pickaxe") return <i className="item-icon food-icon">⛏</i>;
   if (definitionId === "worn_cap") return <i className="item-icon food-icon">🧢</i>;
@@ -1264,48 +1271,94 @@ function CraftTrainerModal({ npcId }: { npcId: string }) {
 function DepotModal({ npcId }: { npcId: string }) {
   const npc = world.npcs.get(npcId);
   const [search, setSearch] = useState("");
+  const [withdrawQuantities, setWithdrawQuantities] = useState<Record<string, number>>({});
   if (!npc) return null;
+
   const matches = (item: ItemInstance) =>
     (world.itemDefinitions.get(item.definitionId)?.name ?? item.definitionId)
       .toLowerCase()
       .includes(search.trim().toLowerCase());
+
+  // Gold is purse currency: weightless and intentionally absent from storage.
   const inventory = world.inventory.filter(
-    (item) => !item.containerId && !item.equippedSlot && matches(item),
+    (item) =>
+      item.definitionId !== "gold_coin"
+      && !item.containerId
+      && !item.equippedSlot
+      && matches(item),
   );
   const depot = world.depot.filter(
     (item) => !item.containerId && matches(item),
   );
+
   const children = (rootId: string, items: ItemInstance[]) =>
     items.filter((item) => item.containerId === rootId).length;
+
   const row = (item: ItemInstance, action: "deposit" | "withdraw") => {
     const definition = world.itemDefinitions.get(item.definitionId);
     const contained = children(
       item.instanceId,
       action === "deposit" ? world.inventory : world.depot,
     );
+    const canChooseQuantity =
+      action === "withdraw"
+      && Boolean(definition?.stackable)
+      && item.quantity > 1;
+    const requestedQuantity = Math.max(
+      1,
+      Math.min(
+        item.quantity,
+        withdrawQuantities[item.instanceId] ?? item.quantity,
+      ),
+    );
+
     return (
       <article key={item.instanceId}>
         <ItemIcon definitionId={item.definitionId} />
         <span>
           <strong>{definition?.name ?? item.definitionId}</strong>
           <small>
-            {item.quantity > 1 ? `×${item.quantity} · ` : ""}
+            {item.quantity > 1 ? "×" + item.quantity + " · " : ""}
             {((definition?.weight ?? 0) * item.quantity).toFixed(1)} oz
-            {contained ? ` · ${contained} contained items` : ""}
+            {contained ? " · " + contained + " contained items" : ""}
           </small>
         </span>
-        <button
-          onClick={() =>
-            action === "deposit"
-              ? network.depositItem(npc.id, item.instanceId)
-              : network.withdrawItem(npc.id, item.instanceId)
-          }
-        >
-          {action === "deposit" ? "Store" : "Withdraw"}
-        </button>
+        <div className="depot-row-actions">
+          {canChooseQuantity && (
+            <label>
+              <small>Qty</small>
+              <input
+                type="number"
+                min={1}
+                max={item.quantity}
+                value={requestedQuantity}
+                onChange={(event) => {
+                  const parsed = Number.parseInt(event.target.value, 10);
+                  const next = Number.isFinite(parsed)
+                    ? Math.max(1, Math.min(item.quantity, parsed))
+                    : 1;
+                  setWithdrawQuantities((current) => ({
+                    ...current,
+                    [item.instanceId]: next,
+                  }));
+                }}
+              />
+            </label>
+          )}
+          <button
+            onClick={() =>
+              action === "deposit"
+                ? network.depositItem(npc.id, item.instanceId)
+                : network.withdrawItem(npc.id, item.instanceId, requestedQuantity)
+            }
+          >
+            {action === "deposit" ? "Store" : "Withdraw"}
+          </button>
+        </div>
       </article>
     );
   };
+
   return (
     <GameModal title="Greyhaven Depot" onClose={() => world.closeNpc()}>
       <div className="depot-panel">
@@ -1566,45 +1619,124 @@ function CompactSkill({ name, level, description }: { name: string; level?: numb
   );
 }
 
-const secondarySkillOptions: { id: SecondarySkill; name: string; description: string }[] = [
-  { id: "alchemy", name: "Alchemy", description: "Potions, extracts and reagents" },
-  { id: "mining", name: "Mining", description: "Ore, stone and rare minerals" },
-  { id: "woodcutting", name: "Woodcutting", description: "Timber and uncommon woods" },
-  { id: "fishing", name: "Fishing", description: "Fish and aquatic resources" },
-  { id: "cooking", name: "Cooking", description: "Meals with restorative effects" },
-  { id: "smithing", name: "Smithing", description: "Weapons, armor and metalwork" },
-  { id: "leatherworking", name: "Leatherworking", description: "Hide, scale and flexible armor" },
+type SecondarySkillCategory = "gathering" | "crafting";
+const secondarySkillOptions: {
+  id: SecondarySkill;
+  name: string;
+  description: string;
+  category: SecondarySkillCategory;
+}[] = [
+  { id: "mining", name: "Mining", description: "Ore, stone and rare minerals", category: "gathering" },
+  { id: "woodcutting", name: "Woodcutting", description: "Timber and uncommon woods", category: "gathering" },
+  { id: "fishing", name: "Fishing", description: "Fish and aquatic resources", category: "gathering" },
+  { id: "alchemy", name: "Alchemy", description: "Potions, extracts and reagents", category: "crafting" },
+  { id: "cooking", name: "Cooking", description: "Meals with restorative effects", category: "crafting" },
+  { id: "smithing", name: "Smithing", description: "Weapons, armor and metalwork", category: "crafting" },
+  { id: "leatherworking", name: "Leatherworking", description: "Hide, scale and flexible armor", category: "crafting" },
 ];
 
 function SecondarySkillsPicker({ selected }: { selected: SecondarySkill[] }) {
   const [pending, setPending] = useState<SecondarySkill[]>(selected);
   useEffect(() => setPending(selected), [selected.join("|")]);
+
+  const categoryOf = (skill: SecondarySkill) =>
+    secondarySkillOptions.find((option) => option.id === skill)?.category;
+
+  const categoryCount = (category: SecondarySkillCategory) =>
+    pending.filter((skill) => categoryOf(skill) === category).length;
+
   const toggle = (skill: SecondarySkill) => {
-    const next = pending.includes(skill)
-      ? pending.filter((entry) => entry !== skill)
-      : pending.length < 2
-        ? [...pending, skill]
-        : pending;
-    if (next === pending) {
-      world.addSystemMessage("You can only have two secondary skills at the same time.");
+    if (pending.includes(skill)) {
+      const next = pending.filter((entry) => entry !== skill);
+      setPending(next);
+      network.setSecondarySkills(next);
       return;
     }
+
+    const category = categoryOf(skill);
+    if (!category) return;
+    if (categoryCount(category) >= 2) {
+      world.addSystemMessage(
+        category === "gathering"
+          ? "You can choose at most two gathering skills."
+          : "You can choose at most two crafting skills.",
+      );
+      return;
+    }
+
+    const next = [...pending, skill];
     setPending(next);
     network.setSecondarySkills(next);
   };
+
+  const renderSkill = (skill: (typeof secondarySkillOptions)[number]) => {
+    const active = pending.includes(skill.id);
+    const unavailable = !active && categoryCount(skill.category) >= 2;
+    const progress = world.professionSkills.get(skill.id);
+    const level = progress?.level ?? 0;
+    const tries = progress?.tries ?? 0;
+    const required = 5 + level * 2;
+    const percent = Math.min(100, tries / required * 100);
+
+    return (
+      <button
+        key={skill.id}
+        className={active ? "selected" : ""}
+        aria-pressed={active}
+        disabled={unavailable}
+        title={skill.description}
+        onClick={() => toggle(skill.id)}
+      >
+        <span>{skill.name}</span>
+        <small>
+          {active
+            ? "Level " + level + " · " + Math.max(0, required - tries) + " left"
+            : unavailable
+              ? "Two " + skill.category + " skills selected"
+              : skill.description}
+        </small>
+        {active && (
+          <i
+            className="secondary-skill-meter"
+            aria-label={tries + " of " + required + " uses"}
+          >
+            <em style={{ width: percent + "%" }} />
+          </i>
+        )}
+      </button>
+    );
+  };
+
+  const gatheringCount = categoryCount("gathering");
+  const craftingCount = categoryCount("crafting");
+
   return (
     <section className="secondary-skills-picker" aria-label="Secondary skills">
-      <header><span><small>Secondary skills</small><strong>Choose two professions</strong></span><b>{pending.length} / 2</b></header>
-      <div>{secondarySkillOptions.map((skill) => {
-        const active = pending.includes(skill.id);
-        const unavailable = !active && pending.length >= 2;
-        const progress = world.professionSkills.get(skill.id);
-        const level = progress?.level ?? 0;
-        const tries = progress?.tries ?? 0;
-        const required = 5 + level * 2;
-        const percent = Math.min(100, tries / required * 100);
-        return <button key={skill.id} className={active ? "selected" : ""} aria-pressed={active} disabled={unavailable} title={skill.description} onClick={() => toggle(skill.id)}><span>{skill.name}</span><small>{active ? `Level ${level} · ${Math.max(0, required - tries)} left` : unavailable ? "Two selected" : skill.description}</small>{active && <i className="secondary-skill-meter" aria-label={`${tries} of ${required} uses`}><em style={{ width: `${percent}%` }} /></i>}</button>;
-      })}</div>
+      <header>
+        <span>
+          <small>Secondary skills</small>
+          <strong>Choose up to two gathering and two crafting skills</strong>
+        </span>
+        <b>G {gatheringCount}/2 · C {craftingCount}/2</b>
+      </header>
+
+      <section className="secondary-skill-group">
+        <h4>Gathering <small>{gatheringCount} / 2</small></h4>
+        <div>
+          {secondarySkillOptions
+            .filter((skill) => skill.category === "gathering")
+            .map(renderSkill)}
+        </div>
+      </section>
+
+      <section className="secondary-skill-group">
+        <h4>Crafting <small>{craftingCount} / 2</small></h4>
+        <div>
+          {secondarySkillOptions
+            .filter((skill) => skill.category === "crafting")
+            .map(renderSkill)}
+        </div>
+      </section>
     </section>
   );
 }

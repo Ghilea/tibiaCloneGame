@@ -353,7 +353,7 @@
     "name": "Orin",
     "title": "Greyhaven Artificer",
     "service": "craft_trainer",
-    "dialogue": "Ore is only half a craft. Hide, scale, bone and old plate all have their uses. Bring me the right creature products and I will teach you how to turn them into equipment worth carrying.",
+    "dialogue": "Raw ore belongs in the furnace first. Smelt it into bars, then shape those bars and the right creature materials into equipment worth carrying.",
     "position": {
       "x": 9,
       "y": 5,
@@ -362,6 +362,9 @@
     "offers": [],
     "spellIds": [],
     "recipeIds": [
+      "smelt_copper_bar",
+      "smelt_tin_bar",
+      "smelt_iron_bar",
       "fletch_rough_arrows",
       "forge_copper_blade",
       "brew_mire_recovery_tonic",

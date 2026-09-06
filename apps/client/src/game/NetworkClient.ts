@@ -118,7 +118,7 @@ export class NetworkClient {
   inspectWorldObject(objectId: string) { this.send({ type: "inspect_world_object", object_id: objectId }); }
   castSpell(spellId: string) { if (this.world.attackTargetId) this.send({ type: "cast_spell", spell_id: spellId, target_id: this.world.attackTargetId }); }
   depositItem(npcId: string, instanceId: string) { this.send({ type: "deposit_item", npc_id: npcId, instance_id: instanceId }); }
-  withdrawItem(npcId: string, instanceId: string) { this.send({ type: "withdraw_item", npc_id: npcId, instance_id: instanceId }); }
+  withdrawItem(npcId: string, instanceId: string, quantity = 1) { this.send({ type: "withdraw_item", npc_id: npcId, instance_id: instanceId, quantity }); }
   useItem(instanceId: string) {
     if (!this.world.attackTargetId) {
       this.world.addSystemMessage("Select a living target before using a sigil.");

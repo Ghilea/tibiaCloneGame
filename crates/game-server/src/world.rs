@@ -2367,15 +2367,54 @@ impl World {
         if self.item_is_offered(player_id, instance_id) {
             return Err("item_locked_in_trade");
         }
+
         let player = self.players.get(&player_id).ok_or("unknown_player")?;
         let item = player
             .inventory
             .iter()
             .find(|item| item.instance_id == instance_id)
+            .cloned()
             .ok_or("item_not_owned")?;
+
+        if item.definition_id == "gold_coin" {
+            return Err("money_not_storable");
+        }
         if item.container_id.is_some() || item.equipped_slot.is_some() {
             return Err("depot_requires_root_item");
         }
+
+        let definition = self
+            .content
+            .item(&item.definition_id)
+            .cloned()
+            .ok_or("item_not_owned")?;
+
+        // Stackable root items are consolidated into as few depot stacks as
+        // maxStack permits. This also repairs duplicate partial stacks created
+        // by older clients.
+        if definition.stackable {
+            let mut inventory = player.inventory.clone();
+            inventory.retain(|entry| entry.instance_id != instance_id);
+            let mut depot = player.depot.clone();
+            merge_root_stack(
+                &mut depot,
+                &definition,
+                item.charges,
+                item.quantity,
+            );
+            if depot.iter().filter(|entry| entry.container_id.is_none()).count() > 200 {
+                return Err("depot_full");
+            }
+
+            let player = self
+                .players
+                .get_mut(&player_id)
+                .expect("player was checked");
+            player.inventory = inventory;
+            player.depot = depot;
+            return Ok(());
+        }
+
         if player
             .depot
             .iter()
@@ -2385,6 +2424,7 @@ impl World {
         {
             return Err("depot_full");
         }
+
         let moving = item_tree_ids(&player.inventory, instance_id);
         let player = self
             .players
@@ -2408,6 +2448,7 @@ impl World {
         player_id: EntityId,
         npc_id: &str,
         instance_id: EntityId,
+        quantity: u16,
     ) -> Result<(), &'static str> {
         self.validate_depot_access(player_id, npc_id)?;
         let player = self.players.get(&player_id).ok_or("unknown_player")?;
@@ -2415,10 +2456,62 @@ impl World {
             .depot
             .iter()
             .find(|item| item.instance_id == instance_id)
+            .cloned()
             .ok_or("depot_item_not_found")?;
+
         if item.container_id.is_some() {
             return Err("depot_requires_root_item");
         }
+        if quantity == 0 || quantity > item.quantity {
+            return Err("invalid_depot_quantity");
+        }
+
+        let definition = self
+            .content
+            .item(&item.definition_id)
+            .cloned()
+            .ok_or("depot_item_not_found")?;
+
+        if definition.stackable {
+            let mut depot = player.depot.clone();
+            let index = depot
+                .iter()
+                .position(|entry| entry.instance_id == instance_id)
+                .expect("depot item was checked");
+            if depot[index].quantity == quantity {
+                depot.remove(index);
+            } else {
+                depot[index].quantity -= quantity;
+            }
+
+            let mut inventory = player.inventory.clone();
+            merge_root_stack(
+                &mut inventory,
+                &definition,
+                item.charges,
+                quantity,
+            );
+
+            if self.inventory_weight(&inventory) > self.carry_capacity(player) + f32::EPSILON {
+                return Err("too_heavy");
+            }
+            if !self.inventory_slots_valid(&inventory) {
+                return Err("inventory_full");
+            }
+
+            let player = self
+                .players
+                .get_mut(&player_id)
+                .expect("player was checked");
+            player.depot = depot;
+            player.inventory = inventory;
+            return Ok(());
+        }
+
+        if quantity != 1 {
+            return Err("invalid_depot_quantity");
+        }
+
         let moving = item_tree_ids(&player.depot, instance_id);
         let transferred: Vec<_> = player
             .depot
@@ -2434,6 +2527,7 @@ impl World {
         if !self.inventory_slots_valid(&combined) {
             return Err("inventory_full");
         }
+
         let player = self
             .players
             .get_mut(&player_id)
@@ -4927,6 +5021,44 @@ fn consume_crafting_material(
     (remaining == 0).then_some(location)
 }
 
+// TIBIAGAME_V34_FRIEND_FEEDBACK: normalize root stacks when moving through storage.
+fn merge_root_stack(
+    items: &mut Vec<ItemInstance>,
+    definition: &ItemDefinition,
+    charges: Option<u16>,
+    quantity: u16,
+) {
+    let mut total = u32::from(quantity);
+
+    items.retain(|item| {
+        let compatible = item.definition_id == definition.id
+            && item.charges == charges
+            && item.container_id.is_none()
+            && item.equipped_slot.is_none();
+
+        if compatible {
+            total = total.saturating_add(u32::from(item.quantity));
+            false
+        } else {
+            true
+        }
+    });
+
+    let max_stack = u32::from(definition.max_stack.max(1));
+    while total > 0 {
+        let stack_quantity = total.min(max_stack) as u16;
+        items.push(ItemInstance {
+            instance_id: uuid::Uuid::new_v4(),
+            definition_id: definition.id.clone(),
+            quantity: stack_quantity,
+            charges,
+            container_id: None,
+            equipped_slot: None,
+        });
+        total -= u32::from(stack_quantity);
+    }
+}
+
 fn add_crafted_output(
     inventory: &mut Vec<ItemInstance>,
     definition: &ItemDefinition,
@@ -6216,7 +6348,7 @@ mod tests {
         );
 
         world
-            .withdraw_item(id, "aldren_vaultkeeper", bag_id)
+            .withdraw_item(id, "aldren_vaultkeeper", bag_id, 1)
             .unwrap();
         assert!(world.player(id).unwrap().depot.is_empty());
         assert_eq!(
@@ -6244,7 +6376,7 @@ mod tests {
         world.insert_player(player);
 
         assert_eq!(
-            world.withdraw_item(id, "aldren_vaultkeeper", heavy_id),
+            world.withdraw_item(id, "aldren_vaultkeeper", heavy_id, 1),
             Err("too_heavy")
         );
         assert!(world.player(id).unwrap().inventory.is_empty());
@@ -6262,7 +6394,7 @@ mod tests {
         world.insert_player(player);
 
         assert_eq!(
-            world.withdraw_item(id, "aldren_vaultkeeper", stored_id),
+            world.withdraw_item(id, "aldren_vaultkeeper", stored_id, 1),
             Err("npc_out_of_reach")
         );
         assert_eq!(world.player(id).unwrap().depot[0].instance_id, stored_id);

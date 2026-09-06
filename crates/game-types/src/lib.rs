@@ -45,8 +45,22 @@ pub fn normalize_mastery(skill_levels: &mut [u16; 4]) {
     }
 }
 
+pub const GATHERING_SKILLS: [&str; 3] = ["mining", "woodcutting", "fishing"];
+pub const CRAFTING_SKILLS: [&str; 4] = ["alchemy", "cooking", "smithing", "leatherworking"];
+
 pub fn valid_secondary_skills(skills: &[String]) -> bool {
-    skills.len() <= 2
+    let gathering = skills
+        .iter()
+        .filter(|skill| GATHERING_SKILLS.contains(&skill.as_str()))
+        .count();
+    let crafting = skills
+        .iter()
+        .filter(|skill| CRAFTING_SKILLS.contains(&skill.as_str()))
+        .count();
+
+    skills.len() <= 4
+        && gathering <= 2
+        && crafting <= 2
         && skills
             .iter()
             .all(|skill| SECONDARY_SKILLS.contains(&skill.as_str()))
@@ -54,6 +68,44 @@ pub fn valid_secondary_skills(skills: &[String]) -> bool {
             .iter()
             .enumerate()
             .all(|(index, skill)| !skills[..index].contains(skill))
+}
+
+#[cfg(test)]
+mod v34_secondary_skill_tests {
+    use super::valid_secondary_skills;
+
+    fn skills(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
+    #[test]
+    fn allows_two_gathering_and_two_crafting() {
+        assert!(valid_secondary_skills(&skills(&[
+            "mining",
+            "fishing",
+            "smithing",
+            "alchemy",
+        ])));
+    }
+
+    #[test]
+    fn rejects_three_skills_from_one_category() {
+        assert!(!valid_secondary_skills(&skills(&[
+            "mining",
+            "fishing",
+            "woodcutting",
+        ])));
+        assert!(!valid_secondary_skills(&skills(&[
+            "smithing",
+            "alchemy",
+            "cooking",
+        ])));
+    }
+
+    #[test]
+    fn rejects_duplicates() {
+        assert!(!valid_secondary_skills(&skills(&["mining", "mining"])));
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -404,7 +456,9 @@ mod tests {
     fn secondary_skills_allow_two_unique_known_professions() {
         assert!(valid_secondary_skills(&["alchemy".into(), "mining".into()]));
         assert!(valid_secondary_skills(&[]));
-        assert!(!valid_secondary_skills(&[
+        // V34: this is valid: 1 gathering (Mining) + 2 crafting
+        // (Alchemy, Cooking). The limit is now per category, not 2 total.
+        assert!(valid_secondary_skills(&[
             "alchemy".into(),
             "mining".into(),
             "cooking".into()

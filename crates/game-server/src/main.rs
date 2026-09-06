@@ -157,6 +157,7 @@ impl AppState {
         }
     }
 
+    // TIBIAGAME_V34_FRIEND_FEEDBACK: reciprocal player visibility across floors and region edges.
     async fn publish_player_movement(
         &self,
         player_id: Uuid,
@@ -174,6 +175,25 @@ impl AppState {
             .into_iter()
             .collect();
         let current_player = world.player(player_id).map(|player| player.view.clone());
+
+        // The old code informed residents that the mover entered/left, but did
+        // not inform the mover about residents on the destination floor/region.
+        // A player following someone upstairs could therefore keep an empty
+        // player cache until the other player changed floor again.
+        let newly_visible_to_mover: Vec<PlayerView> = new_recipients
+            .difference(&old_recipients)
+            .filter(|recipient| **recipient != player_id)
+            .filter_map(|recipient| {
+                world
+                    .player(*recipient)
+                    .map(|player| player.view.clone())
+            })
+            .collect();
+        let no_longer_visible_to_mover: Vec<Uuid> = old_recipients
+            .difference(&new_recipients)
+            .filter(|recipient| **recipient != player_id)
+            .copied()
+            .collect();
         drop(world);
 
         let movement_event = serde_json::to_string(&ServerMessage::PlayerMoved {
@@ -194,6 +214,7 @@ impl AppState {
             .ok()
             .map(|text| ServerEvent { text: text.into() });
 
+        // Existing direction: tell nearby residents about the mover.
         for recipient in &new_recipients {
             if *recipient == player_id || old_recipients.contains(recipient) {
                 if let Some(event) = &movement_event {
@@ -207,6 +228,19 @@ impl AppState {
             if let Some(event) = &left_event {
                 self.events.send(*recipient, event.clone(), false);
             }
+        }
+
+        // V34 reciprocal direction: immediately populate/trim the mover's cache.
+        for player in newly_visible_to_mover {
+            self.publish_update(player_id, ServerMessage::PlayerJoined { player });
+        }
+        for hidden_player_id in no_longer_visible_to_mover {
+            self.publish_update(
+                player_id,
+                ServerMessage::PlayerLeft {
+                    player_id: hidden_player_id,
+                },
+            );
         }
     }
 
@@ -1085,7 +1119,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
                         id,
                         ServerMessage::Error {
                             code: "invalid_secondary_skills".into(),
-                            message: "Choose no more than two different secondary skills".into(),
+                            message: "Choose up to two gathering and two crafting skills".into(),
                         },
                     );
                     continue;
@@ -1164,11 +1198,12 @@ async fn session(mut socket: WebSocket, state: AppState) {
             Ok(ClientMessage::DepositItem {
                 npc_id,
                 instance_id,
-            }) => move_depot_item(&state, id, &npc_id, instance_id, true).await,
+            }) => move_depot_item(&state, id, &npc_id, instance_id, None).await,
             Ok(ClientMessage::WithdrawItem {
                 npc_id,
                 instance_id,
-            }) => move_depot_item(&state, id, &npc_id, instance_id, false).await,
+                quantity,
+            }) => move_depot_item(&state, id, &npc_id, instance_id, Some(quantity)).await,
             Ok(ClientMessage::LearnSpell { npc_id, spell_id }) => {
                 learn_spell(&state, id, &npc_id, &spell_id).await
             }
@@ -2023,7 +2058,7 @@ async fn inspect_world_object(state: &AppState, player_id: Uuid, object_id: &str
 
 fn mining_error_message(code: &str) -> &'static str {
     match code {
-        "mining_not_selected" => "Choose Mining as one of your two professions first",
+        "mining_not_selected" => "Choose Mining as one of your gathering skills first",
         "pickaxe_required" => "Equip a pickaxe in the Mining tool slot before mining",
         "resource_out_of_reach" => "Move next to the resource first",
         "resource_depleted" => "That vein is depleted and must recover",
@@ -2102,14 +2137,13 @@ async fn move_depot_item(
     player_id: Uuid,
     npc_id: &str,
     instance_id: Uuid,
-    deposit: bool,
+    withdraw_quantity: Option<u16>,
 ) {
     let mut world = state.world.write().await;
     let backup = world.clone();
-    let result = if deposit {
-        world.deposit_item(player_id, npc_id, instance_id)
-    } else {
-        world.withdraw_item(player_id, npc_id, instance_id)
+    let result = match withdraw_quantity {
+        Some(quantity) => world.withdraw_item(player_id, npc_id, instance_id, quantity),
+        None => world.deposit_item(player_id, npc_id, instance_id),
     };
     if let Err(reason) = result {
         state.private(
@@ -2161,8 +2195,11 @@ fn depot_error_message(code: &str) -> &'static str {
         "item_locked_in_trade" | "cannot_use_depot_while_trading" => {
             "Finish or cancel your trade before using the depot"
         }
+        "money_not_storable" => "Gold Coins stay in your purse and cannot be stored",
+        "invalid_depot_quantity" => "Choose a valid quantity to withdraw",
         "depot_full" => "Your Greyhaven depot is full",
         "too_heavy" => "You cannot carry that item",
+        "inventory_full" => "Your backpack is full",
         "depot_not_found" => "That vault is not available",
         _ => "The depot transfer could not be completed",
     }

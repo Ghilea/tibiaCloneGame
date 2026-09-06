@@ -294,7 +294,10 @@ export class WorldState {
         break;
       case "player_outfit_changed": {
         const player = this.players.get(message.player_id);
-        if (player) this.players.set(player.id, { ...player, outfit: message.outfit });
+        if (player) {
+          this.players.set(player.id, { ...player, outfit: message.outfit });
+          notification = "visual";
+        }
         break;
       }
       case "player_secondary_skills_changed": {

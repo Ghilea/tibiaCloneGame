@@ -68,7 +68,7 @@
   {
     "id": "gold_coin",
     "name": "Gold Coin",
-    "weight": 0.1,
+    "weight": 0,
     "stackable": true,
     "maxStack": 100
   },
@@ -669,8 +669,22 @@
     "maxStack": 50
   },
   {
+    "id": "copper_ingot",
+    "name": "Copper Bar",
+    "weight": 4.5,
+    "stackable": true,
+    "maxStack": 50
+  },
+  {
+    "id": "tin_ingot",
+    "name": "Tin Bar",
+    "weight": 5,
+    "stackable": true,
+    "maxStack": 50
+  },
+  {
     "id": "iron_ingot",
-    "name": "Iron Ingot",
+    "name": "Iron Bar",
     "weight": 5,
     "stackable": true,
     "maxStack": 50

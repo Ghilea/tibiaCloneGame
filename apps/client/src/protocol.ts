@@ -1,6 +1,7 @@
 // TIBIAGAME_STREAMING_FIX_V9
-export const PROTOCOL_VERSION = 28;
-export const CLIENT_VERSION = "0.1.0";
+// TIBIAGAME_V34_FRIEND_FEEDBACK
+export const PROTOCOL_VERSION = 29;
+export const CLIENT_VERSION = "0.1.1";
 
 export type Position = { x: number; y: number; z: number };
 export type PlayerView = {
@@ -91,7 +92,7 @@ export type ClientMessage =
   | { type: "buy_from_npc"; npc_id: string; offer_id: string; quantity: number }
   | { type: "sell_to_npc"; npc_id: string; instance_id: string; quantity: number }
   | { type: "deposit_item"; npc_id: string; instance_id: string }
-  | { type: "withdraw_item"; npc_id: string; instance_id: string }
+  | { type: "withdraw_item"; npc_id: string; instance_id: string; quantity: number }
   | { type: "learn_spell"; npc_id: string; spell_id: string }
   | { type: "learn_recipe_from_npc"; npc_id: string; recipe_id: string }
   | { type: "learn_recipe_from_item"; instance_id: string }

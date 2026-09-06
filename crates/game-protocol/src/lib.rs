@@ -5,7 +5,8 @@ use game_types::{
 use serde::{Deserialize, Serialize};
 
 // TIBIAGAME_STREAMING_FIX_V9
-pub const PROTOCOL_VERSION: u16 = 28;
+// TIBIAGAME_V34_FRIEND_FEEDBACK
+pub const PROTOCOL_VERSION: u16 = 29;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -102,6 +103,7 @@ pub enum ClientMessage {
     WithdrawItem {
         npc_id: String,
         instance_id: game_types::EntityId,
+        quantity: u16,
     },
     LearnSpell {
         npc_id: String,

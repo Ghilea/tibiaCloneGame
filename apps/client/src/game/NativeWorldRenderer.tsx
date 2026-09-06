@@ -3485,7 +3485,9 @@ class NativeSpriteCreatureActor {
 }
 
 class NativeActorManager {
+  // TIBIAGAME_V34_FRIEND_FEEDBACK: an actor created for one outfit must be rebuilt when outfit changes.
   private readonly players = new Map<string, NativeCharacterActor>();
+  private readonly playerOutfits = new Map<string, CharacterOutfit>();
   private readonly npcs = new Map<string, NativeCharacterActor>();
   private readonly creatures = new Map<string, NativeSpriteCreatureActor>();
 
@@ -3521,9 +3523,12 @@ class NativeActorManager {
 
     for (const player of world.players.values()) {
       let actor = this.players.get(player.id);
-      if (!actor) {
+      const renderedOutfit = this.playerOutfits.get(player.id);
+      if (!actor || renderedOutfit !== player.outfit) {
+        actor?.dispose(this.scene);
         actor = this.createCharacter(player.outfit);
         this.players.set(player.id, actor);
+        this.playerOutfits.set(player.id, player.outfit);
       }
       actor.setTarget(player.position, floor, now);
       actor.update(delta, now);
@@ -3593,6 +3598,7 @@ class NativeActorManager {
       actor.dispose(this.scene);
     }
     this.players.clear();
+    this.playerOutfits.clear();
     this.npcs.clear();
     this.creatures.clear();
   }
@@ -7507,7 +7513,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
 
               if (gainedCopper > 0) {
                 gatheringPreview.feedbackText =
-                  `+${gainedCopper} Copper Ore`;
+                  `+${gainedCopper} Copper Ore · +1 Mining XP`;
                 gatheringPreview.feedbackKind = "success";
                 gatheringPreview.feedbackStartedAt = now;
               } else {
