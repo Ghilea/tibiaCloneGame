@@ -14,6 +14,7 @@ const MAP_INDEX_CHUNK_SIZE = 16;
 
 export class WorldState {
 // TIBIAGAME_V35_3_IDLE_MAINTHREAD_FIXES
+// TIBIAGAME_V35_5_NETWORK_FRAME_BUDGET
   readonly players = new Map<string, PlayerView>();
   readonly chat: ChatLine[] = [];
   readonly itemDefinitions = new Map<string, ItemDefinition>();
@@ -242,7 +243,13 @@ export class WorldState {
         if (player) {
           if (message.player_id === this.localPlayerId) {
             for (const sequence of this.pendingLocalMoves.keys()) if (sequence <= message.sequence) this.pendingLocalMoves.delete(sequence);
-            const latestPrediction = [...this.pendingLocalMoves.entries()].sort(([left], [right]) => left - right).at(-1)?.[1];
+            let latestPrediction: Position | undefined;
+            let latestSequence = Number.NEGATIVE_INFINITY;
+            for (const [sequence, prediction] of this.pendingLocalMoves) {
+              if (sequence <= latestSequence) continue;
+              latestSequence = sequence;
+              latestPrediction = prediction;
+            }
             const nextPosition = latestPrediction ?? message.position;
             if (!samePosition(player.position, nextPosition)) {
               this.players.set(player.id, { ...player, position: nextPosition });
@@ -292,6 +299,7 @@ export class WorldState {
         break;
       case "pong":
         if (this.localPlayerId === message.player_id) this.ping = Date.now() - message.sent_at;
+        notification = "none";
         break;
       case "player_outfit_changed": {
         const player = this.players.get(message.player_id);

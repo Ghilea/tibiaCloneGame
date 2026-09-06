@@ -5474,6 +5474,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       "NATIVE WORLD V31C.1.1 active · movement-cancelled gathering · raw Three.js",
     );
 // TIBIAGAME_V35_3_IDLE_MAINTHREAD_FIXES
+// TIBIAGAME_V35_5_NETWORK_FRAME_BUDGET
 
     const bootstrap = async () => {
       const nextRenderer = new THREE.WebGLRenderer({
@@ -6658,6 +6659,9 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       let sampleTotal = 0;
       let sampleMax = 0;
       let lastLongFrameLogAt = Number.NEGATIVE_INFINITY;
+      let nextPositionHudAt = 0;
+      const consolePerfLogging =
+        new URLSearchParams(window.location.search).get("perfLog") === "1";
 
       const resize = () => {
         const parent = canvas.parentElement;
@@ -6704,7 +6708,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         );
         const prepareMs = performance.now() - prepareStarted;
 
-        if (prepareMs > 4) {
+        if (consolePerfLogging && prepareMs > 4) {
           console.info(
             `NATIVE STATIC PREP ${prepareMs.toFixed(1)}ms · pos ${playerX}:${playerY}:${floor}`,
           );
@@ -6871,7 +6875,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           task.run();
           const taskMs = performance.now() - taskStarted;
 
-          if (taskMs > 4) {
+          if (consolePerfLogging && taskMs > 4) {
             console.info(
               `NATIVE STATIC TASK ${task.label}: ${taskMs.toFixed(1)}ms`,
             );
@@ -7445,12 +7449,8 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
             chunkX * NATIVE_RENDER_CHUNK_SIZE + NATIVE_RENDER_CHUNK_SIZE / 2;
           const staticCenterY =
             chunkY * NATIVE_RENDER_CHUNK_SIZE + NATIVE_RENDER_CHUNK_SIZE / 2;
-          const signature = [
-            floor,
-            chunkX,
-            chunkY,
-            world.streamRegionRevision,
-          ].join(":");
+          const signature =
+            `${floor}:${chunkX}:${chunkY}:${world.streamRegionRevision}`;
 
           const staticWorkStartedAt = performance.now();
           queueStaticSnapshot(
@@ -7702,7 +7702,8 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
             hideGatheringOverlay();
           }
 
-          if (positionRef.current) {
+          if (positionRef.current && now >= nextPositionHudAt) {
+            nextPositionHudAt = now + 250;
             positionRef.current.textContent =
               `NATIVE V31B · ${worldTimeLabel(environment)} ${environment.period} · `
               + `x ${local.position.x} · y ${local.position.y} · z ${floor}`;
@@ -7718,13 +7719,13 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         const totalWorkMs =
           performance.now() - frameWorkStartedAt;
 
-        if (now >= warmupUntil) {
+        if (now >= warmupUntil && (showDebug || consolePerfLogging)) {
           sampleFrames += 1;
           sampleTotal += frameMs;
           sampleMax = Math.max(sampleMax, frameMs);
 
           if (
-            showDebug
+            consolePerfLogging
             && frameMs >= 50
             && local
             && now - lastLongFrameLogAt >= 2_000
@@ -7755,7 +7756,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
               + `calls=${nextRenderer.info.render.calls} `
               + `triangles=${nextRenderer.info.render.triangles}`;
 
-            if (showDebug) console.info(message);
+            if (consolePerfLogging) console.info(message);
             if (performanceRef.current) {
               performanceRef.current.textContent =
                 `${fps.toFixed(0)} FPS · avg ${average.toFixed(1)}ms · max ${sampleMax.toFixed(1)}ms`;

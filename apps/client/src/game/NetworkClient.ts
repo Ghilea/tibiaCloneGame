@@ -1,5 +1,53 @@
 import { CLIENT_VERSION, PROTOCOL_VERSION, type CharacterOutfit, type ClientMessage, type Position, type SecondarySkill, type ServerMessage } from "../protocol";
 import { WorldState } from "./WorldState";
+// TIBIAGAME_V35_5_NETWORK_FRAME_BUDGET
+
+const NETWORK_FRAME_MESSAGE_LIMIT = 64;
+// TIBIAGAME_V35_5_1_NETWORK_QUEUE_HOTFIX
+const NETWORK_PERF_LOG =
+  new URLSearchParams(window.location.search).get("perfLog") === "1";
+
+function coalescingKey(message: ServerMessage): string | null {
+  switch (message.type) {
+    case "player_moved":
+      return `player_moved:${message.player_id}`;
+    case "creature_moved":
+      return `creature_moved:${message.creature_id}`;
+    case "creature_damaged":
+      return `creature_damaged:${message.creature_id}`;
+    case "player_stats_changed":
+      return `player_stats_changed:${message.player_id}`;
+    case "pong":
+      return `pong:${message.player_id}`;
+    case "food_status":
+      return `food_status:${message.player_id}`;
+    default:
+      return null;
+  }
+}
+
+function coalesceIncomingMessages(messages: ServerMessage[]) {
+  if (messages.length < 2) return messages;
+
+  // Keep the newest replaceable state message at its ORIGINAL later position.
+  // Scanning backwards avoids moving a later movement/stat update in front of
+  // an intervening combat/event message.
+  const seen = new Set<string>();
+  const reversed: ServerMessage[] = [];
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    const key = coalescingKey(message);
+    if (key) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    reversed.push(message);
+  }
+
+  reversed.reverse();
+  return reversed;
+}
 
 export class NetworkClient {
   private socket: WebSocket | null = null;
@@ -205,7 +253,7 @@ export class NetworkClient {
       const startedAt = performance.now();
       this.world.apply(region);
       const elapsedMs = performance.now() - startedAt;
-      if (elapsedMs > 8) {
+      if (NETWORK_PERF_LOG && elapsedMs > 8) {
         console.info(`world region apply: ${elapsedMs.toFixed(1)}ms`);
       }
 
@@ -231,12 +279,54 @@ export class NetworkClient {
 
   private flushIncomingMessages() {
     this.incomingFrame = null;
-    const messages = this.incomingMessages.splice(0);
-    if (messages.length === 0) return;
+
+    // TIBIAGAME_V35_5_NETWORK_FRAME_BUDGET
+    // WebSocket bursts used to be applied wholesale in one rAF callback. That
+    // callback runs between native renderer frames, so a burst could delay the
+    // next frame even when Three.js itself only needed 2-4 ms.
+    const queued = this.incomingMessages;
+    this.incomingMessages = [];
+    if (queued.length === 0) return;
+
+    const coalesced = coalesceIncomingMessages(queued);
+    const overBudget = coalesced.length > NETWORK_FRAME_MESSAGE_LIMIT;
+    const messages = overBudget
+      ? coalesced.slice(0, NETWORK_FRAME_MESSAGE_LIMIT)
+      : coalesced;
+
+    // Critical V35.5.1 fix:
+    // when the entire batch was consumed, backlog MUST stay empty. V35.5
+    // accidentally requeued the same array here, replaying combat effects,
+    // movement and stats every display frame forever.
+    if (overBudget) {
+      this.incomingMessages = coalesced.slice(NETWORK_FRAME_MESSAGE_LIMIT);
+    }
+
     const previousFloor = this.world.localPlayerId
       ? this.world.players.get(this.world.localPlayerId)?.position.z
       : undefined;
+
+    const applyStartedAt = performance.now();
     this.world.applyBatch(messages);
+    const applyMs = performance.now() - applyStartedAt;
+
+    if (
+      NETWORK_PERF_LOG
+      && (applyMs >= 8 || queued.length >= NETWORK_FRAME_MESSAGE_LIMIT * 2)
+    ) {
+      console.info(
+        `NETWORK APPLY ${applyMs.toFixed(1)}ms · raw ${queued.length} · `
+        + `applied ${messages.length} · backlog ${this.incomingMessages.length}`,
+      );
+      if (
+        queued.length <= NETWORK_FRAME_MESSAGE_LIMIT
+        && this.incomingMessages.length !== 0
+      ) {
+        console.error(
+          "NETWORK QUEUE INVARIANT FAILED: consumed batch unexpectedly left a backlog",
+        );
+      }
+    }
 
     // TIBIAGAME_V35A_UI_COMBAT: automatically retaliate without overriding
     // an explicit/ongoing target chosen by the player.
@@ -260,6 +350,12 @@ export class NetworkClient {
     if (previousFloor !== undefined && currentFloor !== previousFloor) this.clearAttackTarget();
     if (messages.some((message) => message.type === "creature_died") && this.world.attackTargetId === null) {
       this.stopAttackTimer();
+    }
+
+    // Carry a genuine burst over to the next display frame instead of turning
+    // one network callback into a visible 50-500 ms hitch.
+    if (this.incomingMessages.length > 0 && this.incomingFrame === null) {
+      this.incomingFrame = window.requestAnimationFrame(() => this.flushIncomingMessages());
     }
   }
 

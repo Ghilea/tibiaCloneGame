@@ -26,6 +26,7 @@ import { isWorldTimePaused, setWorldTime, setWorldTimePaused, worldEnvironment, 
 import { PROTOCOL_VERSION, type BuildingView, type CharacterOutfit, type GroundItem, type ItemDefinition, type ItemInstance, type PlayerView, type Position, type SecondarySkill } from "./protocol";
 // TIBIAGAME_V34_FIXSET_1
 // TIBIAGAME_V35_4_CHARACTER_PAPERDOLL
+// TIBIAGAME_V35_5_NETWORK_FRAME_BUDGET
 // TIBIAGAME_V35_2_MAINTHREAD_OPTIMIZATION
 // TIBIAGAME_V35_3_IDLE_MAINTHREAD_FIXES
 // TIBIAGAME_V35_1_COMBAT_UI_FIXES
@@ -332,6 +333,20 @@ function ServerStatusIndicator({ online }: { online: boolean | null }) {
   return <div className={`server-status ${online === true ? "online" : online === false ? "offline" : "checking"}`}><i aria-hidden="true" />{label}</div>;
 }
 
+function WorldPing() {
+  const [ping, setPing] = useState(() => world.ping);
+  useEffect(() => {
+    const refresh = () => {
+      const next = world.ping;
+      setPing((current) => current === next ? current : next);
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return <>{ping} ms</>;
+}
+
 type Panel = "inventory" | "crafting" | "skills" | "character" | "help" | "options";
 
 function Game({ onLeave }: { onLeave: () => void }) {
@@ -567,7 +582,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
       <header className="world-header">
         <strong>Embers of Aldoria</strong>
         <span>
-          Greyhaven · {world.players.size} online · {world.ping} ms
+          Greyhaven · {world.players.size} online · <WorldPing />
         </span>
       </header>
       <GameMinimap world={world} />
