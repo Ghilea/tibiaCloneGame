@@ -62,6 +62,8 @@ const NATIVE_CAMERA_ZOOM = 90;
 // TIBIAGAME_NATIVE_RENDERER_V31_B
 // TIBIAGAME_NATIVE_RENDERER_V31_B_1
 // TIBIAGAME_NATIVE_RENDERER_V31_B_2
+// TIBIAGAME_NATIVE_RENDERER_V31_B_3_1
+// TIBIAGAME_NATIVE_RENDERER_V31_B_3_2
 // Authored low-poly world-prop and copper-vein GLBs. Static prop families stay
 // instanced; resource GLBs use persistent dynamic instance sets.
 // Native day/night atmosphere using the existing shared worldEnvironment()
@@ -1140,6 +1142,114 @@ function nativeTile(
   ];
 }
 
+function appendNativeFloorCoverage(
+  position: Position,
+  structuralTiles: ReadonlySet<string>,
+  target: Transform[],
+) {
+  const x = position.x;
+  const y = position.y;
+  const z = position.z;
+  const centerX = x + 0.5;
+  const centerZ = y + 0.5;
+
+  target.push([
+    centerX,
+    0.025,
+    centerZ,
+    1,
+    0.045,
+    1,
+  ]);
+
+  const north = structuralTiles.has(`${x}:${y - 1}:${z}`);
+  const south = structuralTiles.has(`${x}:${y + 1}:${z}`);
+  const west = structuralTiles.has(`${x - 1}:${y}:${z}`);
+  const east = structuralTiles.has(`${x + 1}:${y}:${z}`);
+
+  if (north) {
+    target.push([
+      centerX,
+      0.025,
+      y - 0.25,
+      1,
+      0.045,
+      0.5,
+    ]);
+  }
+  if (south) {
+    target.push([
+      centerX,
+      0.025,
+      y + 1.25,
+      1,
+      0.045,
+      0.5,
+    ]);
+  }
+  if (west) {
+    target.push([
+      x - 0.25,
+      0.025,
+      centerZ,
+      0.5,
+      0.045,
+      1,
+    ]);
+  }
+  if (east) {
+    target.push([
+      x + 1.25,
+      0.025,
+      centerZ,
+      0.5,
+      0.045,
+      1,
+    ]);
+  }
+
+  if (north && west) {
+    target.push([
+      x - 0.25,
+      0.025,
+      y - 0.25,
+      0.5,
+      0.045,
+      0.5,
+    ]);
+  }
+  if (north && east) {
+    target.push([
+      x + 1.25,
+      0.025,
+      y - 0.25,
+      0.5,
+      0.045,
+      0.5,
+    ]);
+  }
+  if (south && west) {
+    target.push([
+      x - 0.25,
+      0.025,
+      y + 1.25,
+      0.5,
+      0.045,
+      0.5,
+    ]);
+  }
+  if (south && east) {
+    target.push([
+      x + 1.25,
+      0.025,
+      y + 1.25,
+      0.5,
+      0.045,
+      0.5,
+    ]);
+  }
+}
+
 function appendNativeConnectedWalls(
   positions: readonly Position[],
   floor: number,
@@ -1150,61 +1260,58 @@ function appendNativeConnectedWalls(
   target: Transform[],
   skip?: (position: Position) => boolean,
 ) {
-  const wallSet = new Set(
-    positions
-      .filter((position) => position.z === floor)
-      .map(tileKey),
+  const eligible = positions.filter(
+    (position) =>
+      position.z === floor
+      && !skip?.(position),
   );
-  const wallLength = 1.08;
+  const wallSet = new Set(eligible.map(tileKey));
+  const emittedPairs = new Set<string>();
+  const jointOverlap = Math.min(0.08, thickness * 0.18);
+  const segmentLength = 1 + jointOverlap;
 
-  for (const position of positions) {
+  for (const position of eligible) {
     if (!nativeInside(position, floor, centerX, centerY)) continue;
-    if (skip?.(position)) continue;
 
-    const west = wallSet.has(
-      `${position.x - 1}:${position.y}:${position.z}`,
-    );
-    const east = wallSet.has(
-      `${position.x + 1}:${position.y}:${position.z}`,
-    );
-    const north = wallSet.has(
-      `${position.x}:${position.y - 1}:${position.z}`,
-    );
-    const south = wallSet.has(
-      `${position.x}:${position.y + 1}:${position.z}`,
-    );
+    let connected = false;
+    const neighbors = [
+      { dx: -1, dy: 0 },
+      { dx: 1, dy: 0 },
+      { dx: 0, dy: -1 },
+      { dx: 0, dy: 1 },
+    ] as const;
 
-    const horizontal = west || east;
-    const vertical = north || south;
-    const x = position.x + 0.5;
-    const z = position.y + 0.5;
+    for (const neighbor of neighbors) {
+      const nx = position.x + neighbor.dx;
+      const ny = position.y + neighbor.dy;
+      const neighborKey = `${nx}:${ny}:${position.z}`;
+      if (!wallSet.has(neighborKey)) continue;
 
-    if (horizontal) {
+      connected = true;
+      const currentKey = tileKey(position);
+      const pairKey = currentKey < neighborKey
+        ? `${currentKey}|${neighborKey}`
+        : `${neighborKey}|${currentKey}`;
+      if (emittedPairs.has(pairKey)) continue;
+      emittedPairs.add(pairKey);
+
+      const horizontal = neighbor.dx !== 0;
       target.push([
-        x,
+        position.x + 0.5 + neighbor.dx * 0.5,
         height / 2,
-        z,
-        wallLength,
+        position.y + 0.5 + neighbor.dy * 0.5,
+        horizontal ? segmentLength : thickness,
         height,
-        thickness,
+        horizontal ? thickness : segmentLength,
       ]);
     }
-    if (vertical) {
+
+    if (!connected) {
       target.push([
-        x,
+        position.x + 0.5,
         height / 2,
-        z,
-        thickness,
-        height,
-        wallLength,
-      ]);
-    }
-    if (!horizontal && !vertical) {
-      target.push([
-        x,
-        height / 2,
-        z,
-        wallLength,
+        position.y + 0.5,
+        1,
         height,
         thickness,
       ]);
@@ -1292,9 +1399,9 @@ function appendBuilding(
     centerX,
     0.045,
     centerY,
-    Math.max(0.5, building.width - 0.18),
+    Math.max(0.5, building.width),
     0.09,
-    Math.max(0.5, building.height - 0.18),
+    Math.max(0.5, building.height),
   ]);
 
   const addWall = (
@@ -1627,9 +1734,22 @@ function prepareNativeSnapshot(
       snapshot.roads.push(nativeTile(position, 0.015, 0.035));
   }
 
+  const floorStructuralTiles = new Set([
+    ...map.houseWalls,
+    ...map.castleWalls,
+    ...map.doors.map((entry) => entry.position),
+    ...map.windows.map((entry) => entry.position),
+  ]
+    .filter((position) => position.z === floor)
+    .map(tileKey));
+
   for (const position of map.floors) {
-    if (nativeInside(position, floor, centerX, centerY))
-      snapshot.floors.push(nativeTile(position, 0.025, 0.045));
+    if (!nativeInside(position, floor, centerX, centerY)) continue;
+    appendNativeFloorCoverage(
+      position,
+      floorStructuralTiles,
+      snapshot.floors,
+    );
   }
 
   for (const position of map.water) {
@@ -5101,7 +5221,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     const disposables: Array<{ dispose(): void }> = [];
 
     console.info(
-      "NATIVE WORLD V31B.2 active · connected underground walls + GPU warmup · raw Three.js",
+      "NATIVE WORLD V31B.3.2 active · wall-edge floor coverage · raw Three.js",
     );
 
     const bootstrap = async () => {
@@ -7124,7 +7244,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       <canvas
         ref={canvasRef}
         className="three-world"
-        data-native-world-renderer="v31b.2"
+        data-native-world-renderer="v31b.3.2"
         style={{ width: "100%", height: "100%", display: "block" }}
       />
       <div
