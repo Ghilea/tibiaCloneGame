@@ -8,7 +8,38 @@ use serde::{Deserialize, Serialize};
 // TIBIAGAME_V34_FRIEND_FEEDBACK
 pub const PROTOCOL_VERSION: u16 = 30;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthCredentials {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthResponse {
+    pub session_token: String,
+    pub account_id: game_types::EntityId,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterListResponse {
+    pub characters: Vec<CharacterSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CharacterSummary {
+    pub id: game_types::EntityId,
+    pub name: String,
+    pub outfit: String,
+    pub level: i32,
+    pub position: Position,
+}
+// TIBIAGAME_V36_1_NATIVE_SERVER_HANDSHAKE
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
     Hello {
@@ -132,7 +163,7 @@ pub enum ClientMessage {
     },
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ItemDestination {
     Root,
@@ -140,7 +171,7 @@ pub enum ItemDestination {
     Equipment { slot: String },
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WelcomePayload {
     pub protocol_version: u16,
     pub player: PlayerView,
@@ -167,7 +198,7 @@ pub struct WelcomePayload {
     pub discovered_knowledge_ids: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMessage {
     Welcome {
