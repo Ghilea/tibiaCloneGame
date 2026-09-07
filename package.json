@@ -20,6 +20,10 @@
     "client:updater:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-updater-signing.ps1",
     "client:version": "node scripts/set-client-version.mjs",
     "patch": "node scripts/apply-latest-patch.mjs",
-    "patch:check": "node scripts/apply-latest-patch.mjs --check"
+    "patch:check": "node scripts/apply-latest-patch.mjs --check",
+    "desktop:release": "npm --prefix apps/client run desktop:release",
+    "desktop:wv2:baseline": "node scripts/run-webview2-test.mjs baseline",
+    "desktop:wv2:novsync": "node scripts/run-webview2-test.mjs novsync",
+    "desktop:wv2:fixed149": "node scripts/run-webview2-test.mjs fixed149"
   }
 }

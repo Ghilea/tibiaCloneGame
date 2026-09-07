@@ -72,6 +72,14 @@ export class WorldState {
   streamRegionRadius = 0;
   streamRegionFloorRadius = 0;
   localCorrectionRevision = 0;
+  // TIBIAGAME_V35_15_2_LOCAL_MOVEMENT_REPAIR
+  // Exact timing/path of the currently predicted LOCAL player tile.
+  private localVisualMove: {
+    from: Position;
+    to: Position;
+    startedAt: number;
+    sequence: number;
+  } | null = null;
   private listeners = new Set<WorldListener>();
   private visualListeners = new Set<WorldListener>();
   private batchDepth = 0;
@@ -122,6 +130,8 @@ export class WorldState {
     this.incomingTrade = null;
     this.trade = null;
     this.pendingLocalMoves.clear();
+
+    this.localVisualMove = null;
     this.streamRegionCenter = null;
     this.streamRegionRadius = 0;
     this.streamRegionFloorRadius = 0;
@@ -163,6 +173,8 @@ export class WorldState {
         this.incomingTrade = null;
         this.trade = null;
         this.pendingLocalMoves.clear();
+
+        this.localVisualMove = null;
         this.localCorrectionRevision = 0;
         this.localPlayerFacing = 4;
         for (const player of [...message.players, message.player]) this.players.set(player.id, player);
@@ -271,6 +283,8 @@ export class WorldState {
         if (this.localPlayerId === message.player_id) {
           this.localCorrectionRevision += 1;
           this.pendingLocalMoves.clear();
+
+          this.localVisualMove = null;
           const player = this.players.get(this.localPlayerId);
           if (player && !samePosition(player.position, message.position)) {
             this.players.set(player.id, { ...player, position: message.position });
@@ -526,15 +540,30 @@ export class WorldState {
     if (!this.localPlayerId) return;
     const player = this.players.get(this.localPlayerId);
     if (player) {
+      const from = player.position;
+      const startedAt = performance.now();
       this.localPlayerFacing = playerFacingFromMovement(
-        position.x - player.position.x,
-        position.y - player.position.y,
+        position.x - from.x,
+        position.y - from.y,
         this.localPlayerFacing,
       );
+      this.localVisualMove = {
+        from: { ...from },
+        to: { ...position },
+        startedAt,
+        sequence,
+      };
       this.pendingLocalMoves.set(sequence, position);
       this.players.set(player.id, { ...player, position });
       this.notifyVisual();
     }
+  }
+
+  localVisualMoveFor(position: Position) {
+    const movement = this.localVisualMove;
+    return movement && samePosition(movement.to, position)
+      ? movement
+      : null;
   }
 
   setAttackTarget(targetId: string | null) {

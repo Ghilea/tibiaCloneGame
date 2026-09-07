@@ -6,6 +6,12 @@ const NETWORK_FRAME_MESSAGE_LIMIT = 64;
 // TIBIAGAME_V35_5_1_NETWORK_QUEUE_HOTFIX
 const NETWORK_PERF_LOG =
   new URLSearchParams(window.location.search).get("perfLog") === "1";
+// TIBIAGAME_V35_14_DESKTOP_STREAM_HITCH_FIX
+// WebView2 can spend a surprisingly long time structured-cloning a large
+// parsed region object from Worker -> main. Browser dev keeps the worker path;
+// Tauri instead coalesces raw region strings and parses only the newest one
+// during browser idle time on the main thread.
+const TAURI_DESKTOP = "__TAURI_INTERNALS__" in window;
 
 function coalescingKey(message: ServerMessage): string | null {
   switch (message.type) {
@@ -59,6 +65,8 @@ export class NetworkClient {
   private incomingMessages: ServerMessage[] = [];
   private pendingWorldRegion: Extract<ServerMessage, { type: "world_region" }> | null = null;
   private worldRegionIdleHandle: number | null = null;
+  private pendingDesktopWorldRegionRaw: string | null = null;
+  private desktopWorldRegionDecodeIdleHandle: number | null = null;
   private regionDecodeWorker: Worker | null = null;
 
   constructor(private world: WorldState) { }
@@ -84,7 +92,8 @@ export class NetworkClient {
       if (this.socket !== socket) return;
       if (typeof event.data === "string"
         && event.data.slice(0, 96).includes('"type":"world_region"')) {
-        this.decodeWorldRegion(event.data);
+        if (TAURI_DESKTOP) this.decodeDesktopWorldRegion(event.data);
+        else this.decodeWorldRegion(event.data);
         return;
       }
       try {
@@ -208,6 +217,7 @@ export class NetworkClient {
     this.incomingFrame = null;
     this.incomingMessages.length = 0;
     this.cancelWorldRegionApply();
+    this.cancelDesktopWorldRegionDecode();
     this.stopRegionDecodeWorker();
     const socket = this.socket;
     this.socket = null;
@@ -215,6 +225,88 @@ export class NetworkClient {
     this.world.prepareForConnection();
     this.world.connection = "offline";
     this.world.notify();
+  }
+
+  private decodeDesktopWorldRegion(raw: string) {
+    // Keep only the newest raw region before parsing. This is important when
+    // movement crosses more than one streaming refresh boundary while WebView2
+    // is momentarily busy.
+    this.pendingDesktopWorldRegionRaw = raw;
+    if (this.desktopWorldRegionDecodeIdleHandle !== null) return;
+
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (
+        callback: (deadline: { didTimeout: boolean; timeRemaining: () => number }) => void,
+        options?: { timeout: number },
+      ) => number;
+    };
+
+    const schedule = () => {
+      this.desktopWorldRegionDecodeIdleHandle = idleWindow.requestIdleCallback
+        ? idleWindow.requestIdleCallback(decode, { timeout: 700 })
+        : window.setTimeout(
+            () => decode({ didTimeout: true, timeRemaining: () => 0 }),
+            0,
+          );
+    };
+
+    const decode = (deadline: { didTimeout: boolean; timeRemaining: () => number }) => {
+      this.desktopWorldRegionDecodeIdleHandle = null;
+
+      // Parsing cannot yield halfway through JSON.parse. Prefer a frame with
+      // real idle headroom, but never delay streaming indefinitely.
+      if (!deadline.didTimeout && deadline.timeRemaining() < 7) {
+        schedule();
+        return;
+      }
+
+      const latest = this.pendingDesktopWorldRegionRaw;
+      this.pendingDesktopWorldRegionRaw = null;
+      if (!latest) return;
+
+      const startedAt = performance.now();
+      try {
+        const message = JSON.parse(latest) as ServerMessage;
+        const parseMs = performance.now() - startedAt;
+
+        if (message.type !== "world_region") {
+          throw new Error("unexpected desktop region message type");
+        }
+
+        this.pendingWorldRegion = message;
+        this.scheduleWorldRegionApply();
+
+        if (NETWORK_PERF_LOG && parseMs >= 4) {
+          console.info(
+            `REGION DESKTOP parse ${parseMs.toFixed(1)}ms · `
+            + `${Math.round(latest.length / 1024)}K chars · latest-only`,
+          );
+        }
+      } catch {
+        this.world.connection = "error";
+        this.world.notify();
+      }
+
+      // A newer raw region may have arrived while JSON.parse was running.
+      if (this.pendingDesktopWorldRegionRaw) schedule();
+    };
+
+    schedule();
+  }
+
+  private cancelDesktopWorldRegionDecode() {
+    if (this.desktopWorldRegionDecodeIdleHandle !== null) {
+      const idleWindow = window as Window & {
+        cancelIdleCallback?: (handle: number) => void;
+      };
+      if (idleWindow.cancelIdleCallback) {
+        idleWindow.cancelIdleCallback(this.desktopWorldRegionDecodeIdleHandle);
+      } else {
+        window.clearTimeout(this.desktopWorldRegionDecodeIdleHandle);
+      }
+    }
+    this.desktopWorldRegionDecodeIdleHandle = null;
+    this.pendingDesktopWorldRegionRaw = null;
   }
 
   private decodeWorldRegion(raw: string) {

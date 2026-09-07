@@ -1,9 +1,11 @@
-import type { Position, TerrainMaterialId } from "../protocol";
+import type { MapView, Position, TerrainMaterialId } from "../protocol";
 import type { WorldState } from "./WorldState";
 
+// TIBIAGAME_V35_13_4_WORLD_MAP_STUTTER_GUARD
 export const WORLD_MAP_ATLAS_CELL_SIZE = 4;
 const ATLAS_VERSION = 1;
-const CAPTURE_DEBOUNCE_MS = 900;
+const CAPTURE_DEBOUNCE_MS = 1_000;
+const CAPTURE_SLICE_BUDGET_MS = 2.25;
 
 export type WorldMapAtlas = {
   updatedAt: number;
@@ -16,29 +18,73 @@ type StoredAtlas = {
   cells: Record<string, number>;
 };
 
+type AtlasCacheEntry = {
+  atlas: WorldMapAtlas;
+  dirty: boolean;
+};
+
 type PendingCapture = {
   world: WorldState;
   playerId: string;
   discovered: ReadonlySet<string>;
 };
 
+type CapturePhase =
+  | "fill"
+  | "terrain"
+  | "floors"
+  | "roads"
+  | "water"
+  | "bridges"
+  | "houseWalls"
+  | "castleWalls"
+  | "buildings"
+  | "done";
+
+type CaptureJob = {
+  playerId: string;
+  discovered: ReadonlySet<string>;
+  map: MapView;
+  cells: Map<string, number>;
+  center: Position;
+  floorRadius: number;
+  minCellX: number;
+  maxCellX: number;
+  minCellY: number;
+  maxCellY: number;
+  fillZ: number;
+  fillCellX: number;
+  fillCellY: number;
+  phase: CapturePhase;
+  index: number;
+  buildingCellX: number | null;
+  buildingCellY: number | null;
+};
+
+type IdleDeadlineLike = {
+  timeRemaining?: () => number;
+  didTimeout?: boolean;
+};
+
+const atlasCache = new Map<string, AtlasCacheEntry>();
 let captureTimer: number | null = null;
 let idleHandle: number | null = null;
 let pendingCapture: PendingCapture | null = null;
+let captureJob: CaptureJob | null = null;
 
 export const WORLD_MAP_PALETTE = [
-  "#384833", // 0 grass/default
-  "#554534", // 1 mud/earth
-  "#806f54", // 2 road
-  "#27576b", // 3 water
-  "#896443", // 4 bridge/wood
-  "#645c52", // 5 built floor
-  "#4a504b", // 6 stone/wall
-  "#344b36", // 7 marsh
-  "#88754f", // 8 sandstone
-  "#73563b", // 9 planks
-  "#484a50", // 10 crypt
-  "#795440", // 11 building
+  "#384833",
+  "#554534",
+  "#806f54",
+  "#27576b",
+  "#896443",
+  "#645c52",
+  "#4a504b",
+  "#344b36",
+  "#88754f",
+  "#73563b",
+  "#484a50",
+  "#795440",
 ] as const;
 
 export function atlasCellKey(z: number, cellX: number, cellY: number) {
@@ -55,36 +101,85 @@ function storageKey(playerId: string) {
   return `aldoria.worldmap-atlas.${playerId}`;
 }
 
-export function loadWorldMapAtlas(playerId: string): WorldMapAtlas {
+function readStoredAtlas(playerId: string): WorldMapAtlas {
   try {
-    const parsed = JSON.parse(localStorage.getItem(storageKey(playerId)) ?? "null") as StoredAtlas | null;
-    if (!parsed || parsed.v !== ATLAS_VERSION || !parsed.cells || typeof parsed.cells !== "object") {
+    const parsed = JSON.parse(
+      localStorage.getItem(storageKey(playerId)) ?? "null",
+    ) as StoredAtlas | null;
+
+    if (
+      !parsed
+      || parsed.v !== ATLAS_VERSION
+      || !parsed.cells
+      || typeof parsed.cells !== "object"
+    ) {
       return { updatedAt: 0, cells: new Map() };
     }
+
     const cells = new Map<string, number>();
     for (const [key, value] of Object.entries(parsed.cells)) {
-      if (typeof value === "number" && value >= 0 && value < WORLD_MAP_PALETTE.length) {
+      if (
+        typeof value === "number"
+        && value >= 0
+        && value < WORLD_MAP_PALETTE.length
+      ) {
         cells.set(key, value);
       }
     }
-    return { updatedAt: parsed.updatedAt || 0, cells };
+
+    return {
+      updatedAt: parsed.updatedAt || 0,
+      cells,
+    };
   } catch {
     return { updatedAt: 0, cells: new Map() };
   }
 }
 
-function saveWorldMapAtlas(playerId: string, atlas: WorldMapAtlas) {
+function cacheEntry(playerId: string) {
+  let entry = atlasCache.get(playerId);
+  if (!entry) {
+    entry = {
+      atlas: readStoredAtlas(playerId),
+      dirty: false,
+    };
+    atlasCache.set(playerId, entry);
+  }
+  return entry;
+}
+
+export function loadWorldMapAtlas(playerId: string): WorldMapAtlas {
+  // Parsing localStorage once per player/session is enough. Previous V35.13
+  // reparsed the entire atlas for every background capture.
+  return cacheEntry(playerId).atlas;
+}
+
+function persistAtlasEntry(playerId: string, entry: AtlasCacheEntry) {
+  if (!entry.dirty) return;
+
   try {
     const cells: Record<string, number> = {};
-    for (const [key, value] of atlas.cells) cells[key] = value;
+    for (const [key, value] of entry.atlas.cells) cells[key] = value;
+
     const payload: StoredAtlas = {
       v: ATLAS_VERSION,
       updatedAt: Date.now(),
       cells,
     };
+
     localStorage.setItem(storageKey(playerId), JSON.stringify(payload));
+    entry.atlas.updatedAt = payload.updatedAt;
+    entry.dirty = false;
   } catch {
-    // The atlas is a client-side exploration cache. Failure must never block gameplay.
+    // Persistence is a convenience cache. Never affect gameplay.
+  }
+}
+
+function persistAllDirtyAtlases() {
+  // Deliberately only called while leaving/hiding the game. localStorage and
+  // JSON.stringify are synchronous and must not steal frames during gameplay.
+  for (const [playerId, entry] of atlasCache) {
+    persistAtlasEntry(playerId, entry);
   }
 }
 
@@ -113,72 +208,260 @@ function terrainPalette(material: TerrainMaterialId) {
   }
 }
 
-function captureNow({ world, playerId, discovered }: PendingCapture) {
-  const map = world.map;
-  const center = world.streamRegionCenter;
-  if (!map || !center || discovered.size === 0) return;
+function paint(
+  job: CaptureJob,
+  position: Position,
+  palette: number,
+) {
+  const key = discoveryKey(position);
+  if (!job.discovered.has(key)) return false;
 
-  const atlas = loadWorldMapAtlas(playerId);
-  const cells = atlas.cells;
-  const radius = Math.max(16, world.streamRegionRadius || 64);
-  const floorRadius = Math.max(0, world.streamRegionFloorRadius || 0);
+  const previous = job.cells.get(key);
+  if (previous === palette) return false;
 
-  const minCellX = Math.floor((center.x - radius - 2) / WORLD_MAP_ATLAS_CELL_SIZE);
-  const maxCellX = Math.floor((center.x + radius + 2) / WORLD_MAP_ATLAS_CELL_SIZE);
-  const minCellY = Math.floor((center.y - radius - 2) / WORLD_MAP_ATLAS_CELL_SIZE);
-  const maxCellY = Math.floor((center.y + radius + 2) / WORLD_MAP_ATLAS_CELL_SIZE);
-
-  // Start with a cheap neutral chart cell only for chunks the player has actually discovered.
-  for (let z = center.z - floorRadius; z <= center.z + floorRadius; z += 1) {
-    for (let cellY = minCellY; cellY <= maxCellY; cellY += 1) {
-      for (let cellX = minCellX; cellX <= maxCellX; cellX += 1) {
-        const key = atlasCellKey(z, cellX, cellY);
-        if (discovered.has(key) && !cells.has(key)) cells.set(key, 0);
-      }
-    }
-  }
-
-  const paint = (position: Position, palette: number) => {
-    const key = discoveryKey(position);
-    if (!discovered.has(key)) return;
-    cells.set(key, palette);
-  };
-
-  for (const entry of map.terrainMaterials) paint(entry.position, terrainPalette(entry.material));
-  for (const position of map.floors) paint(position, 5);
-  for (const position of map.roads) paint(position, 2);
-  for (const position of map.water) paint(position, 3);
-  for (const position of map.bridges) paint(position, 4);
-  for (const position of map.houseWalls) paint(position, 6);
-  for (const position of map.castleWalls) paint(position, 6);
-
-  // Buildings are sparse, so marking their coarse footprint is cheap and makes
-  // towns remain visible after their streamed region is unloaded.
-  for (const building of map.buildings) {
-    const fromCellX = Math.floor(building.x / WORLD_MAP_ATLAS_CELL_SIZE);
-    const toCellX = Math.floor((building.x + Math.max(0, building.width - 1)) / WORLD_MAP_ATLAS_CELL_SIZE);
-    const fromCellY = Math.floor(building.y / WORLD_MAP_ATLAS_CELL_SIZE);
-    const toCellY = Math.floor((building.y + Math.max(0, building.height - 1)) / WORLD_MAP_ATLAS_CELL_SIZE);
-    for (let cellY = fromCellY; cellY <= toCellY; cellY += 1) {
-      for (let cellX = fromCellX; cellX <= toCellX; cellX += 1) {
-        const key = atlasCellKey(building.floor, cellX, cellY);
-        if (discovered.has(key)) cells.set(key, 11);
-      }
-    }
-  }
-
-  saveWorldMapAtlas(playerId, { updatedAt: Date.now(), cells });
+  job.cells.set(key, palette);
+  return true;
 }
 
-function cancelCapture() {
+function beginCapture(next: PendingCapture) {
+  const map = next.world.map;
+  const center = next.world.streamRegionCenter;
+  if (!map || !center || next.discovered.size === 0) return;
+
+  const entry = cacheEntry(next.playerId);
+  const radius = Math.max(16, next.world.streamRegionRadius || 64);
+  const floorRadius = Math.max(0, next.world.streamRegionFloorRadius || 0);
+
+  const minCellX = Math.floor(
+    (center.x - radius - 2) / WORLD_MAP_ATLAS_CELL_SIZE,
+  );
+  const maxCellX = Math.floor(
+    (center.x + radius + 2) / WORLD_MAP_ATLAS_CELL_SIZE,
+  );
+  const minCellY = Math.floor(
+    (center.y - radius - 2) / WORLD_MAP_ATLAS_CELL_SIZE,
+  );
+  const maxCellY = Math.floor(
+    (center.y + radius + 2) / WORLD_MAP_ATLAS_CELL_SIZE,
+  );
+
+  captureJob = {
+    playerId: next.playerId,
+    discovered: next.discovered,
+    map,
+    cells: entry.atlas.cells,
+    center: { ...center },
+    floorRadius,
+    minCellX,
+    maxCellX,
+    minCellY,
+    maxCellY,
+    fillZ: center.z - floorRadius,
+    fillCellX: minCellX,
+    fillCellY: minCellY,
+    phase: "fill",
+    index: 0,
+    buildingCellX: null,
+    buildingCellY: null,
+  };
+
+  scheduleCaptureSlice();
+}
+
+function markDirty(playerId: string) {
+  cacheEntry(playerId).dirty = true;
+}
+
+function nextArrayPhase(
+  job: CaptureJob,
+  values: readonly Position[],
+  palette: number,
+  nextPhase: CapturePhase,
+) {
+  if (job.index >= values.length) {
+    job.index = 0;
+    job.phase = nextPhase;
+    return false;
+  }
+
+  if (paint(job, values[job.index], palette)) markDirty(job.playerId);
+  job.index += 1;
+  return true;
+}
+
+function processOne(job: CaptureJob) {
+  if (job.phase === "fill") {
+    if (job.fillZ > job.center.z + job.floorRadius) {
+      job.phase = "terrain";
+      job.index = 0;
+      return true;
+    }
+
+    const key = atlasCellKey(job.fillZ, job.fillCellX, job.fillCellY);
+    if (job.discovered.has(key) && !job.cells.has(key)) {
+      job.cells.set(key, 0);
+      markDirty(job.playerId);
+    }
+
+    job.fillCellX += 1;
+    if (job.fillCellX > job.maxCellX) {
+      job.fillCellX = job.minCellX;
+      job.fillCellY += 1;
+    }
+    if (job.fillCellY > job.maxCellY) {
+      job.fillCellY = job.minCellY;
+      job.fillZ += 1;
+    }
+    return true;
+  }
+
+  if (job.phase === "terrain") {
+    if (job.index >= job.map.terrainMaterials.length) {
+      job.index = 0;
+      job.phase = "floors";
+      return true;
+    }
+    const entry = job.map.terrainMaterials[job.index];
+    if (paint(job, entry.position, terrainPalette(entry.material))) {
+      markDirty(job.playerId);
+    }
+    job.index += 1;
+    return true;
+  }
+
+  if (job.phase === "floors") {
+    return nextArrayPhase(job, job.map.floors, 5, "roads");
+  }
+  if (job.phase === "roads") {
+    return nextArrayPhase(job, job.map.roads, 2, "water");
+  }
+  if (job.phase === "water") {
+    return nextArrayPhase(job, job.map.water, 3, "bridges");
+  }
+  if (job.phase === "bridges") {
+    return nextArrayPhase(job, job.map.bridges, 4, "houseWalls");
+  }
+  if (job.phase === "houseWalls") {
+    return nextArrayPhase(job, job.map.houseWalls, 6, "castleWalls");
+  }
+  if (job.phase === "castleWalls") {
+    return nextArrayPhase(job, job.map.castleWalls, 6, "buildings");
+  }
+
+  if (job.phase === "buildings") {
+    if (job.index >= job.map.buildings.length) {
+      job.phase = "done";
+      return true;
+    }
+
+    const building = job.map.buildings[job.index];
+    const fromCellX = Math.floor(
+      building.x / WORLD_MAP_ATLAS_CELL_SIZE,
+    );
+    const toCellX = Math.floor(
+      (building.x + Math.max(0, building.width - 1))
+      / WORLD_MAP_ATLAS_CELL_SIZE,
+    );
+    const fromCellY = Math.floor(
+      building.y / WORLD_MAP_ATLAS_CELL_SIZE,
+    );
+    const toCellY = Math.floor(
+      (building.y + Math.max(0, building.height - 1))
+      / WORLD_MAP_ATLAS_CELL_SIZE,
+    );
+
+    if (job.buildingCellX === null || job.buildingCellY === null) {
+      job.buildingCellX = fromCellX;
+      job.buildingCellY = fromCellY;
+    }
+
+    const key = atlasCellKey(
+      building.floor,
+      job.buildingCellX,
+      job.buildingCellY,
+    );
+    if (job.discovered.has(key) && job.cells.get(key) !== 11) {
+      job.cells.set(key, 11);
+      markDirty(job.playerId);
+    }
+
+    job.buildingCellX += 1;
+    if (job.buildingCellX > toCellX) {
+      job.buildingCellX = fromCellX;
+      job.buildingCellY += 1;
+    }
+    if (job.buildingCellY > toCellY) {
+      job.buildingCellX = null;
+      job.buildingCellY = null;
+      job.index += 1;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+function scheduleCaptureSlice() {
+  if (idleHandle !== null || !captureJob) return;
+
+  const idleWindow = window as Window & {
+    requestIdleCallback?: (
+      callback: (deadline: IdleDeadlineLike) => void,
+      options?: { timeout: number },
+    ) => number;
+  };
+
+  const run = (deadline?: IdleDeadlineLike) => {
+    idleHandle = null;
+    const startedAt = performance.now();
+
+    while (captureJob) {
+      const elapsed = performance.now() - startedAt;
+      const remaining = deadline?.timeRemaining?.() ?? 4;
+
+      // Never turn an idle callback into a long task. Leave enough room for
+      // the renderer/input frame and continue in another idle slice.
+      if (
+        elapsed >= CAPTURE_SLICE_BUDGET_MS
+        || (deadline && !deadline.didTimeout && remaining < 1.25)
+      ) {
+        scheduleCaptureSlice();
+        return;
+      }
+
+      if (!processOne(captureJob) || captureJob.phase === "done") {
+        captureJob = null;
+
+        // If streaming/discovery changed while this job was running, process
+        // only the latest state next rather than queueing every intermediate state.
+        const next = pendingCapture;
+        pendingCapture = null;
+        if (next) beginCapture(next);
+        return;
+      }
+    }
+  };
+
+  idleHandle = idleWindow.requestIdleCallback
+    ? idleWindow.requestIdleCallback(run, { timeout: 1_500 })
+    : window.setTimeout(() => run(), 0);
+}
+
+function cancelQueuedCapture() {
   if (captureTimer !== null) {
     window.clearTimeout(captureTimer);
     captureTimer = null;
   }
+
   if (idleHandle !== null) {
-    const idleWindow = window as Window & { cancelIdleCallback?: (handle: number) => void };
-    if (idleWindow.cancelIdleCallback) idleWindow.cancelIdleCallback(idleHandle);
-    else window.clearTimeout(idleHandle);
+    const idleWindow = window as Window & {
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    if (idleWindow.cancelIdleCallback) {
+      idleWindow.cancelIdleCallback(idleHandle);
+    } else {
+      window.clearTimeout(idleHandle);
+    }
     idleHandle = null;
   }
 }
@@ -188,30 +471,58 @@ export function queueWorldMapAtlasCapture(
   playerId: string,
   discovered: ReadonlySet<string>,
 ) {
-  pendingCapture = { world, playerId, discovered };
-  if (captureTimer !== null) window.clearTimeout(captureTimer);
+  // Keep only the latest desired capture. Stream packets and movement may
+  // arrive faster than the atlas needs to update.
+  pendingCapture = {
+    world,
+    playerId,
+    discovered,
+  };
 
+  if (captureJob) return;
+
+  if (captureTimer !== null) window.clearTimeout(captureTimer);
   captureTimer = window.setTimeout(() => {
     captureTimer = null;
-    const run = () => {
-      idleHandle = null;
-      const next = pendingCapture;
-      pendingCapture = null;
-      if (next) captureNow(next);
-    };
-
-    const idleWindow = window as Window & {
-      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
-    };
-    idleHandle = idleWindow.requestIdleCallback
-      ? idleWindow.requestIdleCallback(run, { timeout: 3_000 })
-      : window.setTimeout(run, 0);
+    const next = pendingCapture;
+    pendingCapture = null;
+    if (next) beginCapture(next);
   }, CAPTURE_DEBOUNCE_MS);
 }
 
-export function flushWorldMapAtlasCapture() {
+function finishCaptureSynchronously() {
+  // Only used while hiding/leaving. Gameplay never enters this path.
+  let guard = 0;
+  while (captureJob && guard < 5_000_000) {
+    processOne(captureJob);
+    guard += 1;
+    if (captureJob.phase === "done") captureJob = null;
+  }
+
   const next = pendingCapture;
   pendingCapture = null;
-  cancelCapture();
-  if (next) captureNow(next);
+  if (next) {
+    beginCapture(next);
+    if (idleHandle !== null) {
+      const idleWindow = window as Window & {
+        cancelIdleCallback?: (handle: number) => void;
+      };
+      if (idleWindow.cancelIdleCallback) idleWindow.cancelIdleCallback(idleHandle);
+      else window.clearTimeout(idleHandle);
+      idleHandle = null;
+    }
+
+    guard = 0;
+    while (captureJob && guard < 5_000_000) {
+      processOne(captureJob);
+      guard += 1;
+      if (captureJob.phase === "done") captureJob = null;
+    }
+  }
+}
+
+export function flushWorldMapAtlasCapture() {
+  cancelQueuedCapture();
+  finishCaptureSynchronously();
+  persistAllDirtyAtlases();
 }

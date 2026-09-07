@@ -6,6 +6,10 @@ import { WorldState } from "./WorldState";
 // A held key is scheduled directly at the next eligible instant.
 export const CLIENT_STEP_MS = 165;
 export const MOVEMENT_CHORD_GRACE_MS = 30;
+// TIBIAGAME_V35_19_MOVEMENT_CADENCE_LOBBY_PREVIEW
+// Wake slightly before the movement deadline and finish scheduling on rAF.
+// This avoids recursive WebView2 setTimeout lateness becoming permanent drift.
+const MOVEMENT_FRAME_LEAD_MS = 24;
 export const DIAGONAL_STEP_FACTOR = Math.SQRT2;
 export const INTERACTION_RANGE_TILES = 2;
 
@@ -13,7 +17,9 @@ export class InputController {
   // TIBIAGAME_GATHER_CANCEL_V31_C_1_1
   private lastMove = 0;
   private heldKeys = new Set<string>();
-  private movementTimer: number | null = null;
+  private chordTimer: number | null = null;
+  private movementWakeTimer: number | null = null;
+  private movementFrame: number | null = null;
   private moveIntervalMs = CLIENT_STEP_MS;
   private attached = false;
   constructor(private world: WorldState, private network: NetworkClient) { }
@@ -180,12 +186,20 @@ export class InputController {
     const startingFromRest = this.heldKeys.size === 0;
     const wasHeld = this.heldKeys.has(key);
     this.heldKeys.add(key);
-    if (!wasHeld && this.movementTimer === null) {
+    if (
+      !wasHeld
+      && this.chordTimer === null
+      && this.movementWakeTimer === null
+      && this.movementFrame === null
+    ) {
       // Keydown events for a two-key diagonal do not arrive simultaneously.
       // Briefly collect the initial chord so its first tile already travels
       // in the intended direction instead of turning one full step later.
       if (startingFromRest) {
-        this.movementTimer = window.setTimeout(this.flushMovement, MOVEMENT_CHORD_GRACE_MS);
+        this.chordTimer = window.setTimeout(() => {
+          this.chordTimer = null;
+          this.flushMovement();
+        }, MOVEMENT_CHORD_GRACE_MS);
       } else {
         this.flushMovement();
       }
@@ -203,19 +217,56 @@ export class InputController {
   };
 
   private flushMovement = () => {
-    this.movementTimer = null;
+    this.movementFrame = null;
     const delta = movementDelta(this.heldKeys);
     if (!delta) return;
-    const sent = this.requestMove(...delta);
-    if (this.heldKeys.size === 0) return;
-    const remainingCooldown = Math.max(0, this.moveIntervalMs - (performance.now() - this.lastMove));
-    const delay = sent || remainingCooldown > 0 ? Math.max(1, remainingCooldown) : 16;
-    this.movementTimer = window.setTimeout(this.flushMovement, delay);
+
+    this.requestMove(...delta);
+
+    if (this.heldKeys.size > 0) {
+      this.scheduleNextMovementCheck();
+    }
   };
 
+  private scheduleNextMovementCheck() {
+    if (
+      this.heldKeys.size === 0
+      || this.movementWakeTimer !== null
+      || this.movementFrame !== null
+    ) return;
+
+    const remainingCooldown = Math.max(
+      0,
+      this.moveIntervalMs - (performance.now() - this.lastMove),
+    );
+
+    // Avoid polling every frame for the whole 165 ms tile. Sleep most of the
+    // interval, wake before the deadline, then let rAF synchronize the actual
+    // eligibility check with presentation. If the wake timer is a few ms late,
+    // that lateness is NOT reused as the duration of the next tile.
+    if (remainingCooldown > MOVEMENT_FRAME_LEAD_MS) {
+      this.movementWakeTimer = window.setTimeout(() => {
+        this.movementWakeTimer = null;
+        if (this.heldKeys.size === 0 || this.movementFrame !== null) return;
+        this.movementFrame = window.requestAnimationFrame(this.flushMovement);
+      }, Math.max(1, remainingCooldown - MOVEMENT_FRAME_LEAD_MS));
+      return;
+    }
+
+    this.movementFrame = window.requestAnimationFrame(this.flushMovement);
+  }
+
   private cancelScheduledMovement() {
-    if (this.movementTimer !== null) window.clearTimeout(this.movementTimer);
-    this.movementTimer = null;
+    if (this.chordTimer !== null) window.clearTimeout(this.chordTimer);
+    if (this.movementWakeTimer !== null) {
+      window.clearTimeout(this.movementWakeTimer);
+    }
+    if (this.movementFrame !== null) {
+      window.cancelAnimationFrame(this.movementFrame);
+    }
+    this.chordTimer = null;
+    this.movementWakeTimer = null;
+    this.movementFrame = null;
   }
 
   private isMovementKey(key: string) {

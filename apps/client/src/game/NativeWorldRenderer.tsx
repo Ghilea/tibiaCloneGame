@@ -42,6 +42,7 @@ const NATIVE_STAGE_BUDGET_MS = 2.5;
 const NATIVE_CAMERA_HEIGHT = 18;
 const NATIVE_CAMERA_OFFSET = 9;
 const NATIVE_CAMERA_ZOOM = 90;
+const NATIVE_PERF_SUSPEND_GAP_MS = 1_000;
 
 // TIBIAGAME_NATIVE_RENDERER_V23
 // TIBIAGAME_NATIVE_RENDERER_V24
@@ -3040,6 +3041,8 @@ class NativeCharacterActor {
   private moveStartZ = 0;
   private moveStartedAt = 0;
   private moveDurationMs = CLIENT_STEP_MS;
+  private walkGraceUntil = 0;
+  // TIBIAGAME_V35_15_LOCAL_MOVEMENT_PHASE_LOCK
   private facingAngle = 0;
   private initialized = false;
 
@@ -3073,7 +3076,15 @@ class NativeCharacterActor {
     return this.root.position;
   }
 
-  setTarget(position: Position, floor: number, now: number) {
+  setTarget(
+    position: Position,
+    floor: number,
+    now: number,
+    localMovement: {
+      from: Position;
+      startedAt: number;
+    } | null = null,
+  ) {
     const nextX = position.x + 0.5;
     const nextZ = position.y + 0.5;
     const floorChanged = this.initialized && position.z !== this.targetFloor;
@@ -3089,6 +3100,7 @@ class NativeCharacterActor {
       this.moveStartZ = nextZ;
       this.moveStartedAt = now;
       this.moveDurationMs = 0;
+      this.walkGraceUntil = 0;
       this.initialized = true;
     } else if (nextX !== this.targetX || nextZ !== this.targetZ) {
       const logicalDx = nextX - this.targetX;
@@ -3101,11 +3113,44 @@ class NativeCharacterActor {
         this.moveStartX = nextX;
         this.moveStartZ = nextZ;
         this.moveDurationMs = 0;
+        this.walkGraceUntil = 0;
       } else {
-        this.moveStartX = this.root.position.x;
-        this.moveStartZ = this.root.position.z;
-        this.moveStartedAt = now;
-        this.moveDurationMs = CLIENT_STEP_MS * Math.max(1, logicalDistance);
+        const moveDurationMs =
+          CLIENT_STEP_MS * Math.max(1, logicalDistance);
+        const phaseLocked =
+          localMovement !== null
+          && localMovement.from.z === position.z
+          && Math.abs(localMovement.from.x + 0.5 - this.targetX) < 0.001
+          && Math.abs(localMovement.from.y + 0.5 - this.targetZ) < 0.001;
+
+        this.moveDurationMs = moveDurationMs;
+
+        if (phaseLocked) {
+          // Use the previous logical tile and the actual prediction timestamp.
+          // This prevents rAF discovery latency from accumulating into visible
+          // camera/player lag in Tauri/WebView2.
+          this.moveStartX = this.targetX;
+          this.moveStartZ = this.targetZ;
+
+          // After a real long frame, catch up aggressively but leave a small
+          // visible tail instead of teleporting the whole tile in one frame.
+          const maximumBackdate = moveDurationMs * 0.85;
+          this.moveStartedAt = Math.max(
+            localMovement.startedAt,
+            now - maximumBackdate,
+          );
+        } else {
+          this.moveStartX = this.root.position.x;
+          this.moveStartZ = this.root.position.z;
+          this.moveStartedAt = now;
+        }
+
+        // Windows/WebView timers can arrive a few ms after the nominal 165 ms
+        // step. Do not briefly fade to idle between two held-key tiles.
+        this.walkGraceUntil =
+          this.moveStartedAt
+          + this.moveDurationMs
+          + (phaseLocked ? 58 : 34);
       }
 
       if (logicalDistance > 0.001) {
@@ -3156,7 +3201,7 @@ class NativeCharacterActor {
       delta,
     );
 
-    const moving = progress < 1;
+    const moving = progress < 1 || now < this.walkGraceUntil;
     const next = moving ? "walk" : "idle";
 
     if (next !== this.active) {
@@ -3594,7 +3639,10 @@ class NativeActorManager {
         this.players.set(player.id, actor);
         this.playerOutfits.set(player.id, player.outfit);
       }
-      actor.setTarget(player.position, floor, now);
+      const localMovement = player.id === world.localPlayerId
+        ? world.localVisualMoveFor(player.position)
+        : null;
+      actor.setTarget(player.position, floor, now, localMovement);
       actor.update(delta, now);
 
       if (player.id !== world.localPlayerId && player.position.z === floor) {
@@ -5458,6 +5506,11 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    // TIBIAGAME_V35_16_WORLDMAP_RENDER_SUSPEND
+    // Full-screen world map owns the screen. Keep the renderer mounted, but
+    // skip WebGL/frame work while the shell carries world-map-open.
+    const gameShell = canvas.closest(".game-shell");
+
     let disposed = false;
     let renderer: THREE.WebGLRenderer | null = null;
     let animationFrame = 0;
@@ -5477,8 +5530,12 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
     console.info(
       "NATIVE WORLD V31C.1.1 active · movement-cancelled gathering · raw Three.js",
     );
+    console.info(
+      `NATIVE WEBVIEW ENGINE · ${navigator.userAgent}`,
+    );
 // TIBIAGAME_V35_3_IDLE_MAINTHREAD_FIXES
 // TIBIAGAME_V35_5_NETWORK_FRAME_BUDGET
+// TIBIAGAME_V35_22_1_WEBVIEW2_RUNTIME_AB_REPAIR
 
     const bootstrap = async () => {
       const nextRenderer = new THREE.WebGLRenderer({
@@ -6664,8 +6721,14 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       let sampleMax = 0;
       let lastLongFrameLogAt = Number.NEGATIVE_INFINITY;
       let nextPositionHudAt = 0;
+      // TIBIAGAME_V35_17_DESKTOP_FRAME_DIAGNOSTICS
+      // Showing the in-game performance HUD should also expose diagnostics in
+      // DevTools. This is especially important in Tauri where adding a query
+      // parameter to the app URL is inconvenient.
       const consolePerfLogging =
-        new URLSearchParams(window.location.search).get("perfLog") === "1";
+        showDebug
+        || new URLSearchParams(window.location.search).get("perfLog") === "1";
+      const desktopRuntime = "__TAURI_INTERNALS__" in window;
 
       const resize = () => {
         const parent = canvas.parentElement;
@@ -7422,6 +7485,17 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
         if (disposed) return;
         animationFrame = window.requestAnimationFrame(render);
 
+        if (gameShell?.classList.contains("world-map-open")) {
+          // No actors, static tasks, dynamic layers, lights or WebGL render
+          // are needed behind the full-screen map. Keep timing fresh so resume
+          // on the next rAF has no artificial long frame.
+          lastFrameAt = now;
+          sampleFrames = 0;
+          sampleTotal = 0;
+          sampleMax = 0;
+          return;
+        }
+
         const frameWorkStartedAt = performance.now();
         let staticWorkMs = 0;
         let actorWorkMs = 0;
@@ -7429,6 +7503,15 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
 
         const frameMs = Math.max(0, now - lastFrameAt);
         lastFrameAt = now;
+        const resumedAfterPause = frameMs >= NATIVE_PERF_SUSPEND_GAP_MS;
+        if (resumedAfterPause) {
+          // A hidden tab, debugger pause, startup handoff or WebView resume is
+          // not a render frame. Reset the sample so one 9-second pause cannot
+          // turn an otherwise 60 FPS sample into a fake 15 FPS result.
+          sampleFrames = 0;
+          sampleTotal = 0;
+          sampleMax = 0;
+        }
 
         const environment = worldEnvironment();
         activeAtmosphereManager.update(environment);
@@ -7724,32 +7807,48 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
           performance.now() - rendererWorkStartedAt;
         const totalWorkMs =
           performance.now() - frameWorkStartedAt;
+        // frameMs is the full rAF-to-rAF interval. totalWorkMs is only the
+        // work done by this renderer callback. A large remainder means the
+        // frame was delayed outside NativeWorldRenderer.
+        const externalGapMs = Math.max(0, frameMs - totalWorkMs);
 
-        if (now >= warmupUntil && (showDebug || consolePerfLogging)) {
+        if (
+          !resumedAfterPause
+          && now >= warmupUntil
+          && (showDebug || consolePerfLogging)
+        ) {
           sampleFrames += 1;
           sampleTotal += frameMs;
           sampleMax = Math.max(sampleMax, frameMs);
 
           if (
             consolePerfLogging
-            && frameMs >= 50
+            && frameMs >= 24
             && local
-            && now - lastLongFrameLogAt >= 2_000
+            && now - lastLongFrameLogAt >= 750
           ) {
             lastLongFrameLogAt = now;
+            const frameDropCause =
+              totalWorkMs >= 12
+                ? "NATIVE/JS WORK"
+                : externalGapMs >= 12
+                  ? "RAF/WEBVIEW/COMPOSITOR GAP"
+                  : "MIXED";
             console.info(
-              `NATIVE LONG FRAME ${frameMs.toFixed(1)}ms · pos `
-              + `${local.position.x}:${local.position.y}:${local.position.z} · `
+              `NATIVE FRAME DROP [${frameDropCause}] ${frameMs.toFixed(1)}ms · `
+              + `work ${totalWorkMs.toFixed(1)}ms · gap ${externalGapMs.toFixed(1)}ms · `
+              + `pos ${local.position.x}:${local.position.y}:${local.position.z} · `
               + `calls ${nextRenderer.info.render.calls} · `
               + `tris ${nextRenderer.info.render.triangles} · `
               + `programs ${nextRenderer.info.programs?.length ?? 0} · `
               + `textures ${nextRenderer.info.memory.textures} · `
               + `geometries ${nextRenderer.info.memory.geometries} · `
-              + `work ${totalWorkMs.toFixed(1)}ms `
-              + `(static ${staticWorkMs.toFixed(1)} · `
-              + `actors ${actorWorkMs.toFixed(1)} · `
-              + `dynamic ${dynamicWorkMs.toFixed(1)} · `
-              + `render ${rendererWorkMs.toFixed(1)})`,
+              + `parts(static ${staticWorkMs.toFixed(1)} / actors ${actorWorkMs.toFixed(1)} / `
+              + `dynamic ${dynamicWorkMs.toFixed(1)} / render ${rendererWorkMs.toFixed(1)}) · `
+              + `runtime ${desktopRuntime ? "tauri" : "browser"} · `
+              + `visibility ${document.visibilityState} · `
+              + `dpr ${window.devicePixelRatio.toFixed(2)} · `
+              + `buffer ${nextRenderer.domElement.width}x${nextRenderer.domElement.height}`,
             );
           }
 
@@ -7827,6 +7926,7 @@ export const NativeWorldRenderer = memo(function NativeWorldRenderer({
       }
     };
   }, [input, world]);
+
 
   return (
     <>

@@ -1,6 +1,5 @@
-import { Canvas, useFrame } from "@react-three/fiber";
-import { Suspense, useEffect, useRef, useState, type FormEvent } from "react";
-import * as THREE from "three";
+import { Canvas, useThree } from "@react-three/fiber";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import {
   ApiFailure,
   createCharacter,
@@ -9,6 +8,9 @@ import {
   type CharacterSummary,
 } from "./api";
 import { AnimatedCharacter, type CharacterKind } from "./game/AnimatedCharacter";
+// TIBIAGAME_V35_18_LOBBY_WEBGL_CLEANUP
+// TIBIAGAME_V35_18_1_CHARACTER_KIND_FIX
+// TIBIAGAME_V35_19_MOVEMENT_CADENCE_LOBBY_PREVIEW
 
 type CharacterLobbyProps = {
   token: string;
@@ -16,8 +18,6 @@ type CharacterLobbyProps = {
   onPlay: (characterId: string) => void;
   onLogout: () => void;
 };
-
-const PREVIEW_POSITION = { x: 0, y: 0, z: 7 };
 
 export function CharacterLobby({ token, connecting, onPlay, onLogout }: CharacterLobbyProps) {
   const [characters, setCharacters] = useState<CharacterSummary[]>([]);
@@ -132,30 +132,68 @@ export function CharacterLobby({ token, connecting, onPlay, onLogout }: Characte
 
 export function CharacterPreview({ outfit }: { outfit?: CharacterKind }) {
   const kind: CharacterKind = outfit ?? "knight";
+
   return (
-    <Canvas dpr={[1, 1.5]} camera={{ position: [0, 1.35, 4.8], fov: 34 }} gl={{ antialias: true, powerPreference: "high-performance" }}>
+    <Canvas
+      frameloop="demand"
+      dpr={1}
+      camera={{ position: [0, 1.35, 4.8], fov: 34 }}
+      gl={{ antialias: true, powerPreference: "high-performance" }}
+    >
+      <LobbyIdleAnimationDriver />
       <ambientLight intensity={1.15} color="#b7c9bd" />
-      <directionalLight position={[-3, 5, 4]} intensity={3.2} color="#ffd99a" castShadow />
-      <pointLight position={[3, 1.5, 2]} intensity={8} distance={8} color="#5d8fb2" />
-      <Suspense fallback={null}><PreviewFigure kind={kind} /></Suspense>
+      <directionalLight
+        position={[-3, 5, 4]}
+        intensity={3.2}
+        color="#ffd99a"
+      />
+      <pointLight
+        position={[3, 1.5, 2]}
+        intensity={8}
+        distance={8}
+        color="#5d8fb2"
+      />
+      <Suspense fallback={null}>
+        <group position={[0, -1.22, 0]} scale={1.42} rotation={[0, 0.18, 0]}>
+          <AnimatedCharacter
+            kind={kind}
+            position={{ x: 0, y: 0, z: 7 }}
+          />
+          <mesh
+            position={[0, -0.035, 0]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            receiveShadow
+          >
+            <circleGeometry args={[0.72, 32]} />
+            <meshStandardMaterial
+              color="#26352d"
+              roughness={0.82}
+              metalness={0.18}
+            />
+          </mesh>
+        </group>
+      </Suspense>
     </Canvas>
   );
 }
 
-function PreviewFigure({ kind }: { kind: CharacterKind }) {
-  const group = useRef<THREE.Group>(null);
-  useFrame(({ clock }) => {
-    if (group.current) group.current.rotation.y = Math.sin(clock.elapsedTime * 0.35) * 0.12;
-  });
-  return (
-    <group ref={group} position={[0, -1.22, 0]} scale={1.42}>
-      <AnimatedCharacter kind={kind} position={PREVIEW_POSITION} />
-      <mesh position={[0, -0.035, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <circleGeometry args={[0.72, 48]} />
-        <meshStandardMaterial color="#26352d" roughness={0.82} metalness={0.18} />
-      </mesh>
-    </group>
-  );
+// TIBIAGAME_V35_20_LOBBY_IDLE_ANIMATION
+// The real KayKit character already owns Idle_A through AnimatedCharacter.
+// Demand rendering normally freezes AnimationMixer after the initial frame, so
+// invalidate this preview at a modest 30 FPS only while the lobby is visible.
+// This is far cheaper than restoring a permanent 60 FPS secondary render loop.
+function LobbyIdleAnimationDriver() {
+  const invalidate = useThree((state) => state.invalidate);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") invalidate();
+    }, 1000 / 30);
+
+    return () => window.clearInterval(interval);
+  }, [invalidate]);
+
+  return null;
 }
 
 function CreateCharacterDialog({ token, onCreated, onClose, onError }: { token: string; onCreated: (character: CharacterSummary) => void; onClose: () => void; onError: (message: string) => void }) {

@@ -4,7 +4,6 @@ import {
   useState,
   useSyncExternalStore,
   type PointerEvent as ReactPointerEvent,
-  type WheelEvent,
 } from "react";
 import type { MapView, Position } from "../protocol";
 import type { WorldState } from "./WorldState";
@@ -18,6 +17,8 @@ import {
 import "./WorldMap.css";
 
 // TIBIAGAME_V35_13_WORLD_MAP_V2
+// TIBIAGAME_V35_13_3_WORLD_MAP_NONPASSIVE_WHEEL
+// TIBIAGAME_V35_13_1_MINIMAL_WORLD_MAP
 
 const CANVAS_WIDTH = 1200;
 const CANVAS_HEIGHT = 760;
@@ -25,7 +26,7 @@ const LIVE_INDEX_CELL_SIZE = 32;
 const ATLAS_INDEX_BUCKET_CELLS = 16;
 const MIN_SCALE = 0.02;
 const MAX_SCALE = 24;
-const DEFAULT_ZONE_SCALE = 4.2;
+const DEFAULT_ZONE_SCALE = 7.5;
 const DISCOVERY_CHUNK_SIZE = 4;
 
 type DragState = {
@@ -212,13 +213,11 @@ export function WorldMap({
   const player = world.localPlayerId ? world.players.get(world.localPlayerId) : null;
   const playerId = player?.id ?? "unknown";
 
-  const [scale, setScale] = useState(() => {
-    const stored = Number(localStorage.getItem(`aldoria.worldmap-scale.${playerId}`));
-    return Number.isFinite(stored) ? clamp(stored, MIN_SCALE, MAX_SCALE) : DEFAULT_ZONE_SCALE;
-  });
+  const [scale, setScale] = useState(DEFAULT_ZONE_SCALE);
   const [center, setCenter] = useState<Position>(
     () => player?.position ?? { x: 0, y: 0, z: 7 },
   );
+  const wheelViewRef = useRef({ center, scale });
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [showNpcs, setShowNpcs] = useState(true);
   const [showResources, setShowResources] = useState(true);
@@ -254,10 +253,6 @@ export function WorldMap({
   );
 
   useEffect(() => {
-    localStorage.setItem(`aldoria.worldmap-scale.${playerId}`, String(scale));
-  }, [playerId, scale]);
-
-  useEffect(() => {
     if (!player) return;
     setCenter((current) =>
       current.z === player.position.z
@@ -265,6 +260,48 @@ export function WorldMap({
         : { ...player.position },
     );
   }, [player?.position.z]);
+
+  useEffect(() => {
+    wheelViewRef.current = { center, scale };
+  }, [center.x, center.y, center.z, scale]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleNativeWheel = (event: globalThis.WheelEvent) => {
+      event.preventDefault();
+
+      const rect = canvas.getBoundingClientRect();
+      const canvasX = (event.clientX - rect.left) * CANVAS_WIDTH / Math.max(1, rect.width);
+      const canvasY = (event.clientY - rect.top) * CANVAS_HEIGHT / Math.max(1, rect.height);
+
+      const current = wheelViewRef.current;
+      const worldBefore = {
+        x: current.center.x + (canvasX - CANVAS_WIDTH / 2) / current.scale,
+        y: current.center.y + (canvasY - CANVAS_HEIGHT / 2) / current.scale,
+      };
+      const nextScale = clamp(
+        current.scale * (event.deltaY > 0 ? 0.78 : 1.28),
+        MIN_SCALE,
+        MAX_SCALE,
+      );
+      const nextCenter = {
+        x: worldBefore.x - (canvasX - CANVAS_WIDTH / 2) / nextScale,
+        y: worldBefore.y - (canvasY - CANVAS_HEIGHT / 2) / nextScale,
+        z: current.center.z,
+      };
+
+      // Update the ref immediately so multiple wheel events in the same frame
+      // build on the latest zoom instead of stale React state.
+      wheelViewRef.current = { center: nextCenter, scale: nextScale };
+      setScale(nextScale);
+      setCenter(nextCenter);
+    };
+
+    canvas.addEventListener("wheel", handleNativeWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", handleNativeWheel);
+  }, []);
 
   useEffect(() => {
     atlasRef.current = loadWorldMapAtlas(playerId);
@@ -385,24 +422,6 @@ export function WorldMap({
     dragRef.current = null;
   };
 
-  const wheel = (event: WheelEvent<HTMLCanvasElement>) => {
-    event.preventDefault();
-    const rect = event.currentTarget.getBoundingClientRect();
-    const mouseX = (event.clientX - rect.left) * CANVAS_WIDTH / Math.max(1, rect.width);
-    const mouseY = (event.clientY - rect.top) * CANVAS_HEIGHT / Math.max(1, rect.height);
-    const worldBefore = {
-      x: center.x + (mouseX - CANVAS_WIDTH / 2) / scale,
-      y: center.y + (mouseY - CANVAS_HEIGHT / 2) / scale,
-    };
-    const nextScale = clamp(scale * (event.deltaY > 0 ? 0.78 : 1.28), MIN_SCALE, MAX_SCALE);
-    setScale(nextScale);
-    setCenter((current) => ({
-      x: worldBefore.x - (mouseX - CANVAS_WIDTH / 2) / nextScale,
-      y: worldBefore.y - (mouseY - CANVAS_HEIGHT / 2) / nextScale,
-      z: current.z,
-    }));
-  };
-
   return (
     <section className="world-map-layer v3513-world-map-layer" role="dialog" aria-modal="true" aria-label="World map">
       <article className="world-map-card v3513-world-map-card">
@@ -475,7 +494,6 @@ export function WorldMap({
               onPointerLeave={() => {
                 if (!dragRef.current) setCursor(null);
               }}
-              onWheel={wheel}
             />
             <div className="v3513-map-zoom">
               <button type="button" onClick={() => zoom(1.35)} aria-label="Zoom in">+</button>

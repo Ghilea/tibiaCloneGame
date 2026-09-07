@@ -6,6 +6,7 @@ import { worldEnvironment, worldTimeLabel } from "./worldEnvironment";
 
 // TIBIAGAME_V35C_MINIMAP_DISCOVERY
 // TIBIAGAME_V35_2_MAINTHREAD_OPTIMIZATION
+// TIBIAGAME_V35_13_4_WORLD_MAP_STUTTER_GUARD
 const CANVAS_SIZE = 220;
 const DISCOVERY_CHUNK_SIZE = 4;
 const DISCOVERY_REVEAL_RADIUS = 8;
@@ -95,6 +96,10 @@ export function GameMinimap({ world }: { world: WorldState }) {
       discoverySaveTimer.current = null;
       const commit = () => {
         discoveryIdleHandle.current = null;
+        // localStorage + JSON.stringify are synchronous. Do not let minimap
+        // persistence steal a visible gameplay frame; pagehide/visibility
+        // flushing below persists the same discovery data safely.
+        if (document.visibilityState === "visible") return;
         persistDiscoveryNow();
       };
       const idleWindow = window as Window & {
@@ -179,9 +184,14 @@ export function GameMinimap({ world }: { world: WorldState }) {
       persistDiscoveryNow();
       flushWorldMapAtlasCapture();
     };
+    const visibilityChanged = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
     window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", visibilityChanged);
     return () => {
       window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", visibilityChanged);
       flush();
     };
   }, []);

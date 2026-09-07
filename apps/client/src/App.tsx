@@ -31,6 +31,7 @@ import { PROTOCOL_VERSION, type BuildingView, type CharacterOutfit, type GroundI
 // TIBIAGAME_V35_5_NETWORK_FRAME_BUDGET
 // TIBIAGAME_V35_2_MAINTHREAD_OPTIMIZATION
 // TIBIAGAME_V35_3_IDLE_MAINTHREAD_FIXES
+// TIBIAGAME_V35_16_WORLDMAP_RENDER_SUSPEND
 // TIBIAGAME_V35_1_COMBAT_UI_FIXES
 // TIBIAGAME_V35_12_2_ACTIONBAR_ICONS_UI_CLEANUP
 
@@ -568,7 +569,7 @@ function Game({ onLeave }: { onLeave: () => void }) {
     options: "Options",
   };
   return (
-    <main className={`game-shell ${reducedMotion ? "reduced-motion" : ""}`}>
+    <main className={`game-shell ${reducedMotion ? "reduced-motion" : ""} ${worldMapOpen ? "world-map-open" : ""}`}>
       <WorldMusic world={world} />
       <section className="viewport">
         {nativeWorldRenderer ? (
