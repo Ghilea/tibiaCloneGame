@@ -223,16 +223,22 @@ pub(crate) enum NativeMapText {
 #[derive(Component)]
 pub(crate) struct NativeWorldMapPanel;
 
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeMinimapCell {
+    dx: i32,
+    dy: i32,
+}
+
 pub fn setup(mut commands: Commands) {
     commands
         .spawn((
             Name::new("Native minimap"),
             Node {
                 position_type: PositionType::Absolute,
-                top: px(104),
+                top: px(62),
                 right: px(14),
-                width: px(275),
-                padding: UiRect::all(px(9)),
+                width: px(238),
+                padding: UiRect::all(px(8)),
                 flex_direction: FlexDirection::Column,
                 ..default()
             },
@@ -245,12 +251,7 @@ pub fn setup(mut commands: Commands) {
                 13.0,
                 Color::srgb(0.92, 0.93, 0.88),
             ));
-            parent.spawn(map_text(
-                "",
-                NativeMapText::MinimapBody,
-                8.0,
-                Color::srgb(0.76, 0.82, 0.77),
-            ));
+                        spawn_native_minimap_grid(parent);
             parent.spawn(map_text(
                 "",
                 NativeMapText::MinimapFooter,
@@ -298,6 +299,109 @@ pub fn setup(mut commands: Commands) {
                 Color::srgb(0.64, 0.69, 0.65),
             ));
         });
+}
+
+fn spawn_native_minimap_grid(
+    parent: &mut ChildSpawnerCommands,
+) {
+    parent
+        .spawn((
+            Name::new("Native minimap grid"),
+            Node {
+                width: Val::Percent(100.0),
+                height: px(170),
+                margin: UiRect::vertical(px(6)),
+                padding: UiRect::all(px(2)),
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            BackgroundColor(Color::srgb(0.020, 0.027, 0.023)),
+        ))
+        .with_children(|grid| {
+            for dy in -MINIMAP_RADIUS..=MINIMAP_RADIUS {
+                grid
+                    .spawn(Node {
+                        width: Val::Percent(100.0),
+                        flex_grow: 1.0,
+                        flex_direction: FlexDirection::Row,
+                        ..default()
+                    })
+                    .with_children(|row| {
+                        for dx in -MINIMAP_RADIUS..=MINIMAP_RADIUS {
+                            row.spawn((
+                                NativeMinimapCell { dx, dy },
+                                Node {
+                                    flex_grow: 1.0,
+                                    height: Val::Percent(100.0),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgb(
+                                    0.055,
+                                    0.075,
+                                    0.063,
+                                )),
+                            ));
+                        }
+                    });
+            }
+        });
+}
+
+fn minimap_tone_color(tone: MapTone) -> Color {
+    match tone {
+        MapTone::Ground => Color::srgb(0.16, 0.20, 0.14),
+        MapTone::Floor => Color::srgb(0.38, 0.32, 0.23),
+        MapTone::Road => Color::srgb(0.46, 0.43, 0.36),
+        MapTone::Bridge => Color::srgb(0.49, 0.34, 0.20),
+        MapTone::Water => Color::srgb(0.12, 0.30, 0.48),
+        MapTone::Tree => Color::srgb(0.12, 0.33, 0.16),
+        MapTone::Wall => Color::srgb(0.48, 0.43, 0.35),
+    }
+}
+
+fn minimap_cell_color(
+    map_state: &NativeMapState,
+    game_state: &NativeGameState,
+    center: Position,
+    position: Position,
+) -> Color {
+    if position == center {
+        return Color::srgb(0.95, 0.79, 0.25);
+    }
+
+    if game_state
+        .creatures
+        .values()
+        .any(|creature| {
+            creature.position == position
+                && creature.health > 0
+        })
+    {
+        return Color::srgb(0.88, 0.18, 0.14);
+    }
+
+    if game_state
+        .npcs
+        .values()
+        .any(|npc| npc.position == position)
+    {
+        return Color::srgb(0.20, 0.78, 0.40);
+    }
+
+    if game_state
+        .resource_nodes
+        .values()
+        .any(|resource| {
+            resource.position == position
+                && resource.available
+        })
+    {
+        return Color::srgb(0.22, 0.72, 0.78);
+    }
+
+    minimap_tone_color(
+        map_state.lookup.tone(position),
+    )
 }
 
 fn map_text(
@@ -394,6 +498,9 @@ pub fn update_ui(
     game_state: Res<NativeGameState>,
     mut ui_state: ResMut<NativeMapUiState>,
     mut texts: Query<(&NativeMapText, &mut Text)>,
+    mut minimap_cells: Query<
+        (&NativeMinimapCell, &mut BackgroundColor),
+    >,
     mut world_panel: Query<
         &mut Visibility,
         With<NativeWorldMapPanel>,
@@ -415,6 +522,25 @@ pub fn update_ui(
     let refresh_minimap = now >= ui_state.next_minimap_at;
     if refresh_minimap {
         ui_state.next_minimap_at = now + MINIMAP_INTERVAL;
+    }
+
+    if refresh_minimap {
+        let center = movement.logical;
+
+        for (cell, mut background) in &mut minimap_cells {
+            let position = Position {
+                x: center.x + cell.dx,
+                y: center.y + cell.dy,
+                z: center.z,
+            };
+
+            background.0 = minimap_cell_color(
+                &map_state,
+                &game_state,
+                center,
+                position,
+            );
+        }
     }
 
     let minimap_body = if refresh_minimap {
@@ -442,7 +568,7 @@ pub fn update_ui(
         match kind {
             NativeMapText::MinimapHeader => {
                 text.0 = format!(
-                    "MINIMAP   ·   {}:{}:{}",
+                    "MINIMAP   |   {}:{}:{}",
                     movement.logical.x,
                     movement.logical.y,
                     movement.logical.z,
@@ -454,11 +580,11 @@ pub fn update_ui(
                 }
             }
             NativeMapText::MinimapFooter => {
-                text.0 = "M World map   ·   @ You   M Monster   N NPC   R Resource".into();
+                text.0 = "M MAP   |   Gold You   Red Creature   Green NPC   Cyan Resource".into();
             }
             NativeMapText::WorldHeader => {
                 text.0 = format!(
-                    "WORLD MAP   ·   floor {}   ·   center {},{}   ·   zoom {}x",
+                    "WORLD MAP   |   floor {}   |   center {},{}   |   zoom {}x",
                     ui_state.floor,
                     ui_state.center_x,
                     ui_state.center_y,

@@ -734,3 +734,108 @@ count and status from RuneCraftingChanged are visible.
 
 No updater, movement, map, world renderer, floor gate or creature safety code is
 changed.
+
+
+<!-- TIBIAGAME_V36_36_LEGACY_CLIENT_UI_SHELL -->
+
+V36.36 starts migrating the visible composition of the current React client into
+the native Bevy client.
+
+The native HUD now follows the same broad hierarchy as the React Game shell:
+world header at the top, player unit frame and target frame below it, minimap and
+battle list on the right, chat in the lower-left, action dock at the bottom
+center and a character-panel dock at the bottom-right.
+
+Native Inventory/Character/Skills/Spells/Crafting/NPC windows are repositioned
+as centered floating modal-style panels rather than edge-attached debug panes.
+
+This patch is deliberately visual/layout-first. Existing keyboard interactions
+remain in place; later parity patches can replace text-only action/panel docks
+with clickable icon buttons and migrate the old client artwork/assets.
+
+No server protocol, movement, updater, world renderer, floor gate or creature
+safety logic changes.
+
+
+<!-- TIBIAGAME_V36_36_1_BATTLE_LIST_COMPILE_HOTFIX -->
+
+V36.36.1 fixes E0308 in battle_list_text. Rust let...else requires the else
+branch to diverge; the no-player String fallback now uses match instead.
+
+No UI layout or gameplay behavior changes.
+
+
+<!-- TIBIAGAME_V36_37_NATIVE_ALDORIA_UI_DESIGN_SYSTEM -->
+
+V36.37 translates the current React client's CSS visual language into reusable
+native Bevy UI tokens instead of attempting to parse CSS at runtime.
+
+native_ui_theme.rs mirrors the old/current styles.css palette: #080c0a root,
+#111a16/#090e0c surfaces, #d2ad68 gold, #706443 edges, #f4ead1 text and #84918a
+muted text. The first native frame applies those tokens to named gameplay,
+minimap, world-map, trade and options surfaces with 1px borders and rounded
+corners.
+
+The bottom-right text-only panel legend is replaced by real Bevy Buttons for
+Character, Inventory, Skills, Spells and Crafting, including hover/pressed
+states and click-to-toggle behavior. Existing keyboard shortcuts remain.
+
+Player/target progress tracks receive themed borders and rounded corners.
+
+This patch remains UI-only. It does not change server protocol, gameplay,
+movement, updater, world rendering, floor gates or creature safety.
+
+
+<!-- TIBIAGAME_V36_38_1_ACTIONBAR_PANEL_HEADERS -->
+
+V36.38.1 continues the React/CSS-to-native UI migration and fixes the V36.38 precheck boundary assumption.
+
+The old text action bar is replaced by nine real Bevy Button slots. Slot 1 is
+Attack and slots 2-9 mirror learned spells in the exact same sorted order as the
+existing keyboard hotkeys. Mouse clicks and number keys now call one shared
+activate_action_slot path, so protocol behavior stays identical.
+
+Inventory, Character, Skills, Spellbook, Crafting and NPC windows now have
+native title bars with gold headings and X close buttons. Hover/pressed states
+reuse the V36.37 Aldoria CSS-derived theme.
+
+No gameplay authority, movement, updater, renderer, floor gate or creature
+safety behavior changes.
+
+
+<!-- TIBIAGAME_V36_39_GRAPHICAL_NATIVE_MINIMAP -->
+
+V36.39 replaces the visible ASCII minimap body with a real 27x27 colored Bevy
+UI tile grid while retaining NativeMapState, MapLookup and the existing 120ms
+refresh cadence.
+
+Terrain is color-coded for ground, floor, roads, bridges, water, trees and
+walls. The center/player is gold, living creatures red, NPCs green and available
+resource nodes cyan.
+
+The existing render_minimap text helper remains available internally but no
+MinimapBody text entity is spawned in the HUD.
+
+Map UI separators are converted to ASCII-safe vertical bars so the default
+native font no longer renders unsupported separator glyphs as boxes.
+
+No movement, server protocol, updater, world renderer, floor-transition gate or
+creature visibility/safety behavior changes.
+
+
+<!-- TIBIAGAME_V36_39_1_BEVY_B0001_UI_QUERY_HOTFIX -->
+
+V36.39.1 fixes the runtime Bevy error B0001 introduced by the clickable native
+action bar.
+
+native_ui::update_ui had two simultaneous mutable Text queries:
+one for NativeUiText and one for NativeActionSlotText. Although those entities
+are logically separate, Bevy cannot assume that from the original query
+signatures and rejects the system at runtime.
+
+The two queries are now explicitly disjoint with complementary Without filters:
+the normal UI-text query excludes NativeActionSlotText and the action-slot query
+excludes NativeUiText.
+
+No visible UI, protocol, combat, movement, minimap, updater, world renderer,
+floor gate or creature-safety behavior changes.

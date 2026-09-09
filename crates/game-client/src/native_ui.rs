@@ -6,6 +6,7 @@ use bevy::{
 use game_protocol::ClientMessage;
 
 use crate::{
+    native_ui_theme as theme,
     state::{NativeGameState, NativeMessageKind},
     NativeNetwork,
 };
@@ -54,6 +55,7 @@ impl NativePingState {
 
 #[derive(Component, Clone, Copy)]
 pub(crate) enum NativeUiText {
+    WorldHeader,
     Identity,
     Health,
     Mana,
@@ -61,6 +63,7 @@ pub(crate) enum NativeUiText {
     Capacity,
     Ping,
     Target,
+    BattleList,
     ChatLog,
     ChatInput,
     ActionBar,
@@ -95,21 +98,51 @@ pub(crate) enum NativeUiPanel {
     Npc,
 }
 
-const PANEL: Color = Color::srgba(0.025, 0.035, 0.032, 0.88);
-const PANEL_SOFT: Color = Color::srgba(0.035, 0.050, 0.045, 0.82);
-const TEXT: Color = Color::srgb(0.92, 0.93, 0.88);
-const MUTED: Color = Color::srgb(0.64, 0.69, 0.65);
-const HP: Color = Color::srgb(0.66, 0.14, 0.12);
-const MANA: Color = Color::srgb(0.12, 0.32, 0.68);
-const XP: Color = Color::srgb(0.76, 0.58, 0.16);
-const CAP: Color = Color::srgb(0.31, 0.54, 0.34);
-const TARGET_HP: Color = Color::srgb(0.78, 0.18, 0.12);
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativePanelDockButton {
+    Character,
+    Inventory,
+    Skills,
+    Spells,
+    Crafting,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeActionSlot(pub(crate) usize);
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeActionSlotText(pub(crate) usize);
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativePanelCloseButton {
+    Inventory,
+    Character,
+    Skills,
+    Spells,
+    Crafting,
+    Npc,
+}
+
+const PANEL: Color = theme::PANEL_BG;
+const PANEL_SOFT: Color = theme::PANEL_BG_SOFT;
+const PANEL_DEEP: Color = theme::PANEL_BG_DEEP;
+const TEXT: Color = theme::TEXT;
+const MUTED: Color = theme::MUTED;
+const ACCENT: Color = theme::GOLD;
+const HP: Color = theme::HP;
+const MANA: Color = theme::MANA;
+const XP: Color = theme::XP;
+const CAP: Color = theme::CAP;
+const TARGET_HP: Color = theme::TARGET_HP;
 
 pub fn setup(mut commands: Commands) {
+    spawn_world_header(&mut commands);
     spawn_player_frame(&mut commands);
     spawn_target_frame(&mut commands);
+    spawn_battle_list(&mut commands);
     spawn_chat(&mut commands);
     spawn_action_bar(&mut commands);
+    spawn_panel_dock(&mut commands);
     spawn_inventory_panel(&mut commands);
     spawn_character_panel(&mut commands);
     spawn_skills_panel(&mut commands);
@@ -144,20 +177,158 @@ fn spawn_bar(
         .spawn((
             Node {
                 width: Val::Percent(100.0),
-                height: px(9),
+                height: px(10),
                 margin: UiRect::vertical(px(2)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(3)),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.56)),
+            BackgroundColor(Color::srgba(0.01, 0.014, 0.012, 0.78)),
+            BorderColor::all(theme::GOLD_DARK),
         ))
         .with_child((
             kind,
             Node {
                 width: Val::Percent(0.0),
                 height: Val::Percent(100.0),
+                border_radius: BorderRadius::all(px(2)),
                 ..default()
             },
             BackgroundColor(color),
+        ));
+}
+
+fn spawn_world_header(commands: &mut Commands) {
+    commands
+        .spawn((
+            Name::new("Native gameplay HUD · world header"),
+            Node {
+                position_type: PositionType::Absolute,
+                top: px(0),
+                left: px(0),
+                right: px(0),
+                height: px(48),
+                padding: UiRect::horizontal(px(16)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::SpaceBetween,
+                ..default()
+            },
+            BackgroundColor(PANEL_DEEP),
+        ))
+        .with_child(text_bundle(
+            "",
+            NativeUiText::WorldHeader,
+            14.0,
+            TEXT,
+        ));
+}
+
+fn spawn_battle_list(commands: &mut Commands) {
+    commands
+        .spawn((
+            Name::new("Native gameplay HUD · battle list"),
+            Node {
+                position_type: PositionType::Absolute,
+                top: px(366),
+                right: px(14),
+                width: px(238),
+                min_height: px(168),
+                padding: UiRect::all(px(10)),
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            BackgroundColor(PANEL),
+        ))
+        .with_child(text_bundle(
+            "",
+            NativeUiText::BattleList,
+            12.0,
+            TEXT,
+        ));
+}
+
+fn spawn_panel_dock(commands: &mut Commands) {
+    commands
+        .spawn((
+            Name::new("Native gameplay HUD · panel dock"),
+            Node {
+                position_type: PositionType::Absolute,
+                right: px(14),
+                bottom: px(14),
+                width: px(282),
+                min_height: px(58),
+                padding: UiRect::all(px(6)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                column_gap: px(5),
+                ..default()
+            },
+            BackgroundColor(PANEL_DEEP),
+        ))
+        .with_children(|parent| {
+            spawn_panel_dock_button(
+                parent,
+                NativePanelDockButton::Character,
+                "C",
+                "CHAR",
+            );
+            spawn_panel_dock_button(
+                parent,
+                NativePanelDockButton::Inventory,
+                "I",
+                "INV",
+            );
+            spawn_panel_dock_button(
+                parent,
+                NativePanelDockButton::Skills,
+                "K",
+                "SKILL",
+            );
+            spawn_panel_dock_button(
+                parent,
+                NativePanelDockButton::Spells,
+                "P",
+                "SPELL",
+            );
+            spawn_panel_dock_button(
+                parent,
+                NativePanelDockButton::Crafting,
+                "B",
+                "CRAFT",
+            );
+        });
+}
+
+fn spawn_panel_dock_button(
+    parent: &mut ChildSpawnerCommands,
+    action: NativePanelDockButton,
+    hotkey: &str,
+    label: &str,
+) {
+    parent
+        .spawn((
+            Button,
+            action,
+            Node {
+                width: px(48),
+                height: px(44),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(6)),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(theme::BUTTON_BG),
+            BorderColor::all(theme::BUTTON_BORDER),
+        ))
+        .with_child((
+            Text::new(format!("{hotkey}  {label}")),
+            TextFont {
+                font_size: FontSize::Px(8.5),
+                ..default()
+            },
+            TextColor(TEXT),
         ));
 }
 
@@ -167,9 +338,9 @@ fn spawn_player_frame(commands: &mut Commands) {
             Name::new("Native gameplay HUD · player"),
             Node {
                 position_type: PositionType::Absolute,
-                top: px(14),
+                top: px(62),
                 left: px(14),
-                width: px(330),
+                width: px(320),
                 padding: UiRect::all(px(12)),
                 flex_direction: FlexDirection::Column,
                 ..default()
@@ -196,8 +367,8 @@ fn spawn_target_frame(commands: &mut Commands) {
             Name::new("Native gameplay HUD · target"),
             Node {
                 position_type: PositionType::Absolute,
-                top: px(14),
-                right: px(14),
+                top: px(62),
+                left: px(348),
                 width: px(300),
                 padding: UiRect::all(px(12)),
                 flex_direction: FlexDirection::Column,
@@ -222,10 +393,10 @@ fn spawn_chat(commands: &mut Commands) {
             Name::new("Native gameplay HUD · chat"),
             Node {
                 position_type: PositionType::Absolute,
-                bottom: px(86),
+                bottom: px(88),
                 left: px(14),
-                width: px(500),
-                min_height: px(178),
+                width: px(520),
+                min_height: px(166),
                 padding: UiRect::all(px(10)),
                 flex_direction: FlexDirection::Column,
                 justify_content: JustifyContent::FlexEnd,
@@ -269,24 +440,111 @@ fn spawn_action_bar(commands: &mut Commands) {
                 position_type: PositionType::Absolute,
                 bottom: px(14),
                 left: Val::Percent(50.0),
-                width: px(700),
-                min_height: px(58),
-                margin: UiRect::left(px(-350)),
-                padding: UiRect::all(px(10)),
+                width: px(598),
+                min_height: px(70),
+                margin: UiRect::left(px(-299)),
+                padding: UiRect::all(px(7)),
+                column_gap: px(5),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
                 ..default()
             },
             BackgroundColor(PANEL),
         ))
-        .with_child(text_bundle(
-            "",
-            NativeUiText::ActionBar,
-            14.0,
-            TEXT,
+        .with_children(|parent| {
+            for slot in 0..9 {
+                spawn_action_slot(parent, slot);
+            }
+        });
+}
+
+fn spawn_action_slot(
+    parent: &mut ChildSpawnerCommands,
+    slot: usize,
+) {
+    parent
+        .spawn((
+            Button,
+            NativeActionSlot(slot),
+            Node {
+                width: px(58),
+                height: px(54),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(6)),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                padding: UiRect::all(px(3)),
+                ..default()
+            },
+            BackgroundColor(theme::BUTTON_BG),
+            BorderColor::all(theme::BUTTON_BORDER),
+        ))
+        .with_child((
+            NativeActionSlotText(slot),
+            Text::new(""),
+            TextFont {
+                font_size: FontSize::Px(8.5),
+                ..default()
+            },
+            TextColor(TEXT),
         ));
 }
 
+
+
+
+fn spawn_panel_header(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    action: NativePanelCloseButton,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            height: px(34),
+            margin: UiRect::bottom(px(10)),
+            padding: UiRect::horizontal(px(4)),
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::SpaceBetween,
+            ..default()
+        })
+        .with_children(|header| {
+            header.spawn((
+                Text::new(title),
+                TextFont {
+                    font_size: FontSize::Px(15.0),
+                    ..default()
+                },
+                TextColor(theme::GOLD_BRIGHT),
+            ));
+
+            header
+                .spawn((
+                    Button,
+                    action,
+                    Node {
+                        width: px(28),
+                        height: px(26),
+                        border: UiRect::all(px(1)),
+                        border_radius: BorderRadius::all(px(5)),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                    BackgroundColor(theme::BUTTON_BG),
+                    BorderColor::all(theme::BUTTON_BORDER),
+                ))
+                .with_child((
+                    Text::new("X"),
+                    TextFont {
+                        font_size: FontSize::Px(11.0),
+                        ..default()
+                    },
+                    TextColor(TEXT),
+                ));
+        });
+}
 
 fn spawn_inventory_panel(commands: &mut Commands) {
     commands
@@ -296,9 +554,10 @@ fn spawn_inventory_panel(commands: &mut Commands) {
             Visibility::Hidden,
             Node {
                 position_type: PositionType::Absolute,
-                top: px(106),
-                right: px(14),
-                width: px(390),
+                top: Val::Percent(12.0),
+                left: Val::Percent(50.0),
+                width: px(470),
+                margin: UiRect::left(px(-235)),
                 min_height: px(530),
                 max_height: Val::Percent(78.0),
                 padding: UiRect::all(px(12)),
@@ -308,8 +567,13 @@ fn spawn_inventory_panel(commands: &mut Commands) {
             BackgroundColor(PANEL),
         ))
         .with_children(|parent| {
-            parent.spawn(text_bundle(
+            spawn_panel_header(
+                parent,
                 "INVENTORY",
+                NativePanelCloseButton::Inventory,
+            );
+            parent.spawn(text_bundle(
+                "",
                 NativeUiText::Inventory,
                 14.0,
                 TEXT,
@@ -331,9 +595,10 @@ fn spawn_character_panel(commands: &mut Commands) {
             Visibility::Hidden,
             Node {
                 position_type: PositionType::Absolute,
-                top: px(106),
-                left: px(360),
-                width: px(390),
+                top: Val::Percent(14.0),
+                left: Val::Percent(50.0),
+                width: px(450),
+                margin: UiRect::left(px(-225)),
                 min_height: px(470),
                 padding: UiRect::all(px(12)),
                 flex_direction: FlexDirection::Column,
@@ -341,12 +606,19 @@ fn spawn_character_panel(commands: &mut Commands) {
             },
             BackgroundColor(PANEL),
         ))
-        .with_child(text_bundle(
-            "",
-            NativeUiText::Character,
-            13.0,
-            TEXT,
-        ));
+        .with_children(|parent| {
+            spawn_panel_header(
+                parent,
+                "CHARACTER",
+                NativePanelCloseButton::Character,
+            );
+            parent.spawn(text_bundle(
+                "",
+                NativeUiText::Character,
+                13.0,
+                TEXT,
+            ));
+        });
 }
 
 
@@ -358,9 +630,10 @@ fn spawn_skills_panel(commands: &mut Commands) {
             Visibility::Hidden,
             Node {
                 position_type: PositionType::Absolute,
-                top: px(106),
-                left: px(360),
-                width: px(420),
+                top: Val::Percent(12.0),
+                left: Val::Percent(50.0),
+                width: px(500),
+                margin: UiRect::left(px(-250)),
                 min_height: px(500),
                 padding: UiRect::all(px(12)),
                 flex_direction: FlexDirection::Column,
@@ -368,12 +641,19 @@ fn spawn_skills_panel(commands: &mut Commands) {
             },
             BackgroundColor(PANEL),
         ))
-        .with_child(text_bundle(
-            "",
-            NativeUiText::Skills,
-            13.0,
-            TEXT,
-        ));
+        .with_children(|parent| {
+            spawn_panel_header(
+                parent,
+                "SKILLS",
+                NativePanelCloseButton::Skills,
+            );
+            parent.spawn(text_bundle(
+                "",
+                NativeUiText::Skills,
+                13.0,
+                TEXT,
+            ));
+        });
 }
 
 fn spawn_spellbook_panel(commands: &mut Commands) {
@@ -384,9 +664,10 @@ fn spawn_spellbook_panel(commands: &mut Commands) {
             Visibility::Hidden,
             Node {
                 position_type: PositionType::Absolute,
-                top: px(106),
-                right: px(14),
-                width: px(430),
+                top: Val::Percent(12.0),
+                left: Val::Percent(50.0),
+                width: px(500),
+                margin: UiRect::left(px(-250)),
                 min_height: px(520),
                 padding: UiRect::all(px(12)),
                 flex_direction: FlexDirection::Column,
@@ -395,6 +676,11 @@ fn spawn_spellbook_panel(commands: &mut Commands) {
             BackgroundColor(PANEL),
         ))
         .with_children(|parent| {
+            spawn_panel_header(
+                parent,
+                "SPELLBOOK",
+                NativePanelCloseButton::Spells,
+            );
             parent.spawn(text_bundle(
                 "",
                 NativeUiText::Spellbook,
@@ -419,9 +705,10 @@ fn spawn_crafting_panel(commands: &mut Commands) {
             Visibility::Hidden,
             Node {
                 position_type: PositionType::Absolute,
-                top: px(106),
-                right: px(14),
-                width: px(470),
+                top: Val::Percent(10.0),
+                left: Val::Percent(50.0),
+                width: px(560),
+                margin: UiRect::left(px(-280)),
                 min_height: px(540),
                 padding: UiRect::all(px(12)),
                 flex_direction: FlexDirection::Column,
@@ -430,6 +717,11 @@ fn spawn_crafting_panel(commands: &mut Commands) {
             BackgroundColor(PANEL),
         ))
         .with_children(|parent| {
+            spawn_panel_header(
+                parent,
+                "CRAFTING",
+                NativePanelCloseButton::Crafting,
+            );
             parent.spawn(text_bundle(
                 "",
                 NativeUiText::Crafting,
@@ -454,9 +746,10 @@ fn spawn_npc_panel(commands: &mut Commands) {
             Visibility::Hidden,
             Node {
                 position_type: PositionType::Absolute,
-                top: px(92),
-                right: px(14),
-                width: px(500),
+                top: Val::Percent(9.0),
+                left: Val::Percent(50.0),
+                width: px(600),
+                margin: UiRect::left(px(-300)),
                 min_height: px(570),
                 max_height: Val::Percent(82.0),
                 padding: UiRect::all(px(12)),
@@ -466,6 +759,11 @@ fn spawn_npc_panel(commands: &mut Commands) {
             BackgroundColor(PANEL),
         ))
         .with_children(|parent| {
+            spawn_panel_header(
+                parent,
+                "NPC",
+                NativePanelCloseButton::Npc,
+            );
             parent.spawn(text_bundle(
                 "",
                 NativeUiText::Npc,
@@ -486,7 +784,14 @@ pub fn update_ui(
     ping: Res<NativePingState>,
     chat: Res<NativeChatState>,
     panel_state: Res<NativePanelState>,
-    mut texts: Query<(&NativeUiText, &mut Text, &mut TextColor)>,
+    mut texts: Query<
+        (&NativeUiText, &mut Text, &mut TextColor),
+        Without<NativeActionSlotText>,
+    >,
+    mut action_slot_texts: Query<
+        (&NativeActionSlotText, &mut Text),
+        Without<NativeUiText>,
+    >,
     mut bars: Query<(&NativeUiBar, &mut Node)>,
     mut panels: Query<(&NativeUiPanel, &mut Visibility)>,
 ) {
@@ -501,6 +806,62 @@ pub fn update_ui(
         .filter_map(|id| game_state.spells.get(id))
         .collect();
     learned.sort_by(|a, b| a.name.cmp(&b.name));
+
+    let battle_list_text = match game_state.local_player() {
+        Some(local) => {
+            let mut nearby: Vec<_> = game_state
+                .creatures
+                .values()
+                .filter(|creature| {
+                    creature.position.z == local.position.z
+                        && creature.health > 0
+                })
+                .map(|creature| {
+                    let dx =
+                        (creature.position.x - local.position.x).abs();
+                    let dy =
+                        (creature.position.y - local.position.y).abs();
+                    (
+                        dx.max(dy),
+                        creature.id,
+                        creature.name.clone(),
+                        creature.health,
+                        creature.max_health,
+                    )
+                })
+                .filter(|(distance, _, _, _, _)| *distance <= 12)
+                .collect();
+
+            nearby.sort_by_key(|entry| entry.0);
+
+            let mut lines = vec!["BATTLE LIST".to_owned()];
+
+            if nearby.is_empty() {
+                lines.push("No creatures nearby.".into());
+            } else {
+                for (_distance, id, name, health, max_health) in
+                    nearby.into_iter().take(8)
+                {
+                    let marker =
+                        if game_state.attack_target_id == Some(id) {
+                            "▶"
+                        } else {
+                            " "
+                        };
+
+                    lines.push(format!(
+                        "{marker} {:<18} {:>3}/{:<3}",
+                        name,
+                        health,
+                        max_health,
+                    ));
+                }
+            }
+
+            lines.join("\n")
+        }
+        None => "BATTLE LIST\nNo local player.".to_owned(),
+    };
 
     let action_line = action_bar_text(&learned);
     let inventory_text =
@@ -531,6 +892,18 @@ pub fn update_ui(
 
     for (kind, mut text, mut color) in &mut texts {
         match kind {
+            NativeUiText::WorldHeader => {
+                let online = game_state.players.len();
+                let ping_text = match ping.last_ms {
+                    Some(ms) => format!("{ms} ms"),
+                    None => "—".into(),
+                };
+
+                text.0 = format!(
+                    "EMBERS OF ALDORIA   |   Greyhaven   |   {online} online   |   {ping_text}"
+                );
+                color.0 = ACCENT;
+            }
             NativeUiText::Identity => {
                 text.0 = player
                     .map(|p| format!("{}   ·   Level {}", p.name, p.level))
@@ -584,6 +957,10 @@ pub fn update_ui(
                     text.0 = "No target".into();
                     color.0 = MUTED;
                 }
+            }
+            NativeUiText::BattleList => {
+                text.0 = battle_list_text.clone();
+                color.0 = TEXT;
             }
             NativeUiText::ChatLog => {
                 text.0 = chat_lines.join("\n");
@@ -642,6 +1019,22 @@ pub fn update_ui(
                 color.0 = MUTED;
             }
         }
+    }
+
+    for (slot, mut text) in &mut action_slot_texts {
+        text.0 = if slot.0 == 0 {
+            "1\nATTACK".into()
+        } else {
+            let spell_index = slot.0 - 1;
+            match learned.get(spell_index) {
+                Some(spell) => {
+                    format!("{}\n{}", slot.0 + 1, spell.name)
+                }
+                None => {
+                    format!("{}\n—", slot.0 + 1)
+                }
+            }
+        };
     }
 
     for (kind, mut node) in &mut bars {
@@ -3059,6 +3452,139 @@ fn title_case(value: &str) -> String {
     result
 }
 
+pub fn handle_panel_close_buttons(
+    mut buttons: Query<
+        (
+            &Interaction,
+            &NativePanelCloseButton,
+            &mut BackgroundColor,
+            &mut BorderColor,
+        ),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut panels: ResMut<NativePanelState>,
+) {
+    for (interaction, action, mut background, mut border) in &mut buttons {
+        match *interaction {
+            Interaction::Pressed => {
+                background.0 = theme::BUTTON_PRESSED;
+                *border = BorderColor::all(theme::GOLD_BRIGHT);
+
+                match action {
+                    NativePanelCloseButton::Inventory => {
+                        panels.inventory_open = false;
+                        panels.inventory_search_active = false;
+                        panels.split_item_id = None;
+                        panels.split_quantity = 0;
+                    }
+                    NativePanelCloseButton::Character => {
+                        panels.character_open = false;
+                    }
+                    NativePanelCloseButton::Skills => {
+                        panels.skills_open = false;
+                    }
+                    NativePanelCloseButton::Spells => {
+                        panels.spells_open = false;
+                    }
+                    NativePanelCloseButton::Crafting => {
+                        panels.crafting_open = false;
+                    }
+                    NativePanelCloseButton::Npc => {
+                        panels.npc_open = false;
+                        panels.selected_npc_id = None;
+                    }
+                }
+            }
+            Interaction::Hovered => {
+                background.0 = theme::BUTTON_HOVER;
+                *border = BorderColor::all(theme::GOLD);
+            }
+            Interaction::None => {
+                background.0 = theme::BUTTON_BG;
+                *border = BorderColor::all(theme::BUTTON_BORDER);
+            }
+        }
+    }
+}
+
+pub fn handle_panel_dock_buttons(
+    mut buttons: Query<
+        (
+            &Interaction,
+            &NativePanelDockButton,
+            &mut BackgroundColor,
+            &mut BorderColor,
+        ),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut panels: ResMut<NativePanelState>,
+) {
+    for (interaction, action, mut background, mut border) in &mut buttons {
+        match *interaction {
+            Interaction::Pressed => {
+                background.0 = theme::BUTTON_PRESSED;
+                *border = BorderColor::all(theme::GOLD_BRIGHT);
+
+                let was_open = match action {
+                    NativePanelDockButton::Character => {
+                        panels.character_open
+                    }
+                    NativePanelDockButton::Inventory => {
+                        panels.inventory_open
+                    }
+                    NativePanelDockButton::Skills => {
+                        panels.skills_open
+                    }
+                    NativePanelDockButton::Spells => {
+                        panels.spells_open
+                    }
+                    NativePanelDockButton::Crafting => {
+                        panels.crafting_open
+                    }
+                };
+
+                panels.inventory_open = false;
+                panels.character_open = false;
+                panels.skills_open = false;
+                panels.spells_open = false;
+                panels.crafting_open = false;
+                panels.npc_open = false;
+                panels.selected_npc_id = None;
+
+                if !was_open {
+                    match action {
+                        NativePanelDockButton::Character => {
+                            panels.character_open = true;
+                        }
+                        NativePanelDockButton::Inventory => {
+                            panels.inventory_open = true;
+                        }
+                        NativePanelDockButton::Skills => {
+                            panels.skills_open = true;
+                        }
+                        NativePanelDockButton::Spells => {
+                            panels.spells_open = true;
+                        }
+                        NativePanelDockButton::Crafting => {
+                            panels.crafting_open = true;
+                            panels.crafting_quantity =
+                                panels.crafting_quantity.max(1);
+                        }
+                    }
+                }
+            }
+            Interaction::Hovered => {
+                background.0 = theme::BUTTON_HOVER;
+                *border = BorderColor::all(theme::GOLD);
+            }
+            Interaction::None => {
+                background.0 = theme::BUTTON_BG;
+                *border = BorderColor::all(theme::BUTTON_BORDER);
+            }
+        }
+    }
+}
+
 pub fn handle_action_hotkeys(
     keys: Res<ButtonInput<KeyCode>>,
     chat: Res<NativeChatState>,
@@ -3087,8 +3613,62 @@ pub fn handle_action_hotkeys(
         return;
     };
 
+    activate_action_slot(
+        slot,
+        &network,
+        &mut game_state,
+    );
+}
+
+pub fn handle_action_slot_buttons(
+    chat: Res<NativeChatState>,
+    network: Res<NativeNetwork>,
+    mut game_state: ResMut<NativeGameState>,
+    mut buttons: Query<
+        (
+            &Interaction,
+            &NativeActionSlot,
+            &mut BackgroundColor,
+            &mut BorderColor,
+        ),
+        (Changed<Interaction>, With<Button>),
+    >,
+) {
+    for (interaction, slot, mut background, mut border) in &mut buttons {
+        match *interaction {
+            Interaction::Pressed => {
+                background.0 = theme::BUTTON_PRESSED;
+                *border = BorderColor::all(theme::GOLD_BRIGHT);
+
+                if !chat.active {
+                    activate_action_slot(
+                        slot.0,
+                        &network,
+                        &mut game_state,
+                    );
+                }
+            }
+            Interaction::Hovered => {
+                background.0 = theme::BUTTON_HOVER;
+                *border = BorderColor::all(theme::GOLD);
+            }
+            Interaction::None => {
+                background.0 = theme::BUTTON_BG;
+                *border = BorderColor::all(theme::BUTTON_BORDER);
+            }
+        }
+    }
+}
+
+fn activate_action_slot(
+    slot: usize,
+    network: &NativeNetwork,
+    game_state: &mut NativeGameState,
+) {
     let Some(target_id) = game_state.attack_target_id else {
-        game_state.push_system_message("Select a target first.");
+        game_state.push_system_message(
+            "Select a target first.",
+        );
         return;
     };
 
@@ -3098,7 +3678,9 @@ pub fn handle_action_hotkeys(
             .send(ClientMessage::AttackRequest { target_id })
             .is_err()
         {
-            game_state.push_system_message("The game connection is offline.");
+            game_state.push_system_message(
+                "The game connection is offline.",
+            );
         }
         return;
     }
@@ -3108,30 +3690,33 @@ pub fn handle_action_hotkeys(
         .iter()
         .filter_map(|id| game_state.spells.get(id))
         .collect();
+
     learned.sort_by(|a, b| a.name.cmp(&b.name));
 
     let spell_index = slot - 1;
+
     let Some(spell) = learned.get(spell_index) else {
         return;
     };
-    // Clone the display data before mutating NativeGameState. The selected
-    // spell is borrowed from game_state.spells, so keeping `spell.name`
-    // alive across push_system_message would create an immutable+mutable
-    // borrow conflict (E0502).
+
     let spell_id = spell.id.clone();
     let spell_name = spell.name.clone();
 
     if network
         .outbound
         .send(ClientMessage::CastSpell {
-            spell_id: spell_id.clone(),
+            spell_id,
             target_id,
         })
         .is_err()
     {
-        game_state.push_system_message("The game connection is offline.");
+        game_state.push_system_message(
+            "The game connection is offline.",
+        );
     } else {
-        game_state.push_system_message(format!("Casting {}.", spell_name));
+        game_state.push_system_message(format!(
+            "Casting {spell_name}.",
+        ));
     }
 }
 

@@ -3,6 +3,7 @@ mod state;
 mod version;
 mod interaction;
 mod native_ui;
+mod native_ui_theme;
 mod native_map_ui;
 mod native_trade_ui;
 mod native_settings;
@@ -310,6 +311,7 @@ fn run_game(session: network::NativeSession) -> Result<()> {
         .add_systems(
             Update,
             (
+                native_ui_theme::apply_once.before(native_ui::update_ui),
                 native_ui::handle_chat_input,
                 native_map_ui::handle_input.before(schedule_tile_movement),
                 native_trade_ui::handle_input
@@ -319,7 +321,14 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                     .after(native_trade_ui::handle_input)
                     .before(schedule_tile_movement),
                 native_ui::handle_panel_hotkeys.after(native_ui::handle_chat_input),
-                native_ui::handle_action_hotkeys.after(native_ui::handle_panel_hotkeys),
+                native_ui::handle_panel_dock_buttons
+                    .after(native_ui::handle_panel_hotkeys),
+                native_ui::handle_panel_close_buttons
+                    .after(native_ui::handle_panel_dock_buttons),
+                native_ui::handle_action_hotkeys
+                    .after(native_ui::handle_panel_close_buttons),
+                native_ui::handle_action_slot_buttons
+                    .after(native_ui::handle_action_hotkeys),
                 native_ui::ping_server,
                 native_ui::update_ui.after(pump_network),
                 native_map_ui::update_ui.after(pump_network),
