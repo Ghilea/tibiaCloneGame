@@ -687,3 +687,50 @@ native_updater::poll is ordered before the login worker/input systems so launche
 input observes the current updater state in the same frame.
 
 No protocol, gameplay, movement, renderer, floor gate or creature logic changes.
+
+
+<!-- TIBIAGAME_V36_34_NATIVE_INVENTORY_INTERACTION_POLISH -->
+
+V36.34 begins the post-migration React-parity pass with native inventory
+interaction polish.
+
+Inventory is now scoped by root/direct container contents instead of flattening
+all nested stacks. Enter opens a selected container and Backspace returns to its
+parent. Slash activates a native text filter over the current container.
+
+F6 starts an authoritative stack split. Left/Right selects the split quantity,
+Enter sends ClientMessage::SplitItem and F6/Escape cancels. No optimistic local
+inventory mutation occurs; InventoryChanged remains authoritative.
+
+Existing equip/unequip, move-to-root and drop requests remain server-authoritative.
+
+No movement, world renderer, map, updater, floor gate or creature safety code is
+changed.
+
+
+<!-- TIBIAGAME_V36_34_1_INVENTORY_FILTER_STRING_HOTFIX -->
+
+V36.34.1 fixes the malformed Rust format string in the native inventory filter
+label. The inner quotation marks around the filter value are now escaped.
+
+No inventory behavior, protocol, gameplay, movement, updater, renderer, floor
+gate or creature safety logic changes.
+
+
+<!-- TIBIAGAME_V36_35_NATIVE_CRAFTING_PARITY_POLISH -->
+
+V36.35 continues native React-parity work in Crafting.
+
+The crafting panel now has dynamic categories derived from authoritative
+RuneRecipe::craft_kind values, with All plus each available category. Tab cycles
+categories. Left/Right selects a batch quantity from 1 to 99. F sends the
+existing StartRuneCrafting { recipe_id, quantity } protocol message.
+
+Client-side preflight checks total material and mana requirements for the batch
+but does not optimistically consume anything. Server state remains authoritative.
+
+The panel also consumes NativeCraftingState so the active recipe, remaining
+count and status from RuneCraftingChanged are visible.
+
+No updater, movement, map, world renderer, floor gate or creature safety code is
+changed.

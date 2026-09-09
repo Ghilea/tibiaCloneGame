@@ -25,8 +25,15 @@ pub struct NativePanelState {
     pub crafting_open: bool,
     pub npc_open: bool,
     pub selected_item: Option<game_types::EntityId>,
+    pub inventory_container_id: Option<game_types::EntityId>,
+    pub inventory_search_active: bool,
+    pub inventory_search: String,
+    pub split_item_id: Option<game_types::EntityId>,
+    pub split_quantity: u16,
     pub selected_spell_id: Option<String>,
     pub selected_recipe_id: Option<String>,
+    pub crafting_category: usize,
+    pub crafting_quantity: u16,
     pub selected_npc_id: Option<String>,
     pub npc_tab: usize,
     pub npc_index: usize,
@@ -497,9 +504,9 @@ pub fn update_ui(
 
     let action_line = action_bar_text(&learned);
     let inventory_text =
-        inventory_panel_text(&game_state, panel_state.selected_item);
+        inventory_panel_text(&game_state, &panel_state);
     let inventory_detail =
-        inventory_detail_text(&game_state, panel_state.selected_item);
+        inventory_detail_text(&game_state, &panel_state);
     let character_text = character_panel_text(&game_state);
     let skills_text = skills_panel_text(&game_state);
     let spellbook_text =
@@ -507,9 +514,9 @@ pub fn update_ui(
     let spell_detail =
         spell_detail_text(&game_state, panel_state.selected_spell_id.as_deref());
     let crafting_text =
-        crafting_panel_text(&game_state, panel_state.selected_recipe_id.as_deref());
+        crafting_panel_text(&game_state, &panel_state);
     let crafting_detail =
-        crafting_detail_text(&game_state, panel_state.selected_recipe_id.as_deref());
+        crafting_detail_text(&game_state, &panel_state);
     let npc_text = npc_panel_text(&game_state, &panel_state);
     let npc_detail = npc_detail_text(&game_state, &panel_state);
 
@@ -739,14 +746,64 @@ pub fn handle_chat_input(
 
 pub fn handle_panel_hotkeys(
     keys: Res<ButtonInput<KeyCode>>,
+    mut inventory_keyboard: MessageReader<KeyboardInput>,
     chat: Res<NativeChatState>,
     network: Res<NativeNetwork>,
     mut panels: ResMut<NativePanelState>,
     mut game_state: ResMut<NativeGameState>,
 ) {
+    // TIBIAGAME_V36_34_INVENTORY_SEARCH_INPUT
     if chat.active {
+        for _ in inventory_keyboard.read() {}
         return;
     }
+
+    if panels.inventory_open && panels.inventory_search_active {
+        let mut search_changed = false;
+
+        for event in inventory_keyboard.read() {
+            if event.state != ButtonState::Pressed {
+                continue;
+            }
+
+            match event.key_code {
+                KeyCode::Enter => {
+                    panels.inventory_search_active = false;
+                }
+                KeyCode::Escape => {
+                    panels.inventory_search_active = false;
+                }
+                KeyCode::Backspace => {
+                    search_changed |= panels.inventory_search.pop().is_some();
+                }
+                _ => {
+                    let Some(input) = event.text.as_ref() else {
+                        continue;
+                    };
+
+                    for character in input.chars() {
+                        if !character.is_control()
+                            && panels.inventory_search.chars().count() < 48
+                        {
+                            panels.inventory_search.push(character);
+                            search_changed = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if search_changed {
+            panels.selected_item = None;
+        }
+
+        ensure_inventory_selection(&game_state, &mut panels);
+        return;
+    }
+
+    // This MessageReader is independent from chat's reader. Drain it while
+    // inventory search is inactive so activating search cannot replay old text.
+    for _ in inventory_keyboard.read() {}
 
     if keys.just_pressed(KeyCode::KeyN) {
         toggle_nearest_npc_panel(&mut game_state, &mut panels);
@@ -782,9 +839,90 @@ pub fn handle_panel_hotkeys(
         return;
     }
 
+    // TIBIAGAME_V36_34_SPLIT_MODE
+    if panels.inventory_open {
+        if let Some(split_id) = panels.split_item_id {
+            let selected_stack = game_state
+                .inventory
+                .iter()
+                .find(|item| item.instance_id == split_id)
+                .cloned();
+
+            let Some(item) = selected_stack else {
+                panels.split_item_id = None;
+                panels.split_quantity = 0;
+                return;
+            };
+
+            let max_split = item.quantity.saturating_sub(1);
+            if max_split == 0 {
+                panels.split_item_id = None;
+                panels.split_quantity = 0;
+                return;
+            }
+
+            panels.split_quantity =
+                panels.split_quantity.clamp(1, max_split);
+
+            if keys.just_pressed(KeyCode::ArrowLeft) {
+                panels.split_quantity =
+                    panels.split_quantity.saturating_sub(1).max(1);
+            }
+
+            if keys.just_pressed(KeyCode::ArrowRight) {
+                panels.split_quantity =
+                    panels.split_quantity.saturating_add(1).min(max_split);
+            }
+
+            if keys.just_pressed(KeyCode::Escape)
+                || keys.just_pressed(KeyCode::F6)
+            {
+                panels.split_item_id = None;
+                panels.split_quantity = 0;
+                return;
+            }
+
+            if keys.just_pressed(KeyCode::Enter) {
+                let quantity = panels.split_quantity;
+
+                let item_name = game_state
+                    .item_definitions
+                    .get(&item.definition_id)
+                    .map(|definition| definition.name.clone())
+                    .unwrap_or_else(|| item.definition_id.clone());
+
+                if network
+                    .outbound
+                    .send(ClientMessage::SplitItem {
+                        instance_id: split_id,
+                        quantity,
+                    })
+                    .is_err()
+                {
+                    game_state.push_system_message(
+                        "The game connection is offline.",
+                    );
+                } else {
+                    game_state.push_system_message(format!(
+                        "Split {quantity} from {item_name}.",
+                    ));
+                }
+
+                panels.split_item_id = None;
+                panels.split_quantity = 0;
+                return;
+            }
+
+            // Split mode owns inventory input until confirmed/cancelled.
+            return;
+        }
+    }
+
     if keys.just_pressed(KeyCode::KeyI) {
         panels.inventory_open = !panels.inventory_open;
         panels.npc_open = false;
+        panels.split_item_id = None;
+        panels.split_quantity = 0;
         if panels.inventory_open {
             ensure_inventory_selection(&game_state, &mut panels);
         }
@@ -814,6 +952,8 @@ pub fn handle_panel_hotkeys(
         panels.npc_open = false;
         if panels.crafting_open {
             panels.spells_open = false;
+            panels.crafting_quantity = panels.crafting_quantity.max(1);
+            normalize_crafting_category(&game_state, &mut panels);
             ensure_recipe_selection(&game_state, &mut panels);
         }
     }
@@ -828,6 +968,9 @@ pub fn handle_panel_hotkeys(
         )
     {
         panels.inventory_open = false;
+        panels.inventory_search_active = false;
+        panels.split_item_id = None;
+        panels.split_quantity = 0;
         panels.character_open = false;
         panels.skills_open = false;
         panels.spells_open = false;
@@ -857,13 +1000,29 @@ pub fn handle_panel_hotkeys(
     }
 
     if panels.crafting_open {
+        normalize_crafting_category(&game_state, &mut panels);
         ensure_recipe_selection(&game_state, &mut panels);
+        panels.crafting_quantity = panels.crafting_quantity.max(1);
+
+        if keys.just_pressed(KeyCode::Tab) {
+            cycle_crafting_category(&game_state, &mut panels);
+            ensure_recipe_selection(&game_state, &mut panels);
+        }
 
         if keys.just_pressed(KeyCode::ArrowDown) {
             step_recipe_selection(&game_state, &mut panels, 1);
         }
         if keys.just_pressed(KeyCode::ArrowUp) {
             step_recipe_selection(&game_state, &mut panels, -1);
+        }
+
+        if keys.just_pressed(KeyCode::ArrowLeft) {
+            panels.crafting_quantity =
+                panels.crafting_quantity.saturating_sub(1).max(1);
+        }
+        if keys.just_pressed(KeyCode::ArrowRight) {
+            panels.crafting_quantity =
+                panels.crafting_quantity.saturating_add(1).min(99);
         }
 
         if keys.just_pressed(KeyCode::KeyF) {
@@ -885,10 +1044,30 @@ pub fn handle_panel_hotkeys(
                 game_state.push_system_message("Cancel crafting requested.");
             }
         }
-    }
 
+        // Crafting owns arrows/Tab/F/X while open.
+        return;
+    }
     if !panels.inventory_open {
         return;
+    }
+
+    if keys.just_pressed(KeyCode::Slash) {
+        panels.inventory_search_active = true;
+        return;
+    }
+
+    if keys.just_pressed(KeyCode::Backspace) {
+        if let Some(container_id) = panels.inventory_container_id {
+            panels.inventory_container_id = game_state
+                .inventory
+                .iter()
+                .find(|item| item.instance_id == container_id)
+                .and_then(|container| container.container_id);
+            panels.selected_item = None;
+            ensure_inventory_selection(&game_state, &mut panels);
+            return;
+        }
     }
 
     ensure_inventory_selection(&game_state, &mut panels);
@@ -903,6 +1082,65 @@ pub fn handle_panel_hotkeys(
     let Some(instance_id) = panels.selected_item else {
         return;
     };
+
+    if keys.just_pressed(KeyCode::Enter) {
+        let selected = game_state
+            .inventory
+            .iter()
+            .find(|item| item.instance_id == instance_id)
+            .cloned();
+
+        if let Some(item) = selected {
+            let is_container = game_state
+                .item_definitions
+                .get(&item.definition_id)
+                .and_then(|definition| definition.container_slots)
+                .is_some();
+
+            if is_container {
+                panels.inventory_container_id = Some(instance_id);
+                panels.selected_item = None;
+                ensure_inventory_selection(&game_state, &mut panels);
+                return;
+            }
+        }
+    }
+
+    if keys.just_pressed(KeyCode::F6) {
+        let selected = game_state
+            .inventory
+            .iter()
+            .find(|item| item.instance_id == instance_id)
+            .cloned();
+
+        let Some(item) = selected else {
+            panels.selected_item = None;
+            return;
+        };
+
+        let stackable = game_state
+            .item_definitions
+            .get(&item.definition_id)
+            .map(|definition| definition.stackable)
+            .unwrap_or(false);
+
+        if !stackable || item.quantity <= 1 {
+            let item_name = game_state
+                .item_definitions
+                .get(&item.definition_id)
+                .map(|definition| definition.name.clone())
+                .unwrap_or_else(|| item.definition_id.clone());
+
+            game_state.push_system_message(format!(
+                "{item_name} cannot be split.",
+            ));
+            return;
+        }
+
+        panels.split_item_id = Some(instance_id);
+        panels.split_quantity = (item.quantity / 2).max(1);
+        return;
+    }
 
     if keys.just_pressed(KeyCode::KeyE) {
         let Some(item) = game_state
@@ -966,7 +1204,7 @@ pub fn handle_panel_hotkeys(
             &mut game_state,
             instance_id,
             game_protocol::ItemDestination::Root,
-            "Move to backpack",
+            "Move to root",
         );
     }
 
@@ -1014,7 +1252,8 @@ fn ensure_inventory_selection(
     game_state: &NativeGameState,
     panels: &mut NativePanelState,
 ) {
-    let ids = selectable_inventory_ids(game_state);
+    let ids = selectable_inventory_ids(game_state, panels);
+
     if ids.is_empty() {
         panels.selected_item = None;
         return;
@@ -1035,7 +1274,8 @@ fn step_inventory_selection(
     panels: &mut NativePanelState,
     delta: isize,
 ) {
-    let ids = selectable_inventory_ids(game_state);
+    let ids = selectable_inventory_ids(game_state, panels);
+
     if ids.is_empty() {
         panels.selected_item = None;
         return;
@@ -1043,21 +1283,56 @@ fn step_inventory_selection(
 
     let current = panels
         .selected_item
-        .and_then(|selected| ids.iter().position(|id| *id == selected))
+        .and_then(|selected| {
+            ids.iter()
+                .position(|id| *id == selected)
+        })
         .unwrap_or(0) as isize;
 
     let len = ids.len() as isize;
-    let next = (current + delta).rem_euclid(len) as usize;
+    let next =
+        (current + delta).rem_euclid(len) as usize;
+
     panels.selected_item = Some(ids[next]);
 }
 
 fn selectable_inventory_ids(
     game_state: &NativeGameState,
+    panels: &NativePanelState,
 ) -> Vec<game_types::EntityId> {
+    let query =
+        panels.inventory_search.trim().to_ascii_lowercase();
+
     let mut items: Vec<_> = game_state
         .inventory
         .iter()
         .filter(|item| item.definition_id != "gold_coin")
+        .filter(|item| {
+            if let Some(container_id) =
+                panels.inventory_container_id
+            {
+                item.container_id == Some(container_id)
+            } else {
+                item.container_id.is_none()
+            }
+        })
+        .filter(|item| {
+            if query.is_empty() {
+                return true;
+            }
+
+            let name = game_state
+                .item_definitions
+                .get(&item.definition_id)
+                .map(|definition| definition.name.as_str())
+                .unwrap_or(item.definition_id.as_str());
+
+            name.to_ascii_lowercase().contains(&query)
+                || item
+                    .definition_id
+                    .to_ascii_lowercase()
+                    .contains(&query)
+        })
         .collect();
 
     items.sort_by(|left, right| {
@@ -1066,22 +1341,25 @@ fn selectable_inventory_ids(
             .get(&left.definition_id)
             .map(|definition| definition.name.as_str())
             .unwrap_or(left.definition_id.as_str());
+
         let right_name = game_state
             .item_definitions
             .get(&right.definition_id)
             .map(|definition| definition.name.as_str())
             .unwrap_or(right.definition_id.as_str());
 
-        left.equipped_slot
+        left
+            .equipped_slot
             .is_none()
             .cmp(&right.equipped_slot.is_none())
             .then_with(|| left_name.cmp(right_name))
     });
 
-    items.into_iter().map(|item| item.instance_id).collect()
+    items
+        .into_iter()
+        .map(|item| item.instance_id)
+        .collect()
 }
-
-
 
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1681,13 +1959,88 @@ fn npc_detail_text(
     }
 }
 
+fn crafting_categories(
+    game_state: &NativeGameState,
+) -> Vec<String> {
+    let mut categories = vec!["all".to_owned()];
+
+    let mut kinds: Vec<_> = game_state
+        .rune_recipes
+        .values()
+        .map(|recipe| recipe.craft_kind.trim().to_ascii_lowercase())
+        .filter(|kind| !kind.is_empty())
+        .collect();
+
+    kinds.sort();
+    kinds.dedup();
+
+    categories.extend(kinds);
+    categories
+}
+
+fn normalize_crafting_category(
+    game_state: &NativeGameState,
+    panels: &mut NativePanelState,
+) {
+    let categories = crafting_categories(game_state);
+
+    if categories.is_empty() {
+        panels.crafting_category = 0;
+        return;
+    }
+
+    panels.crafting_category %= categories.len();
+}
+
+fn cycle_crafting_category(
+    game_state: &NativeGameState,
+    panels: &mut NativePanelState,
+) {
+    let categories = crafting_categories(game_state);
+
+    if categories.is_empty() {
+        panels.crafting_category = 0;
+        panels.selected_recipe_id = None;
+        return;
+    }
+
+    panels.crafting_category =
+        (panels.crafting_category + 1) % categories.len();
+    panels.selected_recipe_id = None;
+}
+
+fn current_crafting_category<'a>(
+    game_state: &'a NativeGameState,
+    panels: &NativePanelState,
+) -> String {
+    let categories = crafting_categories(game_state);
+
+    categories
+        .get(panels.crafting_category.min(categories.len().saturating_sub(1)))
+        .cloned()
+        .unwrap_or_else(|| "all".into())
+}
+
 fn recipes_sorted(
     game_state: &NativeGameState,
+    panels: &NativePanelState,
 ) -> Vec<(String, String)> {
+    let category =
+        current_crafting_category(game_state, panels);
+
     let mut recipes: Vec<_> = game_state
         .rune_recipes
         .values()
-        .map(|recipe| (recipe.id.clone(), recipe.name.clone()))
+        .filter(|recipe| {
+            category == "all"
+                || recipe
+                    .craft_kind
+                    .trim()
+                    .eq_ignore_ascii_case(&category)
+        })
+        .map(|recipe| {
+            (recipe.id.clone(), recipe.name.clone())
+        })
         .collect();
 
     recipes.sort_by(|left, right| left.1.cmp(&right.1));
@@ -1698,7 +2051,7 @@ fn ensure_recipe_selection(
     game_state: &NativeGameState,
     panels: &mut NativePanelState,
 ) {
-    let recipes = recipes_sorted(game_state);
+    let recipes = recipes_sorted(game_state, panels);
 
     if recipes.is_empty() {
         panels.selected_recipe_id = None;
@@ -1708,17 +2061,22 @@ fn ensure_recipe_selection(
     if panels
         .selected_recipe_id
         .as_ref()
-        .is_some_and(|selected| recipes.iter().any(|(id, _)| id == selected))
+        .is_some_and(|selected| {
+            recipes.iter().any(|(id, _)| id == selected)
+        })
     {
         return;
     }
 
     let first_learned = recipes
         .iter()
-        .find(|(id, _)| game_state.learned_recipe_ids.contains(id))
+        .find(|(id, _)| {
+            game_state.learned_recipe_ids.contains(id)
+        })
         .or_else(|| recipes.first());
 
-    panels.selected_recipe_id = first_learned.map(|(id, _)| id.clone());
+    panels.selected_recipe_id =
+        first_learned.map(|(id, _)| id.clone());
 }
 
 fn step_recipe_selection(
@@ -1726,7 +2084,8 @@ fn step_recipe_selection(
     panels: &mut NativePanelState,
     delta: isize,
 ) {
-    let recipes = recipes_sorted(game_state);
+    let recipes = recipes_sorted(game_state, panels);
+
     if recipes.is_empty() {
         panels.selected_recipe_id = None;
         return;
@@ -1735,12 +2094,19 @@ fn step_recipe_selection(
     let current = panels
         .selected_recipe_id
         .as_ref()
-        .and_then(|selected| recipes.iter().position(|(id, _)| id == selected))
+        .and_then(|selected| {
+            recipes
+                .iter()
+                .position(|(id, _)| id == selected)
+        })
         .unwrap_or(0) as isize;
 
     let len = recipes.len() as isize;
-    let next = (current + delta).rem_euclid(len) as usize;
-    panels.selected_recipe_id = Some(recipes[next].0.clone());
+    let next =
+        (current + delta).rem_euclid(len) as usize;
+
+    panels.selected_recipe_id =
+        Some(recipes[next].0.clone());
 }
 
 fn craft_selected_recipe(
@@ -1748,41 +2114,72 @@ fn craft_selected_recipe(
     game_state: &mut NativeGameState,
     panels: &NativePanelState,
 ) {
-    let Some(recipe_id) = panels.selected_recipe_id.clone() else {
-        game_state.push_system_message("No recipe selected.");
+    let Some(recipe_id) =
+        panels.selected_recipe_id.clone()
+    else {
+        game_state.push_system_message(
+            "No recipe selected.",
+        );
         return;
     };
 
-    if !game_state.learned_recipe_ids.contains(&recipe_id) {
-        game_state.push_system_message("That recipe has not been learned.");
+    if !game_state
+        .learned_recipe_ids
+        .contains(&recipe_id)
+    {
+        game_state.push_system_message(
+            "That recipe has not been learned.",
+        );
         return;
     }
 
-    let Some(recipe) = game_state.rune_recipes.get(&recipe_id) else {
-        game_state.push_system_message("Unknown recipe.");
+    let Some(recipe) =
+        game_state.rune_recipes.get(&recipe_id)
+    else {
+        game_state.push_system_message(
+            "Unknown recipe.",
+        );
         return;
     };
 
+    let quantity =
+        panels.crafting_quantity.max(1);
+
     let recipe_name = recipe.name.clone();
-    let input_definition_id = recipe.input_definition_id.clone();
+    let input_definition_id =
+        recipe.input_definition_id.clone();
     let input_quantity = recipe.input_quantity;
     let mana_cost = recipe.mana_cost;
 
-    let carried = inventory_definition_quantity(game_state, &input_definition_id);
-    if carried < u64::from(input_quantity) {
+    let required_items =
+        u64::from(input_quantity)
+            .saturating_mul(u64::from(quantity));
+
+    let carried =
+        inventory_definition_quantity(
+            game_state,
+            &input_definition_id,
+        );
+
+    if carried < required_items {
         game_state.push_system_message(format!(
-            "Not enough materials for {recipe_name}.",
+            "Not enough materials for {quantity} × {recipe_name}.",
         ));
         return;
     }
 
+    let required_mana =
+        u64::from(mana_cost)
+            .saturating_mul(u64::from(quantity));
+
     let mana = game_state
         .local_player()
-        .map(|player| player.mana)
+        .map(|player| u64::from(player.mana))
         .unwrap_or(0);
-    if mana < mana_cost {
+
+    if mana < required_mana {
         game_state.push_system_message(format!(
-            "Not enough mana for {recipe_name}.",
+            "Not enough mana for {quantity} × {recipe_name}.",
         ));
         return;
     }
@@ -1791,57 +2188,131 @@ fn craft_selected_recipe(
         .outbound
         .send(ClientMessage::StartRuneCrafting {
             recipe_id,
-            quantity: 1,
+            quantity,
         })
         .is_err()
     {
-        game_state.push_system_message("The game connection is offline.");
+        game_state.push_system_message(
+            "The game connection is offline.",
+        );
     } else {
-        game_state.push_system_message(format!("Crafting {recipe_name}."));
+        game_state.push_system_message(format!(
+            "Crafting {quantity} × {recipe_name}.",
+        ));
     }
 }
 
 fn crafting_panel_text(
     game_state: &NativeGameState,
-    selected_recipe_id: Option<&str>,
+    panels: &NativePanelState,
 ) -> String {
-    let recipes = recipes_sorted(game_state);
-    let learned = recipes
-        .iter()
-        .filter(|(id, _)| game_state.learned_recipe_ids.contains(id))
+    let categories =
+        crafting_categories(game_state);
+    let category =
+        current_crafting_category(game_state, panels);
+
+    let recipes =
+        recipes_sorted(game_state, panels);
+
+    let learned = game_state
+        .rune_recipes
+        .keys()
+        .filter(|id| {
+            game_state.learned_recipe_ids.contains(*id)
+        })
         .count();
 
+    let category_tabs = categories
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let label =
+                if value == "all" {
+                    "All".into()
+                } else {
+                    title_case(value)
+                };
+
+            if index == panels.crafting_category {
+                format!("[{label}]")
+            } else {
+                label
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("  ·  ");
+
     let mut lines = vec![
-        format!("CRAFTING   ·   Learned {} / {}", learned, recipes.len()),
+        format!(
+            "CRAFTING   ·   Learned {} / {}",
+            learned,
+            game_state.rune_recipes.len(),
+        ),
+        format!("Categories: {category_tabs}"),
+        format!(
+            "Category: {}   ·   Quantity ×{}",
+            if category == "all" {
+                "All".into()
+            } else {
+                title_case(&category)
+            },
+            panels.crafting_quantity.max(1),
+        ),
         String::new(),
     ];
 
     if recipes.is_empty() {
-        lines.push("No recipes available.".into());
+        lines.push(
+            "No recipes in this category.".into(),
+        );
     } else {
         for (id, name) in recipes {
-            let Some(recipe) = game_state.rune_recipes.get(&id) else {
+            let Some(recipe) =
+                game_state.rune_recipes.get(&id)
+            else {
                 continue;
             };
 
-            let marker = if selected_recipe_id == Some(id.as_str()) {
-                "▶"
-            } else {
-                " "
-            };
+            let marker =
+                if panels
+                    .selected_recipe_id
+                    .as_deref()
+                    == Some(id.as_str())
+                {
+                    "▶"
+                } else {
+                    " "
+                };
+
             let learned_marker =
-                if game_state.learned_recipe_ids.contains(&id) { "✓" } else { "×" };
+                if game_state
+                    .learned_recipe_ids
+                    .contains(&id)
+                {
+                    "✓"
+                } else {
+                    "×"
+                };
 
             let input_name = game_state
                 .item_definitions
                 .get(&recipe.input_definition_id)
-                .map(|definition| definition.name.as_str())
-                .unwrap_or(recipe.input_definition_id.as_str());
+                .map(|definition| {
+                    definition.name.as_str()
+                })
+                .unwrap_or(
+                    recipe.input_definition_id.as_str(),
+                );
+
             let output_name = game_state
                 .item_definitions
                 .get(&recipe.output_definition_id)
-                .map(|definition| definition.name.as_str())
-                .unwrap_or(recipe.output_definition_id.as_str());
+                .map(|definition| {
+                    definition.name.as_str()
+                })
+                .unwrap_or(
+                    recipe.output_definition_id.as_str(),
+                );
 
             lines.push(format!(
                 "{marker} {learned_marker} {:<19}  {}× {} → {}× {}",
@@ -1854,48 +2325,117 @@ fn crafting_panel_text(
         }
     }
 
+    if let Some(crafting) =
+        game_state.crafting.as_ref()
+    {
+        lines.push(String::new());
+
+        let recipe_name = crafting
+            .recipe_id
+            .as_ref()
+            .and_then(|id| {
+                game_state.rune_recipes.get(id)
+            })
+            .map(|recipe| recipe.name.clone())
+            .unwrap_or_else(|| {
+                crafting
+                    .recipe_id
+                    .clone()
+                    .unwrap_or_else(|| "Crafting".into())
+            });
+
+        lines.push(format!(
+            "ACTIVE: {}   ·   remaining {}   ·   {}",
+            recipe_name,
+            crafting.remaining,
+            title_case(&crafting.status),
+        ));
+    }
+
     lines.push(String::new());
-    lines.push("↑/↓ Select   ·   F Craft one   ·   X Cancel".into());
+    lines.push(
+        "Tab Category   ·   ↑/↓ Recipe   ·   ←/→ Quantity"
+            .into(),
+    );
+    lines.push(
+        "F Craft selected quantity   ·   X Cancel"
+            .into(),
+    );
     lines.push("B Crafting   ·   Esc Close".into());
+
     lines.join("\n")
 }
 
 fn crafting_detail_text(
     game_state: &NativeGameState,
-    selected_recipe_id: Option<&str>,
+    panels: &NativePanelState,
 ) -> String {
-    let Some(recipe_id) = selected_recipe_id else {
+    let Some(recipe_id) =
+        panels.selected_recipe_id.as_deref()
+    else {
         return String::new();
     };
-    let Some(recipe) = game_state.rune_recipes.get(recipe_id) else {
+
+    let Some(recipe) =
+        game_state.rune_recipes.get(recipe_id)
+    else {
         return String::new();
     };
+
+    let quantity =
+        panels.crafting_quantity.max(1);
 
     let input_name = game_state
         .item_definitions
         .get(&recipe.input_definition_id)
         .map(|definition| definition.name.clone())
-        .unwrap_or_else(|| recipe.input_definition_id.clone());
+        .unwrap_or_else(|| {
+            recipe.input_definition_id.clone()
+        });
+
     let output_name = game_state
         .item_definitions
         .get(&recipe.output_definition_id)
         .map(|definition| definition.name.clone())
-        .unwrap_or_else(|| recipe.output_definition_id.clone());
+        .unwrap_or_else(|| {
+            recipe.output_definition_id.clone()
+        });
 
     let carried =
-        inventory_definition_quantity(game_state, &recipe.input_definition_id);
-    let learned = game_state.learned_recipe_ids.contains(recipe_id);
+        inventory_definition_quantity(
+            game_state,
+            &recipe.input_definition_id,
+        );
+
+    let required_items =
+        u64::from(recipe.input_quantity)
+            .saturating_mul(u64::from(quantity));
+
+    let required_mana =
+        u64::from(recipe.mana_cost)
+            .saturating_mul(u64::from(quantity));
+
+    let total_output =
+        u64::from(recipe.output_quantity)
+            .saturating_mul(u64::from(quantity));
+
+    let learned =
+        game_state
+            .learned_recipe_ids
+            .contains(recipe_id);
 
     format!(
-        "{}\n{}\nInput: {} × {}   ·   carried {}\nOutput: {} × {}\nMana {}   ·   time {:.2}s   ·   required skill {}   ·   {}",
+        "{}\n{}\nBatch ×{}\nInput: {} × {}   ·   carried {}   ·   required {}\nOutput total: {} × {}\nMana total {}   ·   time/craft {:.2}s   ·   required skill {}   ·   {}",
         recipe.name,
         title_case(&recipe.craft_kind),
+        quantity,
         recipe.input_quantity,
         input_name,
         carried,
-        recipe.output_quantity,
+        required_items,
+        total_output,
         output_name,
-        recipe.mana_cost,
+        required_mana,
         recipe.craft_time_ms as f32 / 1000.0,
         recipe.required_skill_level,
         if learned {
@@ -2154,7 +2694,7 @@ fn spell_detail_text(
 
 fn inventory_panel_text(
     game_state: &NativeGameState,
-    selected: Option<game_types::EntityId>,
+    panels: &NativePanelState,
 ) -> String {
     let gold: u64 = game_state
         .inventory
@@ -2163,96 +2703,192 @@ fn inventory_panel_text(
         .map(|item| u64::from(item.quantity))
         .sum();
 
-    let items = selectable_inventory_ids(game_state);
-    let selected_index = selected
-        .and_then(|id| items.iter().position(|candidate| *candidate == id))
+    let items =
+        selectable_inventory_ids(game_state, panels);
+
+    let selected_index = panels
+        .selected_item
+        .and_then(|id| {
+            items
+                .iter()
+                .position(|candidate| *candidate == id)
+        })
         .unwrap_or(0);
 
+    let location = panels
+        .inventory_container_id
+        .and_then(|container_id| {
+            game_state
+                .inventory
+                .iter()
+                .find(|item| {
+                    item.instance_id == container_id
+                })
+        })
+        .map(|container| {
+            game_state
+                .item_definitions
+                .get(&container.definition_id)
+                .map(|definition| definition.name.clone())
+                .unwrap_or_else(|| {
+                    container.definition_id.clone()
+                })
+        })
+        .unwrap_or_else(|| "Root".into());
+
     let mut lines = vec![
-        "INVENTORY".to_owned(),
+        format!("INVENTORY   ·   {location}"),
         format!(
             "Gold {}   ·   {:.1}/{:.1} cap",
             gold,
             game_state.inventory_weight,
             game_state.max_capacity,
         ),
-        String::new(),
     ];
 
-    if items.is_empty() {
-        lines.push("Your inventory is empty.".into());
-        return lines.join("\n");
+    if panels.inventory_search_active {
+        lines.push(format!(
+            "Search: {}_",
+            panels.inventory_search,
+        ));
+    } else if panels.inventory_search.is_empty() {
+        lines.push("/ Search".into());
+    } else {
+        lines.push(format!(
+            "Filter: \"{}\"   ·   / edit",
+            panels.inventory_search,
+        ));
     }
 
-    let start = selected_index.saturating_sub(7);
-    let end = (start + 16).min(items.len());
+    lines.push(String::new());
 
-    for (index, instance_id) in items[start..end].iter().enumerate() {
-        let absolute = start + index;
-        let Some(item) = game_state
-            .inventory
-            .iter()
-            .find(|item| item.instance_id == *instance_id)
-        else {
-            continue;
-        };
+    if items.is_empty() {
+        lines.push(
+            if panels.inventory_search.is_empty() {
+                "This container is empty.".into()
+            } else {
+                "No items match the filter.".into()
+            },
+        );
+    } else {
+        let start =
+            selected_index.saturating_sub(7);
+        let end =
+            (start + 16).min(items.len());
 
-        let definition = game_state.item_definitions.get(&item.definition_id);
-        let name = definition
-            .map(|definition| definition.name.as_str())
-            .unwrap_or(item.definition_id.as_str());
+        for instance_id in &items[start..end] {
+            let Some(item) = game_state
+                .inventory
+                .iter()
+                .find(|item| {
+                    item.instance_id == *instance_id
+                })
+            else {
+                continue;
+            };
 
-        let marker = if Some(*instance_id) == selected {
-            "▶"
-        } else {
-            " "
-        };
-        let quantity = if item.quantity > 1 {
-            format!(" ×{}", item.quantity)
-        } else {
-            String::new()
-        };
-        let location = if let Some(slot) = item.equipped_slot.as_deref() {
-            format!("  [{slot}]")
-        } else if item.container_id.is_some() {
-            "  [container]".into()
-        } else {
-            String::new()
-        };
+            let definition =
+                game_state
+                    .item_definitions
+                    .get(&item.definition_id);
 
-        lines.push(format!("{marker} {name}{quantity}{location}"));
+            let name = definition
+                .map(|definition| {
+                    definition.name.as_str()
+                })
+                .unwrap_or(
+                    item.definition_id.as_str(),
+                );
 
-        if absolute == selected_index && lines.len() > 20 {
-            break;
+            let marker =
+                if Some(*instance_id)
+                    == panels.selected_item
+                {
+                    "▶"
+                } else {
+                    " "
+                };
+
+            let quantity =
+                if item.quantity > 1 {
+                    format!(" ×{}", item.quantity)
+                } else {
+                    String::new()
+                };
+
+            let location_marker =
+                if let Some(slot) =
+                    item.equipped_slot.as_deref()
+                {
+                    format!("  [{slot}]")
+                } else if definition
+                    .and_then(|definition| {
+                        definition.container_slots
+                    })
+                    .is_some()
+                {
+                    "  [container]".into()
+                } else {
+                    String::new()
+                };
+
+            lines.push(format!(
+                "{marker} {name}{quantity}{location_marker}"
+            ));
         }
     }
 
     lines.push(String::new());
-    lines.push("↑/↓ Select   E Equip/unequip".into());
-    lines.push("R Move to root   Del Drop".into());
+
+    if panels.split_item_id.is_some() {
+        lines.push(
+            "←/→ Split amount   ·   Enter Confirm   ·   F6/Esc Cancel"
+                .into(),
+        );
+    } else {
+        lines.push(
+            "↑/↓ Select   ·   Enter Open container   ·   Backspace Parent"
+                .into(),
+        );
+        lines.push(
+            "E Equip/unequip   ·   R Root   ·   F6 Split   ·   Del Drop"
+                .into(),
+        );
+    }
+
     lines.join("\n")
 }
 
 fn inventory_detail_text(
     game_state: &NativeGameState,
-    selected: Option<game_types::EntityId>,
+    panels: &NativePanelState,
 ) -> String {
-    let Some(instance_id) = selected else {
-        return String::new();
-    };
-    let Some(item) = game_state
-        .inventory
-        .iter()
-        .find(|item| item.instance_id == instance_id)
+    let Some(instance_id) =
+        panels.selected_item
     else {
         return String::new();
     };
-    let Some(definition) = game_state.item_definitions.get(&item.definition_id)
+
+    let Some(item) = game_state
+        .inventory
+        .iter()
+        .find(|item| {
+            item.instance_id == instance_id
+        })
+    else {
+        return String::new();
+    };
+
+    let Some(definition) =
+        game_state
+            .item_definitions
+            .get(&item.definition_id)
     else {
         return item.definition_id.clone();
     };
 
     let mut facts = Vec::new();
+
     facts.push(format!(
         "{}   ·   {:.1} wt",
         definition.name,
@@ -2262,17 +2898,35 @@ fn inventory_detail_text(
     if let Some(attack) = definition.attack {
         facts.push(format!("Attack {attack}"));
     }
+
     if let Some(defense) = definition.defense {
         facts.push(format!("Defense {defense}"));
     }
+
     if let Some(charges) = item.charges {
         facts.push(format!("Charges {charges}"));
     }
+
     if let Some(slots) = definition.container_slots {
-        facts.push(format!("Container {slots} slots"));
+        facts.push(format!(
+            "Container {slots} slots   ·   Enter open"
+        ));
     }
-    if let Some(slot) = definition.equipment_slot.as_deref() {
-        facts.push(format!("Equipment slot: {slot}"));
+
+    if let Some(slot) =
+        definition.equipment_slot.as_deref()
+    {
+        facts.push(format!(
+            "Equipment slot: {slot}"
+        ));
+    }
+
+    if panels.split_item_id == Some(instance_id) {
+        facts.push(format!(
+            "SPLIT {} of {}",
+            panels.split_quantity,
+            item.quantity,
+        ));
     }
 
     facts.join("   ·   ")
