@@ -96,6 +96,15 @@ pub(crate) struct LauncherBackdrop;
 pub(crate) struct LauncherBackdropTint;
 
 #[derive(Component)]
+struct LauncherWorldLoadingOverlay;
+
+#[derive(Component)]
+struct LauncherWorldLoadingStatus;
+
+#[derive(Component)]
+struct LauncherWorldLoadingProgress;
+
+#[derive(Component)]
 struct LauncherLoginForm;
 
 
@@ -172,7 +181,8 @@ pub fn run() -> Result<()> {
                 crate::native_updater::poll,
                 poll_login_worker.after(crate::native_updater::poll),
                 poll_game_session_worker.after(poll_login_worker),
-                handle_launcher_text_input.after(poll_game_session_worker),
+                update_world_loading_overlay.after(poll_game_session_worker),
+                handle_launcher_text_input.after(update_world_loading_overlay),
                 handle_keyboard.after(handle_launcher_text_input),
                 handle_launcher_buttons.after(handle_keyboard),
                 handle_character_card_buttons.after(handle_launcher_buttons),
@@ -204,6 +214,7 @@ fn setup(
         Camera2d,
     ));
     spawn_launcher_background(&mut commands, &asset_server);
+    spawn_launcher_world_loading_overlay(&mut commands, &asset_server);
     spawn_launcher_legacy_panel(&mut commands);
     spawn_launcher_controls(&mut commands);
     spawn_launcher_login_form(&mut commands);
@@ -254,6 +265,172 @@ fn spawn_launcher_background(
         },
         BackgroundColor(Color::srgba(0.02, 0.03, 0.04, 0.28)),
     ));
+}
+
+fn spawn_launcher_world_loading_overlay(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+) {
+    commands
+        .spawn((
+            Name::new("Native enter-world loading overlay"),
+            LauncherWorldLoadingOverlay,
+            ZIndex(10_000),
+            Visibility::Hidden,
+            Node {
+                position_type: PositionType::Absolute,
+                left: px(0),
+                right: px(0),
+                top: px(0),
+                bottom: px(0),
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(
+                Color::srgb(0.015, 0.02, 0.018),
+            ),
+            ImageNode::new(
+                asset_server.load(
+                    "ui/launcher/aldoria_launcher_background.png",
+                ),
+            )
+            .with_mode(
+                bevy::ui::widget::NodeImageMode::Stretch,
+            ),
+        ))
+        .with_children(|root| {
+            root.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: px(0),
+                    right: px(0),
+                    top: px(0),
+                    bottom: px(0),
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    ..default()
+                },
+                BackgroundColor(
+                    Color::srgba(0.015, 0.02, 0.018, 0.42),
+                ),
+            ));
+
+            root
+                .spawn((
+                    ZIndex(10_010),
+                    Node {
+                        width: Val::Percent(88.0),
+                        max_width: px(640),
+                        min_height: px(270),
+                        padding: UiRect::all(px(30)),
+                        border: UiRect::all(px(1)),
+                        border_radius:
+                            BorderRadius::all(px(10)),
+                        flex_direction:
+                            FlexDirection::Column,
+                        align_items:
+                            AlignItems::Center,
+                        justify_content:
+                            JustifyContent::Center,
+                        row_gap: px(15),
+                        ..default()
+                    },
+                    BackgroundColor(
+                        Color::srgba(
+                            0.03,
+                            0.04,
+                            0.035,
+                            0.96,
+                        ),
+                    ),
+                    BorderColor::all(
+                        theme::GOLD_DARK,
+                    ),
+                ))
+                .with_children(|card| {
+                    card.spawn((
+                        Text::new("EMBERS OF ALDORIA"),
+                        TextFont {
+                            font_size:
+                                FontSize::Px(28.0),
+                            ..default()
+                        },
+                        TextColor(theme::GOLD_BRIGHT),
+                    ));
+
+                    card.spawn((
+                        Text::new("ENTERING THE WORLD"),
+                        TextFont {
+                            font_size:
+                                FontSize::Px(13.0),
+                            ..default()
+                        },
+                        TextColor(theme::GOLD),
+                    ));
+
+                    card.spawn((
+                        LauncherWorldLoadingStatus,
+                        Text::new(
+                            "Connecting to the realm...",
+                        ),
+                        TextFont {
+                            font_size:
+                                FontSize::Px(15.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT),
+                    ));
+
+                    card
+                        .spawn((
+                            Node {
+                                width:
+                                    Val::Percent(100.0),
+                                max_width: px(520),
+                                height: px(12),
+                                border:
+                                    UiRect::all(px(1)),
+                                border_radius:
+                                    BorderRadius::all(px(4)),
+                                ..default()
+                            },
+                            BackgroundColor(
+                                theme::PANEL_BG_SOFT,
+                            ),
+                            BorderColor::all(
+                                theme::GOLD_DARK,
+                            ),
+                        ))
+                        .with_child((
+                            LauncherWorldLoadingProgress,
+                            Node {
+                                width:
+                                    Val::Percent(12.0),
+                                height:
+                                    Val::Percent(100.0),
+                                border_radius:
+                                    BorderRadius::all(px(3)),
+                                ..default()
+                            },
+                            BackgroundColor(theme::GOLD),
+                        ));
+
+                    card.spawn((
+                        Text::new(
+                            "Connection | world | actors | models | renderer",
+                        ),
+                        TextFont {
+                            font_size:
+                                FontSize::Px(10.5),
+                            ..default()
+                        },
+                        TextColor(theme::MUTED),
+                    ));
+                });
+        });
 }
 
 fn spawn_launcher_legacy_panel(commands: &mut Commands) {
@@ -1658,6 +1835,70 @@ fn render_characters(
 }
 
 #[allow(dead_code)]
+fn update_world_loading_overlay(
+    state: Res<NativeLauncherState>,
+    loading: Option<
+        Res<crate::native_loading::NativeLoadingState>,
+    >,
+    mut overlay: Query<
+        &mut Visibility,
+        With<LauncherWorldLoadingOverlay>,
+    >,
+    mut status: Query<
+        &mut Text,
+        With<LauncherWorldLoadingStatus>,
+    >,
+    mut progress: Query<
+        &mut Node,
+        With<LauncherWorldLoadingProgress>,
+    >,
+) {
+    let loading_active = loading
+        .as_ref()
+        .map(|loading| loading.active())
+        .unwrap_or(false);
+
+    let connecting =
+        state.mode == LauncherMode::Launching;
+
+    let world_loading =
+        state.mode == LauncherMode::GameLoading
+            && loading_active;
+
+    let show = connecting || world_loading;
+
+    if let Ok(mut visibility) = overlay.single_mut() {
+        *visibility = if show {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+
+    if !show {
+        return;
+    }
+
+    let (label, width) = if connecting {
+        (state.status.clone(), 18.0)
+    } else if let Some(loading) = loading.as_ref() {
+        (
+            loading.stage_label().to_owned(),
+            loading.progress_percent(),
+        )
+    } else {
+        ("Preparing world session...".to_owned(), 28.0)
+    };
+
+    if let Ok(mut text) = status.single_mut() {
+        text.0 = label;
+    }
+
+    if let Ok(mut node) = progress.single_mut() {
+        node.width = Val::Percent(width);
+    }
+}
+
 pub(crate) fn sync_single_window_shell(
     launcher: Option<Res<NativeLauncherState>>,
     loading: Option<
@@ -1683,19 +1924,20 @@ pub(crate) fn sync_single_window_shell(
         ),
     >,
 ) {
-    let launcher_loading = launcher
-        .as_ref()
-        .map(|state| matches!(
-            state.mode,
-            LauncherMode::LoggingIn
-                | LauncherMode::Launching
-                | LauncherMode::GameLoading
-        ))
-        .unwrap_or(false);
-
     let loading_active = loading
         .as_ref()
         .map(|state| state.active())
+        .unwrap_or(false);
+
+    let launcher_loading = launcher
+        .as_ref()
+        .map(|state| {
+            state.mode == LauncherMode::Launching
+                || (
+                    state.mode == LauncherMode::GameLoading
+                        && loading_active
+                )
+        })
         .unwrap_or(false);
 
     let shell_visibility =

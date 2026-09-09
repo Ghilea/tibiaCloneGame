@@ -12,6 +12,13 @@ use crate::{
 pub(crate) struct NativeLoadingState {
     active: bool,
     ready_frames: u8,
+    visible_seconds: f32,
+    ready_seconds: f32,
+    last_streamed_entity_count: usize,
+    stable_stream_frames: u8,
+    last_world_asset_root_count: usize,
+    stable_world_asset_frames: u8,
+    stable_render_frames: u8,
     last_stage: &'static str,
 }
 
@@ -20,6 +27,13 @@ impl Default for NativeLoadingState {
         Self {
             active: true,
             ready_frames: 0,
+            visible_seconds: 0.0,
+            ready_seconds: 0.0,
+            last_streamed_entity_count: 0,
+            stable_stream_frames: 0,
+            last_world_asset_root_count: 0,
+            stable_world_asset_frames: 0,
+            stable_render_frames: 0,
             last_stage: "",
         }
     }
@@ -28,6 +42,28 @@ impl Default for NativeLoadingState {
 impl NativeLoadingState {
     pub(crate) fn active(&self) -> bool {
         self.active
+    }
+
+    pub(crate) fn stage_label(&self) -> &'static str {
+        match self.last_stage {
+            "entities" => "Committing world entities...",
+            "creatures" => "Preparing creature visuals...",
+            "models" => "Loading player and world models...",
+            "visibility" => "Waiting for rendered world...",
+            "render" => "Finalizing rendered world...",
+            _ => "Loading world geometry...",
+        }
+    }
+
+    pub(crate) fn progress_percent(&self) -> f32 {
+        match self.last_stage {
+            "entities" => 52.0,
+            "creatures" => 66.0,
+            "models" => 80.0,
+            "visibility" => 91.0,
+            "render" => 97.0,
+            _ => 30.0,
+        }
     }
 }
 
@@ -154,11 +190,69 @@ pub(crate) fn setup(mut commands: Commands) {
         });
 }
 
+fn count_visible_descendant_meshes(
+    root: Entity,
+    children: &Query<&Children>,
+    mesh_visibility: &Query<
+        &ViewVisibility,
+        With<Mesh3d>,
+    >,
+) -> usize {
+    let mut pending = vec![root];
+    let mut visible = 0usize;
+
+    while let Some(entity) = pending.pop() {
+        if mesh_visibility
+            .get(entity)
+            .is_ok_and(|visibility| visibility.get())
+        {
+            visible += 1;
+        }
+
+        if let Ok(entity_children) = children.get(entity) {
+            pending.extend(
+                entity_children.iter().copied(),
+            );
+        }
+    }
+
+    visible
+}
+
 pub(crate) fn update(
+    time: Res<Time>,
     stream: Res<streaming::RegionStream>,
     movement: Res<MovementState>,
     asset_server: Res<AssetServer>,
-    creature_catalog: Res<creature_sprites::CreatureSpriteCatalog>,
+    creature_catalog:
+        Res<creature_sprites::CreatureSpriteCatalog>,
+    streamed_entities: Query<
+        &streaming::StreamedRegionEntity,
+    >,
+    streamed_renderables: Query<
+        (
+            &streaming::StreamedRegionEntity,
+            &ViewVisibility,
+        ),
+        With<Mesh3d>,
+    >,
+    world_asset_roots: Query<
+        (
+            &WorldAssetRoot,
+            Option<
+                &bevy::world_serialization::WorldInstance,
+            >,
+        ),
+    >,
+    player_model_roots: Query<
+        Entity,
+        With<crate::PlayerModelRoot>,
+    >,
+    children: Query<&Children>,
+    mesh_visibility: Query<
+        &ViewVisibility,
+        With<Mesh3d>,
+    >,
     mut state: ResMut<NativeLoadingState>,
     mut overlay: Query<
         &mut Visibility,
@@ -177,49 +271,222 @@ pub(crate) fn update(
         return;
     }
 
+    state.visible_seconds +=
+        time.delta().as_secs_f32();
+
     let floor = movement.logical.z;
     let world_ready = stream.floor_ready(floor);
+    let active_generation =
+        stream.active_generation();
+
+    let streamed_entity_count =
+        streamed_entities
+            .iter()
+            .filter(|entity| {
+                entity.belongs_to_active_floor(
+                    active_generation,
+                    floor,
+                )
+            })
+            .count();
+
+    if streamed_entity_count
+        == state.last_streamed_entity_count
+        && streamed_entity_count > 0
+    {
+        state.stable_stream_frames =
+            state.stable_stream_frames
+                .saturating_add(1);
+    } else {
+        state.stable_stream_frames = 0;
+        state.last_streamed_entity_count =
+            streamed_entity_count;
+    }
+
+    let streamed_entities_ready =
+        world_ready
+            && streamed_entity_count > 0
+            && state.stable_stream_frames >= 4;
+
+    let visible_world_meshes =
+        streamed_renderables
+            .iter()
+            .filter(|(entity, visibility)| {
+                entity.belongs_to_active_floor(
+                    active_generation,
+                    floor,
+                ) && visibility.get()
+            })
+            .count();
+
+    let visible_player_meshes =
+        player_model_roots
+            .iter()
+            .map(|root| {
+                count_visible_descendant_meshes(
+                    root,
+                    &children,
+                    &mesh_visibility,
+                )
+            })
+            .sum::<usize>();
+
     let creature_assets_ready =
         creature_sprites::floor_transition_creature_assets_ready(
             &asset_server,
             &creature_catalog,
         );
 
-    let (stage, label, width) = if !world_ready {
-        state.ready_frames = 0;
-        (
-            "world",
-            format!(
-                "Loading world cache for floor {floor}..."
-            ),
-            38.0,
-        )
-    } else if !creature_assets_ready {
-        state.ready_frames = 0;
-        (
-            "creatures",
-            "Preparing creature visuals...".to_owned(),
-            72.0,
-        )
-    } else {
-        state.ready_frames =
-            state.ready_frames.saturating_add(1);
+    let mut world_asset_root_count = 0usize;
+    let mut world_asset_instance_count = 0usize;
+    let mut world_asset_dependencies_ready = true;
 
-        (
-            "interface",
-            "Synchronizing actors and interface...".to_owned(),
-            94.0,
-        )
-    };
+    for (root, instance) in &world_asset_roots {
+        world_asset_root_count += 1;
+
+        let dependencies_ready =
+            asset_server.is_loaded_with_dependencies(
+                root.0.id(),
+            );
+
+        world_asset_dependencies_ready &=
+            dependencies_ready;
+
+        if dependencies_ready
+            && instance.is_some()
+        {
+            world_asset_instance_count += 1;
+        }
+    }
+
+    if world_asset_root_count
+        == state.last_world_asset_root_count
+        && world_asset_root_count >= 2
+    {
+        state.stable_world_asset_frames =
+            state.stable_world_asset_frames
+                .saturating_add(1);
+    } else {
+        state.stable_world_asset_frames = 0;
+        state.last_world_asset_root_count =
+            world_asset_root_count;
+    }
+
+    let world_assets_ready =
+        world_asset_root_count >= 2
+            && world_asset_dependencies_ready
+            && world_asset_instance_count
+                == world_asset_root_count
+            && state.stable_world_asset_frames >= 4;
+
+    let render_visible =
+        visible_world_meshes > 0
+            && visible_player_meshes > 0;
+
+    if render_visible {
+        state.stable_render_frames =
+            state.stable_render_frames
+                .saturating_add(1);
+    } else {
+        state.stable_render_frames = 0;
+    }
+
+    let render_visibility_ready =
+        state.stable_render_frames >= 12;
+
+    let (stage, label, width) =
+        if !world_ready {
+            state.ready_frames = 0;
+            state.ready_seconds = 0.0;
+
+            (
+                "world",
+                format!(
+                    "Loading world cache for floor {floor}..."
+                ),
+                30.0,
+            )
+        } else if !streamed_entities_ready {
+            state.ready_frames = 0;
+            state.ready_seconds = 0.0;
+
+            (
+                "entities",
+                format!(
+                    "Committing world entities... {} ready",
+                    streamed_entity_count,
+                ),
+                52.0,
+            )
+        } else if !creature_assets_ready {
+            state.ready_frames = 0;
+            state.ready_seconds = 0.0;
+
+            (
+                "creatures",
+                "Preparing creature visuals..."
+                    .to_owned(),
+                66.0,
+            )
+        } else if !world_assets_ready {
+            state.ready_frames = 0;
+            state.ready_seconds = 0.0;
+
+            (
+                "models",
+                format!(
+                    "Loading models... {}/{} instantiated",
+                    world_asset_instance_count,
+                    world_asset_root_count,
+                ),
+                80.0,
+            )
+        } else if !render_visibility_ready {
+            state.ready_frames = 0;
+            state.ready_seconds = 0.0;
+
+            (
+                "visibility",
+                format!(
+                    "Waiting for rendered world... world={} player={} stable={}/12",
+                    visible_world_meshes,
+                    visible_player_meshes,
+                    state.stable_render_frames,
+                ),
+                91.0,
+            )
+        } else {
+            state.ready_frames =
+                state.ready_frames
+                    .saturating_add(1);
+            state.ready_seconds +=
+                time.delta().as_secs_f32();
+
+            (
+                "render",
+                "Finalizing rendered world..."
+                    .to_owned(),
+                97.0,
+            )
+        };
 
     if stage != state.last_stage {
         info!(
-            "ALDORIA STARTUP LOADING · stage {} · floor {} · world_ready={} · creature_assets_ready={}",
+            "ALDORIA STARTUP LOADING · stage {} · floor {} · world_ready={} · streamed={} stable={} · visible_world={} · visible_player={} · creature_assets_ready={} · world_assets={}/{} stable={} · render_stable={}",
             stage,
             floor,
             world_ready,
+            streamed_entity_count,
+            state.stable_stream_frames,
+            visible_world_meshes,
+            visible_player_meshes,
             creature_assets_ready,
+            world_asset_instance_count,
+            world_asset_root_count,
+            state.stable_world_asset_frames,
+            state.stable_render_frames,
         );
+
         state.last_stage = stage;
     }
 
@@ -231,13 +498,14 @@ pub(crate) fn update(
         node.width = Val::Percent(width);
     }
 
-    // RegionStream marks floor_ready only after its complete staged build has
-    // committed. Waiting two additional ready frames gives deferred entity/UI
-    // commands a frame to settle before input and world presentation are
-    // released.
     if world_ready
+        && streamed_entities_ready
         && creature_assets_ready
+        && world_assets_ready
+        && render_visibility_ready
         && state.ready_frames >= 2
+        && state.visible_seconds >= 1.0
+        && state.ready_seconds >= 0.85
     {
         state.active = false;
 
@@ -254,8 +522,13 @@ pub(crate) fn update(
         }
 
         info!(
-            "ALDORIA STARTUP READY · floor {} · world cache + creature assets committed",
+            "ALDORIA STARTUP READY · floor {} · streamed {} · visible world meshes {} · visible player meshes {} · world assets {}/{} instantiated",
             floor,
+            streamed_entity_count,
+            visible_world_meshes,
+            visible_player_meshes,
+            world_asset_instance_count,
+            world_asset_root_count,
         );
     }
 }

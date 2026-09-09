@@ -17,6 +17,17 @@ pub struct StreamedRegionEntity {
     floor: i16,
 }
 
+impl StreamedRegionEntity {
+    pub(crate) fn belongs_to_active_floor(
+        &self,
+        generation: u64,
+        floor: i16,
+    ) -> bool {
+        self.generation == generation
+            && self.floor == floor
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct RegionStream {
     pending: Option<RegionPayload>,
@@ -161,6 +172,11 @@ impl SpawnSpec {
 }
 
 impl RegionStream {
+
+    pub(crate) fn active_generation(&self) -> u64 {
+        self.active_generation
+    }
+
     pub fn floor_ready(&self, floor: i16) -> bool {
         self.active_generation != 0 && self.ready_floors.contains(&floor)
     }
