@@ -4,6 +4,7 @@ mod version;
 mod interaction;
 mod native_ui;
 mod native_ui_theme;
+mod native_loading;
 mod native_map_ui;
 mod native_trade_ui;
 mod native_settings;
@@ -194,7 +195,267 @@ struct FrameProbe {
 
 #[derive(Resource, Default)]
 struct CreatureWarmupHandles {
-    textures: Vec<Handle<Image>>,
+    _textures: Vec<Handle<Image>>,
+}
+
+#[derive(Resource)]
+struct SingleWindowGameBootstrap;
+
+#[derive(Resource)]
+struct SingleWindowGameActive;
+
+pub(crate) struct SingleWindowGameplayPlugin;
+
+impl Plugin for SingleWindowGameplayPlugin {
+    fn build(&self, app: &mut App) {
+        app
+            .init_resource::<streaming::RegionStream>()
+            .init_resource::<native_ui::NativeChatState>()
+            .init_resource::<native_ui::NativePanelState>()
+            .init_resource::<native_map_ui::NativeMapUiState>()
+            .init_resource::<native_trade_ui::NativeTradeUiState>()
+            .init_resource::<native_settings::NativeSettingsState>()
+            .init_resource::<native_ui::NativePingState>()
+            .init_resource::<MoveSequence>()
+            .init_resource::<FrameProbe>()
+            .add_plugins(FrameTimeDiagnosticsPlugin::default())
+            .add_systems(
+                Update,
+                (
+                    setup,
+                    interaction::setup,
+                    native_ui::setup,
+                    native_map_ui::setup,
+                    native_trade_ui::setup,
+                    native_settings::setup,
+                    native_loading::setup,
+                    finish_single_window_bootstrap,
+                )
+                    .chain()
+                    .run_if(single_window_bootstrap_pending),
+            )
+            .add_systems(
+                Update,
+                (
+                    pump_network,
+                    creature_sprites::reconcile_creature_visuals
+                        .after(schedule_tile_movement),
+                    creature_sprites::report_creature_render_visibility
+                        .after(
+                            creature_sprites::reconcile_creature_visuals,
+                        ),
+                    creature_sprites::interpolate_creature_motion
+                        .after(
+                            creature_sprites::reconcile_creature_visuals,
+                        ),
+                    creature_sprites::animate_creature_sprites
+                        .after(
+                            creature_sprites::reconcile_creature_visuals,
+                        ),
+                    creature_sprites::face_creature_sprites_to_camera
+                        .after(
+                            creature_sprites::interpolate_creature_motion,
+                        ),
+                    setup_player_animation,
+                    streaming::apply_streamed_region
+                        .after(pump_network),
+                    native_loading::update
+                        .after(streaming::apply_streamed_region)
+                        .before(schedule_tile_movement),
+                    native_launcher::sync_single_window_shell
+                        .after(native_loading::update),
+                    streaming::sync_streamed_floor_visibility
+                        .after(streaming::apply_streamed_region)
+                        .after(update_building_roofs),
+                    streaming::cleanup_old_region_entities
+                        .after(
+                            streaming::sync_streamed_floor_visibility,
+                        ),
+                )
+                    .run_if(single_window_game_active),
+            )
+            .add_systems(
+                Update,
+                (
+                    schedule_tile_movement
+                        .run_if(native_loading::gameplay_ready)
+                        .after(native_loading::update)
+                        .after(pump_network),
+                    update_player_facing
+                        .after(schedule_tile_movement),
+                    interpolate_player
+                        .after(schedule_tile_movement),
+                    update_player_animation
+                        .after(interpolate_player),
+                    update_building_roofs
+                        .after(interpolate_player),
+                    follow_camera
+                        .after(interpolate_player),
+                    toggle_present_mode,
+                    frame_pacing_probe,
+                    update_hud
+                        .after(frame_pacing_probe),
+                )
+                    .run_if(single_window_game_active),
+            )
+            .add_systems(
+                Update,
+                (
+                    interaction::handle_pointer_interactions
+                        .run_if(native_loading::gameplay_ready)
+                        .after(native_loading::update)
+                        .after(pump_network),
+                    interaction::sync_target_visual
+                        .after(
+                            creature_sprites::interpolate_creature_motion,
+                        ),
+                    interaction::update_hud
+                        .after(pump_network)
+                        .after(
+                            interaction::handle_pointer_interactions,
+                        ),
+                )
+                    .run_if(single_window_game_active),
+            )
+            .add_systems(
+                Update,
+                (
+                    native_ui_theme::apply_once
+                        .before(native_ui::update_ui),
+                    native_ui::handle_chat_input,
+                    native_map_ui::handle_input
+                        .before(schedule_tile_movement),
+                    native_trade_ui::handle_input
+                        .after(native_map_ui::handle_input)
+                        .before(schedule_tile_movement),
+                    native_settings::handle_input
+                        .after(native_trade_ui::handle_input)
+                        .before(schedule_tile_movement),
+                    native_ui::handle_panel_hotkeys
+                        .after(native_ui::handle_chat_input),
+                    native_ui::handle_panel_dock_buttons
+                        .after(
+                            native_ui::handle_panel_hotkeys,
+                        ),
+                    native_ui::handle_panel_close_buttons
+                        .after(
+                            native_ui::handle_panel_dock_buttons,
+                        ),
+                    native_ui::handle_action_hotkeys
+                        .run_if(native_loading::gameplay_ready)
+                        .after(native_loading::update)
+                        .after(
+                            native_ui::handle_panel_close_buttons,
+                        ),
+                    native_ui::handle_action_slot_buttons
+                        .run_if(native_loading::gameplay_ready)
+                        .after(
+                            native_ui::handle_action_hotkeys,
+                        ),
+                    native_ui::ping_server,
+                    native_ui::update_ui
+                        .after(pump_network),
+                    native_map_ui::update_ui
+                        .after(pump_network),
+                    native_trade_ui::update_ui
+                        .after(pump_network),
+                    native_settings::update_performance_probe,
+                    native_settings::update_ui,
+                    native_settings::sync_world_music
+                        .after(pump_network),
+                    native_settings::apply_audio_settings
+                        .after(
+                            native_settings::sync_world_music,
+                        ),
+                )
+                    .run_if(single_window_game_active),
+            );
+    }
+}
+
+fn single_window_bootstrap_pending(
+    bootstrap: Option<Res<SingleWindowGameBootstrap>>,
+) -> bool {
+    bootstrap.is_some()
+}
+
+fn single_window_game_active(
+    active: Option<Res<SingleWindowGameActive>>,
+) -> bool {
+    active.is_some()
+}
+
+fn finish_single_window_bootstrap(
+    mut commands: Commands,
+    mut windows: Query<&mut Window>,
+) {
+    commands.remove_resource::<SingleWindowGameBootstrap>();
+    commands.remove_resource::<BootstrapWelcome>();
+    commands.insert_resource(SingleWindowGameActive);
+
+    if let Ok(mut window) = windows.single_mut() {
+        window.title = version::window_title();
+        window.resizable = true;
+    }
+
+    info!(
+        "ALDORIA SINGLE WINDOW · gameplay bootstrap installed"
+    );
+}
+
+pub(crate) fn install_single_window_session(
+    commands: &mut Commands,
+    session: network::NativeSession,
+) {
+    let native_game_state =
+        state::NativeGameState::from_welcome(
+            session.welcome.as_ref(),
+        );
+
+    let initial_position =
+        session.welcome.player.position;
+
+    let initial_collision =
+        collision::LocalCollision::from_region(
+            session.welcome.map.as_ref(),
+            &session.welcome.npcs,
+        );
+
+    let native_map_state =
+        native_map_ui::NativeMapState::from_welcome(
+            session.welcome.as_ref(),
+        );
+
+    let identity = LocalIdentity {
+        id: session.welcome.player.id,
+        name: session.welcome.player.name.clone(),
+        outfit: session.welcome.player.outfit.clone(),
+        level: session.welcome.player.level,
+    };
+
+    commands.insert_resource(native_game_state);
+    commands.insert_resource(
+        BootstrapWelcome(Some(session.welcome)),
+    );
+    commands.insert_resource(native_map_state);
+    commands.insert_resource(identity);
+    commands.insert_resource(NativeNetwork {
+        outbound: session.outbound,
+        incoming: Mutex::new(session.incoming),
+    });
+    commands.insert_resource(initial_collision);
+    commands.insert_resource(
+        MovementState::new(initial_position),
+    );
+    commands.insert_resource(
+        native_loading::NativeLoadingState::default(),
+    );
+    commands.insert_resource(SingleWindowGameBootstrap);
+
+    info!(
+        "ALDORIA SINGLE WINDOW · session installed · floor {}",
+        initial_position.z,
+    );
 }
 
 fn main() -> Result<()> {
@@ -243,6 +504,7 @@ fn run_game(session: network::NativeSession) -> Result<()> {
         .init_resource::<native_trade_ui::NativeTradeUiState>()
         .init_resource::<native_settings::NativeSettingsState>()
         .init_resource::<native_ui::NativePingState>()
+        .init_resource::<native_loading::NativeLoadingState>()
         .init_resource::<MoveSequence>()
         .init_resource::<FrameProbe>()
         .add_plugins(
@@ -265,7 +527,18 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                 }),
         )
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
-        .add_systems(Startup, (setup, interaction::setup, native_ui::setup, native_map_ui::setup, native_trade_ui::setup, native_settings::setup))
+        .add_systems(
+            Startup,
+            (
+                setup,
+                interaction::setup,
+                native_ui::setup,
+                native_map_ui::setup,
+                native_trade_ui::setup,
+                native_settings::setup,
+                native_loading::setup.after(native_settings::setup),
+            ),
+        )
         .add_systems(
             Update,
             (
@@ -281,12 +554,18 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                     .after(creature_sprites::interpolate_creature_motion),
                 setup_player_animation,
                 streaming::apply_streamed_region.after(pump_network),
+                native_loading::update
+                    .after(streaming::apply_streamed_region)
+                    .before(schedule_tile_movement),
                 streaming::sync_streamed_floor_visibility
                     .after(streaming::apply_streamed_region)
                     .after(update_building_roofs),
                 streaming::cleanup_old_region_entities
                     .after(streaming::sync_streamed_floor_visibility),
-                schedule_tile_movement.after(pump_network),
+                schedule_tile_movement
+                    .run_if(native_loading::gameplay_ready)
+                    .after(native_loading::update)
+                    .after(pump_network),
                 update_player_facing.after(schedule_tile_movement),
                 interpolate_player.after(schedule_tile_movement),
                 update_player_animation.after(interpolate_player),
@@ -300,7 +579,10 @@ fn run_game(session: network::NativeSession) -> Result<()> {
         .add_systems(
             Update,
             (
-                interaction::handle_pointer_interactions.after(pump_network),
+                interaction::handle_pointer_interactions
+                    .run_if(native_loading::gameplay_ready)
+                    .after(native_loading::update)
+                    .after(pump_network),
                 interaction::sync_target_visual
                     .after(creature_sprites::interpolate_creature_motion),
                 interaction::update_hud
@@ -326,8 +608,11 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                 native_ui::handle_panel_close_buttons
                     .after(native_ui::handle_panel_dock_buttons),
                 native_ui::handle_action_hotkeys
+                    .run_if(native_loading::gameplay_ready)
+                    .after(native_loading::update)
                     .after(native_ui::handle_panel_close_buttons),
                 native_ui::handle_action_slot_buttons
+                    .run_if(native_loading::gameplay_ready)
                     .after(native_ui::handle_action_hotkeys),
                 native_ui::ping_server,
                 native_ui::update_ui.after(pump_network),
@@ -382,7 +667,7 @@ fn warmup_creature_assets(asset_server: &AssetServer) -> CreatureWarmupHandles {
         textures.len(),
     );
 
-    CreatureWarmupHandles { textures }
+    CreatureWarmupHandles { _textures: textures }
 }
 
 fn collect_creature_textures(

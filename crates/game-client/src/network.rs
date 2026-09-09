@@ -29,6 +29,7 @@ pub struct NativeSession {
 
 #[derive(Debug, Clone)]
 pub struct NativeLoginResult {
+    #[allow(dead_code)]
     pub api_url: String,
     pub ws_url: String,
     pub session_token: String,
@@ -344,6 +345,7 @@ async fn open_selected_session(
     bail!("WebSocket ended before Welcome")
 }
 
+#[allow(dead_code)]
 pub fn connect_interactive() -> Result<NativeSession> {
     println!("Embers of Aldoria — Native client V{}", version::MIGRATION_VERSION);
     println!("--------------------------------------");
@@ -488,6 +490,7 @@ pub fn connect_interactive() -> Result<NativeSession> {
     })
 }
 
+#[allow(dead_code)]
 async fn open_session(
     api_url: String,
     ws_url: String,
@@ -637,6 +640,7 @@ where
     bail!("{operation} failed with HTTP {status}: {detail}");
 }
 
+#[allow(dead_code)]
 fn choose_character(
     characters: Vec<CharacterSummary>,
     character_hint: Option<String>,
@@ -687,6 +691,7 @@ fn choose_character(
     }
 }
 
+#[allow(dead_code)]
 fn prompt_line(label: &str) -> Result<String> {
     print!("{label}");
     io::stdout().flush().context("failed to flush console")?;

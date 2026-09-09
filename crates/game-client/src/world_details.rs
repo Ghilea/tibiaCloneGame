@@ -39,7 +39,9 @@ const COPPER_VEIN_DEPLETED: &str =
 #[derive(Component)]
 pub struct WorldDoor {
     pub id: String,
+    #[allow(dead_code)]
     pub position: Position,
+    #[allow(dead_code)]
     pub edge: WallEdge,
 }
 
@@ -63,8 +65,11 @@ pub struct WorldObjectActor {
 
 #[derive(Component)]
 pub struct WorldWindow {
+    #[allow(dead_code)]
     pub id: String,
+    #[allow(dead_code)]
     pub position: Position,
+    #[allow(dead_code)]
     pub edge: WallEdge,
 }
 

@@ -14,6 +14,7 @@
 
 use bevy::prelude::*;
 
+#[allow(dead_code)]
 pub(crate) const ROOT_BG: Color =
     Color::srgb(0.031, 0.047, 0.039);
 pub(crate) const HEADER_BG: Color =

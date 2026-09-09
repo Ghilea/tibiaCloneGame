@@ -66,6 +66,7 @@ pub(crate) enum NativeUiText {
     BattleList,
     ChatLog,
     ChatInput,
+    #[allow(dead_code)]
     ActionBar,
     Inventory,
     InventoryDetail,

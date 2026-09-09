@@ -839,3 +839,256 @@ excludes NativeUiText.
 
 No visible UI, protocol, combat, movement, minimap, updater, world renderer,
 floor gate or creature-safety behavior changes.
+
+
+<!-- TIBIAGAME_V36_40_NATIVE_LAUNCHER_UX_HANDOFF -->
+
+V36.40 starts the native launcher/menu UX pass.
+
+Account/password input now uses Bevy KeyboardInput.text rather than the old
+manual US-keyboard mapping. Mouse buttons can focus Account or Password and a
+real LOG IN button uses the same updater gate and login worker as Enter.
+
+The character lobby gets PREV, NEXT, ENTER WORLD and BACK mouse controls while
+keeping keyboard navigation.
+
+The launcher no longer exits immediately after spawning the gameplay child.
+LauncherMode::Launching remains visible for 1.8 seconds so the player sees an
+ENTERING THE WORLD handoff screen while the fresh gameplay process initializes.
+
+The hardcoded local 10-character password rule is removed. The launcher only
+requires a nonempty password; the auth server remains authoritative.
+
+No game protocol, combat, movement, minimap, updater policy, world renderer,
+floor gate or creature-safety behavior changes.
+
+
+<!-- TIBIAGAME_V36_41_AUTHORITATIVE_STARTUP_LOADING -->
+
+V36.41 adds the first real loading screen inside the gameplay process.
+
+The overlay does not use a fake timer or fake percentage completion. It remains
+opaque until the current floor is committed by RegionStream::floor_ready and the
+creature sprite catalog reports all floor-transition assets loaded with
+dependencies. Both signals must then remain ready for two consecutive update
+frames before the overlay is hidden.
+
+The existing RegionStream only marks a floor ready after the complete staged
+generation build has committed; that staged build includes actors, static world,
+NPCs and resources. The extra two-frame settle window prevents input from being
+released on the exact deferred-spawn commit frame.
+
+Movement, pointer interaction and action-slot combat are run-condition gated
+while NativeLoadingState is active. This is an additional startup-only safety
+gate and does not weaken or replace the existing later floor-transition safety
+logic.
+
+No protocol, updater, map authority or server gameplay rules change.
+
+
+<!-- TIBIAGAME_V36_41_1_LOADING_COMPONENT_VISIBILITY_HOTFIX -->
+
+V36.41.1 fixes the Rust private-interface errors from V36.41.
+
+native_loading::update is pub(crate) because it is registered from main.rs.
+Its Bevy Query signature therefore cannot expose component types that are only
+private to native_loading.rs.
+
+NativeLoadingOverlay, NativeLoadingStatus and NativeLoadingProgress are now
+pub(crate). No loading readiness, input gating, floor safety, renderer or
+gameplay behavior changes.
+
+
+<!-- TIBIAGAME_V36_42_GRAPHICAL_NATIVE_LOGIN_FORM -->
+
+V36.42 replaces the launcher login's text-only presentation with a graphical
+native Bevy form while retaining the V36.40 login worker, updater gate and
+KeyboardInput.text input path.
+
+The login form now has two bordered input surfaces, active-field gold focus,
+masked password text, live status text and a single LOG IN action below it.
+The Account and Password surfaces themselves are clickable and reuse the existing
+LauncherAction::FocusAccount/FocusPassword behavior.
+
+The old LauncherText renderer remains for character selection, launching and
+error states, but it is hidden while Login/LoggingIn is active.
+
+No auth protocol, updater policy, gameplay process, loading readiness, movement,
+floor gate or creature safety behavior changes.
+
+
+<!-- TIBIAGAME_V36_43_LAUNCHER_BACKGROUND_RESPONSIVE_SHELL -->
+
+V36.43 upgrades the native launcher shell from a small dark fixed panel to a
+responsive full-window presentation.
+
+Changes:
+- adds a bundled painted medieval background image at
+  ui/launcher/aldoria_launcher_background.png
+- setup now spawns a full-bleed launcher background plus a light tint
+- login form becomes a centered responsive panel with full-window margins
+- non-login launcher states now render inside a matching responsive legacy panel
+  so the character lobby no longer appears as a tiny floating block
+- login mode hides the legacy panel and shows the graphical form; non-login
+  states do the opposite
+
+No auth/network/updater/gameplay/loading/floor/creature behavior changes.
+
+
+<!-- TIBIAGAME_V36_43_1_LAUNCHER_DELIMITER_HOTFIX -->
+
+V36.43.1 repairs three duplicated function signatures introduced by the V36.43
+launcher replaceBlock helper:
+
+- spawn_launcher_button
+- handle_keyboard
+- update_launcher_controls
+
+The V36.43 medieval background image, responsive launcher shell and login/lobby
+visual changes are retained unchanged.
+
+No auth, updater, gameplay, loading, movement, floor-safety or creature-safety
+behavior changes.
+
+
+<!-- TIBIAGAME_V36_43_2_LAUNCHER_ERROR_COLOR_HOTFIX -->
+
+V36.43.2 fixes the launcher compile error caused by referencing
+native_ui_theme::ERROR, which does not exist. The login error-status branch now
+uses an inline warm-red Color::srgb value. No behavior changes.
+
+
+<!-- TIBIAGAME_V36_43_3_LAUNCHER_ASSET_ROOT_BACKGROUND_HOTFIX -->
+
+V36.43.3 fixes the black launcher background from V36.43.
+
+The generated medieval image was copied to apps/client/public/assets, but the
+launcher App still used Bevy's default asset root. Only run_game configured
+AssetPlugin.file_path to crate::native_asset_root(), so the launcher AssetServer
+could not resolve ui/launcher/aldoria_launcher_background.png.
+
+The launcher now configures the same AssetPlugin root as gameplay, re-copies the
+bundled background image, enables window resizing if the old false setting is
+still present, and logs the resolved launcher asset root at startup.
+
+No auth, updater, gameplay, loading, floor or creature-safety behavior changes.
+
+
+<!-- TIBIAGAME_V36_43_4_LAUNCHER_UI_CAMERA_RESTORE -->
+
+V36.43.4 fixes the black launcher introduced when V36.43 replaced setup().
+
+The old launcher explicitly spawned a Camera2d because Bevy UI needs an active
+camera target. V36.43's setup replacement retained the UI tree and background
+ImageNode but accidentally removed that camera, leaving only ClearColor visible.
+
+The launcher now restores the Native launcher UI camera before spawning the
+background and menu shells.
+
+No asset-root, auth, updater, gameplay, loading, movement, floor or creature
+behavior changes.
+
+
+<!-- TIBIAGAME_V36_43_5_LAUNCHER_UI_LAYERING_HOTFIX -->
+
+V36.43.5 fixes the launcher layering regression seen after V36.43.4.
+
+The medieval background image and tint rendered, but they sat over the rest of
+the launcher UI roots. The launcher now assigns explicit ZIndex values:
+
+- background image: -100
+- background tint: -90
+- legacy / lobby panel: 20
+- login form: 30
+- bottom controls: 40
+
+This keeps the background fully visible while ensuring login, lobby and control
+panels render above it and remain clickable.
+
+No auth, updater, gameplay, loading, floor or creature changes.
+
+
+<!-- TIBIAGAME_V36_44_GRAPHICAL_CHARACTER_LOBBY -->
+
+V36.44 adds a native Bevy character-card lobby over the medieval launcher
+background. Twelve reusable card slots avoid dynamic hierarchy churn. Clicking a
+visible card updates selected_character and the selected card uses the Aldoria
+gold focus treatment. Existing launcher controls and keyboard navigation remain.
+
+No auth/network/updater/gameplay/loading/floor/creature behavior changes.
+
+
+<!-- TIBIAGAME_V36_45_SINGLE_WINDOW_CLIENT_FLOW -->
+
+V36.45 removes the normal launcher -> child-process gameplay handoff.
+
+The launcher App now registers SingleWindowGameplayPlugin at startup. Selecting
+Enter World starts only a network connection worker. When Welcome arrives,
+install_single_window_session inserts the authoritative gameplay resources into
+the existing Bevy App and schedules the normal world/UI bootstrap once.
+
+The existing launcher Camera2d and OS window survive the transition:
+
+Login -> Characters -> Connecting -> Loading -> Gameplay.
+
+Gameplay systems are registered from startup but guarded by
+SingleWindowGameActive, so they cannot access gameplay-only resources before the
+selected-character session is installed. The bootstrap setup chain runs exactly
+once under SingleWindowGameBootstrap.
+
+The V36.41 loading gate remains authoritative for player input. The medieval
+launcher background remains visible while Loading is active and is hidden only
+when NativeLoadingState reports the world ready. The background ImageNode uses
+NodeImageMode::Stretch to eliminate the remaining client-area letterbox strip.
+
+The legacy ALDORIA_NATIVE_GAME_SESSION child-process path remains in main.rs only
+as a compatibility/debug fallback, but normal launcher Enter World no longer
+spawns or exits into another executable.
+
+No server protocol or floor/creature safety guarantees are weakened.
+
+
+<!-- TIBIAGAME_V36_45_1_SYSTEM_TUPLE_ARITY_HOTFIX -->
+
+V36.45.1 fixes the Bevy E0599 compiler failure caused by placing 21 gameplay
+systems inside one system-config tuple and applying run_if to that tuple.
+
+The group is split into two Update registrations containing 12 and 9 systems.
+All existing system ordering constraints, SingleWindowGameActive gating,
+NativeLoadingState gating, floor readiness and creature safety remain unchanged.
+
+The obsolete process::Command and anyhow::bail imports in native_launcher.rs are
+also removed because normal Enter World no longer spawns a child executable.
+
+
+<!-- TIBIAGAME_V36_45_2_RUN_CONDITION_WARNING_CLEANUP -->
+
+V36.45.2 fixes the single-window launcher runtime panic caused by
+native_loading::gameplay_ready requiring Res<NativeLoadingState> before a
+character session has installed that resource. The run condition now accepts
+Option<Res<NativeLoadingState>> and returns false while the launcher has no game
+session.
+
+The 16 warnings reported after V36.45.1 are also cleaned up. Creature warmup
+handles use an underscore field because retaining the handles is their purpose.
+Compatibility/debug helpers, protocol state surfaces and legacy UI fallback
+markers that are intentionally retained are marked with targeted allow(dead_code)
+attributes instead of using a crate-wide lint suppression.
+
+No server protocol, gameplay authority, loading readiness, floor-transition gate
+or creature-visibility safety is weakened.
+
+
+<!-- TIBIAGAME_V36_45_3_DUPLICATE_VISIBILITY_HOTFIX -->
+
+V36.45.3 fixes the malformed Rust declaration introduced by V36.45.2:
+
+  pub(crate) pub(crate) fn gameplay_ready(
+
+It is normalized to:
+
+  pub(crate) fn gameplay_ready(
+
+The V36.45.2 launcher-safe Option<Res<NativeLoadingState>> run-condition logic
+is retained unchanged. No gameplay, loading, floor-transition or creature-safety
+behavior changes.

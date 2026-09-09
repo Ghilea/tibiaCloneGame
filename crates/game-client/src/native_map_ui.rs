@@ -213,6 +213,7 @@ impl Default for NativeMapUiState {
 #[derive(Component, Clone, Copy)]
 pub(crate) enum NativeMapText {
     MinimapHeader,
+    #[allow(dead_code)]
     MinimapBody,
     MinimapFooter,
     WorldHeader,

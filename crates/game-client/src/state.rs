@@ -36,6 +36,7 @@ pub struct NativeCraftingState {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct NativeAbilityState {
     pub ability_id: String,
     pub cooldown_ms: u64,
@@ -43,6 +44,7 @@ pub struct NativeAbilityState {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct NativeTelegraphState {
     pub source_id: EntityId,
     pub position: Position,
