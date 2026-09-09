@@ -581,3 +581,109 @@ The existing connect_interactive path remains intact as a compatibility path and
 now shares the same configured_api_url/configured_ws_url helpers.
 
 No gameplay, renderer, floor gate or protocol semantics are changed.
+
+
+<!-- TIBIAGAME_V36_30_NATIVE_LOGIN_CHARACTER_LOBBY -->
+
+V36.30 replaces the console-first startup with a native Bevy account login and
+character lobby.
+
+Authentication uses V36.29's login_and_list_characters helper on a worker
+thread. Character selection starts a fresh copy of the native executable with
+only the authenticated session token, selected character UUID and endpoint
+configuration. The gameplay child opens its WebSocket directly and receives
+Welcome. The account password is not forwarded.
+
+A fresh process is deliberate because winit should own one native EventLoop per
+process. The existing gameplay bootstrap is preserved as run_game(session).
+
+No floor gate, creature renderer, world renderer, movement authority or server
+authority semantics change.
+
+
+<!-- TIBIAGAME_V36_30_1_CLIENT_VERSION_HOTFIX -->
+
+V36.30.1 fixes E0425 in network::open_selected_session. The newly added
+launcher/direct-session handshake no longer depends on a CLIENT_VERSION symbol
+that is not available in the current native network module; it sends the native
+V36.30 client version literal directly in ClientMessage::Hello.
+
+No authentication, session-token, character selection, renderer, floor gate or
+gameplay behavior changes.
+
+
+<!-- TIBIAGAME_V36_31_NATIVE_UPDATER_RELEASE_CHANNEL -->
+
+V36.31 establishes the signed native Bevy updater release channel before adding
+self-installation logic to the launcher.
+
+The existing client-vX.Y.Z release process stays authoritative. Its preflight
+now cargo-checks game-client. GitHub Actions also builds the native release
+binary with ALDORIA_NATIVE_RELEASE_VERSION from the tag, packages
+EmbersOfAldoria.exe into a Windows x86_64 ZIP, signs that ZIP with the existing
+Tauri updater signing key, creates native-latest.json and uploads the native
+assets to the same GitHub Release.
+
+No gameplay or floor/creature safety path changes.
+
+
+<!-- TIBIAGAME_V36_31_1_LAUNCHER_UI_CAMERA_HOTFIX -->
+
+V36.31.1 fixes the blank native launcher window. The launcher created Bevy UI
+nodes but did not create a Camera2d, so the UI tree had no camera target and
+nothing was rendered.
+
+native_launcher::setup now spawns one dedicated Camera2d before creating the
+login/lobby UI.
+
+No login protocol, updater, gameplay, world renderer, floor gate or creature
+logic changes.
+
+
+<!-- TIBIAGAME_V36_32_SIGNED_NATIVE_SELF_UPDATER -->
+
+V36.32 adds the native launcher's signed Windows self-update path.
+
+Release publishing now signs the raw EmbersOfAldoria.exe while retaining the
+ZIP as a manual-download artifact. native-latest.json points at that raw
+executable and carries its Minisign signature.
+
+The launcher checks native-latest.json on a worker thread. Release builds compare
+the embedded client-vX.Y.Z version, constrain downloads to this repository's
+GitHub Release origin, verify the executable with the committed updater public
+key, stage it under the user's local app-data directory, then start a hidden
+PowerShell helper that waits for the launcher to exit, atomically replaces the
+running executable and restarts it.
+
+Development builds report "dev" and do not self-update.
+
+No gameplay, server authority, world renderer, floor gate or creature safety
+logic changes.
+
+
+<!-- TIBIAGAME_V36_32_1_UPDATER_FORMAT_ARGS_HOTFIX -->
+
+V36.32.1 fixes the Rust format_args restriction in the Windows updater helper.
+The PowerShell command is built from concat!(...) inside format!(...), so Rust
+cannot implicitly capture pid/staged/destination from the surrounding scope.
+Those values are now supplied explicitly as named format arguments.
+
+No updater security, signature verification, install flow, gameplay, floor gate
+or creature behavior changes.
+
+
+<!-- TIBIAGAME_V36_33_UPDATER_LOGIN_STARTUP_GATE -->
+
+V36.33 closes the startup race between the native updater and account login.
+
+Credential typing remains available immediately, but Log In and Enter World are
+blocked until the signed update check has completed. Update-check failures are
+non-fatal and allow the existing client to continue with a visible warning.
+However, once a newer executable has been downloaded and cryptographically
+verified, that old client becomes hard-blocked from online play until the
+verified replacement succeeds.
+
+native_updater::poll is ordered before the login worker/input systems so launcher
+input observes the current updater state in the same frame.
+
+No protocol, gameplay, movement, renderer, floor gate or creature logic changes.

@@ -6,6 +6,8 @@ mod native_ui;
 mod native_map_ui;
 mod native_trade_ui;
 mod native_settings;
+mod native_launcher;
+mod native_updater;
 // TIBIAGAME_V36_11_NATIVE_INTERACTION_FOUNDATION
 mod creature_sprites;
 // TIBIAGAME_V36_7_NATIVE_SPRITE_CREATURE_PIPELINE
@@ -195,7 +197,15 @@ struct CreatureWarmupHandles {
 }
 
 fn main() -> Result<()> {
-    let session = network::connect_interactive()?;
+    if std::env::var("ALDORIA_NATIVE_GAME_SESSION").as_deref() != Ok("1") {
+        return native_launcher::run();
+    }
+
+    let session = network::connect_direct_from_env()?;
+    run_game(session)
+}
+
+fn run_game(session: network::NativeSession) -> Result<()> {
     let native_game_state = state::NativeGameState::from_welcome(session.welcome.as_ref());
     let initial_position = session.welcome.player.position;
     let initial_collision = collision::LocalCollision::from_region(

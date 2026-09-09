@@ -243,6 +243,7 @@ async function main() {
     if (!SKIP_CHECKS) {
       console.log('\nRunning release preflight checks...');
       run('npm', ['--prefix', 'apps/client', 'run', 'check']);
+      run('cargo', ['check', '-p', 'game-client', '--bin', 'game-client']);
       run('cargo', ['check', '--manifest-path', 'apps/client/src-tauri/Cargo.toml', '--features', 'friend-updater']);
       run('git', ['diff', '--check']);
     } else {

@@ -126,6 +126,97 @@ jobs:
           Remove-Item $probe, $signature -Force -ErrorAction SilentlyContinue
           Write-Host "Updater signing preflight PASSED." -ForegroundColor Green
 
+
+      # TIBIAGAME_V36_31_NATIVE_UPDATER_RELEASE_CHANNEL
+      - name: Build and sign native Bevy client
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $tag = "${{ github.ref_name }}"
+          if (-not $tag.StartsWith("client-v")) {
+            throw "Native updater build expected a client-v* tag, got '$tag'."
+          }
+
+          $version = $tag.Substring("client-v".Length)
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw "Could not resolve native client version from '$tag'."
+          }
+
+          Write-Host "Building native Bevy client v$version..."
+          $env:ALDORIA_NATIVE_RELEASE_VERSION = $version
+          cargo build -p game-client --bin game-client --release
+          if ($LASTEXITCODE -ne 0) {
+            throw "Native Bevy client release build failed."
+          }
+
+          $sourceExe = Join-Path $env:GITHUB_WORKSPACE "target/release/game-client.exe"
+          if (-not (Test-Path $sourceExe)) {
+            throw "Native Bevy executable was not produced: $sourceExe"
+          }
+
+          $stage = Join-Path $env:RUNNER_TEMP "aldoria-native-updater"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+
+          $publishedExe = Join-Path $stage "EmbersOfAldoria.exe"
+          Copy-Item $sourceExe $publishedExe -Force
+
+          $assetName = "Embers-of-Aldoria-Native-windows-x86_64.zip"
+          $zipPath = Join-Path $env:RUNNER_TEMP $assetName
+          Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+          Compress-Archive -Path $publishedExe -DestinationPath $zipPath -CompressionLevel Optimal
+
+          if (-not (Test-Path $zipPath)) {
+            throw "Native updater archive was not produced."
+          }
+
+          Push-Location "apps/client"
+          try {
+            npm exec -- tauri signer sign --private-key-path "$env:ALDORIA_UPDATER_KEY_PATH" "--password=" "$publishedExe"
+            if ($LASTEXITCODE -ne 0) {
+              throw "Native updater archive signing failed."
+            }
+          } finally {
+            Pop-Location
+          }
+
+          $signaturePath = "$publishedExe.sig"
+          if (-not (Test-Path $signaturePath)) {
+            throw "Native updater signature was not produced: $signaturePath"
+          }
+
+          $signature = (Get-Content -Raw $signaturePath).Trim()
+          if ([string]::IsNullOrWhiteSpace($signature)) {
+            throw "Native updater signature is empty."
+          }
+
+          $downloadUrl = "https://github.com/Ghilea/tibiaCloneGame/releases/download/$tag/EmbersOfAldoria.exe"
+          $manifestPath = Join-Path $env:RUNNER_TEMP "native-latest.json"
+
+          $manifest = [ordered]@{
+            version = $version
+            platform = "windows-x86_64"
+            url = $downloadUrl
+            signature = $signature
+            executable = "EmbersOfAldoria.exe"
+            tag = $tag
+          }
+
+          $manifestJson = $manifest | ConvertTo-Json -Depth 4
+          [IO.File]::WriteAllText(
+            $manifestPath,
+            $manifestJson + [Environment]::NewLine,
+            [Text.UTF8Encoding]::new($false)
+          )
+
+          "ALDORIA_NATIVE_EXE=$publishedExe" >> $env:GITHUB_ENV
+          "ALDORIA_NATIVE_ZIP=$zipPath" >> $env:GITHUB_ENV
+          "ALDORIA_NATIVE_SIG=$signaturePath" >> $env:GITHUB_ENV
+          "ALDORIA_NATIVE_MANIFEST=$manifestPath" >> $env:GITHUB_ENV
+
+          Write-Host "Native updater archive: $zipPath"
+          Write-Host "Native updater manifest: $manifestPath"
+
       - name: Build, sign and publish Windows friend client
         uses: tauri-apps/tauri-action@v1
         env:
@@ -142,3 +233,32 @@ jobs:
           prerelease: false
           uploadUpdaterJson: true
           args: --features friend-updater --config src-tauri/tauri.friend.generated.json
+
+      - name: Upload native Bevy updater assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          foreach ($path in @(
+            $env:ALDORIA_NATIVE_EXE,
+            $env:ALDORIA_NATIVE_ZIP,
+            $env:ALDORIA_NATIVE_SIG,
+            $env:ALDORIA_NATIVE_MANIFEST
+          )) {
+            if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path $path)) {
+              throw "Native updater release asset is missing: $path"
+            }
+          }
+
+          gh release upload "${{ github.ref_name }}" `
+            "$env:ALDORIA_NATIVE_EXE" `
+            "$env:ALDORIA_NATIVE_ZIP" `
+            "$env:ALDORIA_NATIVE_SIG" `
+            "$env:ALDORIA_NATIVE_MANIFEST" `
+            --clobber
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not upload native updater assets to the GitHub release."
+          }

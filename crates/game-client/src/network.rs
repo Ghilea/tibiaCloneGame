@@ -104,6 +104,246 @@ pub fn login_and_list_characters_with_urls(
 }
 
 
+
+pub fn connect_direct_from_env() -> Result<NativeSession> {
+    let session_token = env::var("ALDORIA_SESSION_TOKEN")
+        .context("native launcher session token is missing")?;
+    let character_id = env::var("ALDORIA_CHARACTER_ID")
+        .context("native launcher character id is missing")?
+        .parse::<game_types::EntityId>()
+        .context("native launcher character id is invalid")?;
+
+    connect_selected_character(
+        configured_ws_url(),
+        session_token,
+        character_id,
+    )
+}
+
+pub fn connect_selected_character(
+    ws_url: String,
+    session_token: String,
+    character_id: game_types::EntityId,
+) -> Result<NativeSession> {
+    let (ready_tx, ready_rx) =
+        mpsc::sync_channel::<Result<Box<WelcomePayload>, String>>(1);
+    let (incoming_tx, incoming_rx) =
+        mpsc::channel::<ServerMessage>();
+    let (outbound_tx, mut outbound_rx) =
+        unbounded_channel::<ClientMessage>();
+
+    thread::Builder::new()
+        .name("aldoria-network".into())
+        .spawn(move || {
+            let runtime =
+                match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    Ok(runtime) => runtime,
+                    Err(error) => {
+                        let _ = ready_tx.send(Err(format!(
+                            "failed to create network runtime: {error}"
+                        )));
+                        return;
+                    }
+                };
+
+            runtime.block_on(async move {
+                let result = open_selected_session(
+                    ws_url,
+                    session_token,
+                    character_id,
+                )
+                .await;
+
+                let (mut socket, welcome) = match result {
+                    Ok(value) => value,
+                    Err(error) => {
+                        let _ = ready_tx.send(Err(format!("{error:#}")));
+                        return;
+                    }
+                };
+
+                if ready_tx.send(Ok(welcome)).is_err() {
+                    return;
+                }
+
+                loop {
+                    tokio::select! {
+                        outgoing = outbound_rx.recv() => {
+                            let Some(outgoing) = outgoing else {
+                                let _ = socket.close(None).await;
+                                break;
+                            };
+
+                            match serde_json::to_string(&outgoing) {
+                                Ok(json) => {
+                                    if socket
+                                        .send(Message::Text(json.into()))
+                                        .await
+                                        .is_err()
+                                    {
+                                        break;
+                                    }
+                                }
+                                Err(error) => {
+                                    eprintln!(
+                                        "native protocol encode failed: {error}"
+                                    );
+                                }
+                            }
+                        }
+                        frame = socket.next() => {
+                            let Some(frame) = frame else {
+                                break;
+                            };
+
+                            let frame = match frame {
+                                Ok(frame) => frame,
+                                Err(error) => {
+                                    eprintln!(
+                                        "native WebSocket read failed: {error}"
+                                    );
+                                    break;
+                                }
+                            };
+
+                            match frame {
+                                Message::Text(text) => {
+                                    match serde_json::from_str::<ServerMessage>(
+                                        text.as_str(),
+                                    ) {
+                                        Ok(message) => {
+                                            if incoming_tx
+                                                .send(message)
+                                                .is_err()
+                                            {
+                                                let _ =
+                                                    socket.close(None).await;
+                                                break;
+                                            }
+                                        }
+                                        Err(error) => {
+                                            eprintln!(
+                                                "native protocol decode failed: {error}"
+                                            );
+                                        }
+                                    }
+                                }
+                                Message::Ping(payload) => {
+                                    if socket
+                                        .send(Message::Pong(payload))
+                                        .await
+                                        .is_err()
+                                    {
+                                        break;
+                                    }
+                                }
+                                Message::Close(_) => break,
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+
+                eprintln!("native network worker stopped");
+            });
+        })
+        .context("failed to spawn native network thread")?;
+
+    let welcome = ready_rx
+        .recv()
+        .context("native network thread ended before Welcome")?
+        .map_err(anyhow::Error::msg)?;
+
+    Ok(NativeSession {
+        welcome,
+        outbound: outbound_tx,
+        incoming: incoming_rx,
+    })
+}
+
+async fn open_selected_session(
+    ws_url: String,
+    session_token: String,
+    character_id: game_types::EntityId,
+) -> Result<(
+    tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+    Box<WelcomePayload>,
+)> {
+    let (mut socket, response) =
+        connect_async_with_config(ws_url.as_str(), None, true)
+            .await
+            .context("failed to connect to the game WebSocket")?;
+
+    if response.status().as_u16() != 101 {
+        bail!(
+            "WebSocket upgrade failed with {}",
+            response.status(),
+        );
+    }
+
+    let hello = ClientMessage::Hello {
+        protocol_version: PROTOCOL_VERSION,
+        client_version: "0.1.0-native-v36.30".to_owned(),
+        session_token: Some(session_token),
+        character_id: Some(character_id),
+        character_name: None,
+    };
+
+    socket
+        .send(Message::Text(
+            serde_json::to_string(&hello)?.into(),
+        ))
+        .await
+        .context("failed to send native Hello")?;
+
+    while let Some(frame) = socket.next().await {
+        let frame =
+            frame.context("WebSocket failed during Welcome")?;
+
+        match frame {
+            Message::Text(text) => {
+                let message: ServerMessage =
+                    serde_json::from_str(text.as_str())
+                        .context(
+                            "server sent invalid protocol JSON",
+                        )?;
+
+                match message {
+                    ServerMessage::Welcome { payload } => {
+                        if payload.player.id != character_id {
+                            bail!(
+                                "server returned character {}, expected {}",
+                                payload.player.id,
+                                character_id,
+                            );
+                        }
+
+                        return Ok((socket, payload));
+                    }
+                    ServerMessage::Error { code, message } => {
+                        bail!("server error {code}: {message}");
+                    }
+                    _ => {}
+                }
+            }
+            Message::Ping(payload) => {
+                socket.send(Message::Pong(payload)).await?;
+            }
+            Message::Close(frame) => {
+                bail!("server closed before Welcome: {frame:?}");
+            }
+            _ => {}
+        }
+    }
+
+    bail!("WebSocket ended before Welcome")
+}
+
 pub fn connect_interactive() -> Result<NativeSession> {
     println!("Embers of Aldoria — Native client V{}", version::MIGRATION_VERSION);
     println!("--------------------------------------");
