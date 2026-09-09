@@ -53,7 +53,7 @@ type PendingGameSession = Arc<
 >;
 
 #[derive(Resource)]
-struct NativeLauncherState {
+pub(crate) struct NativeLauncherState {
     mode: LauncherMode,
     field: LoginField,
     username: String,
@@ -1659,6 +1659,7 @@ fn render_characters(
 
 #[allow(dead_code)]
 pub(crate) fn sync_single_window_shell(
+    launcher: Option<Res<NativeLauncherState>>,
     loading: Option<
         Res<crate::native_loading::NativeLoadingState>,
     >,
@@ -1682,12 +1683,23 @@ pub(crate) fn sync_single_window_shell(
         ),
     >,
 ) {
-    let Some(loading) = loading else {
-        return;
-    };
+    let launcher_loading = launcher
+        .as_ref()
+        .map(|state| matches!(
+            state.mode,
+            LauncherMode::LoggingIn
+                | LauncherMode::Launching
+                | LauncherMode::GameLoading
+        ))
+        .unwrap_or(false);
+
+    let loading_active = loading
+        .as_ref()
+        .map(|state| state.active())
+        .unwrap_or(false);
 
     let shell_visibility =
-        if loading.active() {
+        if launcher_loading || loading_active {
             Visibility::Visible
         } else {
             Visibility::Hidden

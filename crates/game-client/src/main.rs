@@ -272,7 +272,7 @@ impl Plugin for SingleWindowGameplayPlugin {
                             streaming::sync_streamed_floor_visibility,
                         ),
                 )
-                    .run_if(single_window_game_active),
+                    .distributive_run_if(single_window_game_active),
             )
             .add_systems(
                 Update,
@@ -296,7 +296,7 @@ impl Plugin for SingleWindowGameplayPlugin {
                     update_hud
                         .after(frame_pacing_probe),
                 )
-                    .run_if(single_window_game_active),
+                    .distributive_run_if(single_window_game_active),
             )
             .add_systems(
                 Update,
@@ -315,7 +315,7 @@ impl Plugin for SingleWindowGameplayPlugin {
                             interaction::handle_pointer_interactions,
                         ),
                 )
-                    .run_if(single_window_game_active),
+                    .distributive_run_if(single_window_game_active),
             )
             .add_systems(
                 Update,
@@ -368,7 +368,7 @@ impl Plugin for SingleWindowGameplayPlugin {
                             native_settings::sync_world_music,
                         ),
                 )
-                    .run_if(single_window_game_active),
+                    .distributive_run_if(single_window_game_active),
             );
     }
 }

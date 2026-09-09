@@ -1092,3 +1092,37 @@ It is normalized to:
 The V36.45.2 launcher-safe Option<Res<NativeLoadingState>> run-condition logic
 is retained unchanged. No gameplay, loading, floor-transition or creature-safety
 behavior changes.
+
+
+<!-- TIBIAGAME_V36_45_4_LOADING_GATE_AND_SHELL_HOTFIX -->
+
+V36.45.4 keeps the single-window launcher shell visible while the native game
+session is still entering the world or the gameplay loading state is active.
+This gives a true loading-screen handoff instead of briefly exposing a black
+world/background with gameplay UI already visible.
+
+It also replaces grouped:
+
+  .run_if(single_window_game_active)
+
+with:
+
+  .distributive_run_if(single_window_game_active)
+
+inside the main Update system tuples so Bevy resolves them as schedule configs
+instead of trying to interpret the tuple as an observer system.
+
+
+<!-- TIBIAGAME_V36_45_5_LAUNCHER_STATE_VISIBILITY_HOTFIX -->
+
+V36.45.5 fixes the single-window compiler error where the pub(crate)
+sync_single_window_shell system exposed Option<Res<NativeLauncherState>> while
+NativeLauncherState itself was private to native_launcher.rs.
+
+NativeLauncherState is now pub(crate). Its fields remain private.
+
+The final WorldResource.position dead-code warning is also handled with a
+targeted field-level allow(dead_code) inside WorldResource.
+
+No loading, gameplay, auth, movement, floor-transition or creature-safety
+behavior changes.

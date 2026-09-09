@@ -54,6 +54,7 @@ pub struct WorldDoorSwing {
 #[derive(Component)]
 pub struct WorldResource {
     pub id: String,
+    #[allow(dead_code)]
     pub position: Position,
 }
 
