@@ -27,14 +27,89 @@ pub struct NativeSession {
     pub incoming: Receiver<ServerMessage>,
 }
 
+#[derive(Debug, Clone)]
+pub struct NativeLoginResult {
+    pub api_url: String,
+    pub ws_url: String,
+    pub session_token: String,
+    pub characters: Vec<CharacterSummary>,
+}
+
+pub fn configured_api_url() -> String {
+    env::var("ALDORIA_API_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:4000/api".to_owned())
+}
+
+pub fn configured_ws_url() -> String {
+    env::var("ALDORIA_WS_URL")
+        .unwrap_or_else(|_| "ws://127.0.0.1:4000/ws".to_owned())
+}
+
+pub fn login_and_list_characters(
+    username: String,
+    password: String,
+) -> Result<NativeLoginResult> {
+    login_and_list_characters_with_urls(
+        configured_api_url(),
+        configured_ws_url(),
+        username,
+        password,
+    )
+}
+
+pub fn login_and_list_characters_with_urls(
+    api_url: String,
+    ws_url: String,
+    username: String,
+    password: String,
+) -> Result<NativeLoginResult> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("failed to create native launcher network runtime")?;
+
+    runtime.block_on(async move {
+        let http = reqwest::Client::builder()
+            .user_agent("Embers-of-Aldoria-Native/36.29")
+            .build()
+            .context("failed to create HTTP client")?;
+
+        let auth_response = http
+            .post(format!("{api_url}/auth/login"))
+            .json(&AuthCredentials { username, password })
+            .send()
+            .await
+            .context("could not reach the login endpoint")?;
+
+        let auth: AuthResponse =
+            decode_api_response(auth_response, "login").await?;
+
+        let characters_response = http
+            .get(format!("{api_url}/characters"))
+            .bearer_auth(&auth.session_token)
+            .send()
+            .await
+            .context("could not reach the character endpoint")?;
+
+        let characters: CharacterListResponse =
+            decode_api_response(characters_response, "character list").await?;
+
+        Ok(NativeLoginResult {
+            api_url,
+            ws_url,
+            session_token: auth.session_token,
+            characters: characters.characters,
+        })
+    })
+}
+
+
 pub fn connect_interactive() -> Result<NativeSession> {
     println!("Embers of Aldoria — Native client V{}", version::MIGRATION_VERSION);
     println!("--------------------------------------");
 
-    let api_url = env::var("ALDORIA_API_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:4000/api".to_owned());
-    let ws_url = env::var("ALDORIA_WS_URL")
-        .unwrap_or_else(|_| "ws://127.0.0.1:4000/ws".to_owned());
+    let api_url = configured_api_url();
+    let ws_url = configured_ws_url();
 
     println!("API: {api_url}");
     println!("WS:  {ws_url}");

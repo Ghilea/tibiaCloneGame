@@ -564,3 +564,20 @@ NativeMusic is now pub(crate), matching the crate-visible sync_world_music and
 apply_audio_settings systems registered from main.rs.
 
 No audio behavior or gameplay logic changes.
+
+
+<!-- TIBIAGAME_V36_29_NATIVE_LAUNCHER_NETWORK_FOUNDATION -->
+
+V36.29 prepares removal of the console login/character picker without changing
+the live game bootstrap yet.
+
+network.rs now exposes a native-launcher-safe account step:
+login_and_list_characters(username, password) returns the authenticated session
+token, configured API/WS endpoints and CharacterSummary list. The work runs on
+its own Tokio runtime, so the next migration can execute it on a worker thread
+without blocking Bevy's main/UI thread.
+
+The existing connect_interactive path remains intact as a compatibility path and
+now shares the same configured_api_url/configured_ws_url helpers.
+
+No gameplay, renderer, floor gate or protocol semantics are changed.
