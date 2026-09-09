@@ -1,4 +1,12 @@
 mod network;
+mod state;
+mod version;
+mod interaction;
+mod native_ui;
+mod native_map_ui;
+mod native_trade_ui;
+mod native_settings;
+// TIBIAGAME_V36_11_NATIVE_INTERACTION_FOUNDATION
 mod creature_sprites;
 // TIBIAGAME_V36_7_NATIVE_SPRITE_CREATURE_PIPELINE
 mod collision;
@@ -6,11 +14,15 @@ mod streaming;
 mod world_visuals;
 mod world_details;
 mod world_architecture;
+// TIBIAGAME_V36_13_WORLD_BOUNDARY_FLOOR_PRELOAD
+// TIBIAGAME_V36_14_MEDIEVAL_FACADE_CREATURE_WARMUP
+// TIBIAGAME_V36_15_1_OPENING_FACADE_RAT_GPU_PREWARM
 // TIBIAGAME_V36_9_NATIVE_ARCHITECTURE_BRIDGES
 // TIBIAGAME_V36_8_1_NATIVE_WORLD_DETAILS
 // TIBIAGAME_V36_8_NATIVE_WORLD_VISUAL_FOUNDATION
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use std::sync::{
@@ -81,17 +93,26 @@ struct WorldStatic;
 
 #[derive(Component)]
 struct BuildingRoof {
+    floor: i16,
     min_x: f32,
     max_x: f32,
     min_z: f32,
     max_z: f32,
+    roof_material: Handle<StandardMaterial>,
+    gable_material: Handle<StandardMaterial>,
+    opacity: f32,
+}
+
+#[derive(Component)]
+struct HouseWallOccluder {
+    position: Position,
 }
 
 #[derive(Component)]
 struct CreatureActor(EntityId);
 
 #[derive(Component)]
-struct NpcActor;
+struct NpcActor(String);
 
 #[derive(Component)]
 struct ResourceActor;
@@ -168,13 +189,22 @@ struct FrameProbe {
     last_hud_at: f64,
 }
 
+#[derive(Resource, Default)]
+struct CreatureWarmupHandles {
+    textures: Vec<Handle<Image>>,
+}
+
 fn main() -> Result<()> {
     let session = network::connect_interactive()?;
+    let native_game_state = state::NativeGameState::from_welcome(session.welcome.as_ref());
     let initial_position = session.welcome.player.position;
     let initial_collision = collision::LocalCollision::from_region(
         session.welcome.map.as_ref(),
         &session.welcome.npcs,
     );
+    let native_map_state =
+        native_map_ui::NativeMapState::from_welcome(session.welcome.as_ref());
+
     let identity = LocalIdentity {
         id: session.welcome.player.id,
         name: session.welcome.player.name.clone(),
@@ -185,7 +215,9 @@ fn main() -> Result<()> {
     App::new()
         .insert_resource(WinitSettings::continuous())
         .insert_resource(ClearColor(Color::srgb(0.035, 0.055, 0.045)))
+        .insert_resource(native_game_state)
         .insert_resource(BootstrapWelcome(Some(session.welcome)))
+        .insert_resource(native_map_state)
         .insert_resource(identity)
         .insert_resource(NativeNetwork {
             outbound: session.outbound,
@@ -194,6 +226,12 @@ fn main() -> Result<()> {
         .insert_resource(initial_collision)
         .insert_resource(MovementState::new(initial_position))
         .init_resource::<streaming::RegionStream>()
+        .init_resource::<native_ui::NativeChatState>()
+        .init_resource::<native_ui::NativePanelState>()
+        .init_resource::<native_map_ui::NativeMapUiState>()
+        .init_resource::<native_trade_ui::NativeTradeUiState>()
+        .init_resource::<native_settings::NativeSettingsState>()
+        .init_resource::<native_ui::NativePingState>()
         .init_resource::<MoveSequence>()
         .init_resource::<FrameProbe>()
         .add_plugins(
@@ -201,7 +239,7 @@ fn main() -> Result<()> {
                 .set(native_render_plugin())
                 .set(WindowPlugin {
                     primary_window: Some(Window {
-                        title: "Embers of Aldoria — Native V36.9.4.3 Live World".into(),
+                        title: version::window_title(),
                         resolution: WindowResolution::new(1280, 800)
                             .with_scale_factor_override(1.0),
                         present_mode: PresentMode::AutoVsync,
@@ -216,19 +254,27 @@ fn main() -> Result<()> {
                 }),
         )
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
-        .add_systems(Startup, setup)
+        .add_systems(Startup, (setup, interaction::setup, native_ui::setup, native_map_ui::setup, native_trade_ui::setup, native_settings::setup))
         .add_systems(
             Update,
             (
                 pump_network,
-                creature_sprites::interpolate_creature_motion.after(pump_network),
-                creature_sprites::animate_creature_sprites.after(pump_network),
+                creature_sprites::reconcile_creature_visuals.after(schedule_tile_movement),
+                creature_sprites::report_creature_render_visibility
+                    .after(creature_sprites::reconcile_creature_visuals),
+                creature_sprites::interpolate_creature_motion
+                    .after(creature_sprites::reconcile_creature_visuals),
+                creature_sprites::animate_creature_sprites
+                    .after(creature_sprites::reconcile_creature_visuals),
                 creature_sprites::face_creature_sprites_to_camera
                     .after(creature_sprites::interpolate_creature_motion),
                 setup_player_animation,
                 streaming::apply_streamed_region.after(pump_network),
+                streaming::sync_streamed_floor_visibility
+                    .after(streaming::apply_streamed_region)
+                    .after(update_building_roofs),
                 streaming::cleanup_old_region_entities
-                    .after(streaming::apply_streamed_region),
+                    .after(streaming::sync_streamed_floor_visibility),
                 schedule_tile_movement.after(pump_network),
                 update_player_facing.after(schedule_tile_movement),
                 interpolate_player.after(schedule_tile_movement),
@@ -238,6 +284,41 @@ fn main() -> Result<()> {
                 toggle_present_mode,
                 frame_pacing_probe,
                 update_hud.after(frame_pacing_probe),
+            ),
+        )
+        .add_systems(
+            Update,
+            (
+                interaction::handle_pointer_interactions.after(pump_network),
+                interaction::sync_target_visual
+                    .after(creature_sprites::interpolate_creature_motion),
+                interaction::update_hud
+                    .after(pump_network)
+                    .after(interaction::handle_pointer_interactions),
+            ),
+        )
+        .add_systems(
+            Update,
+            (
+                native_ui::handle_chat_input,
+                native_map_ui::handle_input.before(schedule_tile_movement),
+                native_trade_ui::handle_input
+                    .after(native_map_ui::handle_input)
+                    .before(schedule_tile_movement),
+                native_settings::handle_input
+                    .after(native_trade_ui::handle_input)
+                    .before(schedule_tile_movement),
+                native_ui::handle_panel_hotkeys.after(native_ui::handle_chat_input),
+                native_ui::handle_action_hotkeys.after(native_ui::handle_panel_hotkeys),
+                native_ui::ping_server,
+                native_ui::update_ui.after(pump_network),
+                native_map_ui::update_ui.after(pump_network),
+                native_trade_ui::update_ui.after(pump_network),
+                native_settings::update_performance_probe,
+                native_settings::update_ui,
+                native_settings::sync_world_music.after(pump_network),
+                native_settings::apply_audio_settings
+                    .after(native_settings::sync_world_music),
             ),
         )
         .run();
@@ -261,6 +342,61 @@ fn native_asset_root() -> String {
         .unwrap_or(candidate)
         .to_string_lossy()
         .into_owned()
+}
+
+fn warmup_creature_assets(asset_server: &AssetServer) -> CreatureWarmupHandles {
+    let root = PathBuf::from(native_asset_root());
+    let search_roots = [
+        root.join("sprites/creatures"),
+        root.join("textures/creatures"),
+        root.join("creatures"),
+        root.join("monsters"),
+    ];
+
+    let mut textures = Vec::new();
+    for directory in search_roots {
+        collect_creature_textures(&root, &directory, asset_server, &mut textures);
+    }
+
+    info!(
+        "ALDORIA CREATURE WARMUP · retained {} texture handles from asset scan",
+        textures.len(),
+    );
+
+    CreatureWarmupHandles { textures }
+}
+
+fn collect_creature_textures(
+    asset_root: &Path,
+    directory: &Path,
+    asset_server: &AssetServer,
+    out: &mut Vec<Handle<Image>>,
+) {
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return;
+    };
+
+    for entry in entries.filter_map(|entry| entry.ok()) {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_creature_textures(asset_root, &path, asset_server, out);
+            continue;
+        }
+
+        let Some(extension) = path.extension().and_then(|ext| ext.to_str()) else {
+            continue;
+        };
+        let extension = extension.to_ascii_lowercase();
+        if !matches!(extension.as_str(), "png" | "jpg" | "jpeg" | "webp" | "ktx2" | "dds" | "basis") {
+            continue;
+        }
+
+        let Ok(relative) = path.strip_prefix(asset_root) else {
+            continue;
+        };
+        let asset_path = relative.to_string_lossy().replace('\\', "/");
+        out.push(asset_server.load(asset_path));
+    }
 }
 
 fn native_render_plugin() -> RenderPlugin {
@@ -288,6 +424,7 @@ fn setup(
     mut bootstrap: ResMut<BootstrapWelcome>,
     movement: Res<MovementState>,
     identity: Res<LocalIdentity>,
+    mut region_stream: ResMut<streaming::RegionStream>,
 ) {
     let welcome = bootstrap
         .0
@@ -295,7 +432,8 @@ fn setup(
         .expect("V36.2 BootstrapWelcome must exist exactly once");
 
     info!(
-        "ALDORIA NATIVE V36.9.4.3 · Bevy 0.19.1 · protocol {} · DX12 · LIVE SERVER",
+        "ALDORIA NATIVE V{} · Bevy 0.19.1 · protocol {} · DX12 · LIVE SERVER",
+        version::MIGRATION_VERSION,
         PROTOCOL_VERSION,
     );
     info!("ALDORIA ASSET ROOT · {}", native_asset_root());
@@ -313,6 +451,11 @@ fn setup(
             &asset_server,
             &mut meshes,
         );
+    creature_sprites::spawn_creature_render_warmup(
+        &mut commands,
+        &mut materials,
+        &creature_sprite_catalog,
+    );
     let world_detail_catalog =
         world_details::WorldDetailCatalog::new(
             &asset_server,
@@ -324,9 +467,22 @@ fn setup(
             &mut meshes,
             &mut materials,
         );
+    let creature_warmup = warmup_creature_assets(&asset_server);
     world_architecture::describe();
     world_details::describe();
     creature_sprites::describe_catalog();
+
+    // V36.17: Welcome already contains region_floor_radius data. Start building
+    // the complete current/adjacent floor cache immediately at startup.
+    region_stream.queue(
+        welcome.map.clone(),
+        welcome.region_center,
+        welcome.region_radius,
+        welcome.region_floor_radius,
+        welcome.creatures.clone(),
+        welcome.npcs.clone(),
+        welcome.resource_nodes.clone(),
+    );
 
     spawn_live_world(
         &mut commands,
@@ -339,7 +495,8 @@ fn setup(
         &welcome,
     );
 
-        commands.insert_resource(creature_sprite_catalog);
+    commands.insert_resource(creature_warmup);
+    commands.insert_resource(creature_sprite_catalog);
     commands.insert_resource(world_detail_catalog);
     commands.insert_resource(architecture_catalog);
 // TIBIAGAME_V36_5_NATIVE_PLAYER_MODEL
@@ -436,6 +593,7 @@ fn setup(
 
     commands.spawn((
         NativeHud,
+        Visibility::Hidden,
         Text::new("Aldoria native live world starting…"),
         TextFont {
             font_size: FontSize::Px(16.0),
@@ -571,19 +729,19 @@ fn spawn_live_world(
             continue;
         }
 
-        let axes = world_architecture::infer_wall_axes(
+        let edges = world_architecture::infer_house_wall_edges(
             *position,
+            &map.buildings,
             &map.house_walls,
             &map.castle_walls,
         );
 
-        world_architecture::spawn_wall(
+        world_architecture::spawn_house_wall(
             commands,
             architecture_catalog,
             house_wall_material.clone(),
             *position,
-            axes,
-            false,
+            edges,
         );
     }
 
@@ -641,8 +799,9 @@ fn spawn_live_world(
         .iter()
         .filter(|door| door.position.z == floor)
     {
-        let horizontal = world_details::infer_wall_horizontal(
+        let edge = world_architecture::infer_opening_edge(
             door.position,
+            &map.buildings,
             &map.house_walls,
             &map.castle_walls,
         );
@@ -650,7 +809,7 @@ fn spawn_live_world(
             commands,
             world_detail_catalog,
             door,
-            horizontal,
+            edge,
         );
     }
 
@@ -659,8 +818,9 @@ fn spawn_live_world(
         .iter()
         .filter(|window| window.position.z == floor)
     {
-        let horizontal = world_details::infer_wall_horizontal(
+        let edge = world_architecture::infer_opening_edge(
             window.position,
+            &map.buildings,
             &map.house_walls,
             &map.castle_walls,
         );
@@ -668,7 +828,7 @@ fn spawn_live_world(
             commands,
             world_detail_catalog,
             window,
-            horizontal,
+            edge,
         );
     }
 
@@ -701,10 +861,12 @@ fn spawn_live_world(
         world_architecture::spawn_building(
             commands,
             architecture_catalog,
+            materials,
             world_materials.house_wall.clone(),
             world_materials.building_floor.clone(),
             world_materials.roof.clone(),
             &building.name,
+            building.floor,
             building.x,
             building.y,
             building.width,
@@ -728,7 +890,7 @@ fn spawn_live_world(
     for npc in welcome.npcs.iter().filter(|npc| npc.position.z == floor) {
         commands.spawn((
             Name::new(format!("NPC · {}", npc.name)),
-            NpcActor,
+            NpcActor(npc.id.clone()),
             Mesh3d(actor_mesh.clone()),
             MeshMaterial3d(npc_material.clone()),
             Transform::from_translation(position_to_world(npc.position)),
@@ -804,16 +966,20 @@ fn count_floor(positions: &[Position], floor: i16) -> usize {
 }
 
 // TIBIAGAME_V36_8_4_PUMP_NETWORK_PARAMSET_FIX
+// TIBIAGAME_V36_10_NATIVE_GAMEPLAY_CORE
 fn pump_network(
     network: Res<NativeNetwork>,
+    mut ping_state: ResMut<native_ui::NativePingState>,
     identity: Res<LocalIdentity>,
+    mut game_state: ResMut<state::NativeGameState>,
     time: Res<Time>,
     mut region_stream: ResMut<streaming::RegionStream>,
+    mut map_state: ResMut<native_map_ui::NativeMapState>,
     mut collision: ResMut<collision::LocalCollision>,
     mut movement: ResMut<MovementState>,
     mut actor_queries: ParamSet<(
-        Query<(&world_details::WorldDoor, &mut Transform)>,
-        Query<(&world_details::WorldWindow, &mut Transform)>,
+        Query<(&world_details::WorldDoorSwing, &mut Transform)>,
+        Query<(&world_details::WorldWindowSwing, &mut Transform)>,
         Query<(
             &CreatureActor,
             &mut Transform,
@@ -831,6 +997,7 @@ fn pump_network(
     };
 
     for message in messages {
+        game_state.apply_server_message(&message);
         match message {
             ServerMessage::PlayerMoved {
                 player_id,
@@ -902,6 +1069,12 @@ fn pump_network(
                 // Coalesce to the newest authoritative region. The streaming
                 // module stages the replacement across multiple Bevy frames,
                 // commits the new generation first, then retires the old one.
+                map_state.replace_region(
+                    map.clone(),
+                    region_center,
+                    region_radius,
+                    region_floor_radius,
+                );
                 collision.replace_region(map.as_ref(), &npcs);
                 region_stream.queue(
                     map,
@@ -960,6 +1133,9 @@ fn pump_network(
                     }
                 }
             }
+            ServerMessage::Pong { sent_at, .. } => {
+                ping_state.record_pong(sent_at, time.elapsed_secs_f64());
+            }
             ServerMessage::Error { code, message } => {
                 error!("ALDORIA SERVER ERROR · {code}: {message}");
             }
@@ -970,12 +1146,50 @@ fn pump_network(
 
 fn schedule_tile_movement(
     keys: Res<ButtonInput<KeyCode>>,
+    chat_state: Res<native_ui::NativeChatState>,
+    panel_state: Res<native_ui::NativePanelState>,
+    movement_ui_locks: native_trade_ui::MovementUiLocks,
     time: Res<Time>,
     network: Res<NativeNetwork>,
     collision: Res<collision::LocalCollision>,
+    asset_server: Res<AssetServer>,
+    creature_catalog: Res<creature_sprites::CreatureSpriteCatalog>,
+    region_stream: Res<streaming::RegionStream>,
+    game_state: Res<state::NativeGameState>,
+    creature_visuals: Query<
+        &CreatureActor,
+        With<creature_sprites::PersistentCreatureVisual>,
+    >,
+    mut floor_visual_ready_since: Local<Option<(i16, f64)>>,
+    mut floor_asset_wait_logged: Local<bool>,
     mut sequence: ResMut<MoveSequence>,
     mut movement: ResMut<MovementState>,
 ) {
+    if chat_state.active {
+        return;
+    }
+
+    if movement_ui_locks.blocks_movement() {
+        return;
+    }
+
+    if panel_state.npc_open {
+        return;
+    }
+
+    if (panel_state.inventory_open
+        || panel_state.spells_open
+        || panel_state.crafting_open)
+        && (
+            keys.pressed(KeyCode::ArrowUp)
+                || keys.pressed(KeyCode::ArrowDown)
+                || keys.pressed(KeyCode::ArrowLeft)
+                || keys.pressed(KeyCode::ArrowRight)
+        )
+    {
+        return;
+    }
+
     let dx = i32::from(keys.pressed(KeyCode::KeyD) || keys.pressed(KeyCode::ArrowRight))
         - i32::from(keys.pressed(KeyCode::KeyA) || keys.pressed(KeyCode::ArrowLeft));
     let dy = i32::from(keys.pressed(KeyCode::KeyS) || keys.pressed(KeyCode::ArrowDown))
@@ -1023,6 +1237,94 @@ fn schedule_tile_movement(
             return;
         }
     };
+
+    // V36.16.1: do not cross floors until creature visuals are ready.
+    // The authoritative server never sees the stair/floor MoveRequest while
+    // assets are still loading, so enemies cannot damage an invisible player
+    // on the destination floor.
+    if predicted_step.destination.z != movement.logical.z {
+        let destination_floor = predicted_step.destination.z;
+        let assets_ready =
+            creature_sprites::floor_transition_creature_assets_ready(
+                &asset_server,
+                &creature_catalog,
+            );
+        let floor_ready = region_stream.floor_ready(destination_floor);
+
+        let expected_actor_count = game_state
+            .creatures
+            .values()
+            .filter(|creature| {
+                creature.position.z == destination_floor && creature.health > 0
+            })
+            .count();
+
+        let cached_actor_count = game_state
+            .creatures
+            .values()
+            .filter(|creature| {
+                creature.position.z == destination_floor
+                    && creature.health > 0
+                    && creature_visuals
+                        .iter()
+                        .any(|actor| actor.0 == creature.id)
+            })
+            .count();
+
+        let actor_cache_ready = cached_actor_count == expected_actor_count;
+
+        // Once all entities exist, leave them in the Bevy world for a few
+        // frames before allowing the authoritative floor change. Startup GPU
+        // probes already warm the atlas/material path; this settle period also
+        // gives deferred actor spawns/extraction time to land.
+        let visual_settled = if assets_ready && floor_ready && actor_cache_ready {
+            match *floor_visual_ready_since {
+                Some((floor, since)) if floor == destination_floor => {
+                    now - since >= 0.30
+                }
+                _ => {
+                    *floor_visual_ready_since = Some((destination_floor, now));
+                    false
+                }
+            }
+        } else {
+            *floor_visual_ready_since = None;
+            false
+        };
+
+        if !assets_ready
+            || !floor_ready
+            || !actor_cache_ready
+            || !visual_settled
+        {
+            if !*floor_asset_wait_logged {
+                info!(
+                    "ALDORIA FLOOR PRELOAD WAIT · destination floor {} · assets={} · static_cache={} · actors={}/{} · settled={}",
+                    destination_floor,
+                    assets_ready,
+                    floor_ready,
+                    cached_actor_count,
+                    expected_actor_count,
+                    visual_settled,
+                );
+                *floor_asset_wait_logged = true;
+            }
+
+            movement.next_step_at = now + 0.05;
+            return;
+        }
+
+        if *floor_asset_wait_logged {
+            info!(
+                "ALDORIA FLOOR PRELOAD READY · destination floor {} · static + assets + actors {}/{} ready",
+                destination_floor,
+                cached_actor_count,
+                expected_actor_count,
+            );
+            *floor_asset_wait_logged = false;
+        }
+        *floor_visual_ready_since = None;
+    }
 
     sequence.0 = sequence.0.wrapping_add(1).max(1);
     let outgoing = ClientMessage::MoveRequest {
@@ -1234,29 +1536,114 @@ fn update_player_animation(
 }
 
 fn update_building_roofs(
-    player: Query<&Transform, (With<LocalPlayer>, Without<BuildingRoof>)>,
-    mut roofs: Query<(&BuildingRoof, &mut Visibility)>,
+    time: Res<Time>,
+    movement: Res<MovementState>,
+    camera: Query<&Transform, (With<MainCamera>, Without<BuildingRoof>)>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut roofs: Query<(&mut BuildingRoof, &mut Visibility)>,
+    mut walls: Query<(&HouseWallOccluder, &mut Visibility), Without<BuildingRoof>>,
 ) {
-    let Ok(player) = player.single() else {
+    let Ok(camera) = camera.single() else {
         return;
     };
 
-    let x = player.translation.x;
-    let z = player.translation.z;
+    let player_2d = Vec2::new(movement.visual.x, movement.visual.z);
+    let camera_2d = Vec2::new(camera.translation.x, camera.translation.z);
+    let active_floor = movement.logical.z;
+    let fade_step = (time.delta_secs() * 9.0).clamp(0.0, 1.0);
 
-    for (roof, mut visibility) in &mut roofs {
+    for (mut roof, mut visibility) in &mut roofs {
+        if roof.floor != active_floor {
+            *visibility = Visibility::Hidden;
+            continue;
+        }
+
+        *visibility = Visibility::Visible;
+
         let inside =
-            x >= roof.min_x
-            && x <= roof.max_x
-            && z >= roof.min_z
-            && z <= roof.max_z;
+            player_2d.x >= roof.min_x
+                && player_2d.x <= roof.max_x
+                && player_2d.y >= roof.min_z
+                && player_2d.y <= roof.max_z;
 
-        *visibility = if inside {
+        let between_camera_and_player = segment_samples_rect(
+            player_2d,
+            camera_2d,
+            Vec2::new(roof.min_x - 0.12, roof.min_z - 0.12),
+            Vec2::new(roof.max_x + 0.12, roof.max_z + 0.12),
+        );
+
+        let target_opacity =
+            if inside || between_camera_and_player { 0.14 } else { 1.0 };
+        roof.opacity += (target_opacity - roof.opacity) * fade_step;
+
+        for handle in [&roof.roof_material, &roof.gable_material] {
+            if let Some(mut material) = materials.get_mut(handle) {
+                material.alpha_mode = AlphaMode::Blend;
+                material.base_color =
+                    Color::srgba(1.0, 1.0, 1.0, roof.opacity);
+            }
+        }
+    }
+
+    // Roof fade solves the large obstruction. A wall edge can still sit
+    // directly between the camera and the player, so perform a Tibia-style
+    // local cutaway only on house-wall roots crossed by that sight segment.
+    for (wall, mut visibility) in &mut walls {
+        if wall.position.z != active_floor {
+            *visibility = Visibility::Hidden;
+            continue;
+        }
+
+        let point = Vec2::new(wall.position.x as f32, wall.position.y as f32);
+        let occluding =
+            point_segment_distance_squared(point, player_2d, camera_2d)
+                <= 0.68 * 0.68;
+
+        *visibility = if occluding {
             Visibility::Hidden
         } else {
-            Visibility::Inherited
+            Visibility::Visible
         };
     }
+}
+
+fn segment_samples_rect(
+    start: Vec2,
+    end: Vec2,
+    min: Vec2,
+    max: Vec2,
+) -> bool {
+    // Houses are several tiles wide, so a short deterministic sample is both
+    // cheaper and less error-prone than maintaining a custom ray/AABB solver.
+    // Skip t=0 so merely standing beside a house does not count as occlusion.
+    for index in 1..=24 {
+        let t = index as f32 / 24.0;
+        let point = start.lerp(end, t);
+        if point.x >= min.x
+            && point.x <= max.x
+            && point.y >= min.y
+            && point.y <= max.y
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn point_segment_distance_squared(
+    point: Vec2,
+    start: Vec2,
+    end: Vec2,
+) -> f32 {
+    let segment = end - start;
+    let length_squared = segment.length_squared();
+    if length_squared <= f32::EPSILON {
+        return point.distance_squared(start);
+    }
+
+    let t = ((point - start).dot(segment) / length_squared).clamp(0.0, 1.0);
+    point.distance_squared(start + segment * t)
 }
 
 fn follow_camera(
@@ -1355,10 +1742,11 @@ fn update_hud(
     };
 
     text.0 = format!(
-        "ALDORIA NATIVE V36.9.4.3 · LIVE SERVER · protocol {}\n\
+        "ALDORIA NATIVE V{} · LIVE SERVER · protocol {}\n\
          {} · level {} · pos {}:{}:{} · sent {} · ack {}\n\
          present {:?} · avg {:.2}ms · max {:.2}ms · {:.1} FPS\n\
          WASD/arrows move · V toggles vsync",
+        version::MIGRATION_VERSION,
         PROTOCOL_VERSION,
         identity.name,
         identity.level,

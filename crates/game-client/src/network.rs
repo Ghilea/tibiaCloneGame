@@ -18,7 +18,8 @@ use tokio_tungstenite::{
     tungstenite::Message,
 };
 
-const CLIENT_VERSION: &str = "0.1.0-native-v36.9.4.3.3.2.2";
+use crate::version;
+
 
 pub struct NativeSession {
     pub welcome: Box<WelcomePayload>,
@@ -27,7 +28,7 @@ pub struct NativeSession {
 }
 
 pub fn connect_interactive() -> Result<NativeSession> {
-    println!("Embers of Aldoria — Native client V36.9.4.3.3.2.2");
+    println!("Embers of Aldoria — Native client V{}", version::MIGRATION_VERSION);
     println!("--------------------------------------");
 
     let api_url = env::var("ALDORIA_API_URL")
@@ -185,7 +186,7 @@ async fn open_session(
     Box<WelcomePayload>,
 )> {
     let http = reqwest::Client::builder()
-        .user_agent("Embers-of-Aldoria-Native/36.2")
+        .user_agent(format!("Embers-of-Aldoria-Native/{}", version::MIGRATION_VERSION))
         .build()
         .context("failed to create HTTP client")?;
 
@@ -231,7 +232,7 @@ async fn open_session(
 
     let hello = ClientMessage::Hello {
         protocol_version: PROTOCOL_VERSION,
-        client_version: CLIENT_VERSION.to_owned(),
+        client_version: version::client_version(),
         session_token: Some(auth.session_token),
         character_id: Some(character.id),
         character_name: None,

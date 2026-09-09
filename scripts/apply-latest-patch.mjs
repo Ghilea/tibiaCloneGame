@@ -180,6 +180,7 @@ run(process.execPath, [patch.path], "Patch apply");
 console.log("\nValidating changed code...");
 
 const touchesClient = source.includes("apps/client/");
+const touchesGameClient = source.includes("crates/game-client/");
 const touchesGameServer =
   source.includes("crates/game-server/") || source.includes("database/migrations/");
 const touchesGameTypes = source.includes("crates/game-types/");
@@ -190,6 +191,13 @@ if (touchesClient) {
 }
 if (touchesGameTypes) {
   run("cargo", ["check", "-p", "game-types"], "game-types cargo check");
+}
+if (touchesGameClient) {
+  run(
+    "cargo",
+    ["check", "-p", "game-client", "--bin", "game-client"],
+    "game-client cargo check"
+  );
 }
 if (touchesGameServer) {
   run("cargo", ["check", "-p", "game-server"], "game-server cargo check");

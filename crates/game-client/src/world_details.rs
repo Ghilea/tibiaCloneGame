@@ -4,9 +4,14 @@ use bevy::prelude::*;
 use game_protocol::{DoorView, StairView, WindowView, WorldObjectView};
 use game_types::{Position, ResourceNodeView};
 
-use crate::{ResourceActor, WorldStatic};
+use crate::{
+    world_architecture::{WallEdge, HOUSE_WALL_HEIGHT},
+    ResourceActor, WorldStatic,
+};
 
 // TIBIAGAME_V36_8_2_BEVY_WORLDASSET_STREAM_BORROW_FIX
+// TIBIAGAME_V36_13_WORLD_BOUNDARY_FLOOR_PRELOAD
+// TIBIAGAME_V36_15_1_OPENING_FACADE_RAT_GPU_PREWARM
 
 const PROP_MODELS: [(&str, &str); 15] = [
     ("chair", "models/world-props/chair.glb"),
@@ -26,6 +31,7 @@ const PROP_MODELS: [(&str, &str); 15] = [
     ("fence_post", "models/world-props/fence_post.glb"),
 ];
 
+// TIBIAGAME_V36_11_NATIVE_INTERACTION_FOUNDATION
 const COPPER_VEIN: &str = "models/world-props/copper_vein.glb";
 const COPPER_VEIN_DEPLETED: &str =
     "models/world-props/copper_vein_depleted.glb";
@@ -33,13 +39,39 @@ const COPPER_VEIN_DEPLETED: &str =
 #[derive(Component)]
 pub struct WorldDoor {
     pub id: String,
-    horizontal: bool,
+    pub position: Position,
+    pub edge: WallEdge,
+}
+
+#[derive(Component)]
+pub struct WorldDoorSwing {
+    pub id: String,
+    edge: WallEdge,
+}
+
+#[derive(Component)]
+pub struct WorldResource {
+    pub id: String,
+    pub position: Position,
+}
+
+#[derive(Component)]
+pub struct WorldObjectActor {
+    pub id: String,
+    pub position: Position,
 }
 
 #[derive(Component)]
 pub struct WorldWindow {
     pub id: String,
-    horizontal: bool,
+    pub position: Position,
+    pub edge: WallEdge,
+}
+
+#[derive(Component)]
+pub struct WorldWindowSwing {
+    pub id: String,
+    edge: WallEdge,
 }
 
 #[derive(Resource)]
@@ -58,6 +90,8 @@ pub struct WorldDetailCatalog {
     glass: Handle<StandardMaterial>,
     flame: Handle<StandardMaterial>,
     generic: Handle<StandardMaterial>,
+    facade_plaster: Handle<StandardMaterial>,
+    facade_timber: Handle<StandardMaterial>,
 }
 
 impl WorldDetailCatalog {
@@ -128,6 +162,18 @@ impl WorldDetailCatalog {
             generic: materials.add(StandardMaterial {
                 base_color: Color::srgb(0.79, 0.73, 0.59),
                 perceptual_roughness: 0.92,
+                ..default()
+            }),
+            facade_plaster: materials.add(StandardMaterial {
+                // Same values as ArchitectureCatalog::plaster.
+                base_color: Color::srgb(0.79, 0.72, 0.58),
+                perceptual_roughness: 0.96,
+                ..default()
+            }),
+            facade_timber: materials.add(StandardMaterial {
+                // Same values as ArchitectureCatalog::timber.
+                base_color: Color::srgb(0.27, 0.145, 0.07),
+                perceptual_roughness: 0.89,
                 ..default()
             }),
         }
@@ -206,6 +252,10 @@ pub fn spawn_world_object(
                     object.kind, object.id
                 )),
                 WorldStatic,
+                WorldObjectActor {
+                    id: object.id.clone(),
+                    position: object.position,
+                },
                 WorldAssetRoot(scene),
                 Transform {
                     translation: Vec3::new(
@@ -228,6 +278,10 @@ pub fn spawn_world_object(
                 object.kind, object.id
             )),
             WorldStatic,
+            WorldObjectActor {
+                id: object.id.clone(),
+                position: object.position,
+            },
             Mesh3d(catalog.detail_cube.clone()),
             MeshMaterial3d(catalog.generic.clone()),
             Transform {
@@ -261,6 +315,10 @@ pub fn spawn_resource(
                 resource.kind, resource.id
             )),
             ResourceActor,
+            WorldResource {
+                id: resource.id.clone(),
+                position: resource.position,
+            },
             WorldAssetRoot(scene),
             Transform {
                 translation: Vec3::new(
@@ -280,95 +338,138 @@ pub fn spawn_door(
     commands: &mut Commands,
     catalog: &WorldDetailCatalog,
     door: &DoorView,
-    horizontal: bool,
+    edge: WallEdge,
 ) -> Entity {
+    let horizontal = edge.horizontal();
+    let boundary = edge.local_offset();
+    let tangent = if horizontal { Vec3::X } else { Vec3::Z };
+    let leaf_half = 0.38;
+
     let root = commands
         .spawn((
             Name::new(format!("Door · {}", door.id)),
             WorldStatic,
-            Transform::from_xyz(door.position.x as f32, 0.0, door.position.y as f32),
+            WorldDoor {
+                id: door.id.clone(),
+                position: door.position,
+                edge,
+            },
+            Transform::from_xyz(
+                door.position.x as f32 + boundary.x,
+                0.0,
+                door.position.y as f32 + boundary.z,
+            ),
             Visibility::default(),
         ))
         .id();
 
     commands.entity(root).with_children(|parent| {
-        let edge_offset = if horizontal {
-            Vec3::new(0.0, 0.0, -0.50)
-        } else {
-            Vec3::new(-0.50, 0.0, 0.0)
-        };
-        let leaf_scale = if horizontal {
-            Vec3::new(0.82, 1.28, 0.10)
-        } else {
-            Vec3::new(0.10, 1.28, 0.82)
-        };
-
+        // Continue the same plaster field used by the surrounding facade.
         parent.spawn((
-            Name::new(format!("Door wall header · {}", door.id)),
+            Name::new(format!("Door facade plaster header · {}", door.id)),
             Mesh3d(catalog.detail_cube.clone()),
-            MeshMaterial3d(catalog.generic.clone()),
+            MeshMaterial3d(catalog.facade_plaster.clone()),
             Transform {
-                translation: edge_offset + Vec3::new(0.0, 2.04, 0.0),
+                translation: Vec3::new(0.0, 2.10, 0.0),
                 scale: if horizontal {
-                    Vec3::new(1.00, 0.82, 0.12)
+                    Vec3::new(1.00, 0.88, 0.11)
                 } else {
-                    Vec3::new(0.12, 0.82, 1.00)
+                    Vec3::new(0.11, 0.88, 1.00)
                 },
                 ..default()
             },
         ));
 
-        parent.spawn((
-            Name::new(format!("Door Leaf · {}", door.id)),
-            WorldDoor {
-                id: door.id.clone(),
-                horizontal,
-            },
-            Mesh3d(catalog.detail_cube.clone()),
-            MeshMaterial3d(catalog.dark_wood.clone()),
-            Transform {
-                translation: edge_offset + Vec3::new(0.0, 0.68, 0.0),
-                rotation: door_rotation(horizontal, door.open),
-                scale: leaf_scale,
-            },
-        ));
-
-        let side_scale = if horizontal {
-            Vec3::new(0.10, 1.48, 0.14)
-        } else {
-            Vec3::new(0.14, 1.48, 0.10)
-        };
-        let side_offset = if horizontal {
-            Vec3::new(0.48, 0.76, -0.50)
-        } else {
-            Vec3::new(-0.50, 0.76, 0.48)
-        };
-
+        // V36.16.1: subdivide the plaster above the door so the opening tile
+        // follows the same half-timber rhythm as its neighboring wall tiles.
         for sign in [-1.0f32, 1.0] {
             parent.spawn((
+                Name::new(format!("Door facade upper stud · {}", door.id)),
                 Mesh3d(catalog.detail_cube.clone()),
-                MeshMaterial3d(catalog.wood.clone()),
+                MeshMaterial3d(catalog.facade_timber.clone()),
                 Transform {
-                    translation: side_offset * sign,
-                    scale: side_scale,
+                    translation: if horizontal {
+                        Vec3::new(0.24 * sign, 2.10, 0.0)
+                    } else {
+                        Vec3::new(0.0, 2.10, 0.24 * sign)
+                    },
+                    scale: if horizontal {
+                        Vec3::new(0.06, 0.82, 0.12)
+                    } else {
+                        Vec3::new(0.12, 0.82, 0.06)
+                    },
                     ..default()
                 },
             ));
         }
 
-        parent.spawn((
-            Mesh3d(catalog.detail_cube.clone()),
-            MeshMaterial3d(catalog.wood.clone()),
-            Transform {
-                translation: edge_offset + Vec3::new(0.0, 1.49, 0.0),
-                scale: if horizontal {
-                    Vec3::new(1.06, 0.10, 0.14)
-                } else {
-                    Vec3::new(0.14, 0.10, 1.06)
+        // Match the house horizontal beam rhythm above the opening.
+        for y in [1.60f32, 2.18] {
+            parent.spawn((
+                Name::new(format!("Door facade beam · {}", door.id)),
+                Mesh3d(catalog.detail_cube.clone()),
+                MeshMaterial3d(catalog.facade_timber.clone()),
+                Transform {
+                    translation: Vec3::new(0.0, y, 0.0),
+                    scale: if horizontal {
+                        Vec3::new(1.04, 0.07, 0.13)
+                    } else {
+                        Vec3::new(0.13, 0.07, 1.04)
+                    },
+                    ..default()
                 },
-                ..default()
-            },
-        ));
+            ));
+        }
+
+        let leaf_scale = if horizontal {
+            Vec3::new(0.76, 1.38, 0.10)
+        } else {
+            Vec3::new(0.10, 1.38, 0.76)
+        };
+
+        parent
+            .spawn((
+                Name::new(format!("Door Hinge · {}", door.id)),
+                WorldDoorSwing {
+                    id: door.id.clone(),
+                    edge,
+                },
+                Transform {
+                    // Lift the complete hinge/leaf assembly slightly.
+                    translation: tangent * -leaf_half + Vec3::Y * 0.06,
+                    rotation: door_rotation(edge, door.open),
+                    ..default()
+                },
+                Visibility::default(),
+            ))
+            .with_child((
+                Name::new(format!("Door Leaf · {}", door.id)),
+                Mesh3d(catalog.detail_cube.clone()),
+                MeshMaterial3d(catalog.dark_wood.clone()),
+                Transform {
+                    translation: tangent * leaf_half + Vec3::Y * 0.75,
+                    scale: leaf_scale,
+                    ..default()
+                },
+            ));
+
+        let post_scale = if horizontal {
+            Vec3::new(0.09, 1.58, 0.13)
+        } else {
+            Vec3::new(0.13, 1.58, 0.09)
+        };
+        for sign in [-1.0f32, 1.0] {
+            parent.spawn((
+                Name::new(format!("Door frame post · {}", door.id)),
+                Mesh3d(catalog.detail_cube.clone()),
+                MeshMaterial3d(catalog.facade_timber.clone()),
+                Transform {
+                    translation: tangent * (0.48 * sign) + Vec3::Y * 0.81,
+                    scale: post_scale,
+                    ..default()
+                },
+            ));
+        }
     });
 
     root
@@ -378,96 +479,172 @@ pub fn spawn_window(
     commands: &mut Commands,
     catalog: &WorldDetailCatalog,
     window: &WindowView,
-    horizontal: bool,
+    edge: WallEdge,
 ) -> Entity {
+    let horizontal = edge.horizontal();
+    let boundary = edge.local_offset();
+    let tangent = if horizontal { Vec3::X } else { Vec3::Z };
+    let glass_half = 0.32;
+
     let root = commands
         .spawn((
             Name::new(format!("Window · {}", window.id)),
             WorldStatic,
-            Transform::from_xyz(window.position.x as f32, 0.0, window.position.y as f32),
+            WorldWindow {
+                id: window.id.clone(),
+                position: window.position,
+                edge,
+            },
+            Transform::from_xyz(
+                window.position.x as f32 + boundary.x,
+                0.0,
+                window.position.y as f32 + boundary.z,
+            ),
             Visibility::default(),
         ))
         .id();
 
     commands.entity(root).with_children(|parent| {
-        let edge_offset = if horizontal {
-            Vec3::new(0.0, 0.0, -0.50)
-        } else {
-            Vec3::new(-0.50, 0.0, 0.0)
-        };
-
+        // Same plaster above and below the window as the rest of the facade.
         parent.spawn((
-            Name::new(format!("Window wall lower · {}", window.id)),
+            Name::new(format!("Window facade plaster lower · {}", window.id)),
             Mesh3d(catalog.detail_cube.clone()),
-            MeshMaterial3d(catalog.generic.clone()),
+            MeshMaterial3d(catalog.facade_plaster.clone()),
             Transform {
-                translation: edge_offset + Vec3::new(0.0, 0.24, 0.0),
+                translation: Vec3::new(0.0, 0.25, 0.0),
                 scale: if horizontal {
-                    Vec3::new(0.98, 0.44, 0.12)
+                    Vec3::new(0.98, 0.46, 0.11)
                 } else {
-                    Vec3::new(0.12, 0.44, 0.98)
+                    Vec3::new(0.11, 0.46, 0.98)
                 },
                 ..default()
             },
         ));
 
         parent.spawn((
-            Name::new(format!("Window wall upper · {}", window.id)),
+            Name::new(format!("Window facade plaster upper · {}", window.id)),
             Mesh3d(catalog.detail_cube.clone()),
-            MeshMaterial3d(catalog.generic.clone()),
+            MeshMaterial3d(catalog.facade_plaster.clone()),
             Transform {
-                translation: edge_offset + Vec3::new(0.0, 1.92, 0.0),
+                translation: Vec3::new(0.0, 1.98, 0.0),
                 scale: if horizontal {
-                    Vec3::new(0.98, 0.72, 0.12)
+                    Vec3::new(0.98, 0.76, 0.11)
                 } else {
-                    Vec3::new(0.12, 0.72, 0.98)
+                    Vec3::new(0.11, 0.76, 0.98)
                 },
                 ..default()
             },
         ));
 
-        parent.spawn((
-            Name::new(format!("Window Glass · {}", window.id)),
-            WorldWindow {
-                id: window.id.clone(),
-                horizontal,
-            },
-            Mesh3d(catalog.detail_cube.clone()),
-            MeshMaterial3d(catalog.glass.clone()),
-            Transform {
-                translation: edge_offset + Vec3::new(0.0, 0.92, 0.0),
-                rotation: window_rotation(horizontal, window.open),
-                scale: if horizontal {
-                    Vec3::new(0.68, 0.62, 0.055)
-                } else {
-                    Vec3::new(0.055, 0.62, 0.68)
-                },
-            },
-        ));
-
-        let frame = if horizontal {
-            [
-                (Vec3::new(-0.39, 0.92, -0.50), Vec3::new(0.08, 0.78, 0.10)),
-                (Vec3::new(0.39, 0.92, -0.50), Vec3::new(0.08, 0.78, 0.10)),
-                (Vec3::new(0.0, 0.53, -0.50), Vec3::new(0.86, 0.08, 0.10)),
-                (Vec3::new(0.0, 1.31, -0.50), Vec3::new(0.86, 0.08, 0.10)),
-            ]
-        } else {
-            [
-                (Vec3::new(-0.50, 0.92, -0.39), Vec3::new(0.10, 0.78, 0.08)),
-                (Vec3::new(-0.50, 0.92, 0.39), Vec3::new(0.10, 0.78, 0.08)),
-                (Vec3::new(-0.50, 0.53, 0.0), Vec3::new(0.10, 0.08, 0.86)),
-                (Vec3::new(-0.50, 1.31, 0.0), Vec3::new(0.10, 0.08, 0.86)),
-            ]
-        };
-
-        for (translation, scale) in frame {
+        // V36.16.1: break up the plaster above and below the window with short
+        // center studs. This makes those areas continue the surrounding facade
+        // instead of reading as two separate flat panels.
+        for (label, y, height) in [
+            ("lower", 0.27f32, 0.42f32),
+            ("upper", 2.02f32, 0.68f32),
+        ] {
             parent.spawn((
+                Name::new(format!(
+                    "Window facade center stud · {} · {}",
+                    window.id,
+                    label,
+                )),
                 Mesh3d(catalog.detail_cube.clone()),
-                MeshMaterial3d(catalog.dark_wood.clone()),
+                MeshMaterial3d(catalog.facade_timber.clone()),
                 Transform {
-                    translation,
-                    scale,
+                    translation: Vec3::new(0.0, y, 0.0),
+                    scale: if horizontal {
+                        Vec3::new(0.06, height, 0.12)
+                    } else {
+                        Vec3::new(0.12, height, 0.06)
+                    },
+                    ..default()
+                },
+            ));
+        }
+
+        // Continue the same regular timber pattern through this tile.
+        for y in [0.72f32, 1.46, 2.18] {
+            parent.spawn((
+                Name::new(format!("Window facade beam · {}", window.id)),
+                Mesh3d(catalog.detail_cube.clone()),
+                MeshMaterial3d(catalog.facade_timber.clone()),
+                Transform {
+                    translation: Vec3::new(0.0, y, 0.0),
+                    scale: if horizontal {
+                        Vec3::new(1.02, 0.07, 0.13)
+                    } else {
+                        Vec3::new(0.13, 0.07, 1.02)
+                    },
+                    ..default()
+                },
+            ));
+        }
+
+        for sign in [-1.0f32, 1.0] {
+            let stud_offset = 0.34 * sign;
+            parent.spawn((
+                Name::new(format!("Window facade stud · {}", window.id)),
+                Mesh3d(catalog.detail_cube.clone()),
+                MeshMaterial3d(catalog.facade_timber.clone()),
+                Transform {
+                    translation: if horizontal {
+                        Vec3::new(stud_offset, HOUSE_WALL_HEIGHT * 0.5, 0.0)
+                    } else {
+                        Vec3::new(0.0, HOUSE_WALL_HEIGHT * 0.5, stud_offset)
+                    },
+                    scale: if horizontal {
+                        Vec3::new(0.07, HOUSE_WALL_HEIGHT + 0.02, 0.13)
+                    } else {
+                        Vec3::new(0.13, HOUSE_WALL_HEIGHT + 0.02, 0.07)
+                    },
+                    ..default()
+                },
+            ));
+        }
+
+        parent
+            .spawn((
+                Name::new(format!("Window Hinge · {}", window.id)),
+                WorldWindowSwing {
+                    id: window.id.clone(),
+                    edge,
+                },
+                Transform {
+                    translation: tangent * -glass_half,
+                    rotation: window_rotation(edge, window.open),
+                    ..default()
+                },
+                Visibility::default(),
+            ))
+            .with_child((
+                Name::new(format!("Window Glass · {}", window.id)),
+                Mesh3d(catalog.detail_cube.clone()),
+                MeshMaterial3d(catalog.glass.clone()),
+                Transform {
+                    translation: tangent * glass_half + Vec3::Y * 1.05,
+                    scale: if horizontal {
+                        Vec3::new(0.64, 0.58, 0.055)
+                    } else {
+                        Vec3::new(0.055, 0.58, 0.64)
+                    },
+                    ..default()
+                },
+            ));
+
+        let post_scale = if horizontal {
+            Vec3::new(0.08, 0.74, 0.10)
+        } else {
+            Vec3::new(0.10, 0.74, 0.08)
+        };
+        for sign in [-1.0f32, 1.0] {
+            parent.spawn((
+                Name::new(format!("Window frame side · {}", window.id)),
+                Mesh3d(catalog.detail_cube.clone()),
+                MeshMaterial3d(catalog.facade_timber.clone()),
+                Transform {
+                    translation: tangent * (0.39 * sign) + Vec3::Y * 1.05,
+                    scale: post_scale,
                     ..default()
                 },
             ));
@@ -477,8 +654,9 @@ pub fn spawn_window(
     root
 }
 
-
-// TIBIAGAME_V36_9_4_2_DUPLICATE_FUNCTION_SIGNATURE_FIX
+// V36.15.2: V36.15.1 replaced the door/window section using
+// apply_door_change as the end anchor. spawn_torch and spawn_stair lived
+// between spawn_window and apply_door_change and were accidentally removed.
 pub fn spawn_torch(
     commands: &mut Commands,
     catalog: &WorldDetailCatalog,
@@ -588,77 +766,53 @@ pub fn spawn_stair(
     Some(root)
 }
 
-pub fn infer_wall_horizontal(
-    position: Position,
-    house_walls: &[Position],
-    castle_walls: &[Position],
-) -> bool {
-    let has = |x: i32, y: i32| {
-        house_walls
-            .iter()
-            .chain(castle_walls.iter())
-            .any(|wall| {
-                wall.z == position.z
-                    && wall.x == x
-                    && wall.y == y
-            })
-    };
-
-    let horizontal_score =
-        i32::from(has(position.x - 1, position.y))
-        + i32::from(has(position.x + 1, position.y));
-    let vertical_score =
-        i32::from(has(position.x, position.y - 1))
-        + i32::from(has(position.x, position.y + 1));
-
-    horizontal_score >= vertical_score
-}
-
 pub fn apply_door_change(
     door: &DoorView,
-    doors: &mut Query<(&WorldDoor, &mut Transform)>,
+    doors: &mut Query<(&WorldDoorSwing, &mut Transform)>,
 ) {
     for (visual, mut transform) in doors.iter_mut() {
         if visual.id != door.id {
             continue;
         }
-
-        transform.rotation =
-            door_rotation(visual.horizontal, door.open);
+        transform.rotation = door_rotation(visual.edge, door.open);
     }
 }
 
 pub fn apply_window_change(
     window: &WindowView,
-    windows: &mut Query<(&WorldWindow, &mut Transform)>,
+    windows: &mut Query<(&WorldWindowSwing, &mut Transform)>,
 ) {
     for (visual, mut transform) in windows.iter_mut() {
         if visual.id != window.id {
             continue;
         }
-
-        transform.rotation =
-            window_rotation(visual.horizontal, window.open);
+        transform.rotation = window_rotation(visual.edge, window.open);
     }
 }
 
-fn door_rotation(horizontal: bool, open: bool) -> Quat {
-    if !open {
-        Quat::IDENTITY
-    } else if horizontal {
-        Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)
-    } else {
-        Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2)
+fn opening_angle(edge: WallEdge, amount: f32) -> f32 {
+    // Swing toward the building interior for all four boundary signs.
+    match edge {
+        WallEdge::North => -amount,
+        WallEdge::South => amount,
+        WallEdge::West => amount,
+        WallEdge::East => -amount,
     }
 }
 
-fn window_rotation(horizontal: bool, open: bool) -> Quat {
-    if !open {
-        Quat::IDENTITY
-    } else if horizontal {
-        Quat::from_rotation_y(0.72)
+fn door_rotation(edge: WallEdge, open: bool) -> Quat {
+    if open {
+        Quat::from_rotation_y(opening_angle(edge, std::f32::consts::FRAC_PI_2))
     } else {
-        Quat::from_rotation_y(-0.72)
+        Quat::IDENTITY
+    }
+}
+
+fn window_rotation(edge: WallEdge, open: bool) -> Quat {
+    if open {
+        Quat::from_rotation_y(opening_angle(edge, 0.72))
+    } else {
+        Quat::IDENTITY
     }
 }
 
@@ -705,6 +859,6 @@ fn natural_rotation(object: &WorldObjectView) -> f32 {
 
 pub fn describe() {
     info!(
-        "ALDORIA WORLD DETAILS · authored GLB props/resources · procedural trees/doors/windows/stairs · torch point lights"
+        "ALDORIA WORLD DETAILS · authored GLB props/resources · procedural trees · collision-aligned hinged doors/windows · stairs · torch point lights"
     );
 }

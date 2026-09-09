@@ -6,14 +6,15 @@ use bevy::prelude::*;
 use game_protocol::MapView;
 use game_types::{CreatureView, NpcView, Position, ResourceNodeView};
 
-use crate::{creature_sprites, world_architecture, world_details, world_visuals, CreatureActor, NpcActor, ResourceActor, WorldStatic};
+use crate::{creature_sprites, world_architecture, world_details, world_visuals, NpcActor, ResourceActor, WorldStatic};
 
-const SPAWN_BUDGET_PER_FRAME: usize = 180;
+const SPAWN_BUDGET_PER_FRAME: usize = 520;
 const CLEANUP_BUDGET_PER_FRAME: usize = 180;
 
 #[derive(Component)]
 pub struct StreamedRegionEntity {
     generation: u64,
+    floor: i16,
 }
 
 #[derive(Resource, Default)]
@@ -24,6 +25,7 @@ pub struct RegionStream {
     active_generation: u64,
     next_generation: u64,
     cleanup_requested: bool,
+    ready_floors: HashSet<i16>,
 }
 
 struct RegionPayload {
@@ -41,6 +43,7 @@ struct RegionBuild {
     center: Position,
     radius: i32,
     floor_radius: i16,
+    floors: Vec<i16>,
     specs: Vec<SpawnSpec>,
     cursor: usize,
     started_at: Instant,
@@ -71,7 +74,10 @@ struct StreamAssets {
 }
 
 enum SpawnSpec {
-    GroundChunk(Vec2),
+    GroundChunk {
+        center: Vec2,
+        floor: i16,
+    },
     Floor(Position),
     Terrain {
         position: Position,
@@ -85,7 +91,7 @@ enum SpawnSpec {
     },
     HouseWall {
         position: Position,
-        axes: world_architecture::WallAxes,
+        edges: world_architecture::WallEdges,
     },
     CastleWall {
         position: Position,
@@ -101,13 +107,13 @@ enum SpawnSpec {
         id: String,
         position: Position,
         open: bool,
-        horizontal: bool,
+        edge: world_architecture::WallEdge,
     },
     Window {
         id: String,
         position: Position,
         open: bool,
-        horizontal: bool,
+        edge: world_architecture::WallEdge,
     },
     Torch(Position),
     Stair {
@@ -117,6 +123,7 @@ enum SpawnSpec {
     },
     Building {
         name: String,
+        floor: i16,
         x: i32,
         y: i32,
         width: i32,
@@ -127,7 +134,37 @@ enum SpawnSpec {
     Resource(ResourceNodeView),
 }
 
+
+impl SpawnSpec {
+    fn floor(&self) -> i16 {
+        match self {
+            Self::GroundChunk { floor, .. } => *floor,
+            Self::Floor(position)
+            | Self::Road(position)
+            | Self::Water(position)
+            | Self::Tree(position)
+            | Self::Torch(position) => position.z,
+            Self::Terrain { position, .. }
+            | Self::Bridge { position, .. }
+            | Self::HouseWall { position, .. }
+            | Self::CastleWall { position, .. }
+            | Self::Object { position, .. }
+            | Self::Door { position, .. }
+            | Self::Window { position, .. }
+            | Self::Stair { position, .. } => position.z,
+            Self::Building { floor, .. } => *floor,
+            Self::Creature(creature) => creature.position.z,
+            Self::Npc(npc) => npc.position.z,
+            Self::Resource(resource) => resource.position.z,
+        }
+    }
+}
+
 impl RegionStream {
+    pub fn floor_ready(&self, floor: i16) -> bool {
+        self.active_generation != 0 && self.ready_floors.contains(&floor)
+    }
+
     pub fn queue(
         &mut self,
         map: Box<MapView>,
@@ -174,6 +211,13 @@ pub fn apply_streamed_region(
         let radius = payload.region_radius;
         let floor_radius = payload.region_floor_radius;
         let specs = build_specs(payload);
+        let mut floors: Vec<i16> = specs
+            .iter()
+            .map(SpawnSpec::floor)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+        floors.sort_unstable();
 
         info!(
             "ALDORIA STREAM START · gen {} · center {}:{}:{} · entities {} · spawn budget {}",
@@ -190,6 +234,7 @@ pub fn apply_streamed_region(
             center,
             radius,
             floor_radius,
+            floors,
             specs,
             cursor: 0,
             started_at: Instant::now(),
@@ -231,14 +276,25 @@ pub fn apply_streamed_region(
                 build.center,
                 build.radius,
                 build.floor_radius,
+                build.floors.clone(),
                 build.specs.len(),
                 build.started_at.elapsed().as_millis(),
             ));
         }
     }
 
-    if let Some((generation, center, radius, floor_radius, count, elapsed_ms)) = completed {
+    if let Some((
+        generation,
+        center,
+        radius,
+        floor_radius,
+        floors,
+        count,
+        elapsed_ms,
+    )) = completed {
         stream.active_generation = generation;
+        stream.ready_floors.clear();
+        stream.ready_floors.extend(floors.iter().copied());
         stream.cleanup_requested = true;
         stream.build = None;
 
@@ -253,6 +309,39 @@ pub fn apply_streamed_region(
             count,
             elapsed_ms,
         );
+        info!(
+            "ALDORIA FLOOR CACHE READY · gen {} · floors {:?}",
+            generation,
+            floors,
+        );
+    }
+}
+
+pub fn sync_streamed_floor_visibility(
+    stream: Res<RegionStream>,
+    movement: Res<crate::MovementState>,
+    mut entities: Query<
+        (&StreamedRegionEntity, &mut Visibility),
+        (
+            Without<crate::BuildingRoof>,
+            Without<crate::HouseWallOccluder>,
+        ),
+    >,
+) {
+    if stream.active_generation == 0 {
+        return;
+    }
+
+    let visible_floor = movement.logical.z;
+    for (streamed, mut visibility) in &mut entities {
+        let should_show =
+            streamed.generation == stream.active_generation
+                && streamed.floor == visible_floor;
+        *visibility = if should_show {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
     }
 }
 
@@ -261,7 +350,6 @@ pub fn cleanup_old_region_entities(
     mut stream: ResMut<RegionStream>,
     entities: Query<(Entity, Option<&StreamedRegionEntity>), Or<(
         With<WorldStatic>,
-        With<CreatureActor>,
         With<NpcActor>,
         With<ResourceActor>,
     )>>,
@@ -295,14 +383,26 @@ pub fn cleanup_old_region_entities(
 }
 
 fn build_specs(payload: RegionPayload) -> Vec<SpawnSpec> {
-    let floor = payload.region_center.z;
+    let center = payload.region_center;
+    let floor_radius = payload.region_floor_radius.max(0);
+    let min_floor = center.z.saturating_sub(floor_radius);
+    let max_floor = center.z.saturating_add(floor_radius);
+    let floors: Vec<i16> = (min_floor..=max_floor).collect();
+
     let ground_chunks = world_architecture::ground_chunk_centers(
         payload.region_center,
         payload.region_radius,
     );
     let map = *payload.map;
 
-    let estimated = ground_chunks.len()
+    let opening_positions: HashSet<Position> = map
+        .doors
+        .iter()
+        .map(|door| door.position)
+        .chain(map.windows.iter().map(|window| window.position))
+        .collect();
+
+    let estimated = ground_chunks.len() * floors.len()
         + map.floors.len()
         + map.terrain_materials.len()
         + map.roads.len()
@@ -315,7 +415,7 @@ fn build_specs(payload: RegionPayload) -> Vec<SpawnSpec> {
         + map.doors.len()
         + map.windows.len()
         + map.torches.len()
-        + map.stairs.len()
+        + map.stairs.len() * floors.len()
         + map.buildings.len()
         + payload.creatures.len()
         + payload.npcs.len()
@@ -323,191 +423,206 @@ fn build_specs(payload: RegionPayload) -> Vec<SpawnSpec> {
 
     let mut specs = Vec::with_capacity(estimated);
 
-    specs.extend(ground_chunks.into_iter().map(SpawnSpec::GroundChunk));
+    for floor in floors {
+        // Actors first on every cached floor. They are spawned hidden when this
+        // is not the visible floor, but their entities/materials already exist.
+        specs.extend(
+            payload
+                .creatures
+                .iter()
+                .filter(|actor| actor.position.z == floor)
+                .cloned()
+                .map(SpawnSpec::Creature),
+        );
+        specs.extend(
+            payload
+                .npcs
+                .iter()
+                .filter(|actor| actor.position.z == floor)
+                .cloned()
+                .map(SpawnSpec::Npc),
+        );
+        specs.extend(
+            payload
+                .resource_nodes
+                .iter()
+                .filter(|actor| actor.position.z == floor)
+                .cloned()
+                .map(SpawnSpec::Resource),
+        );
 
-    let opening_positions: HashSet<Position> = map
-        .doors
-        .iter()
-        .map(|door| door.position)
-        .chain(map.windows.iter().map(|window| window.position))
-        .collect();
+        specs.extend(
+            ground_chunks
+                .iter()
+                .copied()
+                .map(|center| SpawnSpec::GroundChunk { center, floor }),
+        );
 
-    specs.extend(
-        map.floors
-            .into_iter()
-            .filter(|position| position.z == floor)
-            .map(SpawnSpec::Floor),
-    );
-    specs.extend(
-        map.terrain_materials
-            .into_iter()
-            .filter(|terrain| terrain.position.z == floor)
-            .map(|terrain| SpawnSpec::Terrain {
-                position: terrain.position,
-                material: terrain.material,
-            }),
-    );
-    specs.extend(
-        map.roads
-            .into_iter()
-            .filter(|position| position.z == floor)
-            .map(SpawnSpec::Road),
-    );
-    specs.extend(
-        map.water
-            .into_iter()
-            .filter(|position| position.z == floor)
-            .map(SpawnSpec::Water),
-    );
-
-    // Actors are intentionally prioritized before the heavy building/wall pass
-    // so floor swaps (e.g. the rat cellar) become visible almost immediately.
-    specs.extend(
-        payload
-            .creatures
-            .into_iter()
-            .filter(|actor| actor.position.z == floor)
-            .map(SpawnSpec::Creature),
-    );
-    specs.extend(
-        payload
-            .npcs
-            .into_iter()
-            .filter(|actor| actor.position.z == floor)
-            .map(SpawnSpec::Npc),
-    );
-    specs.extend(
-        payload
-            .resource_nodes
-            .into_iter()
-            .filter(|actor| actor.position.z == floor)
-            .map(SpawnSpec::Resource),
-    );
-
-    specs.extend(
-        map.bridges
-            .iter()
-            .copied()
-            .filter(|position| position.z == floor)
-            .map(|position| SpawnSpec::Bridge {
-                position,
-                edges: world_architecture::infer_bridge_edges(position, &map.bridges),
-            }),
-    );
-    specs.extend(
-        map.house_walls
-            .iter()
-            .copied()
-            .filter(|position| position.z == floor)
-            .filter(|position| !opening_positions.contains(position))
-            .map(|position| SpawnSpec::HouseWall {
-                position,
-                axes: world_architecture::infer_wall_axes(
+        specs.extend(
+            map.floors
+                .iter()
+                .filter(|position| position.z == floor)
+                .copied()
+                .map(SpawnSpec::Floor),
+        );
+        specs.extend(
+            map.terrain_materials
+                .iter()
+                .filter(|terrain| terrain.position.z == floor)
+                .map(|terrain| SpawnSpec::Terrain {
+                    position: terrain.position,
+                    material: terrain.material.clone(),
+                }),
+        );
+        specs.extend(
+            map.roads
+                .iter()
+                .filter(|position| position.z == floor)
+                .copied()
+                .map(SpawnSpec::Road),
+        );
+        specs.extend(
+            map.water
+                .iter()
+                .filter(|position| position.z == floor)
+                .copied()
+                .map(SpawnSpec::Water),
+        );
+        specs.extend(
+            map.bridges
+                .iter()
+                .copied()
+                .filter(|position| position.z == floor)
+                .map(|position| SpawnSpec::Bridge {
                     position,
-                    &map.house_walls,
-                    &map.castle_walls,
-                ),
-            }),
-    );
-    specs.extend(
-        map.castle_walls
-            .iter()
-            .copied()
-            .filter(|position| position.z == floor)
-            .filter(|position| !opening_positions.contains(position))
-            .map(|position| SpawnSpec::CastleWall {
-                position,
-                axes: world_architecture::infer_wall_axes(
-                    position,
-                    &map.house_walls,
-                    &map.castle_walls,
-                ),
-            }),
-    );
-    specs.extend(
-        map.trees
-            .into_iter()
-            .filter(|position| position.z == floor)
-            .map(SpawnSpec::Tree),
-    );
-    specs.extend(
-        map.objects
-            .iter()
-            .filter(|object| object.position.z == floor)
-            .map(|object| SpawnSpec::Object {
-                id: object.id.clone(),
-                kind: object.kind.clone(),
-                position: object.position,
-            }),
-    );
-    specs.extend(
-        map.doors
-            .iter()
-            .filter(|door| door.position.z == floor)
-            .map(|door| SpawnSpec::Door {
-                id: door.id.clone(),
-                position: door.position,
-                open: door.open,
-                horizontal: world_details::infer_wall_horizontal(
-                    door.position,
-                    &map.house_walls,
-                    &map.castle_walls,
-                ),
-            }),
-    );
-    specs.extend(
-        map.windows
-            .iter()
-            .filter(|window| window.position.z == floor)
-            .map(|window| SpawnSpec::Window {
-                id: window.id.clone(),
-                position: window.position,
-                open: window.open,
-                horizontal: world_details::infer_wall_horizontal(
-                    window.position,
-                    &map.house_walls,
-                    &map.castle_walls,
-                ),
-            }),
-    );
-    specs.extend(
-        map.torches
-            .iter()
-            .filter(|position| position.z == floor)
-            .copied()
-            .map(SpawnSpec::Torch),
-    );
-    specs.extend(map.stairs.iter().filter_map(|stair| {
-        let position = if stair.from.z == floor {
-            stair.from
-        } else if stair.to.z == floor {
-            stair.to
-        } else {
-            return None;
-        };
+                    edges: world_architecture::infer_bridge_edges(
+                        position,
+                        &map.bridges,
+                    ),
+                }),
+        );
 
-        Some(SpawnSpec::Stair {
-            id: stair.id.clone(),
-            position,
-            up: if stair.from.z == floor {
-                stair.to.z < stair.from.z
+        specs.extend(
+            map.house_walls
+                .iter()
+                .copied()
+                .filter(|position| position.z == floor)
+                .filter(|position| !opening_positions.contains(position))
+                .map(|position| SpawnSpec::HouseWall {
+                    position,
+                    edges: world_architecture::infer_house_wall_edges(
+                        position,
+                        &map.buildings,
+                        &map.house_walls,
+                        &map.castle_walls,
+                    ),
+                }),
+        );
+        specs.extend(
+            map.castle_walls
+                .iter()
+                .copied()
+                .filter(|position| position.z == floor)
+                .filter(|position| !opening_positions.contains(position))
+                .map(|position| SpawnSpec::CastleWall {
+                    position,
+                    axes: world_architecture::infer_wall_axes(
+                        position,
+                        &map.house_walls,
+                        &map.castle_walls,
+                    ),
+                }),
+        );
+
+        specs.extend(
+            map.trees
+                .iter()
+                .filter(|position| position.z == floor)
+                .copied()
+                .map(SpawnSpec::Tree),
+        );
+        specs.extend(
+            map.objects
+                .iter()
+                .filter(|object| object.position.z == floor)
+                .map(|object| SpawnSpec::Object {
+                    id: object.id.clone(),
+                    kind: object.kind.clone(),
+                    position: object.position,
+                }),
+        );
+        specs.extend(
+            map.doors
+                .iter()
+                .filter(|door| door.position.z == floor)
+                .map(|door| SpawnSpec::Door {
+                    id: door.id.clone(),
+                    position: door.position,
+                    open: door.open,
+                    edge: world_architecture::infer_opening_edge(
+                        door.position,
+                        &map.buildings,
+                        &map.house_walls,
+                        &map.castle_walls,
+                    ),
+                }),
+        );
+        specs.extend(
+            map.windows
+                .iter()
+                .filter(|window| window.position.z == floor)
+                .map(|window| SpawnSpec::Window {
+                    id: window.id.clone(),
+                    position: window.position,
+                    open: window.open,
+                    edge: world_architecture::infer_opening_edge(
+                        window.position,
+                        &map.buildings,
+                        &map.house_walls,
+                        &map.castle_walls,
+                    ),
+                }),
+        );
+        specs.extend(
+            map.torches
+                .iter()
+                .filter(|position| position.z == floor)
+                .copied()
+                .map(SpawnSpec::Torch),
+        );
+        specs.extend(map.stairs.iter().filter_map(|stair| {
+            let position = if stair.from.z == floor {
+                stair.from
+            } else if stair.to.z == floor {
+                stair.to
             } else {
-                stair.from.z < stair.to.z
-            },
-        })
-    }));
-    specs.extend(
-        map.buildings
-            .into_iter()
-            .filter(|building| building.floor == floor)
-            .map(|building| SpawnSpec::Building {
-                name: building.name,
-                x: building.x,
-                y: building.y,
-                width: building.width,
-                height: building.height,
-            }),
-    );
+                return None;
+            };
+
+            Some(SpawnSpec::Stair {
+                id: stair.id.clone(),
+                position,
+                up: if stair.from.z == floor {
+                    stair.to.z < stair.from.z
+                } else {
+                    stair.from.z < stair.to.z
+                },
+            })
+        }));
+        specs.extend(
+            map.buildings
+                .iter()
+                .filter(|building| building.floor == floor)
+                .map(|building| SpawnSpec::Building {
+                    name: building.name.clone(),
+                    floor: building.floor,
+                    x: building.x,
+                    y: building.y,
+                    width: building.width,
+                    height: building.height,
+                }),
+        );
+    }
 
     specs
 }
@@ -552,15 +667,16 @@ fn create_assets(
 fn spawn_spec(
     commands: &mut Commands,
     assets: &StreamAssets,
-    catalog: &creature_sprites::CreatureSpriteCatalog,
+    _catalog: &creature_sprites::CreatureSpriteCatalog,
     details: &world_details::WorldDetailCatalog,
     architecture: &world_architecture::ArchitectureCatalog,
     materials: &mut Assets<StandardMaterial>,
     generation: u64,
     spec: &SpawnSpec,
 ) {
+    let floor = spec.floor();
     match spec {
-        SpawnSpec::GroundChunk(center) => {
+        SpawnSpec::GroundChunk { center, .. } => {
             let entity = world_architecture::spawn_ground_chunk(
                 commands,
                 architecture,
@@ -569,13 +685,14 @@ fn spawn_spec(
             );
             commands
                 .entity(entity)
-                .insert(StreamedRegionEntity { generation });
+                .insert(StreamedRegionEntity { generation, floor });
         }
         SpawnSpec::Floor(position) => {
             spawn_cube(
                 commands,
                 assets,
                 generation,
+                floor,
                 "Stream Floor",
                 assets.floor.clone(),
                 Vec3::new(position.x as f32, 0.015, position.y as f32),
@@ -601,6 +718,7 @@ fn spawn_spec(
                 commands,
                 assets,
                 generation,
+                floor,
                 "Stream Terrain",
                 material,
                 Vec3::new(position.x as f32, 0.028, position.y as f32),
@@ -613,6 +731,7 @@ fn spawn_spec(
                 commands,
                 assets,
                 generation,
+                floor,
                 "Stream Road",
                 assets.road.clone(),
                 Vec3::new(position.x as f32, 0.045, position.y as f32),
@@ -625,6 +744,7 @@ fn spawn_spec(
                 commands,
                 assets,
                 generation,
+                floor,
                 "Stream Water",
                 assets.water.clone(),
                 Vec3::new(position.x as f32, 0.03, position.y as f32),
@@ -642,23 +762,22 @@ fn spawn_spec(
             );
             commands
                 .entity(entity)
-                .insert(StreamedRegionEntity { generation });
+                .insert(StreamedRegionEntity { generation, floor });
         }
         SpawnSpec::HouseWall {
             position,
-            axes,
+            edges,
         } => {
-            let entity = world_architecture::spawn_wall(
+            let entity = world_architecture::spawn_house_wall(
                 commands,
                 architecture,
                 assets.house_wall.clone(),
                 *position,
-                *axes,
-                false,
+                *edges,
             );
             commands
                 .entity(entity)
-                .insert(StreamedRegionEntity { generation });
+                .insert(StreamedRegionEntity { generation, floor });
         }
         SpawnSpec::CastleWall {
             position,
@@ -674,7 +793,7 @@ fn spawn_spec(
             );
             commands
                 .entity(entity)
-                .insert(StreamedRegionEntity { generation });
+                .insert(StreamedRegionEntity { generation, floor });
         }
         SpawnSpec::Tree(position) => {
             let entity = world_details::spawn_tree(
@@ -684,7 +803,7 @@ fn spawn_spec(
             );
             commands
                 .entity(entity)
-                .insert(StreamedRegionEntity { generation });
+                .insert(StreamedRegionEntity { generation, floor });
         }
         SpawnSpec::Object {
             id,
@@ -703,13 +822,13 @@ fn spawn_spec(
             );
             commands
                 .entity(entity)
-                .insert(StreamedRegionEntity { generation });
+                .insert(StreamedRegionEntity { generation, floor });
         }
         SpawnSpec::Door {
             id,
             position,
             open,
-            horizontal,
+            edge,
         } => {
             let door = game_protocol::DoorView {
                 id: id.clone(),
@@ -720,17 +839,17 @@ fn spawn_spec(
                 commands,
                 details,
                 &door,
-                *horizontal,
+                *edge,
             );
             commands
                 .entity(entity)
-                .insert(StreamedRegionEntity { generation });
+                .insert(StreamedRegionEntity { generation, floor });
         }
         SpawnSpec::Window {
             id,
             position,
             open,
-            horizontal,
+            edge,
         } => {
             let window = game_protocol::WindowView {
                 id: id.clone(),
@@ -741,11 +860,11 @@ fn spawn_spec(
                 commands,
                 details,
                 &window,
-                *horizontal,
+                *edge,
             );
             commands
                 .entity(entity)
-                .insert(StreamedRegionEntity { generation });
+                .insert(StreamedRegionEntity { generation, floor });
         }
         SpawnSpec::Torch(position) => {
             let entity = world_details::spawn_torch(
@@ -755,7 +874,7 @@ fn spawn_spec(
             );
             commands
                 .entity(entity)
-                .insert(StreamedRegionEntity { generation });
+                .insert(StreamedRegionEntity { generation, floor });
         }
         SpawnSpec::Stair {
             id,
@@ -785,11 +904,12 @@ fn spawn_spec(
             ) {
                 commands
                     .entity(entity)
-                    .insert(StreamedRegionEntity { generation });
+                    .insert(StreamedRegionEntity { generation, floor });
             }
         }
         SpawnSpec::Building {
             name,
+            floor: _,
             x,
             y,
             width,
@@ -799,10 +919,12 @@ fn spawn_spec(
                 world_architecture::spawn_building(
                     commands,
                     architecture,
+                    materials,
                     assets.house_wall.clone(),
                     assets.building_floor.clone(),
                     assets.roof.clone(),
                     name,
+                    floor,
                     *x,
                     *y,
                     *width,
@@ -811,27 +933,20 @@ fn spawn_spec(
 
             commands
                 .entity(floor_entity)
-                .insert(StreamedRegionEntity { generation });
+                .insert(StreamedRegionEntity { generation, floor });
             commands
                 .entity(roof_entity)
-                .insert(StreamedRegionEntity { generation });
+                .insert(StreamedRegionEntity { generation, floor });
         }
-        SpawnSpec::Creature(creature) => {
-            let entity = creature_sprites::spawn_creature_sprite(
-                commands,
-                materials,
-                catalog,
-                creature,
-            );
-            commands
-                .entity(entity)
-                .insert(StreamedRegionEntity { generation });
+        SpawnSpec::Creature(_creature) => {
+            // V36.18: Creature visuals are reconciled from NativeGameState.
+            // Static floor streaming must not create a second actor lifecycle.
         }
         SpawnSpec::Npc(npc) => {
             commands.spawn((
                 Name::new(format!("NPC · {}", npc.name)),
-                StreamedRegionEntity { generation },
-                NpcActor,
+                StreamedRegionEntity { generation, floor },
+                NpcActor(npc.id.clone()),
                 Mesh3d(assets.cube.clone()),
                 MeshMaterial3d(assets.npc.clone()),
                 Transform {
@@ -849,7 +964,7 @@ fn spawn_spec(
             );
             commands
                 .entity(entity)
-                .insert(StreamedRegionEntity { generation });
+                .insert(StreamedRegionEntity { generation, floor });
         }
     }
 }
@@ -862,6 +977,7 @@ fn spawn_cube(
     commands: &mut Commands,
     assets: &StreamAssets,
     generation: u64,
+    floor: i16,
     name: impl Into<String>,
     material: Handle<StandardMaterial>,
     translation: Vec3,
@@ -871,7 +987,7 @@ fn spawn_cube(
     commands.spawn((
         Name::new(name.into()),
         WorldStatic,
-        StreamedRegionEntity { generation },
+        StreamedRegionEntity { generation, floor },
         Mesh3d(assets.cube.clone()),
         MeshMaterial3d(material),
         Transform {
