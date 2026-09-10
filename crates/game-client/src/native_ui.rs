@@ -126,6 +126,48 @@ pub(crate) enum NativePanelCloseButton {
 }
 
 #[derive(Component, Clone, Copy)]
+pub(crate) enum NativeSpellbookButton {
+    Learned(usize),
+    Cast,
+    Skills,
+    Close,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeSpellbookSummaryText {
+    Magic,
+    Learned,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeSpellbookListField {
+    Name,
+    Meta,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeSpellbookLearnedText {
+    pub(crate) index: usize,
+    pub(crate) field: NativeSpellbookListField,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeSpellbookLockedText {
+    pub(crate) index: usize,
+    pub(crate) field: NativeSpellbookListField,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeSpellbookDetailText {
+    Name,
+    Description,
+    Stats,
+    Requirement,
+    CastHint,
+}
+
+
+#[derive(Component, Clone, Copy)]
 pub(crate) enum NativeCraftingButton {
     Category(usize),
     Recipe(usize),
@@ -2022,7 +2064,13 @@ fn spawn_character_panel(commands: &mut Commands) {
                                         native_modal::NativeModalWindow::Character,
                                     ),
                                     Node {
+                                    width: Val::Percent(100.0),
+                                    height: Val::Percent(100.0),
+                                    min_height: px(48),
+                                    flex_grow: 1.0,
                                     flex_direction: FlexDirection::Column,
+                                    align_items: AlignItems::FlexStart,
+                                    justify_content: JustifyContent::Center,
                                     row_gap: px(3),
                                     ..default()
                                 }
@@ -3291,46 +3339,942 @@ fn spawn_skills_panel(commands: &mut Commands) {
         });
 }
 
+fn spellbook_column_node(
+    width: Val,
+) -> Node {
+    Node {
+        width,
+        height: Val::Percent(100.0),
+        min_height: px(500),
+        padding: UiRect::all(px(10)),
+        border: UiRect::all(px(1)),
+        border_radius:
+            BorderRadius::all(px(7)),
+        flex_direction:
+            FlexDirection::Column,
+        row_gap: px(8),
+        ..default()
+    }
+}
+
+fn spawn_spellbook_heading(
+    parent: &mut ChildSpawnerCommands,
+    eyebrow: &str,
+    title: &str,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            flex_direction:
+                FlexDirection::Column,
+            row_gap: px(2),
+            ..default()
+        })
+        .with_children(|copy| {
+            copy.spawn((
+                Text::new(eyebrow),
+                TextFont {
+                    font_size:
+                        FontSize::Px(8.0),
+                    ..default()
+                },
+                TextColor(theme::GOLD),
+            ));
+
+            copy.spawn((
+                Text::new(title),
+                TextFont {
+                    font_size:
+                        FontSize::Px(13.0),
+                    ..default()
+                },
+                TextColor(
+                    theme::GOLD_BRIGHT,
+                ),
+            ));
+        });
+}
+
+fn spawn_spellbook_summary_text(
+    parent: &mut ChildSpawnerCommands,
+    kind: NativeSpellbookSummaryText,
+    value: &str,
+) {
+    parent.spawn((
+        kind,
+        Text::new(value),
+        TextFont {
+            font_size: FontSize::Px(9.0),
+            ..default()
+        },
+        TextColor(TEXT),
+    ));
+}
+
+fn spawn_spellbook_learned_card(
+    parent: &mut ChildSpawnerCommands,
+    index: usize,
+) {
+    parent
+        .spawn((
+            Button,
+            NativeSpellbookButton::Learned(
+                index,
+            ),
+            Node {
+                width: Val::Percent(100.0),
+                min_height: px(58),
+                padding: UiRect::all(px(8)),
+                border: UiRect::all(px(1)),
+                border_radius:
+                    BorderRadius::all(px(6)),
+                flex_direction:
+                    FlexDirection::Row,
+                align_items:
+                    AlignItems::Center,
+                column_gap: px(8),
+                ..default()
+            },
+            BackgroundColor(
+                theme::BUTTON_BG,
+            ),
+            BorderColor::all(
+                theme::BUTTON_BORDER,
+            ),
+        ))
+        .with_children(|card| {
+            card
+                .spawn((
+                    Node {
+                        width: px(38),
+                        height: px(38),
+                        border:
+                            UiRect::all(px(1)),
+                        border_radius:
+                            BorderRadius::all(
+                                px(19),
+                            ),
+                        align_items:
+                            AlignItems::Center,
+                        justify_content:
+                            JustifyContent::Center,
+                        ..default()
+                    },
+                    BackgroundColor(
+                        Color::srgba(
+                            0.20,
+                            0.13,
+                            0.035,
+                            0.82,
+                        ),
+                    ),
+                    BorderColor::all(
+                        theme::GOLD_DARK,
+                    ),
+                ))
+                .with_child((
+                    Text::new("✦"),
+                    TextFont {
+                        font_size:
+                            FontSize::Px(15.0),
+                        ..default()
+                    },
+                    TextColor(
+                        theme::GOLD_BRIGHT,
+                    ),
+                ));
+
+            card
+                .spawn(Node {
+                    flex_grow: 1.0,
+                    flex_direction:
+                        FlexDirection::Column,
+                    row_gap: px(3),
+                    ..default()
+                })
+                .with_children(|copy| {
+                    copy.spawn((
+                        NativeSpellbookLearnedText {
+                            index,
+                            field:
+                                NativeSpellbookListField::Name,
+                        },
+                        Text::new(""),
+                        TextFont {
+                            font_size:
+                                FontSize::Px(
+                                    10.0,
+                                ),
+                            ..default()
+                        },
+                        TextColor(TEXT),
+                    ));
+
+                    copy.spawn((
+                        NativeSpellbookLearnedText {
+                            index,
+                            field:
+                                NativeSpellbookListField::Meta,
+                        },
+                        Text::new(""),
+                        TextFont {
+                            font_size:
+                                FontSize::Px(
+                                    7.5,
+                                ),
+                            ..default()
+                        },
+                        TextColor(MUTED),
+                    ));
+                });
+        });
+}
+
+fn spawn_spellbook_locked_card(
+    parent: &mut ChildSpawnerCommands,
+    index: usize,
+) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                min_height: px(44),
+                padding:
+                    UiRect::all(px(7)),
+                border:
+                    UiRect::all(px(1)),
+                border_radius:
+                    BorderRadius::all(px(5)),
+                flex_direction:
+                    FlexDirection::Column,
+                row_gap: px(2),
+                ..default()
+            },
+            BackgroundColor(PANEL_DEEP),
+            BorderColor::all(
+                theme::BUTTON_BORDER,
+            ),
+        ))
+        .with_children(|card| {
+            card.spawn((
+                NativeSpellbookLockedText {
+                    index,
+                    field:
+                        NativeSpellbookListField::Name,
+                },
+                Text::new(""),
+                TextFont {
+                    font_size:
+                        FontSize::Px(8.8),
+                    ..default()
+                },
+                TextColor(MUTED),
+            ));
+
+            card.spawn((
+                NativeSpellbookLockedText {
+                    index,
+                    field:
+                        NativeSpellbookListField::Meta,
+                },
+                Text::new(""),
+                TextFont {
+                    font_size:
+                        FontSize::Px(7.2),
+                    ..default()
+                },
+                TextColor(MUTED),
+            ));
+        });
+}
+
+fn spawn_spellbook_detail_text(
+    parent: &mut ChildSpawnerCommands,
+    kind: NativeSpellbookDetailText,
+    value: &str,
+    size: f32,
+    color: Color,
+) {
+    parent.spawn((
+        kind,
+        Text::new(value),
+        TextFont {
+            font_size:
+                FontSize::Px(size),
+            ..default()
+        },
+        TextColor(color),
+    ));
+}
+
+fn spawn_spellbook_action_button(
+    parent: &mut ChildSpawnerCommands,
+    action: NativeSpellbookButton,
+    label: &str,
+    primary: bool,
+    width: f32,
+) {
+    parent
+        .spawn((
+            Button,
+            action,
+            Node {
+                width: px(width),
+                height: px(38),
+                padding:
+                    UiRect::horizontal(
+                        px(10),
+                    ),
+                border:
+                    UiRect::all(px(1)),
+                border_radius:
+                    BorderRadius::all(px(6)),
+                align_items:
+                    AlignItems::Center,
+                justify_content:
+                    JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(
+                if primary {
+                    Color::srgba(
+                        0.24,
+                        0.16,
+                        0.035,
+                        0.90,
+                    )
+                } else {
+                    theme::BUTTON_BG
+                },
+            ),
+            BorderColor::all(
+                if primary {
+                    theme::GOLD
+                } else {
+                    theme::BUTTON_BORDER
+                },
+            ),
+        ))
+        .with_child((
+            Text::new(label),
+            TextFont {
+                font_size:
+                    FontSize::Px(9.0),
+                ..default()
+            },
+            TextColor(
+                if primary {
+                    theme::GOLD_BRIGHT
+                } else {
+                    TEXT
+                },
+            ),
+        ));
+}
+
 fn spawn_spellbook_panel(commands: &mut Commands) {
     commands
         .spawn((
-            Name::new("Native gameplay HUD · spellbook"),
+            Name::new("Native modal · spellbook · Greyhaven reference"),
             NativeUiPanel::Spells,
-            native_modal::NativeDraggableSurface(
-                native_modal::NativeModalWindow::Spells,
-            ),
+            native_modal::NativeModalRoot,
+            GlobalZIndex(194),
             Visibility::Hidden,
-            Node {
-                position_type: PositionType::Absolute,
-                top: Val::Percent(12.0),
-                left: Val::Percent(50.0),
-                width: px(500),
-                margin: UiRect::left(px(-250)),
-                min_height: px(520),
-                padding: UiRect::all(px(12)),
-                flex_direction: FlexDirection::Column,
-                ..default()
-            },
-            BackgroundColor(PANEL),
+            native_modal::root_node(),
+            native_modal::backdrop(),
         ))
-        .with_children(|parent| {
-            spawn_panel_header(
-                parent,
-                "SPELLBOOK",
-                NativePanelCloseButton::Spells,
-            );
-            parent.spawn(text_bundle(
-                "",
-                NativeUiText::Spellbook,
-                13.0,
-                TEXT,
-            ));
-            parent.spawn(text_bundle(
-                "",
-                NativeUiText::SpellDetail,
-                12.0,
-                MUTED,
-            ));
+        .with_children(|root| {
+            root
+                .spawn((
+                    Name::new("Greyhaven Spellbook interface"),
+                    native_modal::NativeModalSurface,
+                    native_modal::NativeDraggableSurface(
+                        native_modal::NativeModalWindow::Spells,
+                    ),
+                    native_modal::panel_node(
+                        900.0,
+                        650.0,
+                    ),
+                    native_modal::surface(),
+                    native_modal::surface_border(),
+                ))
+                .with_children(|panel| {
+                    panel
+                        .spawn((
+                            native_modal::header_node(),
+                            native_modal::divider_border(),
+                        ))
+                        .with_children(|header| {
+                            header
+                                .spawn((
+                                    Button,
+                                    native_modal::NativeDragHandle(
+                                        native_modal::NativeModalWindow::Spells,
+                                    ),
+                                    Node {
+                                        flex_grow: 1.0,
+                                        height: Val::Percent(100.0),
+                                        min_height: px(48),
+                                        flex_direction:
+                                            FlexDirection::Column,
+                                        align_items:
+                                            AlignItems::FlexStart,
+                                        justify_content:
+                                            JustifyContent::Center,
+                                        row_gap: px(3),
+                                        ..default()
+                                    },
+                                ))
+                                .with_children(|copy| {
+                                    copy.spawn((
+                                        Text::new(
+                                            "GREYHAVEN INTERFACE",
+                                        ),
+                                        TextFont {
+                                            font_size:
+                                                FontSize::Px(
+                                                    10.0,
+                                                ),
+                                            ..default()
+                                        },
+                                        TextColor(
+                                            theme::GOLD,
+                                        ),
+                                    ));
+
+                                    copy.spawn((
+                                        Text::new(
+                                            "SPELLBOOK",
+                                        ),
+                                        TextFont {
+                                            font_size:
+                                                FontSize::Px(
+                                                    21.0,
+                                                ),
+                                            ..default()
+                                        },
+                                        TextColor(
+                                            theme::GOLD_BRIGHT,
+                                        ),
+                                    ));
+                                });
+
+                            spawn_spellbook_action_button(
+                                header,
+                                NativeSpellbookButton::Close,
+                                "X",
+                                false,
+                                38.0,
+                            );
+                        });
+
+                    panel
+                        .spawn((
+                            Node {
+                                width:
+                                    Val::Percent(
+                                        100.0,
+                                    ),
+                                min_height:
+                                    px(58),
+                                padding:
+                                    UiRect::all(
+                                        px(10),
+                                    ),
+                                border:
+                                    UiRect::all(
+                                        px(1),
+                                    ),
+                                border_radius:
+                                    BorderRadius::all(
+                                        px(7),
+                                    ),
+                                flex_direction:
+                                    FlexDirection::Row,
+                                align_items:
+                                    AlignItems::Center,
+                                justify_content:
+                                    JustifyContent::SpaceBetween,
+                                ..default()
+                            },
+                            BackgroundColor(
+                                PANEL_SOFT,
+                            ),
+                            BorderColor::all(
+                                theme::BUTTON_BORDER,
+                            ),
+                        ))
+                        .with_children(|summary| {
+                            summary
+                                .spawn(Node {
+                                    flex_direction:
+                                        FlexDirection::Column,
+                                    row_gap: px(3),
+                                    ..default()
+                                })
+                                .with_children(|left| {
+                                    left.spawn((
+                                        Text::new(
+                                            "ARCANE MASTERY",
+                                        ),
+                                        TextFont {
+                                            font_size:
+                                                FontSize::Px(
+                                                    8.0,
+                                                ),
+                                            ..default()
+                                        },
+                                        TextColor(
+                                            theme::GOLD,
+                                        ),
+                                    ));
+
+                                    spawn_spellbook_summary_text(
+                                        left,
+                                        NativeSpellbookSummaryText::Magic,
+                                        "Magic Level 0",
+                                    );
+                                });
+
+                            summary
+                                .spawn(Node {
+                                    flex_direction:
+                                        FlexDirection::Column,
+                                    align_items:
+                                        AlignItems::FlexEnd,
+                                    row_gap: px(3),
+                                    ..default()
+                                })
+                                .with_children(|right| {
+                                    right.spawn((
+                                        Text::new(
+                                            "LIBRARY",
+                                        ),
+                                        TextFont {
+                                            font_size:
+                                                FontSize::Px(
+                                                    8.0,
+                                                ),
+                                            ..default()
+                                        },
+                                        TextColor(
+                                            theme::GOLD,
+                                        ),
+                                    ));
+
+                                    spawn_spellbook_summary_text(
+                                        right,
+                                        NativeSpellbookSummaryText::Learned,
+                                        "0 / 0 learned",
+                                    );
+                                });
+                        });
+
+                    panel
+                        .spawn(Node {
+                            width:
+                                Val::Percent(100.0),
+                            flex_grow: 1.0,
+                            min_height: px(460),
+                            flex_direction:
+                                FlexDirection::Row,
+                            column_gap: px(10),
+                            ..default()
+                        })
+                        .with_children(|columns| {
+                            columns
+                                .spawn((
+                                    spellbook_column_node(
+                                        Val::Percent(
+                                            42.0,
+                                        ),
+                                    ),
+                                    BackgroundColor(
+                                        Color::srgba(
+                                            0.015,
+                                            0.03,
+                                            0.022,
+                                            0.98,
+                                        ),
+                                    ),
+                                    BorderColor::all(
+                                        theme::BUTTON_BORDER,
+                                    ),
+                                ))
+                                .with_children(|library| {
+                                    spawn_spellbook_heading(
+                                        library,
+                                        "KNOWN MAGIC",
+                                        "LEARNED SPELLS",
+                                    );
+
+                                    for index
+                                        in 0..8usize
+                                    {
+                                        spawn_spellbook_learned_card(
+                                            library,
+                                            index,
+                                        );
+                                    }
+
+                                    library.spawn((
+                                        Node {
+                                            width:
+                                                Val::Percent(
+                                                    100.0,
+                                                ),
+                                            height: px(1),
+                                            margin:
+                                                UiRect::vertical(
+                                                    px(3),
+                                                ),
+                                            ..default()
+                                        },
+                                        BackgroundColor(
+                                            theme::GOLD_DARK,
+                                        ),
+                                    ));
+
+                                    spawn_spellbook_heading(
+                                        library,
+                                        "DISCOVERY",
+                                        "NOT LEARNED",
+                                    );
+
+                                    for index
+                                        in 0..4usize
+                                    {
+                                        spawn_spellbook_locked_card(
+                                            library,
+                                            index,
+                                        );
+                                    }
+                                });
+
+                            columns
+                                .spawn((
+                                    spellbook_column_node(
+                                        Val::Percent(
+                                            58.0,
+                                        ),
+                                    ),
+                                    BackgroundColor(
+                                        PANEL_SOFT,
+                                    ),
+                                    BorderColor::all(
+                                        theme::BUTTON_BORDER,
+                                    ),
+                                ))
+                                .with_children(|detail| {
+                                    spawn_spellbook_heading(
+                                        detail,
+                                        "SELECTED MAGIC",
+                                        "SPELL DETAIL",
+                                    );
+
+                                    detail
+                                        .spawn((
+                                            Node {
+                                                width:
+                                                    Val::Percent(
+                                                        100.0,
+                                                    ),
+                                                min_height:
+                                                    px(104),
+                                                padding:
+                                                    UiRect::all(
+                                                        px(12),
+                                                    ),
+                                                border:
+                                                    UiRect::all(
+                                                        px(1),
+                                                    ),
+                                                border_radius:
+                                                    BorderRadius::all(
+                                                        px(7),
+                                                    ),
+                                                flex_direction:
+                                                    FlexDirection::Row,
+                                                align_items:
+                                                    AlignItems::Center,
+                                                column_gap:
+                                                    px(12),
+                                                ..default()
+                                            },
+                                            BackgroundColor(
+                                                Color::srgba(
+                                                    0.12,
+                                                    0.08,
+                                                    0.025,
+                                                    0.42,
+                                                ),
+                                            ),
+                                            BorderColor::all(
+                                                theme::GOLD_DARK,
+                                            ),
+                                        ))
+                                        .with_children(|hero| {
+                                            hero
+                                                .spawn((
+                                                    Node {
+                                                        width:
+                                                            px(64),
+                                                        height:
+                                                            px(64),
+                                                        border:
+                                                            UiRect::all(
+                                                                px(1),
+                                                            ),
+                                                        border_radius:
+                                                            BorderRadius::all(
+                                                                px(32),
+                                                            ),
+                                                        align_items:
+                                                            AlignItems::Center,
+                                                        justify_content:
+                                                            JustifyContent::Center,
+                                                        ..default()
+                                                    },
+                                                    BackgroundColor(
+                                                        Color::srgba(
+                                                            0.20,
+                                                            0.13,
+                                                            0.035,
+                                                            0.86,
+                                                        ),
+                                                    ),
+                                                    BorderColor::all(
+                                                        theme::GOLD,
+                                                    ),
+                                                ))
+                                                .with_child((
+                                                    Text::new(
+                                                        "✦",
+                                                    ),
+                                                    TextFont {
+                                                        font_size:
+                                                            FontSize::Px(
+                                                                28.0,
+                                                            ),
+                                                        ..default()
+                                                    },
+                                                    TextColor(
+                                                        theme::GOLD_BRIGHT,
+                                                    ),
+                                                ));
+
+                                            hero
+                                                .spawn(Node {
+                                                    flex_grow:
+                                                        1.0,
+                                                    flex_direction:
+                                                        FlexDirection::Column,
+                                                    row_gap:
+                                                        px(5),
+                                                    ..default()
+                                                })
+                                                .with_children(|copy| {
+                                                    spawn_spellbook_detail_text(
+                                                        copy,
+                                                        NativeSpellbookDetailText::Name,
+                                                        "Select a spell",
+                                                        16.0,
+                                                        theme::GOLD_BRIGHT,
+                                                    );
+
+                                                    spawn_spellbook_detail_text(
+                                                        copy,
+                                                        NativeSpellbookDetailText::Description,
+                                                        "Choose learned magic from the library.",
+                                                        9.0,
+                                                        MUTED,
+                                                    );
+                                                });
+                                        });
+
+                                    detail
+                                        .spawn((
+                                            Node {
+                                                width:
+                                                    Val::Percent(
+                                                        100.0,
+                                                    ),
+                                                padding:
+                                                    UiRect::all(
+                                                        px(10),
+                                                    ),
+                                                border:
+                                                    UiRect::all(
+                                                        px(1),
+                                                    ),
+                                                border_radius:
+                                                    BorderRadius::all(
+                                                        px(6),
+                                                    ),
+                                                flex_direction:
+                                                    FlexDirection::Column,
+                                                row_gap:
+                                                    px(7),
+                                                ..default()
+                                            },
+                                            BackgroundColor(
+                                                PANEL_DEEP,
+                                            ),
+                                            BorderColor::all(
+                                                theme::BUTTON_BORDER,
+                                            ),
+                                        ))
+                                        .with_children(|facts| {
+                                            facts.spawn((
+                                                Text::new(
+                                                    "CASTING",
+                                                ),
+                                                TextFont {
+                                                    font_size:
+                                                        FontSize::Px(
+                                                            8.0,
+                                                        ),
+                                                    ..default()
+                                                },
+                                                TextColor(
+                                                    theme::GOLD,
+                                                ),
+                                            ));
+
+                                            spawn_spellbook_detail_text(
+                                                facts,
+                                                NativeSpellbookDetailText::Stats,
+                                                "Mana —  ·  Damage —  ·  Range —  ·  Cooldown —",
+                                                9.0,
+                                                TEXT,
+                                            );
+
+                                            spawn_spellbook_detail_text(
+                                                facts,
+                                                NativeSpellbookDetailText::Requirement,
+                                                "Required magic level —",
+                                                8.5,
+                                                MUTED,
+                                            );
+                                        });
+
+                                    detail
+                                        .spawn((
+                                            Node {
+                                                width:
+                                                    Val::Percent(
+                                                        100.0,
+                                                    ),
+                                                padding:
+                                                    UiRect::all(
+                                                        px(10),
+                                                    ),
+                                                border:
+                                                    UiRect::all(
+                                                        px(1),
+                                                    ),
+                                                border_radius:
+                                                    BorderRadius::all(
+                                                        px(6),
+                                                    ),
+                                                flex_direction:
+                                                    FlexDirection::Column,
+                                                row_gap:
+                                                    px(5),
+                                                ..default()
+                                            },
+                                            BackgroundColor(
+                                                PANEL_DEEP,
+                                            ),
+                                            BorderColor::all(
+                                                theme::BUTTON_BORDER,
+                                            ),
+                                        ))
+                                        .with_children(|targeting| {
+                                            targeting.spawn((
+                                                Text::new(
+                                                    "TARGETING",
+                                                ),
+                                                TextFont {
+                                                    font_size:
+                                                        FontSize::Px(
+                                                            8.0,
+                                                        ),
+                                                    ..default()
+                                                },
+                                                TextColor(
+                                                    theme::GOLD,
+                                                ),
+                                            ));
+
+                                            spawn_spellbook_detail_text(
+                                                targeting,
+                                                NativeSpellbookDetailText::CastHint,
+                                                "Select a creature target before casting.",
+                                                8.5,
+                                                MUTED,
+                                            );
+                                        });
+
+                                    detail
+                                        .spawn(Node {
+                                            width:
+                                                Val::Percent(
+                                                    100.0,
+                                                ),
+                                            margin:
+                                                UiRect::top(
+                                                    px(4),
+                                                ),
+                                            flex_direction:
+                                                FlexDirection::Row,
+                                            justify_content:
+                                                JustifyContent::FlexEnd,
+                                            column_gap:
+                                                px(7),
+                                            ..default()
+                                        })
+                                        .with_children(|actions| {
+                                            spawn_spellbook_action_button(
+                                                actions,
+                                                NativeSpellbookButton::Skills,
+                                                "SKILLS",
+                                                false,
+                                                88.0,
+                                            );
+
+                                            spawn_spellbook_action_button(
+                                                actions,
+                                                NativeSpellbookButton::Cast,
+                                                "CAST",
+                                                true,
+                                                112.0,
+                                            );
+                                        });
+                                });
+                        });
+
+                    panel
+                        .spawn((
+                            native_modal::footer_node(),
+                            native_modal::divider_border(),
+                        ))
+                        .with_children(|footer| {
+                            footer.spawn((
+                                Text::new(
+                                    "P / Esc close  ·  ↑/↓ select  ·  F cast selected spell",
+                                ),
+                                TextFont {
+                                    font_size:
+                                        FontSize::Px(
+                                            8.5,
+                                        ),
+                                    ..default()
+                                },
+                                TextColor(MUTED),
+                            ));
+                        });
+                });
         });
 }
 
@@ -6015,6 +6959,19 @@ pub(crate) fn update_crafting_modal_ui(
     >,
 ) {
     if !panels.crafting_open {
+        // Crafting item previews use explicit Visibility::Visible while the
+        // window is open. Reset them explicitly before returning so they
+        // cannot remain rendered over the world after the modal closes.
+        for (
+            _,
+            _,
+            mut visibility,
+        ) in &mut images
+        {
+            *visibility =
+                Visibility::Hidden;
+        }
+
         return;
     }
 
@@ -7150,6 +8107,479 @@ fn cast_selected_spell(
     }
 }
 
+pub(crate) fn handle_spellbook_modal_buttons(
+    network: Res<NativeNetwork>,
+    mut game_state: ResMut<NativeGameState>,
+    mut panels: ResMut<NativePanelState>,
+    mut buttons: Query<
+        (
+            &Interaction,
+            &NativeSpellbookButton,
+            &mut BackgroundColor,
+            &mut BorderColor,
+        ),
+        (
+            Changed<Interaction>,
+            With<Button>,
+        ),
+    >,
+) {
+    if !panels.spells_open {
+        return;
+    }
+
+    for (
+        interaction,
+        action,
+        mut background,
+        mut border,
+    ) in &mut buttons
+    {
+        match *interaction {
+            Interaction::Hovered => {
+                background.0 =
+                    theme::BUTTON_HOVER;
+                *border =
+                    BorderColor::all(
+                        theme::GOLD,
+                    );
+            }
+            Interaction::None => {
+                background.0 =
+                    theme::BUTTON_BG;
+                *border =
+                    BorderColor::all(
+                        theme::BUTTON_BORDER,
+                    );
+            }
+            Interaction::Pressed => {
+                background.0 =
+                    theme::BUTTON_PRESSED;
+                *border =
+                    BorderColor::all(
+                        theme::GOLD_BRIGHT,
+                    );
+
+                match *action {
+                    NativeSpellbookButton::Learned(
+                        index,
+                    ) => {
+                        let learned =
+                            learned_spells_sorted(
+                                &game_state,
+                            );
+
+                        if let Some(
+                            (spell_id, _),
+                        ) = learned.get(index)
+                        {
+                            panels
+                                .selected_spell_id =
+                                Some(
+                                    spell_id
+                                        .clone(),
+                                );
+                        }
+                    }
+                    NativeSpellbookButton::Cast => {
+                        cast_selected_spell(
+                            &network,
+                            &mut game_state,
+                            &panels,
+                        );
+                    }
+                    NativeSpellbookButton::Skills => {
+                        panels.spells_open = false;
+                        panels.skills_open = true;
+                        panels.inventory_open =
+                            false;
+                        panels.character_open =
+                            false;
+                        panels.crafting_open =
+                            false;
+                        panels.npc_open = false;
+                    }
+                    NativeSpellbookButton::Close => {
+                        panels.spells_open = false;
+                    }
+                }
+            }
+        }
+    }
+
+    ensure_spell_selection(
+        &game_state,
+        &mut panels,
+    );
+}
+
+pub(crate) fn update_spellbook_modal_ui(
+    game_state: Res<NativeGameState>,
+    panels: Res<NativePanelState>,
+    mut text_queries: ParamSet<(
+        Query<
+            (
+                &NativeSpellbookSummaryText,
+                &mut Text,
+                &mut TextColor,
+            ),
+        >,
+        Query<
+            (
+                &NativeSpellbookLearnedText,
+                &mut Text,
+                &mut TextColor,
+            ),
+        >,
+        Query<
+            (
+                &NativeSpellbookLockedText,
+                &mut Text,
+                &mut TextColor,
+            ),
+        >,
+        Query<
+            (
+                &NativeSpellbookDetailText,
+                &mut Text,
+                &mut TextColor,
+            ),
+        >,
+    )>,
+    mut buttons: Query<
+        (
+            &NativeSpellbookButton,
+            &Interaction,
+            &mut BackgroundColor,
+            &mut BorderColor,
+        ),
+    >,
+) {
+    if !panels.spells_open {
+        return;
+    }
+
+    let learned =
+        learned_spells_sorted(
+            &game_state,
+        );
+
+    let mut all: Vec<_> =
+        game_state
+            .spells
+            .values()
+            .collect();
+
+    all.sort_by(|left, right| {
+        left.name.cmp(&right.name)
+    });
+
+    let locked: Vec<_> =
+        all
+            .iter()
+            .copied()
+            .filter(|spell| {
+                !game_state
+                    .learned_spell_ids
+                    .contains(
+                        &spell.id,
+                    )
+            })
+            .collect();
+
+    for (
+        kind,
+        mut text,
+        mut color,
+    ) in &mut text_queries.p0()
+    {
+        match kind {
+            NativeSpellbookSummaryText::Magic => {
+                if let Some(player) =
+                    game_state.local_player()
+                {
+                    text.0 = format!(
+                        "Magic Level {}  ·  Mana {}/{}",
+                        player.magic_level,
+                        player.mana,
+                        player.max_mana,
+                    );
+                    color.0 = TEXT;
+                } else {
+                    text.0 =
+                        "No local player"
+                            .into();
+                    color.0 = MUTED;
+                }
+            }
+            NativeSpellbookSummaryText::Learned => {
+                text.0 = format!(
+                    "{} / {} LEARNED",
+                    learned.len(),
+                    all.len(),
+                );
+                color.0 =
+                    theme::GOLD_BRIGHT;
+            }
+        }
+    }
+
+    for (
+        view,
+        mut text,
+        mut color,
+    ) in &mut text_queries.p1()
+    {
+        let Some(
+            (spell_id, spell_name),
+        ) = learned.get(view.index)
+        else {
+            text.0.clear();
+            color.0 = MUTED;
+            continue;
+        };
+
+        let selected =
+            panels
+                .selected_spell_id
+                .as_deref()
+                == Some(
+                    spell_id.as_str(),
+                );
+
+        let spell =
+            game_state
+                .spells
+                .get(spell_id);
+
+        match view.field {
+            NativeSpellbookListField::Name => {
+                text.0 =
+                    spell_name.clone();
+
+                color.0 =
+                    if selected {
+                        theme::GOLD_BRIGHT
+                    } else {
+                        TEXT
+                    };
+            }
+            NativeSpellbookListField::Meta => {
+                text.0 =
+                    spell
+                        .map(|spell| {
+                            format!(
+                                "{} mana  ·  range {}  ·  {:.1}s",
+                                spell.mana_cost,
+                                spell.range,
+                                spell.cooldown_ms
+                                    as f32
+                                    / 1000.0,
+                            )
+                        })
+                        .unwrap_or_default();
+
+                color.0 = MUTED;
+            }
+        }
+    }
+
+    for (
+        view,
+        mut text,
+        mut color,
+    ) in &mut text_queries.p2()
+    {
+        let Some(spell) =
+            locked.get(view.index)
+        else {
+            text.0.clear();
+            color.0 = MUTED;
+            continue;
+        };
+
+        match view.field {
+            NativeSpellbookListField::Name => {
+                text.0 =
+                    spell.name.clone();
+                color.0 = MUTED;
+            }
+            NativeSpellbookListField::Meta => {
+                text.0 = format!(
+                    "Required ML {}  ·  price {}",
+                    spell.required_magic_level,
+                    spell.price,
+                );
+                color.0 = MUTED;
+            }
+        }
+    }
+
+    let selected =
+        panels
+            .selected_spell_id
+            .as_deref()
+            .and_then(|spell_id| {
+                game_state
+                    .spells
+                    .get(spell_id)
+            });
+
+    for (
+        kind,
+        mut text,
+        mut color,
+    ) in &mut text_queries.p3()
+    {
+        let Some(spell) = selected else {
+            match kind {
+                NativeSpellbookDetailText::Name => {
+                    text.0 =
+                        "Select a spell"
+                            .into();
+                    color.0 =
+                        theme::GOLD_BRIGHT;
+                }
+                NativeSpellbookDetailText::Description => {
+                    text.0 =
+                        "Choose learned magic from the library."
+                            .into();
+                    color.0 = MUTED;
+                }
+                NativeSpellbookDetailText::CastHint => {
+                    text.0 =
+                        "Select a creature target before casting."
+                            .into();
+                    color.0 = MUTED;
+                }
+                _ => {
+                    text.0.clear();
+                    color.0 = MUTED;
+                }
+            }
+
+            continue;
+        };
+
+        match kind {
+            NativeSpellbookDetailText::Name => {
+                text.0 =
+                    spell.name.clone();
+                color.0 =
+                    theme::GOLD_BRIGHT;
+            }
+            NativeSpellbookDetailText::Description => {
+                text.0 =
+                    spell.description.clone();
+                color.0 = MUTED;
+            }
+            NativeSpellbookDetailText::Stats => {
+                text.0 = format!(
+                    "Mana {}  ·  Damage {}  ·  Range {}  ·  Cooldown {:.2}s",
+                    spell.mana_cost,
+                    spell.damage,
+                    spell.range,
+                    spell.cooldown_ms
+                        as f32
+                        / 1000.0,
+                );
+                color.0 = TEXT;
+            }
+            NativeSpellbookDetailText::Requirement => {
+                text.0 = format!(
+                    "Required magic level {}  ·  training price {}",
+                    spell.required_magic_level,
+                    spell.price,
+                );
+                color.0 = MUTED;
+            }
+            NativeSpellbookDetailText::CastHint => {
+                text.0 =
+                    if game_state
+                        .attack_target_id
+                        .is_some()
+                    {
+                        "Target selected  ·  CAST or F"
+                            .into()
+                    } else {
+                        "Select a creature target before casting."
+                            .into()
+                    };
+
+                color.0 =
+                    if game_state
+                        .attack_target_id
+                        .is_some()
+                    {
+                        theme::GOLD_BRIGHT
+                    } else {
+                        MUTED
+                    };
+            }
+        }
+    }
+
+    for (
+        action,
+        interaction,
+        mut background,
+        mut border,
+    ) in &mut buttons
+    {
+        let selected_button =
+            match *action {
+                NativeSpellbookButton::Learned(
+                    index,
+                ) => {
+                    learned
+                        .get(index)
+                        .is_some_and(
+                            |(spell_id, _)| {
+                                panels
+                                    .selected_spell_id
+                                    .as_deref()
+                                    == Some(
+                                        spell_id
+                                            .as_str(),
+                                    )
+                            },
+                        )
+                }
+                _ => false,
+            };
+
+        if selected_button {
+            background.0 =
+                Color::srgba(
+                    0.22,
+                    0.145,
+                    0.035,
+                    0.72,
+                );
+            *border =
+                BorderColor::all(
+                    theme::GOLD_BRIGHT,
+                );
+        } else if *interaction
+            == Interaction::Hovered
+        {
+            background.0 =
+                theme::BUTTON_HOVER;
+            *border =
+                BorderColor::all(
+                    theme::GOLD,
+                );
+        } else {
+            background.0 =
+                theme::BUTTON_BG;
+            *border =
+                BorderColor::all(
+                    theme::BUTTON_BORDER,
+                );
+        }
+    }
+}
+
 fn spellbook_panel_text(
     game_state: &NativeGameState,
     selected_spell_id: Option<&str>,
@@ -7383,6 +8813,19 @@ pub(crate) fn update_inventory_modal_ui(
     >,
 ) {
     if !panels.inventory_open {
+        // ImageNode visibility is set explicitly while Inventory is open.
+        // Do not rely only on the modal parent's visibility when closing:
+        // force every inventory item image hidden before returning.
+        for (
+            _,
+            _,
+            mut visibility,
+        ) in &mut images
+        {
+            *visibility =
+                Visibility::Hidden;
+        }
+
         return;
     }
 

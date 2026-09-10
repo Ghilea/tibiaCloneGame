@@ -24,6 +24,7 @@ pub(crate) enum NativeModalWindow {
     Skills,
     Spells,
     Crafting,
+    WorldMap,
     Npc,
 }
 

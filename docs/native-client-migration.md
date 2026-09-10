@@ -1630,3 +1630,115 @@ All actions reuse the existing authoritative ClientMessage paths and existing
 craft_selected_recipe helper. No client-side crafting result is invented.
 
 No loading, movement, floor-transition or creature-safety behavior changes.
+
+
+<!-- TIBIAGAME_V36_53_1_INVENTORY_IMAGE_VISIBILITY -->
+
+V36.53.1 fixes Inventory item ImageNodes remaining visible after the Inventory
+window is closed.
+
+The Inventory updater previously returned immediately when inventory_open was
+false. Item images had been given explicit Visibility::Visible while the window
+was open, so the close path never explicitly reset those child images.
+
+The closed-state branch now sets every NativeInventorySlotImage visibility to
+Hidden before returning. Reopening Inventory continues to restore occupied slot
+images through the normal live updater.
+
+No inventory state, item ownership, world item spawning, networking, loading,
+floor-transition or creature-safety behavior changes.
+
+
+<!-- TIBIAGAME_V36_54_0_REACT_FAITHFUL_WORLD_MAP -->
+
+V36.54.0 migrates the full native World Map away from the ASCII/text rendering
+toward the supplied old React Greyhaven map interface.
+
+The World Map now has:
+- draggable large Greyhaven map window
+- WORLD MAP / THE FIRST MARCHES header
+- Zone / World / Player / Close controls
+- left floor selector
+- Buildings / NPCs / Resources filter toggles
+- graphical 49 x 29 atlas cell viewport
+- existing discovered atlas data rendered by terrain tone
+- live Player / NPC / Resource map markers
+- zoom controls
+- coordinate/floor/scale footer
+- existing M/Escape, arrows, +/- , brackets and Home keyboard controls
+
+The graphical map refresh is throttled to 12.5 Hz while open to avoid updating
+1421 UI cells every rendered frame.
+
+WorldMap is also added to NativeModalWindow, so the user can drag it by its
+title using the same per-session UiTransform system as other gameplay windows.
+
+No world streaming, movement, server authority, loading, floor-transition or
+creature-visibility behavior changes.
+
+
+<!-- TIBIAGAME_V36_54_1_WORLD_MAP_THEME_CONSTANTS -->
+
+V36.54.1 fixes the V36.54.0 World Map compiler errors caused by unqualified
+TEXT and MUTED color constants in native_map_ui.rs.
+
+native_map_ui already imports native_ui_theme as theme. This hotfix adds local
+aliases:
+
+  const TEXT: Color = theme::TEXT;
+  const MUTED: Color = theme::MUTED;
+
+This keeps the World Map implementation self-contained and avoids reaching into
+private constants in native_ui.rs.
+
+No map behavior, dragging, world state, loading, network, floor transition or
+creature safety logic changes.
+
+
+<!-- TIBIAGAME_V36_54_2_CRAFTING_VISIBILITY_CHARACTER_DRAG -->
+
+V36.54.2 fixes two native UI regressions.
+
+Crafting image visibility:
+NativeCraftingItemImage entities are explicitly made Visible while Crafting is
+open. The updater previously returned immediately when crafting_open became
+false, so its input/output ImageNodes could remain rendered over the world.
+The closed branch now explicitly hides every Crafting item preview.
+
+Character drag hit area:
+The Character title already carried NativeDragHandle, but its Button Node kept
+intrinsic text sizing. This made only the small GREYHAVEN INTERFACE / CHARACTER
+text region draggable. The drag button now flexes across the available header
+area, has a 48px minimum height, and keeps the close button as a separate control.
+
+No inventory/crafting state, networking, movement, loading, floor-transition or
+creature-safety behavior changes.
+
+
+<!-- TIBIAGAME_V36_55_0_REACT_FAITHFUL_SPELLBOOK -->
+
+V36.55.0 migrates the native Spellbook away from the legacy monolithic text
+panel and into the Greyhaven interface style used by Character, Inventory,
+Skills, Crafting and World Map.
+
+Spellbook now contains:
+- draggable GREYHAVEN INTERFACE / SPELLBOOK header
+- Magic Level + current Mana summary
+- learned / total library count
+- learned spell cards with mana, range and cooldown
+- not-learned library cards with required ML and price
+- selected spell hero/detail section
+- full description
+- damage / mana / range / cooldown facts
+- required magic level / training price
+- live target readiness text
+- mouse spell selection
+- CAST button using existing authoritative CastSpell path
+- SKILLS navigation button
+- existing P / Esc, arrows and F keyboard controls remain
+
+No new client-side spell semantics are invented. Casting still requires the
+existing selected attack target and uses cast_selected_spell / ClientMessage.
+
+No loading, floor-transition, creature-safety, movement or network-authority
+behavior changes.

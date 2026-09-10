@@ -400,7 +400,8 @@ impl Plugin for SingleWindowGameplayPlugin {
                     native_ui::update_ui
                     .after(pump_network),
                     native_map_ui::update_ui
-                    .after(pump_network),
+                    .after(pump_network)
+                    .after(native_map_ui::handle_buttons),
                     native_trade_ui::update_ui
                     .after(pump_network),
                     native_settings::update_performance_probe,
@@ -419,6 +420,9 @@ impl Plugin for SingleWindowGameplayPlugin {
             .add_systems(
                 Update,
                 (
+                    native_map_ui::handle_buttons
+                        .run_if(native_game_menu::menu_closed)
+                        .after(native_map_ui::handle_input),
                     native_modal::handle_window_drag,
                     native_ui::handle_inventory_modal_buttons
                         .run_if(native_game_menu::menu_closed)
@@ -426,6 +430,9 @@ impl Plugin for SingleWindowGameplayPlugin {
                             native_ui::handle_panel_close_buttons,
                         ),
                     native_ui::handle_crafting_modal_buttons
+                        .run_if(native_game_menu::menu_closed)
+                        .after(native_ui::handle_panel_close_buttons),
+                    native_ui::handle_spellbook_modal_buttons
                         .run_if(native_game_menu::menu_closed)
                         .after(native_ui::handle_panel_close_buttons),
                     native_ui::handle_character_modal_buttons
@@ -436,6 +443,8 @@ impl Plugin for SingleWindowGameplayPlugin {
                     native_ui::update_skills_modal_ui
                         .after(native_ui::update_ui),
                     native_ui::update_crafting_modal_ui
+                        .after(native_ui::update_ui),
+                    native_ui::update_spellbook_modal_ui
                         .after(native_ui::update_ui),
                     native_ui::update_character_modal_ui
                         .after(native_ui::update_ui),
