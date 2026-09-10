@@ -4,8 +4,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$clientDir = Join-Path $repoRoot "apps\client"
-$publicKeyTarget = Join-Path $clientDir "src-tauri\updater.pub"
+$publicKeyTarget = Join-Path $repoRoot "crates\game-client\updater.pub"
 
 $keyDir = Split-Path -Parent $KeyPath
 New-Item -ItemType Directory -Path $keyDir -Force | Out-Null
@@ -20,7 +19,7 @@ Write-Host "Private key stays OUTSIDE the repository:"
 Write-Host "  $KeyPath"
 Write-Host ""
 
-Push-Location $clientDir
+Push-Location $repoRoot
 try {
     npm exec -- tauri signer generate -w $KeyPath
     if ($LASTEXITCODE -ne 0) {

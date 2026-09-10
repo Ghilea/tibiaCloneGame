@@ -1,8 +1,10 @@
 # Architecture
 
-The project is a modular monolith with a separate desktop/web client.
+The project is a modular monolith with a native desktop client and a separate browser-based authoring tool.
 
-- `apps/client`: React renders interface layers and PixiJS renders the game world. `WorldState` is framework-independent.
+- `crates/game-client`: Rust/Bevy owns the launcher, native UI, input, audio, networking and wgpu world renderer.
+- `apps/world-editor`: a React/Vite world-authoring tool; it is not shipped as the gameplay client.
+- `assets`: shared runtime art loaded by Bevy and previewed by the editor.
 - `crates/game-server`: an Axum/Tokio process holding active world state in memory. Clients send intentions and the server validates outcomes.
 - `crates/game-protocol`: versioned network messages.
 - `crates/game-types`: shared domain types without networking or storage concerns.

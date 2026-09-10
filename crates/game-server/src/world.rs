@@ -3505,7 +3505,7 @@ impl World {
 
     /// Small worlds already fit completely inside the initial region payload.
     /// Re-sending them at every region boundary only makes the client rebuild
-    /// an identical Three.js scene while the player is moving.
+    /// an identical native scene while the player is moving.
     pub fn requires_region_streaming(&self, radius: i32) -> bool {
         self.map.view.width > radius * 2 || self.map.view.height > radius * 2
     }

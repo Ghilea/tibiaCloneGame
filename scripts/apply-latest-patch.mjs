@@ -22,7 +22,7 @@ function fail(message) {
 
 if (
   !existsSync(packagePath)
-  || !existsSync(join(root, "apps/client/src/App.tsx"))
+  || !existsSync(join(root, "crates/game-client/src/main.rs"))
 ) {
   fail("Run this command from the tibiaCloneGame repository root.");
 }
@@ -179,15 +179,14 @@ run(process.execPath, [patch.path], "Patch apply");
 
 console.log("\nValidating changed code...");
 
-const touchesClient = source.includes("apps/client/");
+const touchesEditor = source.includes("apps/world-editor/");
 const touchesGameClient = source.includes("crates/game-client/");
 const touchesGameServer =
   source.includes("crates/game-server/") || source.includes("database/migrations/");
 const touchesGameTypes = source.includes("crates/game-types/");
-const touchesTauri = source.includes("apps/client/src-tauri/");
 
-if (touchesClient) {
-  run("npm", ["--prefix", "apps/client", "run", "check"], "Client TypeScript check");
+if (touchesEditor) {
+  run("npm", ["--prefix", "apps/world-editor", "run", "check"], "World editor TypeScript check");
 }
 if (touchesGameTypes) {
   run("cargo", ["check", "-p", "game-types"], "game-types cargo check");
@@ -202,14 +201,6 @@ if (touchesGameClient) {
 if (touchesGameServer) {
   run("cargo", ["check", "-p", "game-server"], "game-server cargo check");
 }
-if (touchesTauri) {
-  run(
-    "cargo",
-    ["check", "--manifest-path", "apps/client/src-tauri/Cargo.toml"],
-    "Tauri cargo check"
-  );
-}
-
 run("git", ["diff", "--check"], "git diff --check");
 
 const state = loadState();

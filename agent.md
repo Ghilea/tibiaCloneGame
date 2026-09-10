@@ -768,27 +768,11 @@ Do not implement unrelated housing features during another task merely because t
 
 ## Client
 
-Preferred desktop stack:
-- Tauri
-- React
-- TypeScript
+The production desktop client is `crates/game-client`, implemented in Rust with Bevy/wgpu. It owns both gameplay rendering and native UI. Do not reintroduce a Tauri, WebView, React or Three.js gameplay runtime.
 
-React is primarily for UI:
-- inventory
-- equipment
-- character/skills
-- dialogue
-- chat
-- trade
-- settings
-- menus
-- panels
+The browser-based React code under `apps/world-editor` is an authoring tool only and must not become a gameplay client.
 
-Do **not** use React DOM as the primary world renderer.
-
-The world renderer must be isolated from normal React rerender cycles.
-
-Use the renderer already present in the repository unless a task explicitly requires changing it.
+Use the native Bevy renderer already present in the repository unless a task explicitly requires changing it.
 
 Do not replace the renderer/library solely because another technology might also work.
 
@@ -874,7 +858,7 @@ Important areas:
 - batching
 - texture atlases where relevant
 - sprite/entity updates
-- React rerenders
+- Bevy UI and render-world update cost
 - allocations
 - network traffic
 - map streaming

@@ -42,7 +42,7 @@ if ($detectedPublicIp) {
     Write-Host "Detected WAN : $detectedPublicIp"
     if ($detectedPublicIp -ne $ExpectedPublicIp) {
         Write-Warning "Public IP changed. Friend clients still point to $ExpectedPublicIp."
-        Write-Warning "Update apps/client/.env.production and publish a new client."
+        Write-Warning "Update the native release endpoint variables in .github/workflows/release-friend-client.yml and publish a new client."
     }
 }
 

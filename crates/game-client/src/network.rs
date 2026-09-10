@@ -38,12 +38,20 @@ pub struct NativeLoginResult {
 
 pub fn configured_api_url() -> String {
     env::var("ALDORIA_API_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:4000/api".to_owned())
+        .unwrap_or_else(|_| {
+            option_env!("ALDORIA_DEFAULT_API_URL")
+                .unwrap_or("http://127.0.0.1:4000/api")
+                .to_owned()
+        })
 }
 
 pub fn configured_ws_url() -> String {
     env::var("ALDORIA_WS_URL")
-        .unwrap_or_else(|_| "ws://127.0.0.1:4000/ws".to_owned())
+        .unwrap_or_else(|_| {
+            option_env!("ALDORIA_DEFAULT_WS_URL")
+                .unwrap_or("ws://127.0.0.1:4000/ws")
+                .to_owned()
+        })
 }
 
 pub fn login_and_list_characters(

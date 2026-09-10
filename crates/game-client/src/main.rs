@@ -374,6 +374,10 @@ impl Plugin for SingleWindowGameplayPlugin {
                     .after(
                     native_ui::handle_panel_dock_buttons,
                     ),
+                    native_ui::handle_nearby_loot
+                    .run_if(native_loading::gameplay_ready)
+                    .run_if(native_game_menu::menu_closed)
+                    .after(native_ui::handle_panel_close_buttons),
                     native_ui::handle_action_hotkeys
                     .run_if(native_loading::gameplay_ready)
                     .run_if(native_game_menu::menu_closed)
@@ -399,6 +403,8 @@ impl Plugin for SingleWindowGameplayPlugin {
                     native_ui::ping_server,
                     native_ui::update_ui
                     .after(pump_network),
+                    native_ui::update_nearby_loot_ui
+                    .after(native_ui::update_ui),
                     native_map_ui::update_ui
                     .after(pump_network)
                     .after(native_map_ui::handle_buttons),
@@ -693,6 +699,9 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                     .after(native_ui::handle_panel_hotkeys),
                 native_ui::handle_panel_close_buttons
                     .after(native_ui::handle_panel_dock_buttons),
+                native_ui::handle_nearby_loot
+                    .run_if(native_loading::gameplay_ready)
+                    .after(native_ui::handle_panel_close_buttons),
                 native_ui::handle_action_hotkeys
                     .run_if(native_loading::gameplay_ready)
                     .after(native_loading::update)
@@ -702,6 +711,7 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                     .after(native_ui::handle_action_hotkeys),
                 native_ui::ping_server,
                 native_ui::update_ui.after(pump_network),
+                native_ui::update_nearby_loot_ui.after(native_ui::update_ui),
                 native_map_ui::update_ui.after(pump_network),
                 native_trade_ui::update_ui.after(pump_network),
                 native_settings::update_performance_probe,
@@ -724,8 +734,16 @@ fn native_asset_root() -> String {
         }
     }
 
-    let candidate = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../apps/client/public/assets");
+    // Installed builds ship an `assets` directory next to the executable.
+    // Development builds fall back to the repository-level asset directory.
+    let installed = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(|parent| parent.join("assets")));
+    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets");
+    let candidate = installed
+        .filter(|path| path.is_dir())
+        .unwrap_or(repository);
 
     candidate
         .canonicalize()
@@ -1917,7 +1935,7 @@ fn update_player_animation(
         active.repeat();
 
         if desired == PlayerAnimationState::Walk {
-            // Match the legacy Three.js AnimatedCharacter walk cadence.
+            // Preserve the established visual walk cadence.
             active.set_speed(1.08);
         }
 
@@ -1930,7 +1948,10 @@ fn update_building_roofs(
     movement: Res<MovementState>,
     camera: Query<&Transform, (With<MainCamera>, Without<BuildingRoof>)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut roofs: Query<(&mut BuildingRoof, &mut Visibility)>,
+    mut roofs: Query<
+        (&mut BuildingRoof, &mut Visibility),
+        Without<MainCamera>,
+    >,
     mut walls: Query<(&HouseWallOccluder, &mut Visibility), Without<BuildingRoof>>,
 ) {
     let Ok(camera) = camera.single() else {

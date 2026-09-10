@@ -46,11 +46,10 @@ function Fail-And-Restore {
 }
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$clientDir = Join-Path $repoRoot "apps\client"
-$repoPublicKey = Join-Path $clientDir "src-tauri\updater.pub"
+$repoPublicKey = Join-Path $repoRoot "crates\game-client\updater.pub"
 
-if (-not (Test-Path (Join-Path $clientDir "package.json"))) {
-    throw "Run this script from the repository root. Expected: apps\client\package.json"
+if (-not (Test-Path (Join-Path $repoRoot "package.json"))) {
+    throw "Run this script from the repository root."
 }
 
 $keyDir = Split-Path -Parent $KeyPath
@@ -95,7 +94,7 @@ if (Test-Path "$KeyPath.pub") {
     Remove-Item "$KeyPath.pub" -Force
 }
 
-Push-Location $clientDir
+Push-Location $repoRoot
 try {
     Write-Host ""
     Write-Host "Generating new key with the current Tauri CLI..." -ForegroundColor Cyan
@@ -136,7 +135,7 @@ $probe = Join-Path $env:TEMP ("aldoria-updater-key-probe-" + $timestamp + ".txt"
     [Text.UTF8Encoding]::new($false)
 )
 
-Push-Location $clientDir
+Push-Location $repoRoot
 try {
     Write-Host ""
     Write-Host "Testing the new private key immediately..." -ForegroundColor Cyan

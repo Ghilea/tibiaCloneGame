@@ -5,11 +5,10 @@ target/
 *.log
 .load-test-accounts.json
 *.tsbuildinfo
-apps/client/vite.config.js
-apps/client/vite.config.d.ts
+apps/world-editor/vite.config.js
+apps/world-editor/vite.config.d.ts
 .DS_Store
 .aldoria-generated/
 .aldoria-updater/
 .aldoria-content-backups/
-apps/client/src-tauri/tauri.friend.generated.json
 .vscode/settings.json

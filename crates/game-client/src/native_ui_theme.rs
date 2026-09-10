@@ -1,7 +1,7 @@
 // TIBIAGAME_V36_37_NATIVE_ALDORIA_UI_THEME
 //
 // Native Bevy translation of the current React client's visual language.
-// Source-of-truth palette comes from apps/client/src/styles.css:
+// Source-of-truth palette was ported from the retired React client's styles.css:
 //   root       #080c0a
 //   panel      #111a16 / #090e0c
 //   gold       #d2ad68

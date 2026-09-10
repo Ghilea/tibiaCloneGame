@@ -62,7 +62,7 @@ enum UpdateWorkerResult {
     },
     Ready {
         version: String,
-        staged_executable: PathBuf,
+        staged_bundle: PathBuf,
     },
 }
 
@@ -212,7 +212,7 @@ fn poll_worker(
         }
         Ok(UpdateWorkerResult::Ready {
             version,
-            staged_executable,
+            staged_bundle,
         }) => {
             // Once a newer executable has been downloaded and verified, do not
             // allow the old client to enter the world if replacement fails.
@@ -221,7 +221,7 @@ fn poll_worker(
                 format!("Installing signed update v{version}…");
 
             match schedule_replace_and_restart(
-                &staged_executable,
+                &staged_bundle,
             ) {
                 Ok(()) => {
                     // Windows updater helper is now waiting for this process
@@ -346,14 +346,14 @@ fn check_download_and_stage()
         )?;
 
         let staged =
-            stage_verified_executable(
+            stage_verified_bundle(
                 &manifest.version,
                 &payload,
             )?;
 
         Ok(UpdateWorkerResult::Ready {
             version: manifest.version,
-            staged_executable: staged,
+            staged_bundle: staged,
         })
     })
 }
@@ -398,7 +398,7 @@ fn validate_manifest(
     if !manifest
         .url
         .contains(&format!(
-            "/{}/EmbersOfAldoria.exe",
+            "/{}/Embers-of-Aldoria-Native-windows-x86_64.zip",
             manifest.tag,
         ))
     {
@@ -447,7 +447,7 @@ fn verify_payload(
     Ok(())
 }
 
-fn stage_verified_executable(
+fn stage_verified_bundle(
     version: &str,
     payload: &[u8],
 ) -> Result<PathBuf> {
@@ -468,10 +468,9 @@ fn stage_verified_executable(
             )
         })?;
 
-    let destination =
-        directory.join(format!(
-            "EmbersOfAldoria-{version}.exe",
-        ));
+    let destination = directory.join(format!(
+        "Embers-of-Aldoria-{version}.zip",
+    ));
 
     fs::write(
         &destination,
@@ -503,7 +502,7 @@ fn update_directory() -> PathBuf {
 
 #[cfg(target_os = "windows")]
 fn schedule_replace_and_restart(
-    staged_executable: &Path,
+    staged_bundle: &Path,
 ) -> Result<()> {
     let current =
         std::env::current_exe()
@@ -513,25 +512,37 @@ fn schedule_replace_and_restart(
 
     let pid = std::process::id();
 
-    let staged =
-        powershell_literal(staged_executable);
+    let staged = powershell_literal(staged_bundle);
     let destination =
         powershell_literal(&current);
+    let install_directory = current
+        .parent()
+        .context("native executable has no install directory")?;
+    let install_directory = powershell_literal(install_directory);
 
     let script = format!(
         concat!(
             "$ErrorActionPreference='Stop'; ",
             "Wait-Process -Id {pid}; ",
             "Start-Sleep -Milliseconds 350; ",
-            "Copy-Item -LiteralPath '{staged}' ",
-            "-Destination '{destination}' -Force; ",
+            "$extract='{staged}.contents'; ",
+            "Expand-Archive -LiteralPath '{staged}' -DestinationPath $extract -Force; ",
+            "$sourceExe=Join-Path $extract 'EmbersOfAldoria.exe'; ",
+            "$sourceAssets=Join-Path $extract 'assets'; ",
+            "if (!(Test-Path -LiteralPath $sourceExe)) {{ throw 'Update bundle has no executable.' }}; ",
+            "if (!(Test-Path -LiteralPath $sourceAssets)) {{ throw 'Update bundle has no assets.' }}; ",
+            "Copy-Item -LiteralPath $sourceExe -Destination '{destination}' -Force; ",
+            "$assetsDestination=Join-Path '{install_directory}' 'assets'; ",
+            "New-Item -ItemType Directory -Path $assetsDestination -Force | Out-Null; ",
+            "Copy-Item -Path (Join-Path $sourceAssets '*') -Destination $assetsDestination -Recurse -Force; ",
             "Start-Process -FilePath '{destination}'; ",
-            "Remove-Item -LiteralPath '{staged}' ",
-            "-Force -ErrorAction SilentlyContinue;"
+            "Remove-Item -LiteralPath '{staged}' -Force -ErrorAction SilentlyContinue; ",
+            "Remove-Item -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue;"
         ),
         pid = pid,
         staged = staged,
         destination = destination,
+        install_directory = install_directory,
     );
 
     Command::new("powershell.exe")
@@ -553,7 +564,7 @@ fn schedule_replace_and_restart(
 
 #[cfg(not(target_os = "windows"))]
 fn schedule_replace_and_restart(
-    _staged_executable: &Path,
+    _staged_bundle: &Path,
 ) -> Result<()> {
     bail!(
         "automatic native replacement is only implemented on Windows",
@@ -604,7 +615,11 @@ fn parse_semver(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_semver;
+    use super::{
+        NativeUpdateManifest,
+        parse_semver,
+        validate_manifest,
+    };
 
     #[test]
     fn compares_release_versions() {
@@ -612,5 +627,33 @@ mod tests {
             parse_semver("0.1.10").unwrap()
                 > parse_semver("0.1.9").unwrap()
         );
+    }
+
+    #[test]
+    fn accepts_versioned_native_bundle_url() {
+        let manifest = NativeUpdateManifest {
+            version: "0.1.10".into(),
+            platform: "windows-x86_64".into(),
+            url: "https://github.com/Ghilea/tibiaCloneGame/releases/download/client-v0.1.10/Embers-of-Aldoria-Native-windows-x86_64.zip".into(),
+            signature: "test".into(),
+            executable: "EmbersOfAldoria.exe".into(),
+            tag: "client-v0.1.10".into(),
+        };
+
+        validate_manifest(&manifest).unwrap();
+    }
+
+    #[test]
+    fn rejects_executable_only_update_url() {
+        let manifest = NativeUpdateManifest {
+            version: "0.1.10".into(),
+            platform: "windows-x86_64".into(),
+            url: "https://github.com/Ghilea/tibiaCloneGame/releases/download/client-v0.1.10/EmbersOfAldoria.exe".into(),
+            signature: "test".into(),
+            executable: "EmbersOfAldoria.exe".into(),
+            tag: "client-v0.1.10".into(),
+        };
+
+        assert!(validate_manifest(&manifest).is_err());
     }
 }

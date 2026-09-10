@@ -116,6 +116,24 @@ pub(crate) struct NativeActionSlot(pub(crate) usize);
 pub(crate) struct NativeActionSlotText(pub(crate) usize);
 
 #[derive(Component, Clone, Copy)]
+pub(crate) struct NativeActionSlotImage(pub(crate) usize);
+
+#[derive(Component)]
+pub(crate) struct NativeNearbyLootPanel;
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeLootAction {
+    Slot(usize),
+    All,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeLootSlotText(pub(crate) usize);
+
+#[derive(Component)]
+pub(crate) struct NativeLootAllText;
+
+#[derive(Component, Clone, Copy)]
 pub(crate) enum NativePanelCloseButton {
     Inventory,
     Character,
@@ -440,13 +458,17 @@ const XP: Color = theme::XP;
 const CAP: Color = theme::CAP;
 const TARGET_HP: Color = theme::TARGET_HP;
 
-pub fn setup(mut commands: Commands) {
+pub fn setup(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
     spawn_world_header(&mut commands);
     spawn_player_frame(&mut commands);
     spawn_target_frame(&mut commands);
     spawn_battle_list(&mut commands);
     spawn_chat(&mut commands);
-    spawn_action_bar(&mut commands);
+    spawn_nearby_loot(&mut commands);
+    spawn_action_bar(&mut commands, &asset_server);
     spawn_panel_dock(&mut commands);
     spawn_inventory_panel(&mut commands);
     spawn_character_panel(&mut commands);
@@ -454,6 +476,97 @@ pub fn setup(mut commands: Commands) {
     spawn_spellbook_panel(&mut commands);
     spawn_crafting_panel(&mut commands);
     spawn_npc_panel(&mut commands);
+}
+
+fn spawn_nearby_loot(commands: &mut Commands) {
+    commands
+        .spawn((
+            Name::new("Native gameplay HUD · nearby loot"),
+            NativeNearbyLootPanel,
+            Node {
+                position_type: PositionType::Absolute,
+                right: px(310),
+                bottom: px(92),
+                width: px(265),
+                max_height: px(390),
+                padding: UiRect::all(px(10)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(8)),
+                flex_direction: FlexDirection::Column,
+                row_gap: px(4),
+                ..default()
+            },
+            BackgroundColor(PANEL),
+            BorderColor::all(theme::GOLD_DARK),
+            Visibility::Hidden,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Text::new("NEARBY LOOT  ·  WITHIN REACH"),
+                TextFont {
+                    font_size: FontSize::Px(10.0),
+                    ..default()
+                },
+                TextColor(theme::GOLD),
+            ));
+
+            for index in 0..8 {
+                parent
+                    .spawn((
+                        Button,
+                        NativeLootAction::Slot(index),
+                        Node {
+                            width: Val::Percent(100.0),
+                            min_height: px(31),
+                            padding: UiRect::horizontal(px(8)),
+                            border: UiRect::all(px(1)),
+                            border_radius: BorderRadius::all(px(4)),
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        BackgroundColor(theme::BUTTON_BG),
+                        BorderColor::all(theme::BUTTON_BORDER),
+                        Visibility::Hidden,
+                    ))
+                    .with_child((
+                        NativeLootSlotText(index),
+                        Text::new(""),
+                        TextFont {
+                            font_size: FontSize::Px(9.5),
+                            ..default()
+                        },
+                        TextColor(TEXT),
+                    ));
+            }
+
+            parent
+                .spawn((
+                    Button,
+                    NativeLootAction::All,
+                    Node {
+                        width: Val::Percent(100.0),
+                        min_height: px(38),
+                        margin: UiRect::top(px(4)),
+                        padding: UiRect::horizontal(px(10)),
+                        border: UiRect::all(px(1)),
+                        border_radius: BorderRadius::all(px(5)),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                    BackgroundColor(theme::GOLD_DARK),
+                    BorderColor::all(theme::GOLD),
+                ))
+                .with_child((
+                    NativeLootAllText,
+                    Text::new("E  LOOT ALL"),
+                    TextFont {
+                        font_size: FontSize::Px(10.0),
+                        ..default()
+                    },
+                    TextColor(TEXT),
+                ));
+        });
 }
 
 fn text_bundle(
@@ -737,7 +850,13 @@ fn spawn_chat(commands: &mut Commands) {
         });
 }
 
-fn spawn_action_bar(commands: &mut Commands) {
+fn spawn_action_bar(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+) {
+    let ability_icons = asset_server.load(
+        "ui/ability-icons-v35_12.png",
+    );
     commands
         .spawn((
             Name::new("Native gameplay HUD · action bar"),
@@ -758,7 +877,11 @@ fn spawn_action_bar(commands: &mut Commands) {
         ))
         .with_children(|parent| {
             for slot in 0..9 {
-                spawn_action_slot(parent, slot);
+                spawn_action_slot(
+                    parent,
+                    slot,
+                    ability_icons.clone(),
+                );
             }
         });
 }
@@ -766,6 +889,7 @@ fn spawn_action_bar(commands: &mut Commands) {
 fn spawn_action_slot(
     parent: &mut ChildSpawnerCommands,
     slot: usize,
+    ability_icons: Handle<Image>,
 ) {
     parent
         .spawn((
@@ -785,15 +909,38 @@ fn spawn_action_slot(
             BackgroundColor(theme::BUTTON_BG),
             BorderColor::all(theme::BUTTON_BORDER),
         ))
-        .with_child((
-            NativeActionSlotText(slot),
-            Text::new(""),
-            TextFont {
-                font_size: FontSize::Px(8.5),
-                ..default()
-            },
-            TextColor(TEXT),
-        ));
+        .with_children(|button| {
+            button.spawn((
+                NativeActionSlotImage(slot),
+                Node {
+                    width: px(34),
+                    height: px(34),
+                    border_radius: BorderRadius::all(px(5)),
+                    ..default()
+                },
+                ImageNode {
+                    image: ability_icons,
+                    rect: Some(Rect::new(
+                        0.0,
+                        0.0,
+                        306.0,
+                        306.0,
+                    )),
+                    image_mode: NodeImageMode::Stretch,
+                    ..default()
+                },
+                Visibility::Hidden,
+            ));
+            button.spawn((
+                NativeActionSlotText(slot),
+                Text::new(""),
+                TextFont {
+                    font_size: FontSize::Px(8.0),
+                    ..default()
+                },
+                TextColor(TEXT),
+            ));
+        });
 }
 
 
@@ -5866,8 +6013,19 @@ pub fn update_ui(
         (&NativeActionSlotText, &mut Text),
         Without<NativeUiText>,
     >,
+    mut action_slot_images: Query<
+        (
+            &NativeActionSlotImage,
+            &mut ImageNode,
+            &mut Visibility,
+        ),
+        (Without<NativeUiText>, Without<NativeUiPanel>),
+    >,
     mut bars: Query<(&NativeUiBar, &mut Node)>,
-    mut panels: Query<(&NativeUiPanel, &mut Visibility)>,
+    mut panels: Query<
+        (&NativeUiPanel, &mut Visibility),
+        Without<NativeActionSlotImage>,
+    >,
 ) {
     let player = game_state.local_player();
     let target = game_state
@@ -6111,6 +6269,35 @@ pub fn update_ui(
         };
     }
 
+    for (slot, mut image, mut visibility) in
+        &mut action_slot_images
+    {
+        let icon = if slot.0 == 0 {
+            Some((0, 0))
+        } else {
+            learned
+                .get(slot.0.saturating_sub(1))
+                .and_then(|spell| {
+                    ability_icon_tile(&spell.id)
+                        .or_else(|| ability_icon_tile(&spell.name))
+                })
+        };
+
+        if let Some((column, row)) = icon {
+            let left = column as f32 * 306.0;
+            let top = row as f32 * 306.0;
+            image.rect = Some(Rect::new(
+                left,
+                top,
+                left + 306.0,
+                top + 306.0,
+            ));
+            *visibility = Visibility::Inherited;
+        } else {
+            *visibility = Visibility::Hidden;
+        }
+    }
+
     for (kind, mut node) in &mut bars {
         let ratio = match kind {
             NativeUiBar::Health => player
@@ -6148,6 +6335,31 @@ pub fn update_ui(
         };
     }
 
+}
+
+fn ability_icon_tile(value: &str) -> Option<(u8, u8)> {
+    let normalized = value
+        .to_ascii_lowercase()
+        .replace(|character: char| !character.is_ascii_alphanumeric(), "_")
+        .trim_matches('_')
+        .to_owned();
+
+    match normalized.as_str() {
+        "basic_attack" | "attack" | "power_strike" | "strike"
+        | "heavy_strike" => Some((0, 0)),
+        "shield_guard" | "shield_bash" | "guarding" => Some((1, 0)),
+        "quick_shot" | "aimed_shot" | "shot" => Some((2, 0)),
+        "second_wind" | "healing_pulse" | "heal" | "restore" => Some((3, 0)),
+        "mana_burst" | "mana_surge" | "focus" => Some((0, 1)),
+        "ember_sigil" | "ember_bolt" | "fire_bolt" | "fireball" => Some((1, 1)),
+        "frost_rune" | "frost_nova" | "frost" => Some((2, 1)),
+        "venom_rune" | "poison_toss" | "poison" => Some((3, 1)),
+        "sprint" | "dash" | "haste" => Some((0, 2)),
+        "parry" | "riposte" | "counter" => Some((1, 2)),
+        "cleave" | "sweeping_cleave" => Some((2, 2)),
+        "war_cry" | "stun" | "battle_cry" => Some((3, 2)),
+        _ => None,
+    }
 }
 
 pub fn handle_chat_input(
@@ -7625,6 +7837,7 @@ pub(crate) fn update_npc_modal_ui(
             &mut BorderColor,
             &mut Visibility,
         ),
+        Without<NativeNpcDetailImage>,
     >,
     mut images: Query<
         (
@@ -7632,6 +7845,7 @@ pub(crate) fn update_npc_modal_ui(
             &mut ImageNode,
             &mut Visibility,
         ),
+        Without<NativeNpcModalButton>,
     >,
 ) {
     if !panels.npc_open {
@@ -11923,6 +12137,186 @@ pub fn handle_action_hotkeys(
         &network,
         &mut game_state,
     );
+}
+
+fn nearby_loot_items(
+    game_state: &NativeGameState,
+) -> Vec<(game_types::EntityId, String, u16)> {
+    let Some(local) = game_state.local_player() else {
+        return Vec::new();
+    };
+
+    game_state
+        .ground_items
+        .iter()
+        .filter(|ground| {
+            ground.position.z == local.position.z
+                && (ground.position.x - local.position.x).abs() <= 1
+                && (ground.position.y - local.position.y).abs() <= 1
+        })
+        .flat_map(|ground| {
+            if ground.contents.is_empty() {
+                let pickupable = game_state
+                    .item_definitions
+                    .get(&ground.item.definition_id)
+                    .is_some_and(|definition| definition.pickupable);
+                if pickupable && ground.item.definition_id != "gold_coin" {
+                    vec![&ground.item]
+                } else {
+                    Vec::new()
+                }
+            } else {
+                ground
+                    .contents
+                    .iter()
+                    .filter(|item| item.definition_id != "gold_coin")
+                    .collect()
+            }
+        })
+        .map(|item| {
+            let name = game_state
+                .item_definitions
+                .get(&item.definition_id)
+                .map(|definition| definition.name.clone())
+                .unwrap_or_else(|| item.definition_id.clone());
+            (item.instance_id, name, item.quantity)
+        })
+        .collect()
+}
+
+pub fn update_nearby_loot_ui(
+    game_state: Res<NativeGameState>,
+    mut panel: Query<
+        &mut Visibility,
+        (With<NativeNearbyLootPanel>, Without<NativeLootAction>),
+    >,
+    mut slots: Query<
+        (&NativeLootAction, &mut Visibility),
+        (With<Button>, Without<NativeNearbyLootPanel>),
+    >,
+    mut slot_texts: Query<
+        (&NativeLootSlotText, &mut Text),
+        Without<NativeLootAllText>,
+    >,
+    mut all_text: Query<
+        &mut Text,
+        (With<NativeLootAllText>, Without<NativeLootSlotText>),
+    >,
+) {
+    let loot = nearby_loot_items(&game_state);
+
+    if let Ok(mut visibility) = panel.single_mut() {
+        *visibility = if loot.is_empty() {
+            Visibility::Hidden
+        } else {
+            Visibility::Visible
+        };
+    }
+
+    for (action, mut visibility) in &mut slots {
+        if let NativeLootAction::Slot(index) = action {
+            *visibility = if *index < loot.len().min(8) {
+                Visibility::Inherited
+            } else {
+                Visibility::Hidden
+            };
+        }
+    }
+
+    for (slot, mut text) in &mut slot_texts {
+        text.0 = loot
+            .get(slot.0)
+            .map(|(_, name, quantity)| {
+                if *quantity > 1 {
+                    format!("{name}  ×{quantity}")
+                } else {
+                    format!("{name}  ·  Loot")
+                }
+            })
+            .unwrap_or_default();
+    }
+
+    if let Ok(mut text) = all_text.single_mut() {
+        text.0 = format!(
+            "E  LOOT ALL  ·  {} {}",
+            loot.len(),
+            if loot.len() == 1 { "item" } else { "items" },
+        );
+    }
+}
+
+pub fn handle_nearby_loot(
+    keys: Res<ButtonInput<KeyCode>>,
+    chat: Res<NativeChatState>,
+    panels: Res<NativePanelState>,
+    network: Res<NativeNetwork>,
+    mut game_state: ResMut<NativeGameState>,
+    mut buttons: Query<
+        (
+            &Interaction,
+            &NativeLootAction,
+            &mut BackgroundColor,
+            &mut BorderColor,
+        ),
+        (Changed<Interaction>, With<Button>),
+    >,
+) {
+    if chat.active
+        || panels.inventory_open
+        || panels.character_open
+        || panels.skills_open
+        || panels.spells_open
+        || panels.crafting_open
+        || panels.npc_open
+    {
+        return;
+    }
+
+    let loot = nearby_loot_items(&game_state);
+    let mut requested = Vec::new();
+    if keys.just_pressed(KeyCode::KeyE) {
+        requested.extend(loot.iter().map(|entry| entry.0));
+    }
+
+    for (interaction, action, mut background, mut border) in &mut buttons {
+        match *interaction {
+            Interaction::Pressed => {
+                background.0 = theme::BUTTON_PRESSED;
+                *border = BorderColor::all(theme::GOLD_BRIGHT);
+                match action {
+                    NativeLootAction::Slot(index) => {
+                        if let Some((instance_id, _, _)) = loot.get(*index) {
+                            requested.push(*instance_id);
+                        }
+                    }
+                    NativeLootAction::All => {
+                        requested.extend(loot.iter().map(|entry| entry.0));
+                    }
+                }
+            }
+            Interaction::Hovered => {
+                background.0 = theme::BUTTON_HOVER;
+                *border = BorderColor::all(theme::GOLD);
+            }
+            Interaction::None => {
+                background.0 = theme::BUTTON_BG;
+                *border = BorderColor::all(theme::BUTTON_BORDER);
+            }
+        }
+    }
+
+    requested.sort_unstable();
+    requested.dedup();
+    for instance_id in requested {
+        if network
+            .outbound
+            .send(ClientMessage::PickupItem { instance_id })
+            .is_err()
+        {
+            game_state.push_system_message("The game connection is offline.");
+            break;
+        }
+    }
 }
 
 pub fn handle_action_slot_buttons(

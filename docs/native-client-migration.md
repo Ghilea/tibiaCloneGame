@@ -1,13 +1,24 @@
 # Native client migration
 
+Status: **complete — native production cutover V36.57.0**
+
+V36.57.0 completes the gameplay-client cutover. The React/Three.js/Tauri
+runtime has been removed. `crates/game-client` is the sole production client,
+shared runtime art lives in `/assets`, and release archives contain both the
+native executable and its asset directory. The React world editor remains as
+the isolated `apps/world-editor` authoring tool.
+
+The sections below are retained as the implementation history and parity
+record. References to the old client describe historical migration inputs, not
+active architecture.
 
 <!-- TIBIAGAME_V36_11_1_INTERACTION_VISIBILITY_HOTFIX -->
 
 V36.11.1 fixes Bevy system registration visibility for the native interaction target indicator and HUD marker components. This is a compile-only hotfix; interaction behavior from V36.11 is unchanged.
 
-Status: **V36.14 medieval facade consistency + creature texture warmup in progress**
+Historical checkpoint: **V36.14 medieval facade consistency + creature texture warmup**
 
-The production desktop client is moving from React/Tauri/WebView2 world rendering to a native Rust + Bevy client. The current React/Tauri client remains available as a reference and fallback during the migration. The web-based world editor stays in React.
+The production desktop client moved from React/Tauri/WebView2 rendering to a native Rust + Bevy client. The web-based world editor remains in React as a separate authoring application.
 
 ## Why
 
@@ -117,7 +128,8 @@ Existing shared Rust crates are the migration boundary:
 - `game-protocol`: canonical client/server messages.
 - `game-server`: authoritative server and persistence.
 - `game-client`: new native Bevy client.
-- `apps/client`: legacy/reference React client plus the web editor during migration.
+- `assets`: shared art used by the native client and world editor.
+- `apps/world-editor`: standalone React authoring tool, not a gameplay runtime.
 
 Do not duplicate protocol or gameplay DTO definitions inside Bevy. Extend the shared Rust crates instead.
 
@@ -129,8 +141,8 @@ Do not duplicate protocol or gameplay DTO definitions inside Bevy. Extend the sh
 4. Preserve multi-floor positions and streamed region semantics.
 5. Native movement interpolation and animation run locally every frame.
 6. Network state changes are events/snapshots, never per-frame IPC.
-7. Reuse existing GLB, texture, sprite and audio assets from `apps/client/public/assets`.
-8. Do not remove the React/Tauri client until native parity is verified.
+7. Reuse the GLB, texture, sprite and audio assets from `/assets`.
+8. The retired React/Tauri implementation is available through git history and release tags only.
 9. Keep the editor web-based unless there is a separate reason to port it.
 10. Pin Bevy versions and upgrade intentionally because Bevy releases can contain breaking API changes.
 
@@ -227,7 +239,7 @@ The web editor remains separate.
 - GPU/device-loss handling.
 - Crash logs.
 - Performance budgets.
-- Remove Tauri gameplay runtime only after parity.
+- React/Tauri gameplay runtime removed after parity verification in V36.57.0.
 - Keep a migration tag/branch for the old client.
 
 ## Commands

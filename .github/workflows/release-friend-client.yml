@@ -1,4 +1,4 @@
-name: Release friend client
+name: Release native friend client
 
 on:
   push:
@@ -15,38 +15,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node signing tool
         uses: actions/setup-node@v4
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: apps/client/package-lock.json
+          cache-dependency-path: package-lock.json
+
+      - name: Install signing tool
+        run: npm ci
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install client dependencies
-        run: npm ci --prefix apps/client
-
       - name: Verify updater public key
         shell: pwsh
         run: |
-          if (-not (Test-Path "apps/client/src-tauri/updater.pub")) {
-            throw "Missing updater.pub. Run npm run client:updater:setup locally and commit ONLY the public key."
+          if (-not (Test-Path "crates/game-client/updater.pub")) {
+            throw "Missing crates/game-client/updater.pub. Run npm run client:updater:setup locally and commit only the public key."
           }
 
-      - name: Generate friend Tauri config
-        shell: pwsh
-        run: |
-          $templatePath = "apps/client/src-tauri/tauri.friend.conf.json"
-          $generatedPath = "apps/client/src-tauri/tauri.friend.generated.json"
-          $publicKey = (Get-Content -Raw "apps/client/src-tauri/updater.pub").Trim()
-          $template = Get-Content -Raw $templatePath
-          $publicKeyJson = $publicKey | ConvertTo-Json -Compress
-          $generated = $template.Replace('"__ALDORIA_UPDATER_PUBKEY__"', $publicKeyJson)
-          Set-Content -Path $generatedPath -Value $generated -Encoding UTF8
-
-      # TIBIAGAME_FRIEND_UPDATER_V33_4_KEY_PATH
       - name: Prepare updater signing key
         shell: pwsh
         env:
@@ -55,144 +43,63 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:ALDORIA_UPDATER_PRIVATE_KEY)) {
             throw "Missing repository secret TAURI_SIGNING_PRIVATE_KEY."
           }
-
           $privateKey = $env:ALDORIA_UPDATER_PRIVATE_KEY.Trim()
-
           try {
-            $decoded = [Text.Encoding]::UTF8.GetString(
-              [Convert]::FromBase64String($privateKey)
-            )
+            $decoded = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($privateKey))
           } catch {
             throw "TAURI_SIGNING_PRIVATE_KEY is not valid base64 key content."
           }
-
           if (-not $decoded.StartsWith("untrusted comment: rsign encrypted secret key")) {
-            throw "TAURI_SIGNING_PRIVATE_KEY does not decode to the expected Tauri rsign secret-key format."
+            throw "TAURI_SIGNING_PRIVATE_KEY does not decode to the expected signing-key format."
           }
-
           $keyPath = Join-Path $env:RUNNER_TEMP "aldoria-updater.key"
-          [IO.File]::WriteAllText(
-            $keyPath,
-            $privateKey,
-            [Text.UTF8Encoding]::new($false)
-          )
-
+          [IO.File]::WriteAllText($keyPath, $privateKey, [Text.UTF8Encoding]::new($false))
           "ALDORIA_UPDATER_KEY_PATH=$keyPath" >> $env:GITHUB_ENV
-          Write-Host "Updater private key prepared as a temporary file."
 
-      # TIBIAGAME_FRIEND_UPDATER_V33_5_SIGNING_PREFLIGHT
-      - name: Fast updater signing preflight
+      - name: Fast signing preflight
+        shell: pwsh
+        run: |
+          $probe = Join-Path $env:RUNNER_TEMP "aldoria-signing-probe.txt"
+          [IO.File]::WriteAllText($probe, "aldoria-native-signing-preflight", [Text.UTF8Encoding]::new($false))
+          npm exec -- tauri signer sign --private-key-path "$env:ALDORIA_UPDATER_KEY_PATH" "--password=" "$probe"
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$probe.sig")) {
+            throw "Native updater signing preflight failed."
+          }
+          Remove-Item $probe, "$probe.sig" -Force
+
+      - name: Build, package and sign native client
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-
-          $keyPath = $env:ALDORIA_UPDATER_KEY_PATH
-          if ([string]::IsNullOrWhiteSpace($keyPath) -or -not (Test-Path $keyPath)) {
-            throw "Updater signing preflight: temporary private key file is missing."
-          }
-
-          $probe = Join-Path $env:RUNNER_TEMP "aldoria-updater-signing-probe.txt"
-          [IO.File]::WriteAllText(
-            $probe,
-            "aldoria-updater-signing-preflight",
-            [Text.UTF8Encoding]::new($false)
-          )
-
-          Push-Location "apps/client"
-          try {
-            Write-Host "Testing updater private key before the expensive Tauri build..."
-
-            # The current Aldoria updater key was created without a user password.
-            # Pass an explicit empty password so CI and the bundler use the same mode.
-            npm exec -- tauri signer sign --private-key-path "$keyPath" "--password=" "$probe"
-            if ($LASTEXITCODE -ne 0) {
-              $message = "Updater signing preflight failed BEFORE the full build. " +
-                "The existing private key could not sign a tiny test file with an explicit empty password. " +
-                "Do not wait for the 7-8 minute Tauri build: signing is not usable yet. " +
-                "If this key was generated by Tauri CLI 2.9.3 through 2.10.0 with an empty password, " +
-                "the generated key may be broken and must be regenerated. Otherwise the key was " +
-                "created with a non-empty password and that exact password is required."
-              throw $message
-            }
-          } finally {
-            Pop-Location
-          }
-
-          $signature = "$probe.sig"
-          if (-not (Test-Path $signature)) {
-            throw "Updater signing preflight returned success but did not create $signature."
-          }
-
-          Remove-Item $probe, $signature -Force -ErrorAction SilentlyContinue
-          Write-Host "Updater signing preflight PASSED." -ForegroundColor Green
-
-
-      # TIBIAGAME_V36_31_NATIVE_UPDATER_RELEASE_CHANNEL
-      - name: Build and sign native Bevy client
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-
           $tag = "${{ github.ref_name }}"
-          if (-not $tag.StartsWith("client-v")) {
-            throw "Native updater build expected a client-v* tag, got '$tag'."
-          }
-
+          if (-not $tag.StartsWith("client-v")) { throw "Expected client-v* tag, got '$tag'." }
           $version = $tag.Substring("client-v".Length)
-          if ([string]::IsNullOrWhiteSpace($version)) {
-            throw "Could not resolve native client version from '$tag'."
-          }
-
-          Write-Host "Building native Bevy client v$version..."
           $env:ALDORIA_NATIVE_RELEASE_VERSION = $version
+          $env:ALDORIA_DEFAULT_API_URL = "http://213.65.167.85:4000/api"
+          $env:ALDORIA_DEFAULT_WS_URL = "ws://213.65.167.85:4000/ws"
           cargo build -p game-client --bin game-client --release
-          if ($LASTEXITCODE -ne 0) {
-            throw "Native Bevy client release build failed."
-          }
+          if ($LASTEXITCODE -ne 0) { throw "Native Bevy client release build failed." }
 
           $sourceExe = Join-Path $env:GITHUB_WORKSPACE "target/release/game-client.exe"
-          if (-not (Test-Path $sourceExe)) {
-            throw "Native Bevy executable was not produced: $sourceExe"
-          }
+          $assetSource = Join-Path $env:GITHUB_WORKSPACE "assets"
+          if (-not (Test-Path $sourceExe)) { throw "Native executable was not produced." }
+          if (-not (Test-Path $assetSource)) { throw "Shared asset directory is missing." }
 
-          $stage = Join-Path $env:RUNNER_TEMP "aldoria-native-updater"
+          $stage = Join-Path $env:RUNNER_TEMP "Embers-of-Aldoria"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
-
           $publishedExe = Join-Path $stage "EmbersOfAldoria.exe"
           Copy-Item $sourceExe $publishedExe -Force
+          Copy-Item $assetSource (Join-Path $stage "assets") -Recurse -Force
 
-          $assetName = "Embers-of-Aldoria-Native-windows-x86_64.zip"
-          $zipPath = Join-Path $env:RUNNER_TEMP $assetName
-          Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-          Compress-Archive -Path $publishedExe -DestinationPath $zipPath -CompressionLevel Optimal
-
-          if (-not (Test-Path $zipPath)) {
-            throw "Native updater archive was not produced."
+          $zipPath = Join-Path $env:RUNNER_TEMP "Embers-of-Aldoria-Native-windows-x86_64.zip"
+          Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zipPath -CompressionLevel Optimal
+          npm exec -- tauri signer sign --private-key-path "$env:ALDORIA_UPDATER_KEY_PATH" "--password=" "$zipPath"
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$zipPath.sig")) {
+            throw "Native bundle signing failed."
           }
-
-          Push-Location "apps/client"
-          try {
-            npm exec -- tauri signer sign --private-key-path "$env:ALDORIA_UPDATER_KEY_PATH" "--password=" "$publishedExe"
-            if ($LASTEXITCODE -ne 0) {
-              throw "Native updater archive signing failed."
-            }
-          } finally {
-            Pop-Location
-          }
-
-          $signaturePath = "$publishedExe.sig"
-          if (-not (Test-Path $signaturePath)) {
-            throw "Native updater signature was not produced: $signaturePath"
-          }
-
-          $signature = (Get-Content -Raw $signaturePath).Trim()
-          if ([string]::IsNullOrWhiteSpace($signature)) {
-            throw "Native updater signature is empty."
-          }
-
-          $downloadUrl = "https://github.com/Ghilea/tibiaCloneGame/releases/download/$tag/EmbersOfAldoria.exe"
+          $signature = (Get-Content -Raw "$zipPath.sig").Trim()
           $manifestPath = Join-Path $env:RUNNER_TEMP "native-latest.json"
-
+          $downloadUrl = "https://github.com/Ghilea/tibiaCloneGame/releases/download/$tag/Embers-of-Aldoria-Native-windows-x86_64.zip"
           $manifest = [ordered]@{
             version = $version
             platform = "windows-x86_64"
@@ -201,64 +108,21 @@ jobs:
             executable = "EmbersOfAldoria.exe"
             tag = $tag
           }
-
-          $manifestJson = $manifest | ConvertTo-Json -Depth 4
-          [IO.File]::WriteAllText(
-            $manifestPath,
-            $manifestJson + [Environment]::NewLine,
-            [Text.UTF8Encoding]::new($false)
-          )
-
+          [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json) + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
           "ALDORIA_NATIVE_EXE=$publishedExe" >> $env:GITHUB_ENV
           "ALDORIA_NATIVE_ZIP=$zipPath" >> $env:GITHUB_ENV
-          "ALDORIA_NATIVE_SIG=$signaturePath" >> $env:GITHUB_ENV
+          "ALDORIA_NATIVE_SIG=$zipPath.sig" >> $env:GITHUB_ENV
           "ALDORIA_NATIVE_MANIFEST=$manifestPath" >> $env:GITHUB_ENV
 
-          Write-Host "Native updater archive: $zipPath"
-          Write-Host "Native updater manifest: $manifestPath"
-
-      - name: Build, sign and publish Windows friend client
-        uses: tauri-apps/tauri-action@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ env.ALDORIA_UPDATER_KEY_PATH }}
-          # Keep this explicit: the current Aldoria signing key uses an empty password.
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        with:
-          projectPath: apps/client
-          tagName: ${{ github.ref_name }}
-          releaseName: "Embers of Aldoria v__VERSION__"
-          releaseBody: "Friend test client. Existing installations update automatically."
-          releaseDraft: false
-          prerelease: false
-          uploadUpdaterJson: true
-          args: --features friend-updater --config src-tauri/tauri.friend.generated.json
-
-      - name: Upload native Bevy updater assets
+      - name: Publish native release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $ErrorActionPreference = "Stop"
-
-          foreach ($path in @(
-            $env:ALDORIA_NATIVE_EXE,
-            $env:ALDORIA_NATIVE_ZIP,
-            $env:ALDORIA_NATIVE_SIG,
-            $env:ALDORIA_NATIVE_MANIFEST
-          )) {
-            if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path $path)) {
-              throw "Native updater release asset is missing: $path"
-            }
-          }
-
-          gh release upload "${{ github.ref_name }}" `
+          gh release create "${{ github.ref_name }}" `
             "$env:ALDORIA_NATIVE_EXE" `
             "$env:ALDORIA_NATIVE_ZIP" `
             "$env:ALDORIA_NATIVE_SIG" `
             "$env:ALDORIA_NATIVE_MANIFEST" `
-            --clobber
-
-          if ($LASTEXITCODE -ne 0) {
-            throw "Could not upload native updater assets to the GitHub release."
-          }
+            --title "Embers of Aldoria ${{ github.ref_name }}" `
+            --notes "Native Rust/Bevy friend-test client. Extract the zip and keep the assets directory beside EmbersOfAldoria.exe."

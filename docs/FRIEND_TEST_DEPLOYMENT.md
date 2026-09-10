@@ -14,9 +14,13 @@ Friend server mode binds to:
 Router:
 - forward TCP 4000 to the development PC LAN IPv4 on port 4000.
 
+Distribution:
+- download `Embers-of-Aldoria-Native-windows-x86_64.zip` from the latest `client-v*` GitHub release;
+- extract the complete archive so `assets` remains beside `EmbersOfAldoria.exe`.
+
 Updater:
-- https://github.com/Ghilea/tibiaCloneGame/releases/latest/download/latest.json
-- updater.pub is public and committed.
+- https://github.com/Ghilea/tibiaCloneGame/releases/latest/download/native-latest.json
+- `crates/game-client/updater.pub` is public and committed.
 - the updater private key must never be committed.
 
 Security:

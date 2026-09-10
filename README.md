@@ -4,10 +4,10 @@ An early playable technical slice for a social, tile-based MMORPG. The world and
 
 ## Getting started
 
-Requirements: Node.js 22+, stable Rust, and Docker.
+Requirements: stable Rust and Docker. Node.js 22+ is only needed for the world editor and repository utility scripts.
 
 ```powershell
-npm install --prefix apps/client
+npm install --prefix apps/world-editor
 docker compose up -d postgres
 $env:DATABASE_URL="postgres://postgres:postgres@localhost:5433/aldoria"
 cargo run -p game-server
@@ -68,7 +68,7 @@ Start the client in a second terminal:
 npm run dev
 ```
 
-Use `npm run desktop` for the Tauri desktop client. Open `http://localhost:1420`, create an account, and enter Greyhaven.
+`npm run dev` starts the native Rust/Bevy desktop client. Create an account in the launcher and enter Greyhaven; no browser or WebView runtime is involved.
 
 ## World editor
 
@@ -78,7 +78,7 @@ Start the standalone browser editor with:
 npm run editor
 ```
 
-It opens at `http://localhost:1421/editor.html`. The editor uses a straight top-down square grid, while map coordinates, movement, collision, and exported JSON remain tile-based. World dimensions can be resized from 8 x 8 up to 16,384 x 16,384 tiles. The editor renders a movable 40 x 28 tile window instead of creating browser elements for the entire world, and stores only authored terrain, so large sparse maps remain responsive. Tools are grouped into Select, Terrain, Build, and Life categories; only settings relevant to the active tool are shown. Pan is always available with the right or middle mouse button, or Space plus the left button. Existing objects are always draggable regardless of the paint tool, with a translucent destination preview; use Ctrl+Z/Y for undo and redo or navigate directly with viewport X/Y. Shrinking warns before removing anything outside the new bounds. Paint terrain, three additional ground materials, collision, walls, bridges, oak trees, shuttered house windows, animated light-producing torches, doors, stairs, creature spawns, copper resource nodes, NPCs, and the authoritative Player start across floors 6-9. Clicking an existing NPC selects it and opens its inspector for stable ID, name, title, dialogue, service, shop inventory, prices, quantities, and teachable spells. House and Keep tools create complete rectangular buildings with walls, collision, interior floors, and renderer roof metadata; placing a door cuts a valid opening automatically. Dragging paints continuously as one undo operation; zoom, automatic local saving, and JSON import/export are included. Water, wall, and tree brushes automatically add collision. Water boundaries are auto-tiled in both the editor and game: open land creates a sandy shore, blocked terrain or the edge of the world creates a rocky cliff, and adjacent water tiles join without internal seams. Paint the Bridge tool over existing water to create a wooden, server-authoritative crossing that players and creatures can use. Exported `.world.json` files remain backwards compatible: authored window positions receive stable multiplayer IDs when the server loads the document.
+It opens at `http://localhost:1421/`. The editor uses a straight top-down square grid, while map coordinates, movement, collision, and exported JSON remain tile-based. World dimensions can be resized from 8 x 8 up to 16,384 x 16,384 tiles. The editor renders a movable 40 x 28 tile window instead of creating browser elements for the entire world, and stores only authored terrain, so large sparse maps remain responsive. Tools are grouped into Select, Terrain, Build, and Life categories; only settings relevant to the active tool are shown. Pan is always available with the right or middle mouse button, or Space plus the left button. Existing objects are always draggable regardless of the paint tool, with a translucent destination preview; use Ctrl+Z/Y for undo and redo or navigate directly with viewport X/Y. Shrinking warns before removing anything outside the new bounds. Paint terrain, three additional ground materials, collision, walls, bridges, oak trees, shuttered house windows, animated light-producing torches, doors, stairs, creature spawns, copper resource nodes, NPCs, and the authoritative Player start across floors 6-9. Clicking an existing NPC selects it and opens its inspector for stable ID, name, title, dialogue, service, shop inventory, prices, quantities, and teachable spells. House and Keep tools create complete rectangular buildings with walls, collision, interior floors, and renderer roof metadata; placing a door cuts a valid opening automatically. Dragging paints continuously as one undo operation; zoom, automatic local saving, and JSON import/export are included. Water, wall, and tree brushes automatically add collision. Water boundaries are auto-tiled in both the editor and game: open land creates a sandy shore, blocked terrain or the edge of the world creates a rocky cliff, and adjacent water tiles join without internal seams. Paint the Bridge tool over existing water to create a wooden, server-authoritative crossing that players and creatures can use. Exported `.world.json` files remain backwards compatible: authored window positions receive stable multiplayer IDs when the server loads the document.
 
 To generate a compatible world draft with ChatGPT, use the copy-ready schema, content IDs, building rules, and validation checklist in [`docs/WORLD_JSON_CHATGPT_PROMPT.md`](docs/WORLD_JSON_CHATGPT_PROMPT.md).
 
@@ -110,13 +110,13 @@ The server validates the document before opening its socket. Invalid dimensions,
 
 NPCs in a world file are server-authoritative and replace the built-in set completely. Their positions, identities, profiles, services, offers, item references, and spell references are validated at startup. Greyhaven's fallback NPC content is data-driven in `content/npcs/npcs.json`; NPC profiles and dialogue are no longer compiled into Rust.
 
-Character creation includes four persistent vocations. Warriors have the highest health, capacity, and Sword training rate. Rangers begin with an equipped Ashwood Bow and 100 physical Rough Arrows, attack up to six tiles away with clear line of sight, and train Distance twice as quickly. Mages and Druids have larger mana pools, faster Magic training, and can produce sigils. Every vocation can equip distance weapons or buy, trade, carry, and use sigils, but vocation starting skills and training rates preserve specialization.
+Character progression is classless. Equipment, learned spells, combat skills, profession skills and the player's choices determine specialization rather than a permanent vocation selected at character creation.
 
 Movement is keyboard-first and screen-relative to the fixed isometric camera: W always moves visually upward, A left, S down, and D right. Hold keys continuously and combine two directions for visual diagonals; arrow keys use the same mapping. Movement remains server-authoritative at a deliberate 150 ms cadence, while client-side acceleration and braking blend confirmed tiles into continuous motion. Click creatures to attack and right-click another player for social actions. Press 1 to use an Ember Sigil or 2 to cast a learned Ember Bolt on the selected target, C for character and skills, I for inventory, K for crafting and production, H for help, and Escape to close a modal.
 
-The game world is rendered as a real Three.js scene through React Three Fiber while retaining a close, fixed orthographic isometric camera and server-authoritative tile rules. Terrain and water are GPU-instanced; houses, thin walls, centred gabled roofs, chimneys, hanging signs, animated doors, wooden shutters, crenellated castle walls, bridges, trees, items, players, NPCs, and creatures are real 3D meshes that receive lighting and depth. House walls combine rough plaster with structural timber, while keeps use visible masonry courses. Windows deliberately contain no glass: two braced wooden leaves rotate on hinges and their open state is range-checked by the server and synchronized to every player through protocol 19. A synchronized three-minute atmosphere cycle drives the sun, night ambience, exponential fog, and rain. Authored torches have emissive flames and nearby dynamic point lights, while a shadow-casting directional sun provides the main world shadows. Only nearby torch lights are active to keep the light budget predictable. House collision still uses thin footprint edges: tiles on both sides remain walkable, crossing an actual wall edge is blocked, and an open door replaces exactly one edge section. Server pathfinding and client prediction share this rule.
+The game world is rendered natively by Bevy/wgpu with a fixed orthographic isometric camera and server-authoritative tile rules. Terrain, water, medieval architecture, doors, windows, roofs, bridges, props, actors, dynamic lights and atmosphere are presented directly through the native renderer. The gameplay UI, launcher, updater, input and audio are also native Bevy systems.
 
-World actors now use animated 3D mesh placeholders and smoothly interpolate between confirmed server positions without changing authoritative hitboxes. The scene is ready for authored glTF character, creature, prop, and environment models; the existing item artwork remains shared by inventory, shops, depot, loot, and direct trade UI until those assets receive model equivalents.
+World actors interpolate smoothly between confirmed server positions without changing authoritative hitboxes. Creatures use the native sprite pipeline and environment props reuse the repository-level assets catalog.
 
 New characters receive a 12-slot Field Backpack. Inventory supports containers, stack splitting, equipment, ground items, weight, and physical corpse loot. Mirelings can be found east of the starting area and are targeted directly in the world.
 
@@ -144,6 +144,7 @@ As a Mage or Druid, pick up Unmarked Sigils near the starting point and use the 
 cargo test --workspace
 npm run check
 npm run build
+npm run editor:check
 ```
 
 The server listens on `127.0.0.1:4000`. `GET /health` provides a health check and game sessions connect through `/ws`.
