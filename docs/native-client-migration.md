@@ -1826,3 +1826,13 @@ V36.58.1 is a compile-only integration hotfix for V36.58.0. The textual action-b
 <!-- TIBIAGAME_V36_58_2_VISIBILITY_WARNING_CLEANUP -->
 
 V36.58.2 fixes the Bevy system-interface visibility errors exposed by V36.58.1 by making AttackRepeatState and NativeDragDropState pub(crate), matching the visibility of the systems that use them as Local<T> params. It also removes the 20 known dead_code warnings from intentionally retained legacy native UI/map text helpers with item-scoped allow(dead_code) attributes. No global warning suppression is added and V36.58 combat/drag behavior is unchanged.
+
+
+<!-- TIBIAGAME_V36_59_1_WOW_HUD_FIRST_PASS_FIX -->
+
+V36.59.1 retries the first WoW-inspired HUD pass with more robust function-range patch anchors. The top header is removed from setup, player and target frames are compacted, ping moves to its own bottom-right widget, the bottom-right dock becomes a compact icon strip, and the chat frame is lowered and softened. This is still a first-pass HUD patch and does not yet rewrite the minimap widget or implement true timed per-line chat fading.
+
+
+<!-- TIBIAGAME_V36_60_0_WOW_HUD_VISUAL_OVERHAUL -->
+
+V36.60.0 replaces the layout-only first HUD pass with a visual MMO HUD pass: custom surfaces are excluded from legacy theme flattening, player/target unit frames use gold portrait-style chrome and overlaid health/mana text, the minimap becomes circular, the battle list gains a framed title bar, chat receives General/Combat/Loot tabs and fades after inactivity, the action bar receives a stronger fantasy frame, and the bottom-right dock uses generated image icons instead of unsupported emoji glyphs.

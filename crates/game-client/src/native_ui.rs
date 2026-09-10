@@ -55,6 +55,9 @@ impl NativePingState {
     }
 }
 
+#[derive(Component)]
+pub(crate) struct NativeChatPanel;
+
 #[derive(Component, Clone, Copy)]
 #[allow(dead_code)]
 pub(crate) enum NativeUiText {
@@ -67,6 +70,7 @@ pub(crate) enum NativeUiText {
     Capacity,
     Ping,
     Target,
+    TargetHealth,
     BattleList,
     ChatLog,
     ChatInput,
@@ -469,14 +473,14 @@ pub fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {
-    spawn_world_header(&mut commands);
-    spawn_player_frame(&mut commands);
+    spawn_player_frame(&mut commands, &asset_server);
     spawn_target_frame(&mut commands);
     spawn_battle_list(&mut commands);
     spawn_chat(&mut commands);
+    spawn_ping_widget(&mut commands);
     spawn_nearby_loot(&mut commands);
     spawn_action_bar(&mut commands, &asset_server);
-    spawn_panel_dock(&mut commands);
+    spawn_panel_dock(&mut commands, &asset_server);
     spawn_inventory_panel(&mut commands);
     spawn_character_panel(&mut commands);
     spawn_skills_panel(&mut commands);
@@ -484,6 +488,7 @@ pub fn setup(
     spawn_crafting_panel(&mut commands);
     spawn_npc_panel(&mut commands);
 }
+
 
 fn spawn_nearby_loot(commands: &mut Commands) {
     commands
@@ -623,22 +628,20 @@ fn spawn_bar(
         ));
 }
 
+#[allow(dead_code)]
 fn spawn_world_header(commands: &mut Commands) {
     commands
         .spawn((
-            Name::new("Native gameplay HUD · world header"),
+            Name::new("Native gameplay HUD · hidden world header anchor"),
             Node {
                 position_type: PositionType::Absolute,
                 top: px(0),
                 left: px(0),
-                right: px(0),
-                height: px(48),
-                padding: UiRect::horizontal(px(16)),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::SpaceBetween,
+                width: px(1),
+                height: px(1),
                 ..default()
             },
-            BackgroundColor(PANEL_DEEP),
+            Visibility::Hidden,
         ))
         .with_child(text_bundle(
             "",
@@ -648,79 +651,155 @@ fn spawn_world_header(commands: &mut Commands) {
         ));
 }
 
+fn spawn_ping_widget(commands: &mut Commands) {
+    commands
+        .spawn((
+            Name::new("Native gameplay HUD · ping"),
+            Node {
+                position_type: PositionType::Absolute,
+                right: px(18),
+                bottom: px(18),
+                min_width: px(76),
+                height: px(24),
+                padding: UiRect::horizontal(px(8)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(12)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.015, 0.018, 0.014, 0.88)),
+            BorderColor::all(Color::srgb(0.35, 0.28, 0.10)),
+            Outline::new(px(1), px(0), Color::srgba(0.0, 0.0, 0.0, 0.85)),
+            GlobalZIndex(190),
+        ))
+        .with_child(text_bundle(
+            "-- ms",
+            NativeUiText::Ping,
+            10.0,
+            Color::srgb(0.35, 0.90, 0.30),
+        ));
+}
+
 fn spawn_battle_list(commands: &mut Commands) {
     commands
         .spawn((
             Name::new("Native gameplay HUD · battle list"),
             Node {
                 position_type: PositionType::Absolute,
-                top: px(366),
-                right: px(14),
-                width: px(238),
-                min_height: px(168),
-                padding: UiRect::all(px(10)),
+                top: px(304),
+                right: px(18),
+                width: px(220),
+                min_height: px(142),
+                border: UiRect::all(px(2)),
+                border_radius: BorderRadius::all(px(10)),
                 flex_direction: FlexDirection::Column,
+                overflow: Overflow::clip(),
                 ..default()
             },
-            BackgroundColor(PANEL),
+            BackgroundColor(Color::srgba(0.015, 0.020, 0.016, 0.90)),
+            BorderColor::all(Color::srgb(0.52, 0.38, 0.12)),
+            Outline::new(px(1), px(1), Color::srgba(0.0, 0.0, 0.0, 0.82)),
+            GlobalZIndex(168),
         ))
-        .with_child(text_bundle(
-            "",
-            NativeUiText::BattleList,
-            12.0,
-            TEXT,
-        ));
+        .with_children(|panel| {
+            panel
+                .spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        height: px(30),
+                        padding: UiRect::horizontal(px(10)),
+                        border: UiRect {
+                            left: px(0),
+                            right: px(0),
+                            top: px(0),
+                            bottom: px(1),
+                        },
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.08, 0.055, 0.018, 0.96)),
+                    BorderColor::all(Color::srgb(0.42, 0.31, 0.10)),
+                ))
+                .with_child((
+                    Text::new("BATTLE LIST"),
+                    TextFont {
+                        font_size: FontSize::Px(11.0),
+                        ..default()
+                    },
+                    TextColor(theme::GOLD_BRIGHT),
+                ));
+
+            panel
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    padding: UiRect::all(px(10)),
+                    ..default()
+                })
+                .with_child(text_bundle(
+                    "",
+                    NativeUiText::BattleList,
+                    10.5,
+                    TEXT,
+                ));
+        });
 }
 
-fn spawn_panel_dock(commands: &mut Commands) {
+
+fn spawn_panel_dock(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+) {
+    let icons = [
+        (
+            NativePanelDockButton::Character,
+            "C",
+            asset_server.load("ui/hud_v36_60/character.png"),
+        ),
+        (
+            NativePanelDockButton::Inventory,
+            "I",
+            asset_server.load("ui/hud_v36_60/inventory.png"),
+        ),
+        (
+            NativePanelDockButton::Skills,
+            "K",
+            asset_server.load("ui/hud_v36_60/skills.png"),
+        ),
+        (
+            NativePanelDockButton::Spells,
+            "P",
+            asset_server.load("ui/hud_v36_60/spells.png"),
+        ),
+        (
+            NativePanelDockButton::Crafting,
+            "B",
+            asset_server.load("ui/hud_v36_60/crafting.png"),
+        ),
+    ];
+
     commands
         .spawn((
             Name::new("Native gameplay HUD · panel dock"),
             Node {
                 position_type: PositionType::Absolute,
-                right: px(14),
+                right: px(108),
                 bottom: px(14),
-                width: px(282),
-                min_height: px(58),
-                padding: UiRect::all(px(6)),
+                width: px(246),
+                height: px(54),
+                padding: UiRect::all(px(4)),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
                 column_gap: px(5),
                 ..default()
             },
-            BackgroundColor(PANEL_DEEP),
+            BackgroundColor(Color::NONE),
+            GlobalZIndex(182),
         ))
         .with_children(|parent| {
-            spawn_panel_dock_button(
-                parent,
-                NativePanelDockButton::Character,
-                "C",
-                "CHAR",
-            );
-            spawn_panel_dock_button(
-                parent,
-                NativePanelDockButton::Inventory,
-                "I",
-                "INV",
-            );
-            spawn_panel_dock_button(
-                parent,
-                NativePanelDockButton::Skills,
-                "K",
-                "SKILL",
-            );
-            spawn_panel_dock_button(
-                parent,
-                NativePanelDockButton::Spells,
-                "P",
-                "SPELL",
-            );
-            spawn_panel_dock_button(
-                parent,
-                NativePanelDockButton::Crafting,
-                "B",
-                "CRAFT",
-            );
+            for (action, hotkey, image) in icons {
+                spawn_panel_dock_button(parent, action, hotkey, image);
+            }
         });
 }
 
@@ -728,75 +807,210 @@ fn spawn_panel_dock_button(
     parent: &mut ChildSpawnerCommands,
     action: NativePanelDockButton,
     hotkey: &str,
-    label: &str,
+    image: Handle<Image>,
 ) {
     parent
         .spawn((
             Button,
             action,
             Node {
-                width: px(48),
+                width: px(44),
                 height: px(44),
                 border: UiRect::all(px(1)),
-                border_radius: BorderRadius::all(px(6)),
-                flex_direction: FlexDirection::Column,
+                border_radius: BorderRadius::all(px(8)),
+                position_type: PositionType::Relative,
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
+                overflow: Overflow::clip(),
                 ..default()
             },
-            BackgroundColor(theme::BUTTON_BG),
-            BorderColor::all(theme::BUTTON_BORDER),
+            BackgroundColor(Color::srgba(0.015, 0.020, 0.016, 0.94)),
+            BorderColor::all(Color::srgb(0.62, 0.45, 0.13)),
+            Outline::new(px(1), px(0), Color::srgba(0.0, 0.0, 0.0, 0.90)),
         ))
-        .with_child((
-            Text::new(format!("{hotkey}  {label}")),
-            TextFont {
-                font_size: FontSize::Px(8.5),
-                ..default()
-            },
-            TextColor(TEXT),
-        ));
+        .with_children(|button| {
+            button.spawn((
+                Node {
+                    width: px(40),
+                    height: px(40),
+                    ..default()
+                },
+                ImageNode {
+                    image,
+                    image_mode: NodeImageMode::Stretch,
+                    ..default()
+                },
+            ));
+            button
+                .spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        right: px(2),
+                        bottom: px(1),
+                        min_width: px(12),
+                        height: px(12),
+                        border_radius: BorderRadius::all(px(6)),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.84)),
+                ))
+                .with_child((
+                    Text::new(hotkey),
+                    TextFont {
+                        font_size: FontSize::Px(6.5),
+                        ..default()
+                    },
+                    TextColor(theme::GOLD_BRIGHT),
+                ));
+        });
 }
 
-fn spawn_player_frame(commands: &mut Commands) {
+fn spawn_hud_resource_bar(
+    parent: &mut ChildSpawnerCommands,
+    bar_kind: NativeUiBar,
+    text_kind: NativeUiText,
+    color: Color,
+) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: px(18),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(5)),
+                position_type: PositionType::Relative,
+                overflow: Overflow::clip(),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.015, 0.012, 0.010, 0.98)),
+            BorderColor::all(Color::srgb(0.40, 0.31, 0.12)),
+        ))
+        .with_children(|bar| {
+            bar.spawn((
+                bar_kind,
+                Node {
+                    width: Val::Percent(0.0),
+                    height: Val::Percent(100.0),
+                    border_radius: BorderRadius::all(px(4)),
+                    ..default()
+                },
+                BackgroundColor(color),
+            ));
+            bar
+                .spawn(Node {
+                    position_type: PositionType::Absolute,
+                    left: px(0),
+                    right: px(0),
+                    top: px(0),
+                    bottom: px(0),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                })
+                .with_child(text_bundle("", text_kind, 9.0, TEXT));
+        });
+}
+
+fn spawn_player_frame(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+) {
+    let portrait = asset_server.load("ui/hud_v36_60/portrait.png");
+
     commands
         .spawn((
             Name::new("Native gameplay HUD · player"),
             Node {
                 position_type: PositionType::Absolute,
-                top: px(58),
-                left: px(14),
-                width: px(306),
-                padding: UiRect::all(px(10)),
+                top: px(16),
+                left: px(16),
+                width: px(310),
+                height: px(92),
+                padding: UiRect {
+                    left: px(72),
+                    right: px(10),
+                    top: px(8),
+                    bottom: px(8),
+                },
+                border: UiRect::all(px(2)),
+                border_radius: BorderRadius::all(px(14)),
                 flex_direction: FlexDirection::Column,
-                row_gap: px(1),
+                row_gap: px(4),
                 ..default()
             },
-            BackgroundColor(theme::PLAYER_FRAME_BG),
+            BackgroundColor(Color::srgba(0.018, 0.020, 0.016, 0.93)),
+            BorderColor::all(Color::srgb(0.61, 0.44, 0.12)),
+            Outline::new(px(2), px(1), Color::srgba(0.0, 0.0, 0.0, 0.88)),
+            GlobalZIndex(180),
         ))
-        .with_children(|parent| {
-            parent.spawn((
+        .with_children(|frame| {
+            frame.spawn((
                 Node {
-                    width: Val::Percent(100.0),
-                    margin: UiRect::bottom(px(2)),
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::SpaceBetween,
+                    position_type: PositionType::Absolute,
+                    left: px(-10),
+                    top: px(-5),
+                    width: px(82),
+                    height: px(82),
+                    border: UiRect::all(px(3)),
+                    border_radius: BorderRadius::all(px(41)),
+                    overflow: Overflow::clip(),
                     ..default()
                 },
-            )).with_children(|identity| {
-                identity.spawn(text_bundle("", NativeUiText::Identity, 18.0, TEXT));
-                identity.spawn(text_bundle("", NativeUiText::IdentityLevel, 17.0, TEXT));
-            });
-            parent.spawn(text_bundle("", NativeUiText::Health, 12.0, TEXT));
-            spawn_bar(parent, NativeUiBar::Health, HP);
-            parent.spawn(text_bundle("", NativeUiText::Mana, 12.0, TEXT));
-            spawn_bar(parent, NativeUiBar::Mana, MANA);
-            parent.spawn(text_bundle("", NativeUiText::Experience, 11.0, MUTED));
-            spawn_bar(parent, NativeUiBar::Experience, XP);
-            parent.spawn(text_bundle("", NativeUiText::Capacity, 11.0, MUTED));
-            spawn_bar(parent, NativeUiBar::Capacity, CAP);
-            parent.spawn(text_bundle("", NativeUiText::Ping, 10.0, MUTED));
+                BackgroundColor(Color::srgba(0.03, 0.035, 0.03, 1.0)),
+                BorderColor::all(theme::GOLD_BRIGHT),
+                Outline::new(px(2), px(1), Color::srgb(0.22, 0.13, 0.03)),
+                ImageNode {
+                    image: portrait,
+                    image_mode: NodeImageMode::Stretch,
+                    ..default()
+                },
+            ));
+
+            frame
+                .spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: px(47),
+                        top: px(58),
+                        width: px(30),
+                        height: px(30),
+                        border: UiRect::all(px(2)),
+                        border_radius: BorderRadius::all(px(15)),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.025, 0.022, 0.015, 0.98)),
+                    BorderColor::all(theme::GOLD),
+                ))
+                .with_child(text_bundle(
+                    "",
+                    NativeUiText::IdentityLevel,
+                    8.0,
+                    theme::GOLD_BRIGHT,
+                ));
+
+            frame
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    height: px(18),
+                    align_items: AlignItems::Center,
+                    ..default()
+                })
+                .with_child(text_bundle(
+                    "",
+                    NativeUiText::Identity,
+                    13.0,
+                    theme::GOLD_BRIGHT,
+                ));
+
+            spawn_hud_resource_bar(frame, NativeUiBar::Health, NativeUiText::Health, HP);
+            spawn_hud_resource_bar(frame, NativeUiBar::Mana, NativeUiText::Mana, MANA);
         });
 }
+
 
 fn spawn_target_frame(commands: &mut Commands) {
     commands
@@ -804,78 +1018,174 @@ fn spawn_target_frame(commands: &mut Commands) {
             Name::new("Native gameplay HUD · target"),
             Node {
                 position_type: PositionType::Absolute,
-                top: px(62),
-                left: px(348),
-                width: px(300),
-                padding: UiRect::all(px(12)),
+                top: px(22),
+                left: px(342),
+                width: px(252),
+                height: px(70),
+                padding: UiRect {
+                    left: px(64),
+                    right: px(9),
+                    top: px(8),
+                    bottom: px(8),
+                },
+                border: UiRect::all(px(2)),
+                border_radius: BorderRadius::all(px(13)),
                 flex_direction: FlexDirection::Column,
+                justify_content: JustifyContent::Center,
+                row_gap: px(7),
                 ..default()
             },
-            BackgroundColor(PANEL),
+            BackgroundColor(Color::srgba(0.018, 0.020, 0.016, 0.91)),
+            BorderColor::all(Color::srgb(0.58, 0.42, 0.12)),
+            Outline::new(px(2), px(1), Color::srgba(0.0, 0.0, 0.0, 0.86)),
+            GlobalZIndex(179),
         ))
-        .with_children(|parent| {
-            parent.spawn(text_bundle(
+        .with_children(|frame| {
+            frame.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: px(-8),
+                    top: px(5),
+                    width: px(58),
+                    height: px(58),
+                    border: UiRect::all(px(3)),
+                    border_radius: BorderRadius::all(px(29)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.01, 0.012, 0.012, 0.98)),
+                BorderColor::all(theme::GOLD),
+                Outline::new(px(1), px(1), Color::srgb(0.20, 0.12, 0.03)),
+            ));
+
+            frame.spawn(text_bundle(
                 "No target",
                 NativeUiText::Target,
-                16.0,
+                11.5,
                 TEXT,
             ));
-            spawn_bar(parent, NativeUiBar::TargetHealth, TARGET_HP);
+            spawn_hud_resource_bar(
+                frame,
+                NativeUiBar::TargetHealth,
+                NativeUiText::TargetHealth,
+                TARGET_HP,
+            );
         });
 }
+
 
 fn spawn_chat(commands: &mut Commands) {
     commands
         .spawn((
             Name::new("Native gameplay HUD · chat"),
+            NativeChatPanel,
             Node {
                 position_type: PositionType::Absolute,
-                bottom: px(88),
-                left: px(14),
-                width: px(520),
-                min_height: px(166),
-                padding: UiRect::all(px(10)),
+                bottom: px(14),
+                left: px(16),
+                width: px(430),
+                min_height: px(172),
+                padding: UiRect::all(px(8)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(9)),
                 flex_direction: FlexDirection::Column,
                 justify_content: JustifyContent::FlexEnd,
+                row_gap: px(5),
                 ..default()
             },
-            BackgroundColor(PANEL_SOFT),
+            BackgroundColor(Color::srgba(0.01, 0.014, 0.011, 0.60)),
+            BorderColor::all(Color::srgb(0.42, 0.31, 0.10)),
+            GlobalZIndex(171),
         ))
-        .with_children(|parent| {
-            parent.spawn(text_bundle(
+        .with_children(|panel| {
+            panel
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    height: px(26),
+                    flex_direction: FlexDirection::Row,
+                    column_gap: px(4),
+                    ..default()
+                })
+                .with_children(|tabs| {
+                    for (label, active) in [
+                        ("GENERAL", true),
+                        ("COMBAT", false),
+                        ("LOOT", false),
+                    ] {
+                        tabs
+                            .spawn((
+                                Node {
+                                    min_width: px(74),
+                                    height: px(24),
+                                    padding: UiRect::horizontal(px(8)),
+                                    border: UiRect::all(px(1)),
+                                    border_radius: BorderRadius::all(px(5)),
+                                    align_items: AlignItems::Center,
+                                    justify_content: JustifyContent::Center,
+                                    ..default()
+                                },
+                                BackgroundColor(if active {
+                                    Color::srgba(0.12, 0.075, 0.018, 0.92)
+                                } else {
+                                    Color::srgba(0.02, 0.025, 0.021, 0.72)
+                                }),
+                                BorderColor::all(if active {
+                                    theme::GOLD
+                                } else {
+                                    theme::GOLD_DARK
+                                }),
+                            ))
+                            .with_child((
+                                Text::new(label),
+                                TextFont {
+                                    font_size: FontSize::Px(8.0),
+                                    ..default()
+                                },
+                                TextColor(if active {
+                                    theme::GOLD_BRIGHT
+                                } else {
+                                    MUTED
+                                }),
+                            ));
+                    }
+                });
+
+            panel.spawn(text_bundle(
                 "",
                 NativeUiText::ChatLog,
-                13.0,
+                11.0,
                 TEXT,
             ));
-            parent
+
+            panel
                 .spawn((
                     Node {
                         width: Val::Percent(100.0),
-                        min_height: px(28),
-                        margin: UiRect::top(px(7)),
+                        min_height: px(26),
                         padding: UiRect::horizontal(px(8)),
+                        border: UiRect::all(px(1)),
+                        border_radius: BorderRadius::all(px(5)),
                         align_items: AlignItems::Center,
                         ..default()
                     },
-                    BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.48)),
+                    BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.34)),
+                    BorderColor::all(theme::GOLD_DARK),
                 ))
                 .with_child(text_bundle(
                     "Enter to chat",
                     NativeUiText::ChatInput,
-                    14.0,
+                    10.5,
                     MUTED,
                 ));
         });
 }
 
+
 fn spawn_action_bar(
     commands: &mut Commands,
     asset_server: &AssetServer,
 ) {
-    let ability_icons = asset_server.load(
-        "ui/ability-icons-v35_12.png",
-    );
+    let ability_icons = asset_server.load("ui/ability-icons-v35_12.png");
+
     commands
         .spawn((
             Name::new("Native gameplay HUD · action bar"),
@@ -883,25 +1193,62 @@ fn spawn_action_bar(
                 position_type: PositionType::Absolute,
                 bottom: px(14),
                 left: Val::Percent(50.0),
-                width: px(598),
-                min_height: px(70),
-                margin: UiRect::left(px(-299)),
+                width: px(590),
+                height: px(70),
+                margin: UiRect::left(px(-295)),
                 padding: UiRect::all(px(7)),
+                border: UiRect::all(px(2)),
+                border_radius: BorderRadius::all(px(12)),
                 column_gap: px(5),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
                 ..default()
             },
-            BackgroundColor(PANEL),
+            BackgroundColor(Color::srgba(0.012, 0.016, 0.013, 0.93)),
+            BorderColor::all(Color::srgb(0.61, 0.43, 0.12)),
+            Outline::new(px(2), px(1), Color::srgba(0.0, 0.0, 0.0, 0.90)),
+            GlobalZIndex(181),
         ))
         .with_children(|parent| {
+            parent
+                .spawn((
+                    Node {
+                        width: px(28),
+                        height: px(54),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                ))
+                .with_child((
+                    Text::new("❖"),
+                    TextFont {
+                        font_size: FontSize::Px(22.0),
+                        ..default()
+                    },
+                    TextColor(theme::GOLD),
+                ));
+
             for slot in 0..9 {
-                spawn_action_slot(
-                    parent,
-                    slot,
-                    ability_icons.clone(),
-                );
+                spawn_action_slot(parent, slot, ability_icons.clone());
             }
+
+            parent
+                .spawn(Node {
+                    width: px(28),
+                    height: px(54),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                })
+                .with_child((
+                    Text::new("❖"),
+                    TextFont {
+                        font_size: FontSize::Px(22.0),
+                        ..default()
+                    },
+                    TextColor(theme::GOLD),
+                ));
         });
 }
 
@@ -915,57 +1262,65 @@ fn spawn_action_slot(
             Button,
             NativeActionSlot(slot),
             Node {
-                width: px(58),
-                height: px(54),
+                width: px(50),
+                height: px(50),
                 border: UiRect::all(px(1)),
-                border_radius: BorderRadius::all(px(6)),
-                flex_direction: FlexDirection::Column,
+                border_radius: BorderRadius::all(px(7)),
+                position_type: PositionType::Relative,
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
-                padding: UiRect::all(px(3)),
+                overflow: Overflow::clip(),
                 ..default()
             },
-            BackgroundColor(theme::BUTTON_BG),
-            BorderColor::all(theme::BUTTON_BORDER),
+            BackgroundColor(Color::srgba(0.025, 0.031, 0.026, 0.98)),
+            BorderColor::all(Color::srgb(0.46, 0.34, 0.12)),
+            Outline::new(px(1), px(0), Color::srgba(0.0, 0.0, 0.0, 0.92)),
         ))
         .with_children(|button| {
             button.spawn((
                 NativeActionSlotImage(slot),
                 Node {
-                    width: px(34),
-                    height: px(34),
+                    width: px(42),
+                    height: px(42),
                     border_radius: BorderRadius::all(px(5)),
                     ..default()
                 },
                 ImageNode {
                     image: ability_icons,
-                    rect: Some(Rect::new(
-                        0.0,
-                        0.0,
-                        306.0,
-                        306.0,
-                    )),
+                    rect: Some(Rect::new(0.0, 0.0, 306.0, 306.0)),
                     image_mode: NodeImageMode::Stretch,
                     ..default()
                 },
                 Visibility::Hidden,
             ));
-            button.spawn((
-                NativeActionSlotText(slot),
-                Text::new(""),
-                TextFont {
-                    font_size: FontSize::Px(8.0),
-                    ..default()
-                },
-                TextColor(TEXT),
-            ));
+
+            button
+                .spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        right: px(2),
+                        bottom: px(1),
+                        min_width: px(14),
+                        min_height: px(13),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.72)),
+                ))
+                .with_child((
+                    NativeActionSlotText(slot),
+                    Text::new(""),
+                    TextFont {
+                        font_size: FontSize::Px(7.5),
+                        ..default()
+                    },
+                    TextColor(TEXT),
+                ));
         });
 }
 
 
-
-
-#[allow(dead_code)]
 fn spawn_panel_header(
     parent: &mut ChildSpawnerCommands,
     title: &str,
@@ -6028,6 +6383,7 @@ fn spawn_npc_panel(commands: &mut Commands) {
 }
 
 pub fn update_ui(
+    time: Res<Time>,
     game_state: Res<NativeGameState>,
     mut action_bar: ResMut<NativeActionBarState>,
     ping: Res<NativePingState>,
@@ -6054,6 +6410,8 @@ pub fn update_ui(
         (&NativeUiPanel, &mut Visibility),
         Without<NativeActionSlotImage>,
     >,
+    mut chat_panels: Query<&mut BackgroundColor, With<NativeChatPanel>>,
+    mut chat_fade: Local<(usize, f64)>,
 ) {
     let player = game_state.local_player();
     let target = game_state
@@ -6089,7 +6447,7 @@ pub fn update_ui(
 
             nearby.sort_by_key(|entry| entry.0);
 
-            let mut lines = vec!["BATTLE LIST".to_owned()];
+            let mut lines = Vec::new();
 
             if nearby.is_empty() {
                 lines.push("No creatures nearby.".into());
@@ -6145,6 +6503,29 @@ pub fn update_ui(
         .collect();
     chat_lines.reverse();
 
+    let now = time.elapsed_secs_f64();
+    let message_count = game_state.messages.len();
+    if chat_fade.0 != message_count || chat.active {
+        chat_fade.0 = message_count;
+        chat_fade.1 = now;
+    }
+    let idle = (now - chat_fade.1).max(0.0);
+    let chat_alpha = if chat.active || idle <= 5.0 {
+        1.0
+    } else if idle >= 13.0 {
+        0.14
+    } else {
+        1.0 - ((idle - 5.0) / 8.0) as f32 * 0.86
+    };
+    for mut background in &mut chat_panels {
+        background.0 = Color::srgba(
+            0.01,
+            0.014,
+            0.011,
+            0.10 + 0.50 * chat_alpha,
+        );
+    }
+
     for (kind, mut text, mut color) in &mut texts {
         match kind {
             NativeUiText::WorldHeader => {
@@ -6167,20 +6548,20 @@ pub fn update_ui(
             }
             NativeUiText::IdentityLevel => {
                 text.0 = player
-                    .map(|p| format!("Level {}", p.level))
-                    .unwrap_or_else(|| "Level —".into());
-                color.0 = TEXT;
+                    .map(|p| p.level.to_string())
+                    .unwrap_or_else(|| "—".into());
+                color.0 = theme::GOLD_BRIGHT;
             }
             NativeUiText::Health => {
                 text.0 = player
-                    .map(|p| format!("Health   {} / {}", p.health, p.max_health))
-                    .unwrap_or_else(|| "Health".into());
+                    .map(|p| format!("{} / {}", p.health, p.max_health))
+                    .unwrap_or_else(|| "— / —".into());
                 color.0 = TEXT;
             }
             NativeUiText::Mana => {
                 text.0 = player
-                    .map(|p| format!("Mana     {} / {}", p.mana, p.max_mana))
-                    .unwrap_or_else(|| "Mana".into());
+                    .map(|p| format!("{} / {}", p.mana, p.max_mana))
+                    .unwrap_or_else(|| "— / —".into());
                 color.0 = TEXT;
             }
             NativeUiText::Experience => {
@@ -6199,23 +6580,26 @@ pub fn update_ui(
             }
             NativeUiText::Ping => {
                 text.0 = match ping.last_ms {
-                    Some(ms) => format!("Ping   {ms} ms"),
-                    None => "Ping   —".into(),
+                    Some(ms) => format!("●  {ms} ms"),
+                    None => "●  — ms".into(),
                 };
-                color.0 = MUTED;
+                color.0 = Color::srgb(0.35, 0.90, 0.30);
             }
             NativeUiText::Target => {
                 if let Some(creature) = target {
-                    text.0 = format!(
-                        "{}\nHP {} / {}   ·   {}",
-                        creature.name,
-                        creature.health,
-                        creature.max_health,
-                        creature.state,
-                    );
-                    color.0 = TEXT;
+                    text.0 = creature.name.clone();
+                    color.0 = theme::GOLD_BRIGHT;
                 } else {
                     text.0 = "No target".into();
+                    color.0 = MUTED;
+                }
+            }
+            NativeUiText::TargetHealth => {
+                if let Some(creature) = target {
+                    text.0 = format!("{} / {}", creature.health, creature.max_health);
+                    color.0 = TEXT;
+                } else {
+                    text.0.clear();
                     color.0 = MUTED;
                 }
             }
@@ -6225,7 +6609,7 @@ pub fn update_ui(
             }
             NativeUiText::ChatLog => {
                 text.0 = chat_lines.join("\n");
-                color.0 = TEXT;
+                color.0 = Color::srgba(0.957, 0.918, 0.820, chat_alpha);
             }
             NativeUiText::ChatInput => {
                 text.0 = if chat.active {
@@ -6233,7 +6617,11 @@ pub fn update_ui(
                 } else {
                     "Enter to chat".into()
                 };
-                color.0 = if chat.active { TEXT } else { MUTED };
+                color.0 = if chat.active {
+                    TEXT
+                } else {
+                    Color::srgba(0.518, 0.569, 0.541, 0.28 + 0.58 * chat_alpha)
+                };
             }
             NativeUiText::ActionBar => {
                 text.0 = action_line.clone();
@@ -6283,16 +6671,9 @@ pub fn update_ui(
     }
 
     for (slot, mut text) in &mut action_slot_texts {
-        text.0 = if slot.0 == 0 {
-            "1\nATTACK".into()
-        } else {
-            action_bar
-                .spell_id(slot.0)
-                .and_then(|spell_id| game_state.spells.get(spell_id))
-                .map(|spell| format!("{}\n{}", slot.0 + 1, spell.name))
-                .unwrap_or_else(|| format!("{}\n—", slot.0 + 1))
-        };
+        text.0 = (slot.0 + 1).to_string();
     }
+
 
     for (slot, mut image, mut visibility) in
         &mut action_slot_images

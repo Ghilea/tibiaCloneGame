@@ -63,6 +63,21 @@ pub(crate) const TARGET_HP: Color =
     Color::srgb(0.788, 0.204, 0.165);
 
 fn surface_style(name: &str) -> Option<(Color, Color, f32)> {
+    // V36.60 HUD roots own their complete visual styling. Do not flatten them
+    // back into the legacy generic panel theme during apply_once().
+    if matches!(
+        name,
+        "Native gameplay HUD · player"
+            | "Native gameplay HUD · target"
+            | "Native gameplay HUD · battle list"
+            | "Native gameplay HUD · chat"
+            | "Native gameplay HUD · action bar"
+            | "Native gameplay HUD · panel dock"
+            | "Native minimap"
+    ) {
+        return None;
+    }
+
     if name.ends_with("player") {
         return Some((PLAYER_FRAME_BG, PLAYER_FRAME_BORDER, 8.0));
     }

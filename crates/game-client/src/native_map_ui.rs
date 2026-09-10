@@ -283,37 +283,77 @@ pub fn setup(mut commands: Commands) {
             Name::new("Native minimap"),
             Node {
                 position_type: PositionType::Absolute,
-                top: px(62),
-                right: px(14),
-                width: px(238),
-                padding: UiRect::all(px(8)),
+                top: px(18),
+                right: px(18),
+                width: px(250),
+                height: px(270),
                 flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                row_gap: px(5),
                 ..default()
             },
-            BackgroundColor(
-                Color::srgba(
-                    0.025,
-                    0.035,
-                    0.032,
-                    0.88,
-                ),
-            ),
+            BackgroundColor(Color::NONE),
+            GlobalZIndex(172),
         ))
         .with_children(|parent| {
-            parent.spawn(map_text(
-                "MINIMAP",
-                NativeMapText::MinimapHeader,
-                13.0,
-                Color::srgb(0.92, 0.93, 0.88),
-            ));
+            parent
+                .spawn((
+                    Node {
+                        width: px(220),
+                        height: px(220),
+                        padding: UiRect::all(px(8)),
+                        border: UiRect::all(px(3)),
+                        border_radius: BorderRadius::all(px(110)),
+                        overflow: Overflow::clip(),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.015, 0.019, 0.016, 0.98)),
+                    BorderColor::all(theme::GOLD),
+                    Outline::new(px(2), px(1), Color::srgb(0.22, 0.13, 0.03)),
+                ))
+                .with_children(|ring| {
+                    spawn_native_minimap_grid(ring);
+                });
 
-            spawn_native_minimap_grid(parent);
+            parent
+                .spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        top: px(-7),
+                        left: px(108),
+                        width: px(34),
+                        height: px(34),
+                        border: UiRect::all(px(2)),
+                        border_radius: BorderRadius::all(px(17)),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.025, 0.022, 0.014, 0.98)),
+                    BorderColor::all(theme::GOLD),
+                ))
+                .with_child((
+                    Text::new("N"),
+                    TextFont {
+                        font_size: FontSize::Px(12.0),
+                        ..default()
+                    },
+                    TextColor(theme::GOLD_BRIGHT),
+                ));
 
             parent.spawn(map_text(
                 "",
+                NativeMapText::MinimapHeader,
+                9.0,
+                theme::GOLD_BRIGHT,
+            ));
+            parent.spawn(map_text(
+                "M  WORLD MAP",
                 NativeMapText::MinimapFooter,
-                11.0,
-                Color::srgb(0.64, 0.69, 0.65),
+                7.5,
+                MUTED,
             ));
         });
 
@@ -817,10 +857,10 @@ fn spawn_native_minimap_grid(
         .spawn((
             Name::new("Native minimap grid"),
             Node {
-                width: Val::Percent(100.0),
-                height: px(170),
-                margin: UiRect::vertical(px(6)),
-                padding: UiRect::all(px(2)),
+                width: px(198),
+                height: px(198),
+                border_radius: BorderRadius::all(px(99)),
+                overflow: Overflow::clip(),
                 flex_direction: FlexDirection::Column,
                 ..default()
             },
@@ -855,6 +895,7 @@ fn spawn_native_minimap_grid(
             }
         });
 }
+
 
 fn minimap_tone_color(tone: MapTone) -> Color {
     match tone {
@@ -1149,6 +1190,13 @@ pub fn update_ui(
             mut background,
         ) in &mut cell_queries.p0()
         {
+            if cell.dx * cell.dx + cell.dy * cell.dy
+                > MINIMAP_RADIUS * MINIMAP_RADIUS
+            {
+                background.0 = Color::NONE;
+                continue;
+            }
+
             let position = Position {
                 x: center.x + cell.dx,
                 y: center.y + cell.dy,
@@ -1193,7 +1241,7 @@ pub fn update_ui(
         match kind {
             NativeMapText::MinimapHeader => {
                 text.0 = format!(
-                    "MINIMAP   |   {}:{}:{}",
+                    "{}:{}:{}",
                     movement.logical.x,
                     movement.logical.y,
                     movement.logical.z,
@@ -1201,9 +1249,7 @@ pub fn update_ui(
             }
             NativeMapText::MinimapBody => {}
             NativeMapText::MinimapFooter => {
-                text.0 =
-                    "M MAP   |   Gold You   Red Creature   Green NPC   Cyan Resource"
-                        .into();
+                text.0 = "M  WORLD MAP".into();
             }
             NativeMapText::WorldHeader => {
                 text.0 = format!(

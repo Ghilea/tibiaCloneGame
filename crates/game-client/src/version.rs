@@ -1,5 +1,5 @@
 // TIBIAGAME_V36_10_NATIVE_GAMEPLAY_CORE
-pub const MIGRATION_VERSION: &str = "36.58.2";
+pub const MIGRATION_VERSION: &str = "36.60.0";
 
 #[allow(dead_code)]
 pub fn client_version() -> String {
