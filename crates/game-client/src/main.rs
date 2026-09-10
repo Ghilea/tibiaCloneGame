@@ -4,6 +4,8 @@ mod version;
 mod interaction;
 mod native_ui;
 mod native_ui_theme;
+mod native_modal;
+mod native_game_menu;
 mod native_loading;
 mod native_map_ui;
 mod native_trade_ui;
@@ -208,6 +210,22 @@ pub(crate) struct SingleWindowGameplayPlugin;
 
 impl Plugin for SingleWindowGameplayPlugin {
     fn build(&self, app: &mut App) {
+        // V36.45.15: Bevy's GPU pipelines live in RenderApp. Mirror their
+        // readiness into NativeLoadingState through ExtractSchedule, following
+        // Bevy 0.19's official loading-screen pattern.
+        if let Some(render_app) =
+            app.get_sub_app_mut(
+                bevy::render::RenderApp,
+            )
+        {
+            render_app.add_systems(
+                bevy::render::ExtractSchedule,
+                native_loading::
+                    update_render_pipeline_readiness,
+            );
+        }
+
+
         app
             .init_resource::<streaming::RegionStream>()
             .init_resource::<native_ui::NativeChatState>()
@@ -228,6 +246,7 @@ impl Plugin for SingleWindowGameplayPlugin {
                     native_map_ui::setup,
                     native_trade_ui::setup,
                     native_settings::setup,
+                    native_game_menu::setup,
                     native_loading::setup,
                     finish_single_window_bootstrap,
                 )
@@ -279,6 +298,7 @@ impl Plugin for SingleWindowGameplayPlugin {
                 (
                     schedule_tile_movement
                         .run_if(native_loading::gameplay_ready)
+                        .run_if(native_game_menu::menu_closed)
                         .after(native_loading::update)
                         .after(pump_network),
                     update_player_facing
@@ -303,6 +323,7 @@ impl Plugin for SingleWindowGameplayPlugin {
                 (
                     interaction::handle_pointer_interactions
                         .run_if(native_loading::gameplay_ready)
+                        .run_if(native_game_menu::menu_closed)
                         .after(native_loading::update)
                         .after(pump_network),
                     interaction::sync_target_visual
@@ -321,52 +342,88 @@ impl Plugin for SingleWindowGameplayPlugin {
                 Update,
                 (
                     native_ui_theme::apply_once
-                        .before(native_ui::update_ui),
-                    native_ui::handle_chat_input,
+                    .before(native_ui::update_ui),
+                    native_game_menu::handle_input
+                    .run_if(native_loading::gameplay_ready),
+                    native_ui::handle_chat_input
+                    .run_if(native_game_menu::menu_closed)
+                    .after(native_game_menu::handle_input),
                     native_map_ui::handle_input
-                        .before(schedule_tile_movement),
+                    .run_if(native_game_menu::menu_closed)
+                    .after(native_game_menu::handle_input)
+                    .before(schedule_tile_movement),
                     native_trade_ui::handle_input
-                        .after(native_map_ui::handle_input)
-                        .before(schedule_tile_movement),
+                    .run_if(native_game_menu::menu_closed)
+                    .after(native_map_ui::handle_input)
+                    .before(schedule_tile_movement),
                     native_settings::handle_input
-                        .after(native_trade_ui::handle_input)
-                        .before(schedule_tile_movement),
+                    .run_if(native_game_menu::menu_closed)
+                    .after(native_trade_ui::handle_input)
+                    .before(schedule_tile_movement),
+                    native_settings::handle_buttons
+                    .after(native_settings::handle_input),
                     native_ui::handle_panel_hotkeys
-                        .after(native_ui::handle_chat_input),
+                    .run_if(native_game_menu::menu_closed)
+                    .after(native_ui::handle_chat_input),
                     native_ui::handle_panel_dock_buttons
-                        .after(
-                            native_ui::handle_panel_hotkeys,
-                        ),
+                    .run_if(native_game_menu::menu_closed)
+                    .after(
+                    native_ui::handle_panel_hotkeys,
+                    ),
                     native_ui::handle_panel_close_buttons
-                        .after(
-                            native_ui::handle_panel_dock_buttons,
-                        ),
+                    .after(
+                    native_ui::handle_panel_dock_buttons,
+                    ),
                     native_ui::handle_action_hotkeys
-                        .run_if(native_loading::gameplay_ready)
-                        .after(native_loading::update)
-                        .after(
-                            native_ui::handle_panel_close_buttons,
-                        ),
+                    .run_if(native_loading::gameplay_ready)
+                    .run_if(native_game_menu::menu_closed)
+                    .after(native_loading::update)
+                    .after(
+                    native_ui::handle_panel_close_buttons,
+                    ),
+                )
+                    .distributive_run_if(single_window_game_active),
+            )
+            // TIBIAGAME_V36_48_1_SPLIT_NATIVE_UI_SCHEDULE
+            .add_systems(
+                Update,
+                (
                     native_ui::handle_action_slot_buttons
-                        .run_if(native_loading::gameplay_ready)
-                        .after(
-                            native_ui::handle_action_hotkeys,
-                        ),
+                    .run_if(native_loading::gameplay_ready)
+                    .run_if(native_game_menu::menu_closed)
+                    .after(
+                    native_ui::handle_action_hotkeys,
+                    ),
+                    native_game_menu::handle_buttons
+                    .after(native_game_menu::handle_input),
                     native_ui::ping_server,
                     native_ui::update_ui
-                        .after(pump_network),
+                    .after(pump_network),
                     native_map_ui::update_ui
-                        .after(pump_network),
+                    .after(pump_network),
                     native_trade_ui::update_ui
-                        .after(pump_network),
+                    .after(pump_network),
                     native_settings::update_performance_probe,
                     native_settings::update_ui,
+                    native_game_menu::update_ui
+                    .after(native_settings::update_ui),
                     native_settings::sync_world_music
-                        .after(pump_network),
+                    .after(pump_network),
                     native_settings::apply_audio_settings
-                        .after(
-                            native_settings::sync_world_music,
-                        ),
+                    .after(
+                    native_settings::sync_world_music,
+                    ),
+                )
+                    .distributive_run_if(single_window_game_active),
+            )
+            .add_systems(
+                Update,
+                (
+                    native_ui::handle_character_modal_buttons
+                        .run_if(native_game_menu::menu_closed)
+                        .after(native_ui::handle_panel_close_buttons),
+                    native_ui::update_character_modal_ui
+                        .after(native_ui::update_ui),
                 )
                     .distributive_run_if(single_window_game_active),
             );

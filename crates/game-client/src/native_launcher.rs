@@ -17,6 +17,7 @@ use bevy::{
 };
 
 use crate::{
+    native_modal,
     native_ui_theme as theme,
     network::{
         self,
@@ -117,6 +118,15 @@ struct LauncherCharacterCard(usize);
 #[derive(Component, Clone, Copy)]
 struct LauncherCharacterCardText(usize);
 
+#[derive(Component)]
+struct LauncherCharacterLobbySummary;
+
+#[derive(Component)]
+struct LauncherModalActionButton;
+
+#[derive(Component)]
+struct LauncherModalPrimaryButton;
+
 #[derive(Component, Clone, Copy)]
 struct LauncherFieldFrame(LoginField);
 
@@ -182,7 +192,8 @@ pub fn run() -> Result<()> {
                 poll_login_worker.after(crate::native_updater::poll),
                 poll_game_session_worker.after(poll_login_worker),
                 update_world_loading_overlay.after(poll_game_session_worker),
-                handle_launcher_text_input.after(update_world_loading_overlay),
+                update_adaptive_ui_scale.after(update_world_loading_overlay),
+                handle_launcher_text_input.after(update_adaptive_ui_scale),
                 handle_keyboard.after(handle_launcher_text_input),
                 handle_launcher_buttons.after(handle_keyboard),
                 handle_character_card_buttons.after(handle_launcher_buttons),
@@ -191,6 +202,7 @@ pub fn run() -> Result<()> {
                 update_character_lobby.after(update_login_form),
                 tick_launch_handoff.after(update_character_lobby),
                 update_screen.after(tick_launch_handoff),
+                enforce_gameplay_launcher_ui_hidden.after(update_screen),
             ),
         )
         .run();
@@ -212,6 +224,12 @@ fn setup(
     commands.spawn((
         Name::new("Native launcher UI camera"),
         Camera2d,
+        Camera {
+            order: 100,
+            clear_color: bevy::camera::ClearColorConfig::None,
+            ..default()
+        },
+        bevy::ui::IsDefaultUiCamera,
     ));
     spawn_launcher_background(&mut commands, &asset_server);
     spawn_launcher_world_loading_overlay(&mut commands, &asset_server);
@@ -275,7 +293,7 @@ fn spawn_launcher_world_loading_overlay(
         .spawn((
             Name::new("Native enter-world loading overlay"),
             LauncherWorldLoadingOverlay,
-            ZIndex(10_000),
+            GlobalZIndex(10_000),
             Visibility::Hidden,
             Node {
                 position_type: PositionType::Absolute,
@@ -520,6 +538,52 @@ fn spawn_launcher_button(
         ));
 }
 
+fn spawn_modal_action_button(
+    parent: &mut ChildSpawnerCommands,
+    action: LauncherAction,
+    label: &str,
+    primary: bool,
+) {
+    let background =
+        if primary {
+            theme::BUTTON_HOVER
+        } else {
+            theme::BUTTON_BG
+        };
+
+    let border =
+        if primary {
+            theme::GOLD
+        } else {
+            theme::BUTTON_BORDER
+        };
+
+    let mut button =
+        parent.spawn((
+            Button,
+            action,
+            LauncherModalActionButton,
+            native_modal::action_button_node(),
+            BackgroundColor(background),
+            BorderColor::all(border),
+        ));
+
+    if primary {
+        button.insert(
+            LauncherModalPrimaryButton,
+        );
+    }
+
+    button.with_child((
+        Text::new(label),
+        TextFont {
+            font_size: FontSize::Px(12.0),
+            ..default()
+        },
+        TextColor(theme::TEXT),
+    ));
+}
+
 fn spawn_launcher_controls(commands: &mut Commands) {
     commands
         .spawn((
@@ -565,6 +629,34 @@ fn spawn_launcher_controls(commands: &mut Commands) {
                 "BACK",
             );
         });
+}
+
+fn update_adaptive_ui_scale(
+    windows: Query<
+        &Window,
+        With<bevy::window::PrimaryWindow>,
+    >,
+    mut ui_scale: ResMut<UiScale>,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+
+    let width =
+        window.resolution.width().max(1.0);
+    let height =
+        window.resolution.height().max(1.0);
+
+    // Native HUD was laid out around 1280x800. Scale only fixed pixel
+    // dimensions; percentage anchors keep their existing behavior.
+    let target =
+        (width / 1280.0)
+            .min(height / 800.0)
+            .clamp(0.58, 1.0);
+
+    if (ui_scale.0 - target).abs() > 0.005 {
+        ui_scale.0 = target;
+    }
 }
 
 fn handle_launcher_text_input(
@@ -802,151 +894,239 @@ fn spawn_launcher_character_lobby(
 ) {
     commands
         .spawn((
-            Name::new("Native graphical character lobby"),
+            Name::new("Native modal · character lobby"),
             LauncherCharacterLobby,
-            ZIndex(30),
+            native_modal::NativeModalRoot,
+            GlobalZIndex(120),
             Visibility::Hidden,
-            Node {
-                position_type: PositionType::Absolute,
-                left: px(0),
-                right: px(0),
-                top: px(0),
-                bottom: px(0),
-                padding: UiRect {
-                    left: px(64),
-                    right: px(64),
-                    top: px(70),
-                    bottom: px(128),
-                },
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                ..default()
-            },
+            native_modal::root_node(),
+            native_modal::backdrop(),
         ))
         .with_children(|root| {
             root
                 .spawn((
-                    Node {
-                        width: Val::Percent(100.0),
-                        max_width: px(820),
-                        min_height: px(520),
-                        padding: UiRect::all(px(30)),
-                        border: UiRect::all(px(1)),
-                        border_radius: BorderRadius::all(px(10)),
-                        flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::Stretch,
-                        row_gap: px(12),
-                        ..default()
-                    },
-                    BackgroundColor(
-                        Color::srgba(0.03, 0.04, 0.05, 0.82),
+                    Name::new("Native modal surface · character lobby"),
+                    native_modal::NativeModalSurface,
+                    native_modal::panel_node(
+                        900.0,
+                        520.0,
                     ),
-                    BorderColor::all(theme::GOLD_DARK),
+                    native_modal::surface(),
+                    native_modal::surface_border(),
                 ))
                 .with_children(|panel| {
-                    panel.spawn((
-                        Text::new("EMBERS OF ALDORIA"),
-                        TextFont {
-                            font_size: FontSize::Px(27.0),
-                            ..default()
-                        },
-                        TextColor(theme::GOLD_BRIGHT),
-                    ));
-
-                    panel.spawn((
-                        Text::new("CHARACTER LOBBY"),
-                        TextFont {
-                            font_size: FontSize::Px(14.0),
-                            ..default()
-                        },
-                        TextColor(theme::GOLD),
-                    ));
-
-                    panel.spawn((
-                        Text::new(
-                            "Choose a character to enter the realm",
-                        ),
-                        TextFont {
-                            font_size: FontSize::Px(11.0),
-                            ..default()
-                        },
-                        TextColor(theme::MUTED),
-                    ));
-
-                    panel.spawn((
-                        Node {
-                            width: Val::Percent(100.0),
-                            height: px(1),
-                            margin: UiRect::vertical(px(5)),
-                            ..default()
-                        },
-                        BackgroundColor(theme::GOLD_DARK),
-                    ));
-
                     panel
-                        .spawn(Node {
-                            width: Val::Percent(100.0),
-                            flex_direction: FlexDirection::Column,
-                            row_gap: px(7),
-                            ..default()
-                        })
-                        .with_children(|list| {
-                            for index in 0..12usize {
-                                list
-                                    .spawn((
-                                        Button,
-                                        LauncherCharacterCard(index),
-                                        Visibility::Hidden,
-                                        Node {
-                                            width:
-                                                Val::Percent(100.0),
-                                            min_height: px(48),
-                                            padding:
-                                                UiRect::horizontal(
-                                                    px(14),
-                                                ),
-                                            border:
-                                                UiRect::all(px(1)),
-                                            border_radius:
-                                                BorderRadius::all(
-                                                    px(6),
-                                                ),
-                                            align_items:
-                                                AlignItems::Center,
-                                            ..default()
-                                        },
-                                        BackgroundColor(
-                                            theme::BUTTON_BG,
+                        .spawn((
+                            native_modal::header_node(),
+                            native_modal::divider_border(),
+                        ))
+                        .with_children(|header| {
+                            header
+                                .spawn(
+                                    native_modal::header_copy_node(),
+                                )
+                                .with_children(|copy| {
+                                    copy.spawn((
+                                        Text::new(
+                                            "SELECT CHARACTER",
                                         ),
-                                        BorderColor::all(
-                                            theme::BUTTON_BORDER,
-                                        ),
-                                    ))
-                                    .with_child((
-                                        LauncherCharacterCardText(
-                                            index,
-                                        ),
-                                        Text::new(""),
                                         TextFont {
                                             font_size:
-                                                FontSize::Px(13.0),
+                                                FontSize::Px(
+                                                    24.0,
+                                                ),
                                             ..default()
                                         },
-                                        TextColor(theme::TEXT),
+                                        TextColor(
+                                            theme::GOLD_BRIGHT,
+                                        ),
                                     ));
-                            }
+
+                                    copy.spawn((
+                                        Text::new(
+                                            "Choose who enters Greyhaven",
+                                        ),
+                                        TextFont {
+                                            font_size:
+                                                FontSize::Px(
+                                                    11.5,
+                                                ),
+                                            ..default()
+                                        },
+                                        TextColor(
+                                            theme::MUTED,
+                                        ),
+                                    ));
+                                });
+
+                            header.spawn((
+                                Text::new(
+                                    "EMBERS OF ALDORIA  |  GREYHAVEN",
+                                ),
+                                TextFont {
+                                    font_size:
+                                        FontSize::Px(
+                                            10.5,
+                                        ),
+                                    ..default()
+                                },
+                                TextColor(theme::GOLD),
+                            ));
                         });
 
-                    panel.spawn((
-                        Text::new(
-                            "Click a character | Arrow keys select | Enter enters world | Esc returns",
-                        ),
-                        TextFont {
-                            font_size: FontSize::Px(10.0),
-                            ..default()
-                        },
-                        TextColor(theme::MUTED),
-                    ));
+                    panel
+                        .spawn(native_modal::body_node())
+                        .with_children(|body| {
+                            body.spawn((
+                                LauncherCharacterLobbySummary,
+                                Text::new(
+                                    "Loading characters...",
+                                ),
+                                TextFont {
+                                    font_size:
+                                        FontSize::Px(
+                                            11.5,
+                                        ),
+                                    ..default()
+                                },
+                                TextColor(theme::MUTED),
+                            ));
+
+                            body
+                                .spawn(
+                                    native_modal::two_column_node(),
+                                )
+                                .with_children(|columns| {
+                                    columns
+                                        .spawn(
+                                            native_modal::card_column_node(),
+                                        )
+                                        .with_children(|left| {
+                                            for index
+                                                in 0..6usize
+                                            {
+                                                left
+                                                    .spawn((
+                                                        Button,
+                                                        LauncherCharacterCard(
+                                                            index,
+                                                        ),
+                                                        Visibility::Hidden,
+                                                        native_modal::card_node(),
+                                                        BackgroundColor(
+                                                            theme::BUTTON_BG,
+                                                        ),
+                                                        BorderColor::all(
+                                                            theme::BUTTON_BORDER,
+                                                        ),
+                                                    ))
+                                                    .with_child((
+                                                        LauncherCharacterCardText(
+                                                            index,
+                                                        ),
+                                                        Text::new(
+                                                            "",
+                                                        ),
+                                                        TextFont {
+                                                            font_size:
+                                                                FontSize::Px(
+                                                                    12.0,
+                                                                ),
+                                                            ..default()
+                                                        },
+                                                        TextColor(
+                                                            theme::TEXT,
+                                                        ),
+                                                    ));
+                                            }
+                                        });
+
+                                    columns
+                                        .spawn(
+                                            native_modal::card_column_node(),
+                                        )
+                                        .with_children(|right| {
+                                            for index
+                                                in 6..12usize
+                                            {
+                                                right
+                                                    .spawn((
+                                                        Button,
+                                                        LauncherCharacterCard(
+                                                            index,
+                                                        ),
+                                                        Visibility::Hidden,
+                                                        native_modal::card_node(),
+                                                        BackgroundColor(
+                                                            theme::BUTTON_BG,
+                                                        ),
+                                                        BorderColor::all(
+                                                            theme::BUTTON_BORDER,
+                                                        ),
+                                                    ))
+                                                    .with_child((
+                                                        LauncherCharacterCardText(
+                                                            index,
+                                                        ),
+                                                        Text::new(
+                                                            "",
+                                                        ),
+                                                        TextFont {
+                                                            font_size:
+                                                                FontSize::Px(
+                                                                    12.0,
+                                                                ),
+                                                            ..default()
+                                                        },
+                                                        TextColor(
+                                                            theme::TEXT,
+                                                        ),
+                                                    ));
+                                            }
+                                        });
+                                });
+                        });
+
+                    panel
+                        .spawn((
+                            native_modal::footer_node(),
+                            native_modal::divider_border(),
+                        ))
+                        .with_children(|footer| {
+                            footer.spawn((
+                                Text::new(
+                                    "Arrow keys select  |  Enter plays  |  Esc returns",
+                                ),
+                                TextFont {
+                                    font_size:
+                                        FontSize::Px(
+                                            10.0,
+                                        ),
+                                    ..default()
+                                },
+                                TextColor(theme::MUTED),
+                            ));
+
+                            footer
+                                .spawn(
+                                    native_modal::footer_actions_node(),
+                                )
+                                .with_children(|actions| {
+                                    spawn_modal_action_button(
+                                        actions,
+                                        LauncherAction::Back,
+                                        "BACK",
+                                        false,
+                                    );
+
+                                    spawn_modal_action_button(
+                                        actions,
+                                        LauncherAction::EnterWorld,
+                                        "ENTER WORLD",
+                                        true,
+                                    );
+                                });
+                        });
                 });
         });
 }
@@ -1049,86 +1229,154 @@ fn handle_launcher_buttons(
         (
             &Interaction,
             &LauncherAction,
+            Option<&LauncherModalPrimaryButton>,
             &mut BackgroundColor,
             &mut BorderColor,
         ),
         (Changed<Interaction>, With<Button>),
     >,
 ) {
-    for (interaction, action, mut background, mut border) in &mut buttons {
+    for (
+        interaction,
+        action,
+        primary,
+        mut background,
+        mut border,
+    ) in &mut buttons
+    {
         match *interaction {
             Interaction::Pressed => {
-                background.0 = theme::BUTTON_PRESSED;
-                *border = BorderColor::all(theme::GOLD_BRIGHT);
+                background.0 =
+                    theme::BUTTON_PRESSED;
+                *border =
+                    BorderColor::all(
+                        theme::GOLD_BRIGHT,
+                    );
 
                 match action {
                     LauncherAction::FocusAccount => {
-                        if state.mode == LauncherMode::Login {
-                            state.field = LoginField::Account;
+                        if state.mode
+                            == LauncherMode::Login
+                        {
+                            state.field =
+                                LoginField::Account;
                         }
                     }
                     LauncherAction::FocusPassword => {
-                        if state.mode == LauncherMode::Login {
-                            state.field = LoginField::Password;
+                        if state.mode
+                            == LauncherMode::Login
+                        {
+                            state.field =
+                                LoginField::Password;
                         }
                     }
                     LauncherAction::Login => {
-                        if state.mode == LauncherMode::Login {
-                            if updater.blocks_online_play() {
+                        if state.mode
+                            == LauncherMode::Login
+                        {
+                            if updater
+                                .blocks_online_play()
+                            {
                                 state.status =
-                                    updater.gate_message().into();
+                                    updater
+                                        .gate_message()
+                                        .into();
                             } else {
-                                begin_login(&mut state);
+                                begin_login(
+                                    &mut state,
+                                );
                             }
                         }
                     }
                     LauncherAction::PreviousCharacter => {
-                        if state.mode == LauncherMode::Characters {
-                            step_character(&mut state, -1);
+                        if state.mode
+                            == LauncherMode::Characters
+                        {
+                            step_character(
+                                &mut state,
+                                -1,
+                            );
                         }
                     }
                     LauncherAction::NextCharacter => {
-                        if state.mode == LauncherMode::Characters {
-                            step_character(&mut state, 1);
+                        if state.mode
+                            == LauncherMode::Characters
+                        {
+                            step_character(
+                                &mut state,
+                                1,
+                            );
                         }
                     }
                     LauncherAction::EnterWorld => {
-                        if state.mode == LauncherMode::Characters {
-                            if updater.blocks_online_play() {
-                                state.status =
-                                    updater.gate_message().into();
-                            } else if let Err(error) =
-                                launch_selected_character(&mut state)
+                        if state.mode
+                            == LauncherMode::Characters
+                        {
+                            if updater
+                                .blocks_online_play()
                             {
-                                state.mode = LauncherMode::Error;
-                                state.status = format!(
-                                    "Could not start game: {error:#}"
-                                );
+                                state.status =
+                                    updater
+                                        .gate_message()
+                                        .into();
+                            } else if let Err(
+                                error,
+                            ) =
+                                launch_selected_character(
+                                    &mut state,
+                                )
+                            {
+                                state.mode =
+                                    LauncherMode::Error;
+                                state.status =
+                                    format!(
+                                        "Could not start game: {error:#}"
+                                    );
                             }
                         }
                     }
                     LauncherAction::Back => {
                         if matches!(
                             state.mode,
-                            LauncherMode::Characters | LauncherMode::Error
+                            LauncherMode::Characters
+                                | LauncherMode::Error
                         ) {
-                            state.mode = LauncherMode::Login;
-                            state.pending_login = None;
+                            state.mode =
+                                LauncherMode::Login;
+                            state.pending_login =
+                                None;
                             state.login = None;
-                            state.selected_character = 0;
+                            state.selected_character =
+                                0;
                             state.status =
-                                "Returned to account login.".into();
+                                "Returned to account login."
+                                    .into();
                         }
                     }
                 }
             }
             Interaction::Hovered => {
-                background.0 = theme::BUTTON_HOVER;
-                *border = BorderColor::all(theme::GOLD);
+                background.0 =
+                    theme::BUTTON_HOVER;
+                *border =
+                    BorderColor::all(theme::GOLD);
             }
             Interaction::None => {
-                background.0 = theme::BUTTON_BG;
-                *border = BorderColor::all(theme::BUTTON_BORDER);
+                background.0 =
+                    if primary.is_some() {
+                        theme::BUTTON_HOVER
+                    } else {
+                        theme::BUTTON_BG
+                    };
+
+                *border =
+                    BorderColor::all(
+                        if primary.is_some() {
+                            theme::GOLD
+                        } else {
+                            theme::BUTTON_BORDER
+                        },
+                    );
             }
         }
     }
@@ -1205,28 +1453,52 @@ fn update_character_lobby(
             Without<LauncherLegacyPanel>,
         ),
     >,
-    mut card_texts: Query<
-        (&LauncherCharacterCardText, &mut Text),
-    >,
+    mut text_queries: ParamSet<(
+        Query<
+            (
+                &LauncherCharacterCardText,
+                &mut Text,
+                &mut TextColor,
+            ),
+        >,
+        Query<
+            &mut Text,
+            With<LauncherCharacterLobbySummary>,
+        >,
+    )>,
 ) {
     let show =
         state.mode == LauncherMode::Characters;
 
-    if let Ok(mut visibility) = lobby.single_mut() {
-        *visibility = if show {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
+    for mut visibility in &mut lobby {
+        *visibility =
+            if show {
+                Visibility::Visible
+            } else {
+                Visibility::Hidden
+            };
     }
 
     if !show {
+        for (
+            _,
+            mut visibility,
+            _,
+            _,
+        ) in &mut cards
+        {
+            *visibility =
+                Visibility::Hidden;
+        }
+
+        for (_, mut text, _) in &mut text_queries.p0() {
+            text.0.clear();
+        }
+
         return;
     }
 
-    if let Ok(mut visibility) =
-        legacy_panels.single_mut()
-    {
+    for mut visibility in &mut legacy_panels {
         *visibility = Visibility::Hidden;
     }
 
@@ -1236,35 +1508,72 @@ fn update_character_lobby(
         .map(|login| login.characters.as_slice())
         .unwrap_or(&[]);
 
-    for (card, mut visibility, mut background, mut border)
-        in &mut cards
-    {
-        if characters.get(card.0).is_none() {
-            *visibility = Visibility::Hidden;
-            continue;
-        }
+    let selected_name =
+        characters
+            .get(state.selected_character)
+            .map(|character| {
+                character.name.as_str()
+            })
+            .unwrap_or("None");
 
-        *visibility = Visibility::Visible;
-
-        let selected =
-            card.0 == state.selected_character;
-
-        background.0 = if selected {
-            theme::BUTTON_HOVER
-        } else {
-            theme::BUTTON_BG
-        };
-
-        *border = BorderColor::all(
-            if selected {
-                theme::GOLD_BRIGHT
+    for mut text in &mut text_queries.p1() {
+        text.0 = format!(
+            "{} character{} available  |  Selected: {}",
+            characters.len(),
+            if characters.len() == 1 {
+                ""
             } else {
-                theme::BUTTON_BORDER
+                "s"
             },
+            selected_name,
         );
     }
 
-    for (slot, mut text) in &mut card_texts {
+    for (
+        card,
+        mut visibility,
+        mut background,
+        mut border,
+    ) in &mut cards
+    {
+        let Some(_) =
+            characters.get(card.0)
+        else {
+            *visibility =
+                Visibility::Hidden;
+            continue;
+        };
+
+        *visibility =
+            Visibility::Visible;
+
+        let selected =
+            card.0
+                == state.selected_character;
+
+        background.0 =
+            if selected {
+                theme::BUTTON_HOVER
+            } else {
+                theme::BUTTON_BG
+            };
+
+        *border =
+            BorderColor::all(
+                if selected {
+                    theme::GOLD_BRIGHT
+                } else {
+                    theme::BUTTON_BORDER
+                },
+            );
+    }
+
+    for (
+        slot,
+        mut text,
+        mut color,
+    ) in &mut text_queries.p0()
+    {
         let Some(character) =
             characters.get(slot.0)
         else {
@@ -1272,21 +1581,30 @@ fn update_character_lobby(
             continue;
         };
 
-        let marker =
-            if slot.0 == state.selected_character {
-                ">"
-            } else {
-                " "
-            };
+        let selected =
+            slot.0
+                == state.selected_character;
 
         text.0 = format!(
-            "{marker} {:<28}  Level {:>3}     Position {}:{}:{}",
+            "{}\nLevel {}  |  Position {}:{}:{}{}",
             character.name,
             character.level,
             character.position.x,
             character.position.y,
             character.position.z,
+            if selected {
+                "  |  SELECTED"
+            } else {
+                ""
+            },
         );
+
+        color.0 =
+            if selected {
+                theme::GOLD_BRIGHT
+            } else {
+                theme::TEXT
+            };
     }
 }
 
@@ -1403,34 +1721,48 @@ fn update_login_form(
 
 fn update_launcher_controls(
     state: Res<NativeLauncherState>,
-    mut buttons: Query<(&LauncherAction, &mut Visibility)>,
+    mut buttons: Query<
+        (&LauncherAction, &mut Visibility),
+        Without<LauncherModalActionButton>,
+    >,
 ) {
-    for (action, mut visibility) in &mut buttons {
-        let shown = match state.mode {
-            LauncherMode::Login => matches!(
-                action,
-                LauncherAction::FocusAccount
-                    | LauncherAction::FocusPassword
-                    | LauncherAction::Login
-            ),
-            LauncherMode::Characters => matches!(
-                action,
-                LauncherAction::PreviousCharacter
-                    | LauncherAction::NextCharacter
-                    | LauncherAction::EnterWorld
-                    | LauncherAction::Back
-            ),
-            LauncherMode::Error => {
-                matches!(action, LauncherAction::Back)
-            }
-            LauncherMode::LoggingIn | LauncherMode::Launching | LauncherMode::GameLoading => false,
-        };
+    for (
+        action,
+        mut visibility,
+    ) in &mut buttons
+    {
+        let shown =
+            match state.mode {
+                LauncherMode::Login => {
+                    matches!(
+                        action,
+                        LauncherAction::FocusAccount
+                            | LauncherAction::FocusPassword
+                            | LauncherAction::Login
+                    )
+                }
+                LauncherMode::Characters => {
+                    false
+                }
+                LauncherMode::Error => {
+                    matches!(
+                        action,
+                        LauncherAction::Back
+                    )
+                }
+                LauncherMode::LoggingIn
+                | LauncherMode::Launching
+                | LauncherMode::GameLoading => {
+                    false
+                }
+            };
 
-        *visibility = if shown {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
+        *visibility =
+            if shown {
+                Visibility::Visible
+            } else {
+                Visibility::Hidden
+            };
     }
 }
 
@@ -1701,6 +2033,31 @@ fn launch_selected_character(
     Ok(())
 }
 
+fn enforce_gameplay_launcher_ui_hidden(
+    state: Res<NativeLauncherState>,
+    mut transient_roots: Query<
+        &mut Visibility,
+        Or<(
+            With<LauncherLegacyPanel>,
+            With<LauncherLoginForm>,
+            With<LauncherCharacterLobby>,
+            With<LauncherCharacterCard>,
+        )>,
+    >,
+) {
+    if !matches!(
+        state.mode,
+        LauncherMode::Launching
+            | LauncherMode::GameLoading
+    ) {
+        return;
+    }
+
+    for mut visibility in &mut transient_roots {
+        *visibility = Visibility::Hidden;
+    }
+}
+
 fn update_screen(
     state: Res<NativeLauncherState>,
     mut text: Query<&mut Text, With<LauncherText>>,
@@ -1836,6 +2193,9 @@ fn render_characters(
 
 #[allow(dead_code)]
 fn update_world_loading_overlay(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    time: Res<Time>,
     state: Res<NativeLauncherState>,
     loading: Option<
         Res<crate::native_loading::NativeLoadingState>,
@@ -1852,7 +2212,11 @@ fn update_world_loading_overlay(
         &mut Node,
         With<LauncherWorldLoadingProgress>,
     >,
+    mut last_show: Local<Option<bool>>,
+    mut ready_grace_seconds: Local<f32>,
 ) {
+    const POST_READY_GRACE_SECONDS: f32 = 2.0;
+
     let loading_active = loading
         .as_ref()
         .map(|loading| loading.active())
@@ -1861,13 +2225,55 @@ fn update_world_loading_overlay(
     let connecting =
         state.mode == LauncherMode::Launching;
 
-    let world_loading =
-        state.mode == LauncherMode::GameLoading
-            && loading_active;
+    let game_loading =
+        state.mode == LauncherMode::GameLoading;
 
-    let show = connecting || world_loading;
+    let authoritative_loading =
+        if game_loading {
+            loading
+                .as_ref()
+                .map(|loading| loading.active())
+                .unwrap_or(true)
+        } else {
+            false
+        };
 
-    if let Ok(mut visibility) = overlay.single_mut() {
+    if connecting || authoritative_loading {
+        *ready_grace_seconds = 0.0;
+    } else if game_loading && loading.is_some() {
+        *ready_grace_seconds +=
+            time.delta().as_secs_f32();
+    } else {
+        *ready_grace_seconds = 0.0;
+    }
+
+    let post_ready_grace =
+        game_loading
+            && loading.is_some()
+            && !loading_active
+            && *ready_grace_seconds
+                < POST_READY_GRACE_SECONDS;
+
+    let show =
+        connecting
+            || authoritative_loading
+            || post_ready_grace;
+
+    let overlay_count =
+        overlay.iter_mut().count();
+
+    if show && overlay_count == 0 {
+        warn!(
+            "ALDORIA LOADING COVER · missing root while active; respawning"
+        );
+
+        spawn_launcher_world_loading_overlay(
+            &mut commands,
+            &asset_server,
+        );
+    }
+
+    for mut visibility in &mut overlay {
         *visibility = if show {
             Visibility::Visible
         } else {
@@ -1875,26 +2281,58 @@ fn update_world_loading_overlay(
         };
     }
 
+    if *last_show != Some(show) {
+        info!(
+            "ALDORIA LOADING COVER · show={} · mode={:?} · native_loading={} · post_ready={:.2}/{:.2}s · roots={}",
+            show,
+            state.mode,
+            loading_active,
+            *ready_grace_seconds,
+            POST_READY_GRACE_SECONDS,
+            overlay_count,
+        );
+
+        *last_show = Some(show);
+    }
+
     if !show {
         return;
     }
 
-    let (label, width) = if connecting {
-        (state.status.clone(), 18.0)
-    } else if let Some(loading) = loading.as_ref() {
-        (
-            loading.stage_label().to_owned(),
-            loading.progress_percent(),
-        )
-    } else {
-        ("Preparing world session...".to_owned(), 28.0)
-    };
+    let (label, width) =
+        if connecting {
+            (
+                state.status.clone(),
+                18.0,
+            )
+        } else if authoritative_loading {
+            if let Some(loading) =
+                loading.as_ref()
+            {
+                (
+                    loading.stage_label().to_owned(),
+                    loading.progress_percent(),
+                )
+            } else {
+                (
+                    "Preparing world session..."
+                        .to_owned(),
+                    24.0,
+                )
+            }
+        } else {
+            (
+                "Presenting world..."
+                    .to_owned(),
+                100.0,
+            )
+        };
 
-    if let Ok(mut text) = status.single_mut() {
-        text.0 = label;
+    for mut text in &mut status {
+        text.0 = label.clone();
     }
 
-    if let Ok(mut node) = progress.single_mut() {
+    for mut node in &mut progress {
         node.width = Val::Percent(width);
     }
 }

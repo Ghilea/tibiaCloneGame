@@ -19,6 +19,16 @@ pub(crate) struct NativeLoadingState {
     last_world_asset_root_count: usize,
     stable_world_asset_frames: u8,
     stable_render_frames: u8,
+    last_visible_world_meshes: usize,
+    last_visible_player_meshes: usize,
+    last_actor_root_count: usize,
+    last_actor_meshes: usize,
+    stable_presentation_frames: u16,
+    render_pipeline_probe_seen: bool,
+    render_pipeline_total: usize,
+    render_pipeline_waiting: usize,
+    render_pipeline_last_total: usize,
+    render_pipeline_stable_frames: u16,
     last_stage: &'static str,
 }
 
@@ -34,6 +44,16 @@ impl Default for NativeLoadingState {
             last_world_asset_root_count: 0,
             stable_world_asset_frames: 0,
             stable_render_frames: 0,
+            last_visible_world_meshes: 0,
+            last_visible_player_meshes: 0,
+            last_actor_root_count: 0,
+            last_actor_meshes: 0,
+            stable_presentation_frames: 0,
+            render_pipeline_probe_seen: false,
+            render_pipeline_total: 0,
+            render_pipeline_waiting: 0,
+            render_pipeline_last_total: 0,
+            render_pipeline_stable_frames: 0,
             last_stage: "",
         }
     }
@@ -65,6 +85,85 @@ impl NativeLoadingState {
             _ => 30.0,
         }
     }
+
+    pub(crate) fn update_render_pipeline_status(
+        &mut self,
+        total: usize,
+        waiting: usize,
+    ) {
+        let was_ready =
+            self.render_pipelines_ready();
+
+        let counts_changed =
+            total != self.render_pipeline_total
+                || waiting
+                    != self.render_pipeline_waiting;
+
+        self.render_pipeline_probe_seen = true;
+        self.render_pipeline_total = total;
+        self.render_pipeline_waiting = waiting;
+
+        if total > 0
+            && waiting == 0
+            && total
+                == self.render_pipeline_last_total
+        {
+            self.render_pipeline_stable_frames =
+                self.render_pipeline_stable_frames
+                    .saturating_add(1);
+        } else {
+            self.render_pipeline_stable_frames = 0;
+        }
+
+        self.render_pipeline_last_total = total;
+
+        if counts_changed {
+            info!(
+                "ALDORIA GPU PIPELINES · total={} · waiting={} · stable={}/12",
+                total,
+                waiting,
+                self.render_pipeline_stable_frames,
+            );
+        }
+
+        if !was_ready
+            && self.render_pipelines_ready()
+        {
+            info!(
+                "ALDORIA GPU PIPELINES READY · total={} · waiting=0 · stable={}",
+                total,
+                self.render_pipeline_stable_frames,
+            );
+        }
+    }
+
+    pub(crate) fn render_pipelines_ready(
+        &self,
+    ) -> bool {
+        // Direct/legacy game mode remains compatible if the RenderApp probe
+        // was not installed. In single-window mode the probe runs every
+        // ExtractSchedule long before the other startup gates can complete.
+        !self.render_pipeline_probe_seen
+            || (
+                self.render_pipeline_total > 0
+                    && self.render_pipeline_waiting == 0
+                    && self.render_pipeline_stable_frames
+                        >= 12
+            )
+    }
+
+    pub(crate) fn render_pipeline_waiting(
+        &self,
+    ) -> usize {
+        self.render_pipeline_waiting
+    }
+
+    pub(crate) fn render_pipeline_total(
+        &self,
+    ) -> usize {
+        self.render_pipeline_total
+    }
+
 }
 
 #[derive(Component)]
@@ -86,7 +185,16 @@ pub(crate) fn gameplay_ready(
     !state.active()
 }
 
-pub(crate) fn setup(mut commands: Commands) {
+pub(crate) fn setup(
+    mut commands: Commands,
+    launcher: Option<
+        Res<crate::native_launcher::NativeLauncherState>,
+    >,
+) {
+    if launcher.is_some() {
+        // Single-window mode uses the launcher's full-screen loading surface.
+        return;
+    }
     commands
         .spawn((
             Name::new("Native startup loading overlay"),
@@ -190,6 +298,27 @@ pub(crate) fn setup(mut commands: Commands) {
         });
 }
 
+fn count_descendant_meshes(
+    root: Entity,
+    children: &Query<&Children>,
+    mesh_visibility: &Query<&ViewVisibility, With<Mesh3d>>,
+) -> usize {
+    let mut pending = vec![root];
+    let mut meshes = 0usize;
+
+    while let Some(entity) = pending.pop() {
+        if mesh_visibility.get(entity).is_ok() {
+            meshes += 1;
+        }
+
+        if let Ok(entity_children) = children.get(entity) {
+            pending.extend(entity_children.iter());
+        }
+    }
+
+    meshes
+}
+
 fn count_visible_descendant_meshes(
     root: Entity,
     children: &Query<&Children>,
@@ -211,12 +340,36 @@ fn count_visible_descendant_meshes(
 
         if let Ok(entity_children) = children.get(entity) {
             pending.extend(
-                entity_children.iter().copied(),
+                entity_children.iter(),
             );
         }
     }
 
     visible
+}
+
+pub(crate) fn update_render_pipeline_readiness(
+    mut main_world:
+        ResMut<bevy::render::MainWorld>,
+    pipelines: Res<
+        bevy::render::render_resource::PipelineCache,
+    >,
+) {
+    let total =
+        pipelines.pipelines().count();
+
+    let waiting =
+        pipelines.waiting_pipelines().count();
+
+    if let Some(mut loading) =
+        main_world
+            .get_resource_mut::<NativeLoadingState>()
+    {
+        loading.update_render_pipeline_status(
+            total,
+            waiting,
+        );
+    }
 }
 
 pub(crate) fn update(
@@ -238,15 +391,25 @@ pub(crate) fn update(
     >,
     world_asset_roots: Query<
         (
+            Entity,
             &WorldAssetRoot,
             Option<
                 &bevy::world_serialization::WorldInstance,
             >,
+            Option<&crate::AnimationTemplateRig>,
         ),
     >,
     player_model_roots: Query<
         Entity,
         With<crate::PlayerModelRoot>,
+    >,
+    actor_roots: Query<
+        Entity,
+        Or<(
+            With<crate::CreatureActor>,
+            With<crate::NpcActor>,
+            With<crate::ResourceActor>,
+        )>,
     >,
     children: Query<&Children>,
     mesh_visibility: Query<
@@ -331,6 +494,51 @@ pub(crate) fn update(
             })
             .sum::<usize>();
 
+    let actor_root_count = actor_roots.iter().count();
+
+    let mut actor_roots_with_mesh = 0usize;
+    let mut actor_meshes = 0usize;
+
+    for root in &actor_roots {
+        let meshes =
+            count_descendant_meshes(
+                root,
+                &children,
+                &mesh_visibility,
+            );
+
+        actor_meshes += meshes;
+
+        if meshes > 0 {
+            actor_roots_with_mesh += 1;
+        }
+    }
+
+    let presentation_unchanged =
+        visible_world_meshes == state.last_visible_world_meshes
+            && visible_player_meshes == state.last_visible_player_meshes
+            && actor_root_count == state.last_actor_root_count
+            && actor_meshes == state.last_actor_meshes
+            && visible_world_meshes > 0
+            && visible_player_meshes > 0;
+
+    if presentation_unchanged {
+        state.stable_presentation_frames =
+            state.stable_presentation_frames.saturating_add(1);
+    } else {
+        state.stable_presentation_frames = 0;
+        state.last_visible_world_meshes = visible_world_meshes;
+        state.last_visible_player_meshes = visible_player_meshes;
+        state.last_actor_root_count = actor_root_count;
+        state.last_actor_meshes = actor_meshes;
+    }
+
+    let actors_instantiated =
+        actor_roots_with_mesh
+            == actor_root_count;
+    let presentation_stable =
+        actors_instantiated && state.stable_presentation_frames >= 120;
+
     let creature_assets_ready =
         creature_sprites::floor_transition_creature_assets_ready(
             &asset_server,
@@ -339,9 +547,17 @@ pub(crate) fn update(
 
     let mut world_asset_root_count = 0usize;
     let mut world_asset_instance_count = 0usize;
+    let mut world_asset_render_root_count = 0usize;
+    let mut world_asset_roots_with_mesh = 0usize;
     let mut world_asset_dependencies_ready = true;
 
-    for (root, instance) in &world_asset_roots {
+    for (
+        entity,
+        root,
+        instance,
+        animation_template,
+    ) in &world_asset_roots
+    {
         world_asset_root_count += 1;
 
         let dependencies_ready =
@@ -356,6 +572,22 @@ pub(crate) fn update(
             && instance.is_some()
         {
             world_asset_instance_count += 1;
+        }
+
+        // AnimationTemplateRig is deliberately hidden and exists only to
+        // provide animation sources. Every other WorldAssetRoot represents
+        // presentation that should have produced at least one mesh.
+        if animation_template.is_none() {
+            world_asset_render_root_count += 1;
+
+            if count_descendant_meshes(
+                entity,
+                &children,
+                &mesh_visibility,
+            ) > 0
+            {
+                world_asset_roots_with_mesh += 1;
+            }
         }
     }
 
@@ -377,6 +609,9 @@ pub(crate) fn update(
             && world_asset_dependencies_ready
             && world_asset_instance_count
                 == world_asset_root_count
+            && world_asset_render_root_count > 0
+            && world_asset_roots_with_mesh
+                == world_asset_render_root_count
             && state.stable_world_asset_frames >= 4;
 
     let render_visible =
@@ -392,7 +627,9 @@ pub(crate) fn update(
     }
 
     let render_visibility_ready =
-        state.stable_render_frames >= 12;
+        state.stable_render_frames >= 12
+            && actors_instantiated
+            && presentation_stable;
 
     let (stage, label, width) =
         if !world_ready {
@@ -435,9 +672,11 @@ pub(crate) fn update(
             (
                 "models",
                 format!(
-                    "Loading models... {}/{} instantiated",
+                    "Loading models... instances={}/{} meshes={}/{}",
                     world_asset_instance_count,
                     world_asset_root_count,
+                    world_asset_roots_with_mesh,
+                    world_asset_render_root_count,
                 ),
                 80.0,
             )
@@ -448,10 +687,13 @@ pub(crate) fn update(
             (
                 "visibility",
                 format!(
-                    "Waiting for rendered world... world={} player={} stable={}/12",
+                    "Waiting for complete presentation... world={} player={} actors={}/{} render={}/12 presentation={}/120",
                     visible_world_meshes,
                     visible_player_meshes,
+                    actor_meshes,
+                    actor_root_count,
                     state.stable_render_frames,
+                    state.stable_presentation_frames,
                 ),
                 91.0,
             )
@@ -498,14 +740,65 @@ pub(crate) fn update(
         node.width = Val::Percent(width);
     }
 
+    // ALDORIA GPU PIPELINE GATE
+
+    // ViewVisibility does not imply that wgpu has finished compiling the
+
+    // StandardMaterial / mesh pipelines needed to draw the scene.
+
+    if world_ready
+
+        && streamed_entities_ready
+
+        && creature_assets_ready
+
+        && world_assets_ready
+
+        && render_visibility_ready
+
+        && !state.render_pipelines_ready()
+
+    {
+
+        state.ready_frames = 0;
+
+        state.ready_seconds = 0.0;
+
+
+        if let Ok(mut text) = status.single_mut() {
+
+            text.0 = format!(
+
+                "Compiling GPU pipelines... {} waiting / {} total",
+
+                state.render_pipeline_waiting(),
+
+                state.render_pipeline_total(),
+
+            );
+
+        }
+
+
+        if let Ok(mut node) = progress.single_mut() {
+
+            node.width = Val::Percent(98.0);
+
+        }
+
+    }
+
+
+
     if world_ready
         && streamed_entities_ready
         && creature_assets_ready
         && world_assets_ready
         && render_visibility_ready
+        && state.render_pipelines_ready()
         && state.ready_frames >= 2
         && state.visible_seconds >= 1.0
-        && state.ready_seconds >= 0.85
+        && state.ready_seconds >= 2.50
     {
         state.active = false;
 

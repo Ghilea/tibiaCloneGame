@@ -6,6 +6,7 @@ use bevy::{
 use game_protocol::ClientMessage;
 
 use crate::{
+    native_modal,
     native_ui_theme as theme,
     state::{NativeGameState, NativeMessageKind},
     NativeNetwork,
@@ -123,6 +124,60 @@ pub(crate) enum NativePanelCloseButton {
     Crafting,
     Npc,
 }
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeCharacterModalText {
+    HeaderContext,
+    Avatar,
+    Identity,
+    Health,
+    Mana,
+    Experience,
+    Capacity,
+    Melee,
+    Distance,
+    Shielding,
+    Fletching,
+    Magic,
+    Equipment,
+    Professions,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeCharacterModalBar {
+    Health,
+    Mana,
+    Experience,
+    Capacity,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeCharacterEquipmentSlot {
+    Helmet,
+    Amulet,
+    Chest,
+    Back,
+    LeftHand,
+    RightHand,
+    Backpack,
+    Ring,
+    Feet,
+    Legs,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeCharacterProfessionSlot(
+    pub(crate) usize,
+);
+
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeCharacterModalAction {
+    Inventory,
+    Skills,
+    Close,
+}
+
 
 const PANEL: Color = theme::PANEL_BG;
 const PANEL_SOFT: Color = theme::PANEL_BG_SOFT;
@@ -588,37 +643,841 @@ fn spawn_inventory_panel(commands: &mut Commands) {
         });
 }
 
+fn spawn_character_modal_text(
+    parent: &mut ChildSpawnerCommands,
+    kind: NativeCharacterModalText,
+    value: &str,
+    size: f32,
+    color: Color,
+) {
+    parent.spawn((
+        kind,
+        Text::new(value),
+        TextFont { font_size: FontSize::Px(size), ..default() },
+        TextColor(color),
+    ));
+}
+
+fn character_card_node() -> Node {
+    Node {
+        width: Val::Percent(100.0),
+        padding: UiRect::all(px(14)),
+        border: UiRect::all(px(1)),
+        border_radius: BorderRadius::all(px(8)),
+        flex_direction: FlexDirection::Column,
+        row_gap: px(8),
+        ..default()
+    }
+}
+
+fn spawn_character_section_title(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    subtitle: &str,
+) {
+    parent.spawn(Node {
+        width: Val::Percent(100.0),
+        flex_direction: FlexDirection::Column,
+        row_gap: px(2),
+        ..default()
+    }).with_children(|copy| {
+        copy.spawn((
+            Text::new(title),
+            TextFont { font_size: FontSize::Px(11.5), ..default() },
+            TextColor(theme::GOLD),
+        ));
+        copy.spawn((
+            Text::new(subtitle),
+            TextFont { font_size: FontSize::Px(9.0), ..default() },
+            TextColor(MUTED),
+        ));
+    });
+}
+
+fn spawn_character_vital(
+    parent: &mut ChildSpawnerCommands,
+    label: &str,
+    text_kind: NativeCharacterModalText,
+    bar_kind: NativeCharacterModalBar,
+    bar_color: Color,
+) {
+    parent.spawn(Node {
+        width: Val::Percent(100.0),
+        flex_direction: FlexDirection::Column,
+        row_gap: px(4),
+        ..default()
+    }).with_children(|root| {
+        root.spawn(Node {
+            width: Val::Percent(100.0),
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::SpaceBetween,
+            ..default()
+        }).with_children(|row| {
+            row.spawn((
+                Text::new(label),
+                TextFont { font_size: FontSize::Px(9.5), ..default() },
+                TextColor(MUTED),
+            ));
+            spawn_character_modal_text(row, text_kind, "—", 10.5, TEXT);
+        });
+
+        root.spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: px(7),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(3)),
+                ..default()
+            },
+            BackgroundColor(PANEL_DEEP),
+            BorderColor::all(theme::GOLD_DARK),
+        )).with_child((
+            bar_kind,
+            Node {
+                width: Val::Percent(0.0),
+                height: Val::Percent(100.0),
+                border_radius: BorderRadius::all(px(2)),
+                ..default()
+            },
+            BackgroundColor(bar_color),
+        ));
+    });
+}
+
+fn spawn_character_skill_row(
+    parent: &mut ChildSpawnerCommands,
+    label: &str,
+    kind: NativeCharacterModalText,
+) {
+    parent.spawn((
+        Node {
+            width: Val::Percent(100.0),
+            min_height: px(32),
+            padding: UiRect::horizontal(px(9)),
+            border: UiRect::all(px(1)),
+            border_radius: BorderRadius::all(px(5)),
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::SpaceBetween,
+            ..default()
+        },
+        BackgroundColor(PANEL_DEEP),
+        BorderColor::all(theme::BUTTON_BORDER),
+    )).with_children(|row| {
+        row.spawn((
+            Text::new(label),
+            TextFont { font_size: FontSize::Px(9.5), ..default() },
+            TextColor(MUTED),
+        ));
+        spawn_character_modal_text(row, kind, "—", 10.5, TEXT);
+    });
+}
+
+fn spawn_character_modal_button(
+    parent: &mut ChildSpawnerCommands,
+    action: NativeCharacterModalAction,
+    label: &str,
+    primary: bool,
+) {
+    parent.spawn((
+        Button,
+        action,
+        native_modal::action_button_node(),
+        BackgroundColor(if primary { theme::BUTTON_HOVER } else { theme::BUTTON_BG }),
+        BorderColor::all(if primary { theme::GOLD } else { theme::BUTTON_BORDER }),
+    )).with_child((
+        Text::new(label),
+        TextFont { font_size: FontSize::Px(10.5), ..default() },
+        TextColor(if primary { theme::GOLD_BRIGHT } else { TEXT }),
+    ));
+}
+
+fn character_reference_root_node() -> Node {
+    Node {
+        position_type: PositionType::Absolute,
+        left: px(0),
+        right: px(0),
+        top: px(0),
+        bottom: px(0),
+        width: Val::Percent(100.0),
+        height: Val::Percent(100.0),
+        padding: UiRect::all(px(10)),
+        align_items: AlignItems::FlexStart,
+        justify_content: JustifyContent::FlexStart,
+        ..default()
+    }
+}
+
+fn character_reference_surface_node() -> Node {
+    Node {
+        width: px(430),
+        height: Val::Percent(100.0),
+        max_height: px(820),
+        padding: UiRect::all(px(14)),
+        border: UiRect::all(px(1)),
+        border_radius: BorderRadius::all(px(10)),
+        flex_direction: FlexDirection::Column,
+        row_gap: px(10),
+        ..default()
+    }
+}
+
+fn character_reference_section_node(
+    height: f32,
+) -> Node {
+    Node {
+        width: Val::Percent(100.0),
+        height: px(height),
+        padding: UiRect::all(px(10)),
+        border: UiRect::all(px(1)),
+        border_radius: BorderRadius::all(px(7)),
+        flex_direction: FlexDirection::Column,
+        row_gap: px(7),
+        ..default()
+    }
+}
+
+fn spawn_character_reference_close(
+    parent: &mut ChildSpawnerCommands,
+) {
+    parent
+        .spawn((
+            Button,
+            NativeCharacterModalAction::Close,
+            Node {
+                width: px(34),
+                height: px(34),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(6)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(theme::BUTTON_BG),
+            BorderColor::all(theme::BUTTON_BORDER),
+        ))
+        .with_child((
+            Text::new("X"),
+            TextFont {
+                font_size: FontSize::Px(14.0),
+                ..default()
+            },
+            TextColor(TEXT),
+        ));
+}
+
+fn spawn_character_avatar(
+    parent: &mut ChildSpawnerCommands,
+) {
+    parent
+        .spawn((
+            Node {
+                width: px(56),
+                height: px(56),
+                border: UiRect::all(px(3)),
+                border_radius: BorderRadius::all(px(28)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(
+                Color::srgb(0.74, 0.56, 0.25),
+            ),
+            BorderColor::all(theme::GOLD_BRIGHT),
+        ))
+        .with_child((
+            NativeCharacterModalText::Avatar,
+            Text::new("A"),
+            TextFont {
+                font_size: FontSize::Px(22.0),
+                ..default()
+            },
+            TextColor(
+                Color::srgb(0.10, 0.08, 0.04),
+            ),
+        ));
+}
+
+fn spawn_character_paper_doll(
+    parent: &mut ChildSpawnerCommands,
+) {
+    parent
+        .spawn(Node {
+            position_type: PositionType::Absolute,
+            left: Val::Percent(50.0),
+            top: px(58),
+            width: px(132),
+            height: px(260),
+            margin: UiRect::left(px(-66)),
+            ..default()
+        })
+        .with_children(|figure| {
+            figure.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: px(47),
+                    top: px(0),
+                    width: px(38),
+                    height: px(38),
+                    border: UiRect::all(px(1)),
+                    border_radius: BorderRadius::all(px(19)),
+                    ..default()
+                },
+                BackgroundColor(
+                    Color::srgba(0.17, 0.23, 0.20, 0.92),
+                ),
+                BorderColor::all(
+                    Color::srgb(0.39, 0.47, 0.42),
+                ),
+            ));
+
+            figure.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: px(35),
+                    top: px(42),
+                    width: px(62),
+                    height: px(112),
+                    border: UiRect::all(px(1)),
+                    border_radius: BorderRadius::all(px(9)),
+                    ..default()
+                },
+                BackgroundColor(
+                    Color::srgba(0.12, 0.19, 0.16, 0.86),
+                ),
+                BorderColor::all(
+                    Color::srgb(0.39, 0.47, 0.42),
+                ),
+            ));
+
+            for (left, top, width, height) in [
+                (20.0, 50.0, 16.0, 104.0),
+                (96.0, 50.0, 16.0, 104.0),
+                (42.0, 150.0, 21.0, 104.0),
+                (69.0, 150.0, 21.0, 104.0),
+            ] {
+                figure.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: px(left),
+                        top: px(top),
+                        width: px(width),
+                        height: px(height),
+                        border: UiRect::all(px(1)),
+                        border_radius: BorderRadius::all(px(8)),
+                        ..default()
+                    },
+                    BackgroundColor(
+                        Color::srgba(
+                            0.12,
+                            0.19,
+                            0.16,
+                            0.86,
+                        ),
+                    ),
+                    BorderColor::all(
+                        Color::srgb(
+                            0.39,
+                            0.47,
+                            0.42,
+                        ),
+                    ),
+                ));
+            }
+
+            for (left, top) in [
+                (13.0, 148.0),
+                (99.0, 148.0),
+            ] {
+                figure.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: px(left),
+                        top: px(top),
+                        width: px(22),
+                        height: px(22),
+                        border: UiRect::all(px(1)),
+                        border_radius: BorderRadius::all(px(11)),
+                        ..default()
+                    },
+                    BackgroundColor(
+                        Color::srgba(
+                            0.12,
+                            0.19,
+                            0.16,
+                            0.86,
+                        ),
+                    ),
+                    BorderColor::all(
+                        Color::srgb(
+                            0.39,
+                            0.47,
+                            0.42,
+                        ),
+                    ),
+                ));
+            }
+        });
+}
+
+fn spawn_character_equipment_slot(
+    parent: &mut ChildSpawnerCommands,
+    slot: NativeCharacterEquipmentSlot,
+    label: &str,
+    left: Val,
+    top: Val,
+) {
+    parent
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left,
+                top,
+                width: px(84),
+                height: px(70),
+                padding: UiRect::all(px(5)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(6)),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::SpaceBetween,
+                ..default()
+            },
+            BackgroundColor(
+                Color::srgba(0.02, 0.045, 0.035, 0.95),
+            ),
+            BorderColor::all(theme::BUTTON_BORDER),
+        ))
+        .with_children(|card| {
+            card.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: FontSize::Px(8.0),
+                    ..default()
+                },
+                TextColor(MUTED),
+            ));
+
+            card.spawn((
+                slot,
+                Text::new("Empty"),
+                TextFont {
+                    font_size: FontSize::Px(8.5),
+                    ..default()
+                },
+                TextColor(TEXT),
+            ));
+        });
+}
+
+fn spawn_character_profession_slot(
+    parent: &mut ChildSpawnerCommands,
+    index: usize,
+) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(24.0),
+                height: px(44),
+                padding: UiRect::horizontal(px(7)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(6)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(theme::BUTTON_BG),
+            BorderColor::all(theme::BUTTON_BORDER),
+        ))
+        .with_child((
+            NativeCharacterProfessionSlot(index),
+            Text::new("Empty"),
+            TextFont {
+                font_size: FontSize::Px(8.5),
+                ..default()
+            },
+            TextColor(MUTED),
+        ));
+}
+
+fn spawn_character_outfit_chip(
+    parent: &mut ChildSpawnerCommands,
+    label: &str,
+    selected: bool,
+) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(24.0),
+                height: px(38),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(6)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(
+                if selected {
+                    Color::srgba(
+                        0.28,
+                        0.19,
+                        0.06,
+                        0.92,
+                    )
+                } else {
+                    theme::BUTTON_BG
+                },
+            ),
+            BorderColor::all(
+                if selected {
+                    theme::GOLD
+                } else {
+                    theme::BUTTON_BORDER
+                },
+            ),
+        ))
+        .with_child((
+            Text::new(label),
+            TextFont {
+                font_size: FontSize::Px(8.5),
+                ..default()
+            },
+            TextColor(
+                if selected {
+                    theme::GOLD_BRIGHT
+                } else {
+                    MUTED
+                },
+            ),
+        ));
+}
+
 fn spawn_character_panel(commands: &mut Commands) {
     commands
         .spawn((
-            Name::new("Native gameplay HUD · character"),
+            Name::new("Native modal · character · Greyhaven reference"),
             NativeUiPanel::Character,
+            native_modal::NativeModalRoot,
+            GlobalZIndex(190),
             Visibility::Hidden,
-            Node {
-                position_type: PositionType::Absolute,
-                top: Val::Percent(14.0),
-                left: Val::Percent(50.0),
-                width: px(450),
-                margin: UiRect::left(px(-225)),
-                min_height: px(470),
-                padding: UiRect::all(px(12)),
-                flex_direction: FlexDirection::Column,
-                ..default()
-            },
-            BackgroundColor(PANEL),
+            character_reference_root_node(),
+            native_modal::backdrop(),
         ))
-        .with_children(|parent| {
-            spawn_panel_header(
-                parent,
-                "CHARACTER",
-                NativePanelCloseButton::Character,
-            );
-            parent.spawn(text_bundle(
-                "",
-                NativeUiText::Character,
-                13.0,
-                TEXT,
-            ));
+        .with_children(|root| {
+            root
+                .spawn((
+                    Name::new("Greyhaven Character interface"),
+                    native_modal::NativeModalSurface,
+                    character_reference_surface_node(),
+                    native_modal::surface(),
+                    native_modal::surface_border(),
+                ))
+                .with_children(|panel| {
+                    panel
+                        .spawn(Node {
+                            width: Val::Percent(100.0),
+                            min_height: px(58),
+                            padding: UiRect {
+                                left: px(6),
+                                right: px(0),
+                                top: px(0),
+                                bottom: px(8),
+                            },
+                            border: UiRect {
+                                left: px(0),
+                                right: px(0),
+                                top: px(0),
+                                bottom: px(1),
+                            },
+                            flex_direction: FlexDirection::Row,
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::SpaceBetween,
+                            ..default()
+                        })
+                        .with_children(|header| {
+                            header
+                                .spawn(Node {
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: px(3),
+                                    ..default()
+                                })
+                                .with_children(|copy| {
+                                    copy.spawn((
+                                        Text::new("GREYHAVEN INTERFACE"),
+                                        TextFont {
+                                            font_size: FontSize::Px(10.0),
+                                            ..default()
+                                        },
+                                        TextColor(theme::GOLD),
+                                    ));
+
+                                    copy.spawn((
+                                        Text::new("CHARACTER"),
+                                        TextFont {
+                                            font_size: FontSize::Px(21.0),
+                                            ..default()
+                                        },
+                                        TextColor(theme::GOLD_BRIGHT),
+                                    ));
+                                });
+
+                            spawn_character_reference_close(header);
+                        });
+
+                    panel
+                        .spawn((
+                            character_reference_section_node(82.0),
+                            BackgroundColor(PANEL_SOFT),
+                            BorderColor::all(theme::BUTTON_BORDER),
+                        ))
+                        .with_children(|identity| {
+                            identity
+                                .spawn(Node {
+                                    width: Val::Percent(100.0),
+                                    height: Val::Percent(100.0),
+                                    flex_direction: FlexDirection::Row,
+                                    align_items: AlignItems::Center,
+                                    column_gap: px(12),
+                                    ..default()
+                                })
+                                .with_children(|row| {
+                                    spawn_character_avatar(row);
+
+                                    row
+                                        .spawn(Node {
+                                            flex_grow: 1.0,
+                                            flex_direction: FlexDirection::Column,
+                                            row_gap: px(2),
+                                            ..default()
+                                        })
+                                        .with_children(|copy| {
+                                            spawn_character_modal_text(
+                                                copy,
+                                                NativeCharacterModalText::Identity,
+                                                "No local player",
+                                                13.0,
+                                                theme::GOLD_BRIGHT,
+                                            );
+
+                                            copy.spawn((
+                                                Text::new(
+                                                    "Manage equipment through Inventory",
+                                                ),
+                                                TextFont {
+                                                    font_size: FontSize::Px(9.0),
+                                                    ..default()
+                                                },
+                                                TextColor(MUTED),
+                                            ));
+                                        });
+
+                                    spawn_character_modal_text(
+                                        row,
+                                        NativeCharacterModalText::HeaderContext,
+                                        "Greyhaven",
+                                        8.5,
+                                        theme::GOLD,
+                                    );
+                                });
+                        });
+
+                    panel
+                        .spawn((
+                            Node {
+                                width: Val::Percent(100.0),
+                                height: px(420),
+                                border: UiRect::all(px(1)),
+                                border_radius: BorderRadius::all(px(7)),
+                                ..default()
+                            },
+                            BackgroundColor(
+                                Color::srgba(
+                                    0.015,
+                                    0.035,
+                                    0.027,
+                                    0.95,
+                                ),
+                            ),
+                            BorderColor::all(theme::BUTTON_BORDER),
+                        ))
+                        .with_children(|equipment| {
+                            spawn_character_paper_doll(equipment);
+
+                            spawn_character_equipment_slot(
+                                equipment,
+                                NativeCharacterEquipmentSlot::Helmet,
+                                "HELMET",
+                                Val::Percent(50.0),
+                                px(8),
+                            );
+
+                            spawn_character_equipment_slot(
+                                equipment,
+                                NativeCharacterEquipmentSlot::Amulet,
+                                "AMULET",
+                                px(304),
+                                px(18),
+                            );
+
+                            spawn_character_equipment_slot(
+                                equipment,
+                                NativeCharacterEquipmentSlot::Chest,
+                                "CHEST",
+                                px(10),
+                                px(92),
+                            );
+
+                            spawn_character_equipment_slot(
+                                equipment,
+                                NativeCharacterEquipmentSlot::Back,
+                                "BACK",
+                                px(304),
+                                px(92),
+                            );
+
+                            spawn_character_equipment_slot(
+                                equipment,
+                                NativeCharacterEquipmentSlot::LeftHand,
+                                "LEFT HAND",
+                                px(10),
+                                px(178),
+                            );
+
+                            spawn_character_equipment_slot(
+                                equipment,
+                                NativeCharacterEquipmentSlot::RightHand,
+                                "RIGHT HAND",
+                                px(304),
+                                px(178),
+                            );
+
+                            spawn_character_equipment_slot(
+                                equipment,
+                                NativeCharacterEquipmentSlot::Backpack,
+                                "BACKPACK",
+                                px(10),
+                                px(264),
+                            );
+
+                            spawn_character_equipment_slot(
+                                equipment,
+                                NativeCharacterEquipmentSlot::Ring,
+                                "RING",
+                                px(304),
+                                px(264),
+                            );
+
+                            spawn_character_equipment_slot(
+                                equipment,
+                                NativeCharacterEquipmentSlot::Feet,
+                                "FEET",
+                                Val::Percent(50.0),
+                                px(338),
+                            );
+
+                            spawn_character_equipment_slot(
+                                equipment,
+                                NativeCharacterEquipmentSlot::Legs,
+                                "LEGS",
+                                px(304),
+                                px(338),
+                            );
+                        });
+
+                    panel
+                        .spawn((
+                            character_reference_section_node(90.0),
+                            BackgroundColor(PANEL_SOFT),
+                            BorderColor::all(theme::BUTTON_BORDER),
+                        ))
+                        .with_children(|professions| {
+                            professions.spawn((
+                                Text::new("PROFESSION SLOTS"),
+                                TextFont {
+                                    font_size: FontSize::Px(10.0),
+                                    ..default()
+                                },
+                                TextColor(theme::GOLD),
+                            ));
+
+                            professions.spawn((
+                                Text::new(
+                                    "Up to 2 gathering + 2 crafting",
+                                ),
+                                TextFont {
+                                    font_size: FontSize::Px(8.0),
+                                    ..default()
+                                },
+                                TextColor(MUTED),
+                            ));
+
+                            professions
+                                .spawn(Node {
+                                    width: Val::Percent(100.0),
+                                    flex_direction: FlexDirection::Row,
+                                    justify_content: JustifyContent::SpaceBetween,
+                                    column_gap: px(5),
+                                    ..default()
+                                })
+                                .with_children(|slots| {
+                                    for index in 0..4usize {
+                                        spawn_character_profession_slot(
+                                            slots,
+                                            index,
+                                        );
+                                    }
+                                });
+                        });
+
+                    panel
+                        .spawn((
+                            character_reference_section_node(74.0),
+                            BackgroundColor(PANEL_SOFT),
+                            BorderColor::all(theme::BUTTON_BORDER),
+                        ))
+                        .with_children(|outfit| {
+                            outfit.spawn((
+                                Text::new("OUTFIT"),
+                                TextFont {
+                                    font_size: FontSize::Px(10.0),
+                                    ..default()
+                                },
+                                TextColor(theme::GOLD),
+                            ));
+
+                            outfit
+                                .spawn(Node {
+                                    width: Val::Percent(100.0),
+                                    flex_direction: FlexDirection::Row,
+                                    justify_content: JustifyContent::SpaceBetween,
+                                    column_gap: px(5),
+                                    ..default()
+                                })
+                                .with_children(|chips| {
+                                    spawn_character_outfit_chip(
+                                        chips,
+                                        "ARMORED",
+                                        true,
+                                    );
+                                    spawn_character_outfit_chip(
+                                        chips,
+                                        "WAYFARER",
+                                        false,
+                                    );
+                                    spawn_character_outfit_chip(
+                                        chips,
+                                        "MYSTIC",
+                                        false,
+                                    );
+                                    spawn_character_outfit_chip(
+                                        chips,
+                                        "SHADOW",
+                                        false,
+                                    );
+                                });
+                        });
+                });
         });
 }
 
@@ -3324,6 +4183,419 @@ fn inventory_detail_text(
     }
 
     facts.join("   ·   ")
+}
+
+pub(crate) fn handle_character_modal_buttons(
+    game_state: Res<NativeGameState>,
+    mut panels: ResMut<NativePanelState>,
+    mut buttons: Query<
+        (
+            &Interaction,
+            &NativeCharacterModalAction,
+            &mut BackgroundColor,
+            &mut BorderColor,
+        ),
+        (Changed<Interaction>, With<Button>),
+    >,
+) {
+    for (interaction, action, mut background, mut border) in &mut buttons {
+        match *interaction {
+            Interaction::Hovered => {
+                background.0 = theme::BUTTON_HOVER;
+                *border = BorderColor::all(theme::GOLD);
+            }
+            Interaction::None => {
+                background.0 = theme::BUTTON_BG;
+                *border = BorderColor::all(theme::BUTTON_BORDER);
+            }
+            Interaction::Pressed => {
+                background.0 = theme::BUTTON_PRESSED;
+                *border = BorderColor::all(theme::GOLD_BRIGHT);
+                if !panels.character_open { continue; }
+
+                match *action {
+                    NativeCharacterModalAction::Inventory => {
+                        panels.character_open = false;
+                        panels.skills_open = false;
+                        panels.inventory_open = true;
+                        panels.npc_open = false;
+                        panels.split_item_id = None;
+                        panels.split_quantity = 0;
+                        ensure_inventory_selection(&game_state, &mut panels);
+                    }
+                    NativeCharacterModalAction::Skills => {
+                        panels.character_open = false;
+                        panels.inventory_open = false;
+                        panels.skills_open = true;
+                        panels.npc_open = false;
+                    }
+                    NativeCharacterModalAction::Close => {
+                        panels.character_open = false;
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub(crate) fn update_character_modal_ui(
+    game_state: Res<NativeGameState>,
+    panels: Res<NativePanelState>,
+    mut text_queries: ParamSet<(
+        Query<
+            (
+                &NativeCharacterModalText,
+                &mut Text,
+                &mut TextColor,
+            ),
+        >,
+        Query<
+            (
+                &NativeCharacterEquipmentSlot,
+                &mut Text,
+                &mut TextColor,
+            ),
+        >,
+        Query<
+            (
+                &NativeCharacterProfessionSlot,
+                &mut Text,
+                &mut TextColor,
+            ),
+        >,
+    )>,
+) {
+    if !panels.character_open {
+        return;
+    }
+
+    let Some(player) =
+        game_state.local_player()
+    else {
+        for (_, mut text, mut color)
+            in &mut text_queries.p0()
+        {
+            text.0 = "—".into();
+            color.0 = MUTED;
+        }
+
+        for (_, mut text, mut color)
+            in &mut text_queries.p1()
+        {
+            text.0 = "Empty".into();
+            color.0 = MUTED;
+        }
+
+        for (_, mut text, mut color)
+            in &mut text_queries.p2()
+        {
+            text.0 = "Empty".into();
+            color.0 = MUTED;
+        }
+
+        return;
+    };
+
+    for (
+        kind,
+        mut text,
+        mut color,
+    ) in &mut text_queries.p0()
+    {
+        match kind {
+            NativeCharacterModalText::HeaderContext => {
+                text.0 = format!(
+                    "{}:{}:{}",
+                    player.position.x,
+                    player.position.y,
+                    player.position.z,
+                );
+                color.0 = theme::GOLD;
+            }
+            NativeCharacterModalText::Avatar => {
+                text.0 = player
+                    .name
+                    .chars()
+                    .next()
+                    .map(|value| {
+                        value
+                            .to_uppercase()
+                            .collect::<String>()
+                    })
+                    .unwrap_or_else(|| {
+                        "A".into()
+                    });
+                color.0 =
+                    Color::srgb(
+                        0.10,
+                        0.08,
+                        0.04,
+                    );
+            }
+            NativeCharacterModalText::Identity => {
+                text.0 = format!(
+                    "LEVEL {}\n{}",
+                    player.level,
+                    player.name.to_uppercase(),
+                );
+                color.0 = theme::GOLD_BRIGHT;
+            }
+
+            // These variants belonged to the first V36.49 generic Character
+            // modal. Keep them valid during the migration even though the new
+            // reference-faithful layout does not spawn them.
+            NativeCharacterModalText::Health => {
+                text.0 = format!(
+                    "{} / {}",
+                    player.health,
+                    player.max_health,
+                );
+                color.0 = TEXT;
+            }
+            NativeCharacterModalText::Mana => {
+                text.0 = format!(
+                    "{} / {}",
+                    player.mana,
+                    player.max_mana,
+                );
+                color.0 = TEXT;
+            }
+            NativeCharacterModalText::Experience => {
+                text.0 = experience_text(player);
+                color.0 = TEXT;
+            }
+            NativeCharacterModalText::Capacity => {
+                text.0 = format!(
+                    "{:.1} / {:.1}",
+                    game_state.inventory_weight,
+                    game_state.max_capacity,
+                );
+                color.0 = TEXT;
+            }
+            NativeCharacterModalText::Melee => {
+                text.0 = format!(
+                    "{} | {} tries",
+                    player.sword_skill,
+                    player.sword_tries,
+                );
+                color.0 = TEXT;
+            }
+            NativeCharacterModalText::Distance => {
+                text.0 = format!(
+                    "{} | {} tries",
+                    player.distance_skill,
+                    player.distance_tries,
+                );
+                color.0 = TEXT;
+            }
+            NativeCharacterModalText::Shielding => {
+                text.0 = format!(
+                    "{} | {} tries",
+                    player.shielding_skill,
+                    player.shielding_tries,
+                );
+                color.0 = TEXT;
+            }
+            NativeCharacterModalText::Fletching => {
+                text.0 = format!(
+                    "{} | {} tries",
+                    player.fletching_skill,
+                    player.fletching_tries,
+                );
+                color.0 = TEXT;
+            }
+            NativeCharacterModalText::Magic => {
+                text.0 = format!(
+                    "{} | {} tries",
+                    player.magic_level,
+                    player.magic_tries,
+                );
+                color.0 = TEXT;
+            }
+            NativeCharacterModalText::Equipment => {
+                text.0.clear();
+                color.0 = TEXT;
+            }
+            NativeCharacterModalText::Professions => {
+                text.0.clear();
+                color.0 = TEXT;
+            }
+        }
+    }
+
+    for (
+        slot,
+        mut text,
+        mut color,
+    ) in &mut text_queries.p1()
+    {
+        if let Some(name) =
+            character_equipment_slot_name(
+                &game_state,
+                *slot,
+            )
+        {
+            text.0 = name;
+            color.0 = theme::GOLD_BRIGHT;
+        } else {
+            text.0 = "Empty".into();
+            color.0 = MUTED;
+        }
+    }
+
+    for (
+        slot,
+        mut text,
+        mut color,
+    ) in &mut text_queries.p2()
+    {
+        if let Some(skill_id) =
+            player.secondary_skills.get(slot.0)
+        {
+            let level = game_state
+                .profession_skills
+                .get(skill_id)
+                .map(|skill| skill.level)
+                .unwrap_or(0);
+
+            text.0 = format!(
+                "{}\nLv {}",
+                title_case(skill_id),
+                level,
+            );
+            color.0 = theme::GOLD_BRIGHT;
+        } else {
+            text.0 = "Empty".into();
+            color.0 = MUTED;
+        }
+    }
+}
+
+fn character_equipment_slot_name(
+    game_state: &NativeGameState,
+    slot: NativeCharacterEquipmentSlot,
+) -> Option<String> {
+    let aliases: &[&str] =
+        match slot {
+            NativeCharacterEquipmentSlot::Helmet => {
+                &["helmet", "head"]
+            }
+            NativeCharacterEquipmentSlot::Amulet => {
+                &["amulet", "neck"]
+            }
+            NativeCharacterEquipmentSlot::Chest => {
+                &["chest", "armor", "body"]
+            }
+            NativeCharacterEquipmentSlot::Back => {
+                &["back", "cape"]
+            }
+            NativeCharacterEquipmentSlot::LeftHand => {
+                &[
+                    "left_hand",
+                    "lefthand",
+                    "off_hand",
+                    "offhand",
+                ]
+            }
+            NativeCharacterEquipmentSlot::RightHand => {
+                &[
+                    "right_hand",
+                    "righthand",
+                    "main_hand",
+                    "mainhand",
+                    "weapon",
+                ]
+            }
+            NativeCharacterEquipmentSlot::Backpack => {
+                &[
+                    "backpack",
+                    "bag",
+                ]
+            }
+            NativeCharacterEquipmentSlot::Ring => {
+                &["ring"]
+            }
+            NativeCharacterEquipmentSlot::Feet => {
+                &[
+                    "feet",
+                    "boots",
+                    "shoes",
+                ]
+            }
+            NativeCharacterEquipmentSlot::Legs => {
+                &[
+                    "legs",
+                    "pants",
+                ]
+            }
+        };
+
+    game_state
+        .inventory
+        .iter()
+        .find(|item| {
+            let Some(value) =
+                item.equipped_slot.as_deref()
+            else {
+                return false;
+            };
+
+            aliases
+                .iter()
+                .any(|alias| {
+                    value.eq_ignore_ascii_case(alias)
+                })
+        })
+        .map(|item| {
+            game_state
+                .item_definitions
+                .get(&item.definition_id)
+                .map(|definition| {
+                    definition.name.clone()
+                })
+                .unwrap_or_else(|| {
+                    item.definition_id.clone()
+                })
+        })
+}
+
+fn character_equipment_summary(game_state: &NativeGameState) -> String {
+    let mut equipped: Vec<_> = game_state.inventory.iter().filter_map(|item| {
+        item.equipped_slot.as_deref().map(|slot| {
+            let name = game_state.item_definitions
+                .get(&item.definition_id)
+                .map(|definition| definition.name.clone())
+                .unwrap_or_else(|| item.definition_id.clone());
+            (slot.to_owned(), name)
+        })
+    }).collect();
+
+    equipped.sort_by(|a, b| a.0.cmp(&b.0));
+
+    if equipped.is_empty() {
+        return "No equipment currently equipped.".into();
+    }
+
+    equipped.into_iter().map(|(slot, name)| {
+        format!("{:<13} {}", title_case(&slot.replace('_', " ")), name)
+    }).collect::<Vec<_>>().join("\n")
+}
+
+fn character_professions_summary(game_state: &NativeGameState) -> String {
+    let Some(player) = game_state.local_player() else {
+        return "No professions selected.".into();
+    };
+
+    if player.secondary_skills.is_empty() {
+        return "No secondary professions selected.".into();
+    }
+
+    player.secondary_skills.iter().map(|skill_id| {
+        let skill = game_state.profession_skills.get(skill_id);
+        let level = skill.map(|value| value.level).unwrap_or(0);
+        let tries = skill.map(|value| value.tries).unwrap_or(0);
+        format!("{}   Lv {}   |   {} tries", title_case(skill_id), level, tries)
+    }).collect::<Vec<_>>().join("\n")
 }
 
 fn character_panel_text(game_state: &NativeGameState) -> String {
