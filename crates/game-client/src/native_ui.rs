@@ -126,6 +126,119 @@ pub(crate) enum NativePanelCloseButton {
 }
 
 #[derive(Component, Clone, Copy)]
+pub(crate) enum NativeCraftingButton {
+    Category(usize),
+    Recipe(usize),
+    QuantityDown,
+    QuantityUp,
+    Craft,
+    Cancel,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeCraftingCategoryText(
+    pub(crate) usize,
+);
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeCraftingRecipeField {
+    Name,
+    Meta,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeCraftingRecipeText {
+    pub(crate) index: usize,
+    pub(crate) field: NativeCraftingRecipeField,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeCraftingDetailText {
+    Name,
+    Kind,
+    Input,
+    Output,
+    Requirements,
+    Quantity,
+    Active,
+}
+
+#[derive(Component)]
+pub(crate) enum NativeCraftingItemImage {
+    Input {
+        definition_id: Option<String>,
+    },
+    Output {
+        definition_id: Option<String>,
+    },
+}
+
+
+#[derive(
+    Component,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+)]
+pub(crate) enum NativeSkillsCore {
+    Melee,
+    Distance,
+    Shielding,
+    Fletching,
+    Magic,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeSkillsCoreField {
+    Level,
+    Tries,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeSkillsCoreText {
+    pub(crate) skill: NativeSkillsCore,
+    pub(crate) field: NativeSkillsCoreField,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeSkillsCoreBar(
+    pub(crate) NativeSkillsCore,
+);
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeSkillsAbilityField {
+    Name,
+    Detail,
+    Cost,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeSkillsAbilityText {
+    pub(crate) index: usize,
+    pub(crate) field: NativeSkillsAbilityField,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeSkillsProfessionField {
+    Name,
+    Detail,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeSkillsProfessionText {
+    pub(crate) index: usize,
+    pub(crate) field: NativeSkillsProfessionField,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeSkillsProfessionBar(
+    pub(crate) usize,
+);
+
+
+#[derive(Component, Clone, Copy)]
 pub(crate) enum NativeCharacterModalText {
     HeaderContext,
     Avatar,
@@ -177,6 +290,52 @@ pub(crate) enum NativeCharacterModalAction {
     Skills,
     Close,
 }
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeInventoryText {
+    Location,
+    Usage,
+    Capacity,
+    Search,
+    Detail,
+    Gold,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeInventorySlotField {
+    Quantity,
+    Name,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeInventorySlotText {
+    pub(crate) index: usize,
+    pub(crate) field:
+        NativeInventorySlotField,
+}
+
+#[derive(Component)]
+pub(crate) struct NativeInventorySlotImage {
+    pub(crate) index: usize,
+    definition_id: Option<String>,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeInventoryCapacityBar;
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeInventoryAction {
+    Search,
+    Back,
+    Close,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeInventoryButton {
+    Slot(usize),
+    Action(NativeInventoryAction),
+}
+
 
 
 const PANEL: Color = theme::PANEL_BG;
@@ -555,6 +714,28 @@ fn spawn_panel_header(
     title: &str,
     action: NativePanelCloseButton,
 ) {
+    let drag_window =
+        match action {
+            NativePanelCloseButton::Inventory => {
+                native_modal::NativeModalWindow::Inventory
+            }
+            NativePanelCloseButton::Character => {
+                native_modal::NativeModalWindow::Character
+            }
+            NativePanelCloseButton::Skills => {
+                native_modal::NativeModalWindow::Skills
+            }
+            NativePanelCloseButton::Spells => {
+                native_modal::NativeModalWindow::Spells
+            }
+            NativePanelCloseButton::Crafting => {
+                native_modal::NativeModalWindow::Crafting
+            }
+            NativePanelCloseButton::Npc => {
+                native_modal::NativeModalWindow::Npc
+            }
+        };
+
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
@@ -566,14 +747,31 @@ fn spawn_panel_header(
             ..default()
         })
         .with_children(|header| {
-            header.spawn((
-                Text::new(title),
-                TextFont {
-                    font_size: FontSize::Px(15.0),
-                    ..default()
-                },
-                TextColor(theme::GOLD_BRIGHT),
-            ));
+            header
+                .spawn((
+                    Button,
+                    native_modal::NativeDragHandle(
+                        drag_window,
+                    ),
+                    Node {
+                        flex_grow: 1.0,
+                        height: px(30),
+                        align_items:
+                            AlignItems::Center,
+                        ..default()
+                    },
+                ))
+                .with_child((
+                    Text::new(title),
+                    TextFont {
+                        font_size:
+                            FontSize::Px(15.0),
+                        ..default()
+                    },
+                    TextColor(
+                        theme::GOLD_BRIGHT,
+                    ),
+                ));
 
             header
                 .spawn((
@@ -582,19 +780,209 @@ fn spawn_panel_header(
                     Node {
                         width: px(28),
                         height: px(26),
-                        border: UiRect::all(px(1)),
-                        border_radius: BorderRadius::all(px(5)),
-                        align_items: AlignItems::Center,
-                        justify_content: JustifyContent::Center,
+                        border:
+                            UiRect::all(px(1)),
+                        border_radius:
+                            BorderRadius::all(
+                                px(5),
+                            ),
+                        align_items:
+                            AlignItems::Center,
+                        justify_content:
+                            JustifyContent::Center,
                         ..default()
                     },
-                    BackgroundColor(theme::BUTTON_BG),
-                    BorderColor::all(theme::BUTTON_BORDER),
+                    BackgroundColor(
+                        theme::BUTTON_BG,
+                    ),
+                    BorderColor::all(
+                        theme::BUTTON_BORDER,
+                    ),
                 ))
                 .with_child((
                     Text::new("X"),
                     TextFont {
-                        font_size: FontSize::Px(11.0),
+                        font_size:
+                            FontSize::Px(11.0),
+                        ..default()
+                    },
+                    TextColor(TEXT),
+                ));
+        });
+}
+
+fn spawn_inventory_text(
+    parent: &mut ChildSpawnerCommands,
+    kind: NativeInventoryText,
+    value: &str,
+    size: f32,
+    color: Color,
+) {
+    parent.spawn((
+        kind,
+        Text::new(value),
+        TextFont {
+            font_size:
+                FontSize::Px(size),
+            ..default()
+        },
+        TextColor(color),
+    ));
+}
+
+fn spawn_inventory_reference_button(
+    parent: &mut ChildSpawnerCommands,
+    action: NativeInventoryAction,
+    label: &str,
+    width: f32,
+) {
+    parent
+        .spawn((
+            Button,
+            NativeInventoryButton::Action(
+                action,
+            ),
+            Node {
+                width: px(width),
+                height: px(36),
+                padding:
+                    UiRect::horizontal(
+                        px(10),
+                    ),
+                border:
+                    UiRect::all(px(1)),
+                border_radius:
+                    BorderRadius::all(px(6)),
+                align_items:
+                    AlignItems::Center,
+                justify_content:
+                    JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(
+                theme::BUTTON_BG,
+            ),
+            BorderColor::all(
+                theme::BUTTON_BORDER,
+            ),
+        ))
+        .with_child((
+            Text::new(label),
+            TextFont {
+                font_size:
+                    FontSize::Px(9.0),
+                ..default()
+            },
+            TextColor(TEXT),
+        ));
+}
+
+fn spawn_inventory_slot(
+    parent: &mut ChildSpawnerCommands,
+    index: usize,
+) {
+    parent
+        .spawn((
+            Button,
+            NativeInventoryButton::Slot(index),
+            Node {
+                width: Val::Percent(19.0),
+                height: px(116),
+                padding:
+                    UiRect::all(px(6)),
+                border:
+                    UiRect::all(px(1)),
+                border_radius:
+                    BorderRadius::all(px(5)),
+                flex_direction:
+                    FlexDirection::Column,
+                justify_content:
+                    JustifyContent::SpaceBetween,
+                ..default()
+            },
+            BackgroundColor(
+                Color::srgba(
+                    0.015,
+                    0.035,
+                    0.026,
+                    0.98,
+                ),
+            ),
+            BorderColor::all(
+                theme::BUTTON_BORDER,
+            ),
+        ))
+        .with_children(|slot| {
+            slot
+                .spawn(Node {
+                    width:
+                        Val::Percent(100.0),
+                    min_height: px(16),
+                    justify_content:
+                        JustifyContent::FlexEnd,
+                    ..default()
+                })
+                .with_child((
+                    NativeInventorySlotText {
+                        index,
+                        field:
+                            NativeInventorySlotField::Quantity,
+                    },
+                    Text::new(""),
+                    TextFont {
+                        font_size:
+                            FontSize::Px(9.0),
+                        ..default()
+                    },
+                    TextColor(
+                        theme::GOLD_BRIGHT,
+                    ),
+                ));
+
+            slot
+                .spawn(Node {
+                    width:
+                        Val::Percent(100.0),
+                    flex_grow: 1.0,
+                    align_items:
+                        AlignItems::Center,
+                    justify_content:
+                        JustifyContent::Center,
+                    ..default()
+                })
+                .with_child((
+                    NativeInventorySlotImage {
+                        index,
+                        definition_id: None,
+                    },
+                    ImageNode::default(),
+                    Visibility::Hidden,
+                    Node {
+                        width: px(54),
+                        height: px(54),
+                        ..default()
+                    },
+                ));
+
+            slot
+                .spawn(Node {
+                    width:
+                        Val::Percent(100.0),
+                    min_height: px(28),
+                    align_items:
+                        AlignItems::FlexEnd,
+                    ..default()
+                })
+                .with_child((
+                    NativeInventorySlotText {
+                        index,
+                        field:
+                            NativeInventorySlotField::Name,
+                    },
+                    Text::new(""),
+                    TextFont {
+                        font_size:
+                            FontSize::Px(8.3),
                         ..default()
                     },
                     TextColor(TEXT),
@@ -605,41 +993,469 @@ fn spawn_panel_header(
 fn spawn_inventory_panel(commands: &mut Commands) {
     commands
         .spawn((
-            Name::new("Native gameplay HUD · inventory"),
+            Name::new("Native modal · inventory · Greyhaven reference"),
             NativeUiPanel::Inventory,
+            native_modal::NativeModalRoot,
+            GlobalZIndex(191),
             Visibility::Hidden,
-            Node {
-                position_type: PositionType::Absolute,
-                top: Val::Percent(12.0),
-                left: Val::Percent(50.0),
-                width: px(470),
-                margin: UiRect::left(px(-235)),
-                min_height: px(530),
-                max_height: Val::Percent(78.0),
-                padding: UiRect::all(px(12)),
-                flex_direction: FlexDirection::Column,
-                ..default()
-            },
-            BackgroundColor(PANEL),
+            native_modal::root_node(),
+            native_modal::backdrop(),
         ))
-        .with_children(|parent| {
-            spawn_panel_header(
-                parent,
-                "INVENTORY",
-                NativePanelCloseButton::Inventory,
-            );
-            parent.spawn(text_bundle(
-                "",
-                NativeUiText::Inventory,
-                14.0,
-                TEXT,
-            ));
-            parent.spawn(text_bundle(
-                "",
-                NativeUiText::InventoryDetail,
-                13.0,
-                MUTED,
-            ));
+        .with_children(|root| {
+            root
+                .spawn((
+                    Name::new("Greyhaven Inventory interface"),
+                    native_modal::NativeModalSurface,
+                    native_modal::NativeDraggableSurface(
+                        native_modal::NativeModalWindow::Inventory,
+                    ),
+                    native_modal::panel_node(
+                        900.0,
+                        680.0,
+                    ),
+                    native_modal::surface(),
+                    native_modal::surface_border(),
+                ))
+                .with_children(|panel| {
+                    panel
+                        .spawn((
+                            native_modal::header_node(),
+                            native_modal::divider_border(),
+                        ))
+                        .with_children(|header| {
+                            header
+                                .spawn((
+                                    Button,
+                                    native_modal::NativeDragHandle(
+                                        native_modal::NativeModalWindow::Inventory,
+                                    ),
+                                    Node {
+                                        flex_grow: 1.0,
+                                        flex_direction:
+                                            FlexDirection::Column,
+                                        align_items:
+                                            AlignItems::FlexStart,
+                                        justify_content:
+                                            JustifyContent::Center,
+                                        row_gap: px(3),
+                                        ..default()
+                                    },
+                                ))
+                                .with_children(|copy| {
+                                    copy.spawn((
+                                        Text::new(
+                                            "GREYHAVEN INTERFACE",
+                                        ),
+                                        TextFont {
+                                            font_size:
+                                                FontSize::Px(
+                                                    10.0,
+                                                ),
+                                            ..default()
+                                        },
+                                        TextColor(
+                                            theme::GOLD,
+                                        ),
+                                    ));
+
+                                    copy.spawn((
+                                        Text::new(
+                                            "INVENTORY",
+                                        ),
+                                        TextFont {
+                                            font_size:
+                                                FontSize::Px(
+                                                    21.0,
+                                                ),
+                                            ..default()
+                                        },
+                                        TextColor(
+                                            theme::GOLD_BRIGHT,
+                                        ),
+                                    ));
+                                });
+
+                            spawn_inventory_reference_button(
+                                header,
+                                NativeInventoryAction::Close,
+                                "X",
+                                38.0,
+                            );
+                        });
+
+                    panel
+                        .spawn((
+                            Node {
+                                width:
+                                    Val::Percent(
+                                        100.0,
+                                    ),
+                                min_height:
+                                    px(58),
+                                padding:
+                                    UiRect::all(
+                                        px(10),
+                                    ),
+                                border:
+                                    UiRect::all(
+                                        px(1),
+                                    ),
+                                border_radius:
+                                    BorderRadius::all(
+                                        px(7),
+                                    ),
+                                flex_direction:
+                                    FlexDirection::Row,
+                                align_items:
+                                    AlignItems::Center,
+                                justify_content:
+                                    JustifyContent::SpaceBetween,
+                                column_gap: px(12),
+                                ..default()
+                            },
+                            BackgroundColor(
+                                PANEL_SOFT,
+                            ),
+                            BorderColor::all(
+                                theme::BUTTON_BORDER,
+                            ),
+                        ))
+                        .with_children(|summary| {
+                            summary
+                                .spawn(Node {
+                                    flex_grow: 1.0,
+                                    flex_direction:
+                                        FlexDirection::Column,
+                                    row_gap: px(2),
+                                    ..default()
+                                })
+                                .with_children(|copy| {
+                                    spawn_inventory_text(
+                                        copy,
+                                        NativeInventoryText::Location,
+                                        "ROOT INVENTORY",
+                                        10.0,
+                                        theme::GOLD,
+                                    );
+
+                                    spawn_inventory_text(
+                                        copy,
+                                        NativeInventoryText::Usage,
+                                        "0 / 12 SLOTS USED",
+                                        9.0,
+                                        TEXT,
+                                    );
+                                });
+
+                            summary
+                                .spawn(Node {
+                                    flex_direction:
+                                        FlexDirection::Row,
+                                    align_items:
+                                        AlignItems::Center,
+                                    column_gap: px(8),
+                                    ..default()
+                                })
+                                .with_children(|actions| {
+                                    spawn_inventory_reference_button(
+                                        actions,
+                                        NativeInventoryAction::Back,
+                                        "BACK",
+                                        72.0,
+                                    );
+
+                                    spawn_inventory_reference_button(
+                                        actions,
+                                        NativeInventoryAction::Search,
+                                        "SEARCH",
+                                        90.0,
+                                    );
+                                });
+                        });
+
+                    panel
+                        .spawn((
+                            Node {
+                                width:
+                                    Val::Percent(
+                                        100.0,
+                                    ),
+                                min_height:
+                                    px(58),
+                                padding:
+                                    UiRect::all(
+                                        px(10),
+                                    ),
+                                border:
+                                    UiRect::all(
+                                        px(1),
+                                    ),
+                                border_radius:
+                                    BorderRadius::all(
+                                        px(7),
+                                    ),
+                                flex_direction:
+                                    FlexDirection::Column,
+                                row_gap: px(6),
+                                ..default()
+                            },
+                            BackgroundColor(
+                                PANEL_SOFT,
+                            ),
+                            BorderColor::all(
+                                theme::BUTTON_BORDER,
+                            ),
+                        ))
+                        .with_children(|capacity| {
+                            capacity
+                                .spawn(Node {
+                                    width:
+                                        Val::Percent(
+                                            100.0,
+                                        ),
+                                    flex_direction:
+                                        FlexDirection::Row,
+                                    justify_content:
+                                        JustifyContent::SpaceBetween,
+                                    ..default()
+                                })
+                                .with_children(|row| {
+                                    spawn_inventory_text(
+                                        row,
+                                        NativeInventoryText::Capacity,
+                                        "0.0 / 0.0 capacity",
+                                        9.5,
+                                        TEXT,
+                                    );
+
+                                    spawn_inventory_text(
+                                        row,
+                                        NativeInventoryText::Search,
+                                        "/ Search",
+                                        9.0,
+                                        MUTED,
+                                    );
+                                });
+
+                            capacity
+                                .spawn((
+                                    Node {
+                                        width:
+                                            Val::Percent(
+                                                100.0,
+                                            ),
+                                        height: px(7),
+                                        border:
+                                            UiRect::all(
+                                                px(1),
+                                            ),
+                                        border_radius:
+                                            BorderRadius::all(
+                                                px(3),
+                                            ),
+                                        ..default()
+                                    },
+                                    BackgroundColor(
+                                        PANEL_DEEP,
+                                    ),
+                                    BorderColor::all(
+                                        theme::GOLD_DARK,
+                                    ),
+                                ))
+                                .with_child((
+                                    NativeInventoryCapacityBar,
+                                    Node {
+                                        width:
+                                            Val::Percent(
+                                                0.0,
+                                            ),
+                                        height:
+                                            Val::Percent(
+                                                100.0,
+                                            ),
+                                        border_radius:
+                                            BorderRadius::all(
+                                                px(2),
+                                            ),
+                                        ..default()
+                                    },
+                                    BackgroundColor(CAP),
+                                ));
+                        });
+
+                    panel
+                        .spawn((
+                            Node {
+                                width:
+                                    Val::Percent(
+                                        100.0,
+                                    ),
+                                flex_grow: 1.0,
+                                min_height:
+                                    px(390),
+                                padding:
+                                    UiRect::all(
+                                        px(10),
+                                    ),
+                                border:
+                                    UiRect::all(
+                                        px(1),
+                                    ),
+                                border_radius:
+                                    BorderRadius::all(
+                                        px(7),
+                                    ),
+                                flex_direction:
+                                    FlexDirection::Column,
+                                row_gap: px(8),
+                                ..default()
+                            },
+                            BackgroundColor(
+                                Color::srgba(
+                                    0.015,
+                                    0.03,
+                                    0.022,
+                                    0.98,
+                                ),
+                            ),
+                            BorderColor::all(
+                                theme::BUTTON_BORDER,
+                            ),
+                        ))
+                        .with_children(|storage| {
+                            storage
+                                .spawn(Node {
+                                    width:
+                                        Val::Percent(
+                                            100.0,
+                                        ),
+                                    flex_direction:
+                                        FlexDirection::Row,
+                                    justify_content:
+                                        JustifyContent::SpaceBetween,
+                                    ..default()
+                                })
+                                .with_children(|heading| {
+                                    heading.spawn((
+                                        Text::new(
+                                            "STORAGE  ·  BACKPACK",
+                                        ),
+                                        TextFont {
+                                            font_size:
+                                                FontSize::Px(
+                                                    10.0,
+                                                ),
+                                            ..default()
+                                        },
+                                        TextColor(
+                                            theme::GOLD,
+                                        ),
+                                    ));
+
+                                    heading.spawn((
+                                        Text::new(
+                                            "Click an item to select",
+                                        ),
+                                        TextFont {
+                                            font_size:
+                                                FontSize::Px(
+                                                    8.0,
+                                                ),
+                                            ..default()
+                                        },
+                                        TextColor(MUTED),
+                                    ));
+                                });
+
+                            storage
+                                .spawn(Node {
+                                    width:
+                                        Val::Percent(
+                                            100.0,
+                                        ),
+                                    flex_grow: 1.0,
+                                    flex_direction:
+                                        FlexDirection::Row,
+                                    flex_wrap:
+                                        FlexWrap::Wrap,
+                                    align_content:
+                                        AlignContent::FlexStart,
+                                    column_gap: px(7),
+                                    row_gap: px(7),
+                                    ..default()
+                                })
+                                .with_children(|grid| {
+                                    for index
+                                        in 0..12usize
+                                    {
+                                        spawn_inventory_slot(
+                                            grid,
+                                            index,
+                                        );
+                                    }
+                                });
+                        });
+
+                    panel
+                        .spawn((
+                            Node {
+                                width:
+                                    Val::Percent(
+                                        100.0,
+                                    ),
+                                min_height:
+                                    px(56),
+                                padding:
+                                    UiRect::all(
+                                        px(10),
+                                    ),
+                                border:
+                                    UiRect::all(
+                                        px(1),
+                                    ),
+                                border_radius:
+                                    BorderRadius::all(
+                                        px(7),
+                                    ),
+                                flex_direction:
+                                    FlexDirection::Row,
+                                align_items:
+                                    AlignItems::Center,
+                                justify_content:
+                                    JustifyContent::SpaceBetween,
+                                column_gap: px(12),
+                                ..default()
+                            },
+                            BackgroundColor(
+                                Color::srgba(
+                                    0.12,
+                                    0.09,
+                                    0.025,
+                                    0.42,
+                                ),
+                            ),
+                            BorderColor::all(
+                                theme::GOLD_DARK,
+                            ),
+                        ))
+                        .with_children(|footer| {
+                            spawn_inventory_text(
+                                footer,
+                                NativeInventoryText::Gold,
+                                "0 GOLD COINS",
+                                10.5,
+                                theme::GOLD_BRIGHT,
+                            );
+
+                            spawn_inventory_text(
+                                footer,
+                                NativeInventoryText::Detail,
+                                "Select an item",
+                                8.5,
+                                MUTED,
+                            );
+                        });
+                });
         });
 }
 
@@ -1169,6 +1985,9 @@ fn spawn_character_panel(commands: &mut Commands) {
                 .spawn((
                     Name::new("Greyhaven Character interface"),
                     native_modal::NativeModalSurface,
+                    native_modal::NativeDraggableSurface(
+                        native_modal::NativeModalWindow::Character,
+                    ),
                     character_reference_surface_node(),
                     native_modal::surface(),
                     native_modal::surface_border(),
@@ -1197,11 +2016,17 @@ fn spawn_character_panel(commands: &mut Commands) {
                         })
                         .with_children(|header| {
                             header
-                                .spawn(Node {
+                                .spawn((
+                                    Button,
+                                    native_modal::NativeDragHandle(
+                                        native_modal::NativeModalWindow::Character,
+                                    ),
+                                    Node {
                                     flex_direction: FlexDirection::Column,
                                     row_gap: px(3),
                                     ..default()
-                                })
+                                }
+                                ))
                                 .with_children(|copy| {
                                     copy.spawn((
                                         Text::new("GREYHAVEN INTERFACE"),
@@ -1482,37 +2307,987 @@ fn spawn_character_panel(commands: &mut Commands) {
 }
 
 
+fn skills_section_heading(
+    parent: &mut ChildSpawnerCommands,
+    eyebrow: &str,
+    title: &str,
+    detail: &str,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            flex_direction:
+                FlexDirection::Row,
+            align_items:
+                AlignItems::FlexEnd,
+            justify_content:
+                JustifyContent::SpaceBetween,
+            column_gap: px(12),
+            ..default()
+        })
+        .with_children(|row| {
+            row
+                .spawn(Node {
+                    flex_direction:
+                        FlexDirection::Column,
+                    row_gap: px(2),
+                    ..default()
+                })
+                .with_children(|copy| {
+                    copy.spawn((
+                        Text::new(eyebrow),
+                        TextFont {
+                            font_size:
+                                FontSize::Px(9.0),
+                            ..default()
+                        },
+                        TextColor(theme::GOLD),
+                    ));
+
+                    copy.spawn((
+                        Text::new(title),
+                        TextFont {
+                            font_size:
+                                FontSize::Px(14.0),
+                            ..default()
+                        },
+                        TextColor(
+                            theme::GOLD_BRIGHT,
+                        ),
+                    ));
+                });
+
+            row.spawn((
+                Text::new(detail),
+                TextFont {
+                    font_size:
+                        FontSize::Px(8.5),
+                    ..default()
+                },
+                TextColor(MUTED),
+            ));
+        });
+}
+
+fn skills_card_node(
+    width: Val,
+    min_height: f32,
+) -> Node {
+    Node {
+        width,
+        min_height: px(min_height),
+        padding: UiRect::all(px(10)),
+        border: UiRect::all(px(1)),
+        border_radius:
+            BorderRadius::all(px(7)),
+        flex_direction:
+            FlexDirection::Column,
+        row_gap: px(6),
+        ..default()
+    }
+}
+
+fn skills_core_label(
+    skill: NativeSkillsCore,
+) -> (&'static str, &'static str, &'static str) {
+    match skill {
+        NativeSkillsCore::Melee => (
+            "MELEE",
+            "Any melee weapon",
+            "⚔",
+        ),
+        NativeSkillsCore::Distance => (
+            "DISTANCE",
+            "Bows and ammunition",
+            "➶",
+        ),
+        NativeSkillsCore::Shielding => (
+            "SHIELDING",
+            "Defensive off-hand mastery",
+            "◆",
+        ),
+        NativeSkillsCore::Fletching => (
+            "FLETCHING",
+            "Physical ammunition",
+            "➶",
+        ),
+        NativeSkillsCore::Magic => (
+            "MAGIC",
+            "Spells and sigils",
+            "✦",
+        ),
+    }
+}
+
+fn spawn_skills_core_card(
+    parent: &mut ChildSpawnerCommands,
+    skill: NativeSkillsCore,
+) {
+    let (label, detail, glyph) =
+        skills_core_label(skill);
+
+    parent
+        .spawn((
+            skills_card_node(
+                Val::Percent(32.2),
+                100.0,
+            ),
+            BackgroundColor(PANEL_SOFT),
+            BorderColor::all(
+                theme::BUTTON_BORDER,
+            ),
+        ))
+        .with_children(|card| {
+            card
+                .spawn(Node {
+                    width:
+                        Val::Percent(100.0),
+                    flex_direction:
+                        FlexDirection::Row,
+                    align_items:
+                        AlignItems::Center,
+                    justify_content:
+                        JustifyContent::SpaceBetween,
+                    column_gap: px(8),
+                    ..default()
+                })
+                .with_children(|top| {
+                    top
+                        .spawn(Node {
+                            flex_direction:
+                                FlexDirection::Row,
+                            align_items:
+                                AlignItems::Center,
+                            column_gap: px(8),
+                            ..default()
+                        })
+                        .with_children(|left| {
+                            left.spawn((
+                                Node {
+                                    width: px(38),
+                                    height: px(38),
+                                    border:
+                                        UiRect::all(
+                                            px(1),
+                                        ),
+                                    border_radius:
+                                        BorderRadius::all(
+                                            px(6),
+                                        ),
+                                    align_items:
+                                        AlignItems::Center,
+                                    justify_content:
+                                        JustifyContent::Center,
+                                    ..default()
+                                },
+                                BackgroundColor(
+                                    Color::srgba(
+                                        0.20,
+                                        0.13,
+                                        0.035,
+                                        0.82,
+                                    ),
+                                ),
+                                BorderColor::all(
+                                    theme::GOLD_DARK,
+                                ),
+                            ))
+                            .with_child((
+                                Text::new(glyph),
+                                TextFont {
+                                    font_size:
+                                        FontSize::Px(
+                                            17.0,
+                                        ),
+                                    ..default()
+                                },
+                                TextColor(
+                                    theme::GOLD_BRIGHT,
+                                ),
+                            ));
+
+                            left
+                                .spawn(Node {
+                                    flex_direction:
+                                        FlexDirection::Column,
+                                    row_gap: px(2),
+                                    ..default()
+                                })
+                                .with_children(|copy| {
+                                    copy.spawn((
+                                        Text::new(label),
+                                        TextFont {
+                                            font_size:
+                                                FontSize::Px(
+                                                    10.5,
+                                                ),
+                                            ..default()
+                                        },
+                                        TextColor(TEXT),
+                                    ));
+
+                                    copy.spawn((
+                                        Text::new(detail),
+                                        TextFont {
+                                            font_size:
+                                                FontSize::Px(
+                                                    7.5,
+                                                ),
+                                            ..default()
+                                        },
+                                        TextColor(MUTED),
+                                    ));
+                                });
+                        });
+
+                    top
+                        .spawn((
+                            Node {
+                                min_width: px(42),
+                                min_height: px(34),
+                                padding:
+                                    UiRect::all(px(5)),
+                                border:
+                                    UiRect::all(px(1)),
+                                border_radius:
+                                    BorderRadius::all(
+                                        px(5),
+                                    ),
+                                flex_direction:
+                                    FlexDirection::Column,
+                                align_items:
+                                    AlignItems::Center,
+                                justify_content:
+                                    JustifyContent::Center,
+                                ..default()
+                            },
+                            BackgroundColor(
+                                Color::srgba(
+                                    0.11,
+                                    0.075,
+                                    0.02,
+                                    0.72,
+                                ),
+                            ),
+                            BorderColor::all(
+                                theme::GOLD_DARK,
+                            ),
+                        ))
+                        .with_children(|badge| {
+                            badge.spawn((
+                                NativeSkillsCoreText {
+                                    skill,
+                                    field:
+                                        NativeSkillsCoreField::Level,
+                                },
+                                Text::new("0"),
+                                TextFont {
+                                    font_size:
+                                        FontSize::Px(
+                                            11.0,
+                                        ),
+                                    ..default()
+                                },
+                                TextColor(
+                                    theme::GOLD_BRIGHT,
+                                ),
+                            ));
+
+                            badge.spawn((
+                                Text::new("LEVEL"),
+                                TextFont {
+                                    font_size:
+                                        FontSize::Px(
+                                            6.0,
+                                        ),
+                                    ..default()
+                                },
+                                TextColor(MUTED),
+                            ));
+                        });
+                });
+
+            card
+                .spawn((
+                    Node {
+                        width:
+                            Val::Percent(100.0),
+                        height: px(6),
+                        border:
+                            UiRect::all(px(1)),
+                        border_radius:
+                            BorderRadius::all(px(3)),
+                        ..default()
+                    },
+                    BackgroundColor(PANEL_DEEP),
+                    BorderColor::all(
+                        theme::GOLD_DARK,
+                    ),
+                ))
+                .with_child((
+                    NativeSkillsCoreBar(skill),
+                    Node {
+                        width:
+                            Val::Percent(0.0),
+                        height:
+                            Val::Percent(100.0),
+                        border_radius:
+                            BorderRadius::all(
+                                px(2),
+                            ),
+                        ..default()
+                    },
+                    BackgroundColor(
+                        Color::srgb(
+                            0.39,
+                            0.58,
+                            0.50,
+                        ),
+                    ),
+                ));
+
+            card
+                .spawn(Node {
+                    width:
+                        Val::Percent(100.0),
+                    flex_direction:
+                        FlexDirection::Row,
+                    justify_content:
+                        JustifyContent::SpaceBetween,
+                    ..default()
+                })
+                .with_children(|bottom| {
+                    bottom.spawn((
+                        NativeSkillsCoreText {
+                            skill,
+                            field:
+                                NativeSkillsCoreField::Tries,
+                        },
+                        Text::new("0 tries"),
+                        TextFont {
+                            font_size:
+                                FontSize::Px(
+                                    8.0,
+                                ),
+                            ..default()
+                        },
+                        TextColor(MUTED),
+                    ));
+
+                    bottom.spawn((
+                        Text::new("mastery"),
+                        TextFont {
+                            font_size:
+                                FontSize::Px(
+                                    7.5,
+                                ),
+                            ..default()
+                        },
+                        TextColor(MUTED),
+                    ));
+                });
+        });
+}
+
+fn spawn_skills_ability_card(
+    parent: &mut ChildSpawnerCommands,
+    index: usize,
+) {
+    parent
+        .spawn((
+            skills_card_node(
+                Val::Percent(49.4),
+                66.0,
+            ),
+            BackgroundColor(PANEL_SOFT),
+            BorderColor::all(
+                theme::BUTTON_BORDER,
+            ),
+        ))
+        .with_children(|card| {
+            card
+                .spawn(Node {
+                    width:
+                        Val::Percent(100.0),
+                    flex_direction:
+                        FlexDirection::Row,
+                    align_items:
+                        AlignItems::Center,
+                    column_gap: px(9),
+                    ..default()
+                })
+                .with_children(|row| {
+                    row.spawn((
+                        Node {
+                            width: px(40),
+                            height: px(40),
+                            border:
+                                UiRect::all(px(1)),
+                            border_radius:
+                                BorderRadius::all(
+                                    px(6),
+                                ),
+                            align_items:
+                                AlignItems::Center,
+                            justify_content:
+                                JustifyContent::Center,
+                            ..default()
+                        },
+                        BackgroundColor(
+                            Color::srgba(
+                                0.20,
+                                0.13,
+                                0.035,
+                                0.82,
+                            ),
+                        ),
+                        BorderColor::all(
+                            theme::GOLD_DARK,
+                        ),
+                    ))
+                    .with_child((
+                        Text::new("✦"),
+                        TextFont {
+                            font_size:
+                                FontSize::Px(
+                                    16.0,
+                                ),
+                            ..default()
+                        },
+                        TextColor(
+                            theme::GOLD_BRIGHT,
+                        ),
+                    ));
+
+                    row
+                        .spawn(Node {
+                            flex_grow: 1.0,
+                            flex_direction:
+                                FlexDirection::Column,
+                            row_gap: px(2),
+                            ..default()
+                        })
+                        .with_children(|copy| {
+                            copy.spawn((
+                                NativeSkillsAbilityText {
+                                    index,
+                                    field:
+                                        NativeSkillsAbilityField::Name,
+                                },
+                                Text::new("Unassigned"),
+                                TextFont {
+                                    font_size:
+                                        FontSize::Px(
+                                            10.5,
+                                        ),
+                                    ..default()
+                                },
+                                TextColor(TEXT),
+                            ));
+
+                            copy.spawn((
+                                NativeSkillsAbilityText {
+                                    index,
+                                    field:
+                                        NativeSkillsAbilityField::Detail,
+                                },
+                                Text::new(""),
+                                TextFont {
+                                    font_size:
+                                        FontSize::Px(
+                                            8.0,
+                                        ),
+                                    ..default()
+                                },
+                                TextColor(MUTED),
+                            ));
+                        });
+
+                    row.spawn((
+                        NativeSkillsAbilityText {
+                            index,
+                            field:
+                                NativeSkillsAbilityField::Cost,
+                        },
+                        Text::new(""),
+                        TextFont {
+                            font_size:
+                                FontSize::Px(
+                                    9.5,
+                                ),
+                            ..default()
+                        },
+                        TextColor(
+                            theme::GOLD_BRIGHT,
+                        ),
+                    ));
+                });
+        });
+}
+
+fn spawn_skills_profession_card(
+    parent: &mut ChildSpawnerCommands,
+    index: usize,
+) {
+    parent
+        .spawn((
+            skills_card_node(
+                Val::Percent(100.0),
+                64.0,
+            ),
+            BackgroundColor(PANEL_SOFT),
+            BorderColor::all(
+                theme::BUTTON_BORDER,
+            ),
+        ))
+        .with_children(|card| {
+            card
+                .spawn(Node {
+                    width:
+                        Val::Percent(100.0),
+                    flex_direction:
+                        FlexDirection::Row,
+                    align_items:
+                        AlignItems::Center,
+                    justify_content:
+                        JustifyContent::SpaceBetween,
+                    ..default()
+                })
+                .with_children(|row| {
+                    row
+                        .spawn(Node {
+                            flex_direction:
+                                FlexDirection::Column,
+                            row_gap: px(2),
+                            ..default()
+                        })
+                        .with_children(|copy| {
+                            copy.spawn((
+                                NativeSkillsProfessionText {
+                                    index,
+                                    field:
+                                        NativeSkillsProfessionField::Name,
+                                },
+                                Text::new("Empty slot"),
+                                TextFont {
+                                    font_size:
+                                        FontSize::Px(
+                                            10.0,
+                                        ),
+                                    ..default()
+                                },
+                                TextColor(TEXT),
+                            ));
+
+                            copy.spawn((
+                                NativeSkillsProfessionText {
+                                    index,
+                                    field:
+                                        NativeSkillsProfessionField::Detail,
+                                },
+                                Text::new(
+                                    "No profession selected",
+                                ),
+                                TextFont {
+                                    font_size:
+                                        FontSize::Px(
+                                            7.8,
+                                        ),
+                                    ..default()
+                                },
+                                TextColor(MUTED),
+                            ));
+                        });
+                });
+
+            card
+                .spawn((
+                    Node {
+                        width:
+                            Val::Percent(100.0),
+                        height: px(5),
+                        border:
+                            UiRect::all(px(1)),
+                        border_radius:
+                            BorderRadius::all(px(3)),
+                        ..default()
+                    },
+                    BackgroundColor(PANEL_DEEP),
+                    BorderColor::all(
+                        theme::GOLD_DARK,
+                    ),
+                ))
+                .with_child((
+                    NativeSkillsProfessionBar(
+                        index,
+                    ),
+                    Node {
+                        width:
+                            Val::Percent(0.0),
+                        height:
+                            Val::Percent(100.0),
+                        border_radius:
+                            BorderRadius::all(
+                                px(2),
+                            ),
+                        ..default()
+                    },
+                    BackgroundColor(
+                        Color::srgb(
+                            0.39,
+                            0.58,
+                            0.50,
+                        ),
+                    ),
+                ));
+        });
+}
+
 fn spawn_skills_panel(commands: &mut Commands) {
     commands
         .spawn((
-            Name::new("Native gameplay HUD · skills"),
+            Name::new("Native modal · skills · Greyhaven reference"),
             NativeUiPanel::Skills,
+            native_modal::NativeModalRoot,
+            GlobalZIndex(192),
             Visibility::Hidden,
-            Node {
-                position_type: PositionType::Absolute,
-                top: Val::Percent(12.0),
-                left: Val::Percent(50.0),
-                width: px(500),
-                margin: UiRect::left(px(-250)),
-                min_height: px(500),
-                padding: UiRect::all(px(12)),
-                flex_direction: FlexDirection::Column,
-                ..default()
-            },
-            BackgroundColor(PANEL),
+            native_modal::root_node(),
+            native_modal::backdrop(),
         ))
-        .with_children(|parent| {
-            spawn_panel_header(
-                parent,
-                "SKILLS",
-                NativePanelCloseButton::Skills,
-            );
-            parent.spawn(text_bundle(
-                "",
-                NativeUiText::Skills,
-                13.0,
-                TEXT,
-            ));
+        .with_children(|root| {
+            root
+                .spawn((
+                    Name::new("Greyhaven Skills interface"),
+                    native_modal::NativeModalSurface,
+                    native_modal::NativeDraggableSurface(
+                        native_modal::NativeModalWindow::Skills,
+                    ),
+                    native_modal::panel_node(
+                        940.0,
+                        700.0,
+                    ),
+                    native_modal::surface(),
+                    native_modal::surface_border(),
+                ))
+                .with_children(|panel| {
+                    panel
+                        .spawn((
+                            native_modal::header_node(),
+                            native_modal::divider_border(),
+                        ))
+                        .with_children(|header| {
+                            header
+                                .spawn((
+                                    Button,
+                                    native_modal::NativeDragHandle(
+                                        native_modal::NativeModalWindow::Skills,
+                                    ),
+                                    Node {
+                                        flex_grow: 1.0,
+                                        flex_direction:
+                                            FlexDirection::Column,
+                                        align_items:
+                                            AlignItems::FlexStart,
+                                        justify_content:
+                                            JustifyContent::Center,
+                                        row_gap: px(3),
+                                        ..default()
+                                    },
+                                ))
+                                .with_children(|copy| {
+                                    copy.spawn((
+                                        Text::new(
+                                            "GREYHAVEN INTERFACE",
+                                        ),
+                                        TextFont {
+                                            font_size:
+                                                FontSize::Px(
+                                                    10.0,
+                                                ),
+                                            ..default()
+                                        },
+                                        TextColor(
+                                            theme::GOLD,
+                                        ),
+                                    ));
+
+                                    copy.spawn((
+                                        Text::new(
+                                            "SKILLS",
+                                        ),
+                                        TextFont {
+                                            font_size:
+                                                FontSize::Px(
+                                                    21.0,
+                                                ),
+                                            ..default()
+                                        },
+                                        TextColor(
+                                            theme::GOLD_BRIGHT,
+                                        ),
+                                    ));
+                                });
+
+                            header
+                                .spawn((
+                                    Button,
+                                    NativePanelCloseButton::Skills,
+                                    Node {
+                                        width: px(38),
+                                        height: px(36),
+                                        border:
+                                            UiRect::all(
+                                                px(1),
+                                            ),
+                                        border_radius:
+                                            BorderRadius::all(
+                                                px(6),
+                                            ),
+                                        align_items:
+                                            AlignItems::Center,
+                                        justify_content:
+                                            JustifyContent::Center,
+                                        ..default()
+                                    },
+                                    BackgroundColor(
+                                        theme::BUTTON_BG,
+                                    ),
+                                    BorderColor::all(
+                                        theme::BUTTON_BORDER,
+                                    ),
+                                ))
+                                .with_child((
+                                    Text::new("X"),
+                                    TextFont {
+                                        font_size:
+                                            FontSize::Px(
+                                                12.0,
+                                            ),
+                                        ..default()
+                                    },
+                                    TextColor(TEXT),
+                                ));
+                        });
+
+                    panel
+                        .spawn(Node {
+                            width:
+                                Val::Percent(100.0),
+                            flex_grow: 1.0,
+                            flex_direction:
+                                FlexDirection::Column,
+                            row_gap: px(10),
+                            ..default()
+                        })
+                        .with_children(|body| {
+                            skills_section_heading(
+                                body,
+                                "COMBAT & CORE",
+                                "Character skills",
+                                "Classless progression · use what you want to improve",
+                            );
+
+                            body
+                                .spawn(Node {
+                                    width:
+                                        Val::Percent(
+                                            100.0,
+                                        ),
+                                    flex_direction:
+                                        FlexDirection::Row,
+                                    flex_wrap:
+                                        FlexWrap::Wrap,
+                                    align_content:
+                                        AlignContent::FlexStart,
+                                    column_gap: px(8),
+                                    row_gap: px(8),
+                                    ..default()
+                                })
+                                .with_children(|grid| {
+                                    for skill in [
+                                        NativeSkillsCore::Melee,
+                                        NativeSkillsCore::Distance,
+                                        NativeSkillsCore::Shielding,
+                                        NativeSkillsCore::Fletching,
+                                        NativeSkillsCore::Magic,
+                                    ] {
+                                        spawn_skills_core_card(
+                                            grid,
+                                            skill,
+                                        );
+                                    }
+                                });
+
+                            skills_section_heading(
+                                body,
+                                "ACTION BAR",
+                                "Abilities",
+                                "Learned combat actions",
+                            );
+
+                            body
+                                .spawn(Node {
+                                    width:
+                                        Val::Percent(
+                                            100.0,
+                                        ),
+                                    flex_direction:
+                                        FlexDirection::Row,
+                                    flex_wrap:
+                                        FlexWrap::Wrap,
+                                    align_content:
+                                        AlignContent::FlexStart,
+                                    column_gap: px(8),
+                                    row_gap: px(8),
+                                    ..default()
+                                })
+                                .with_children(|abilities| {
+                                    for index
+                                        in 0..4usize
+                                    {
+                                        spawn_skills_ability_card(
+                                            abilities,
+                                            index,
+                                        );
+                                    }
+                                });
+
+                            skills_section_heading(
+                                body,
+                                "PROFESSIONS",
+                                "Secondary skills",
+                                "Up to 2 gathering + 2 crafting",
+                            );
+
+                            body
+                                .spawn(Node {
+                                    width:
+                                        Val::Percent(
+                                            100.0,
+                                        ),
+                                    flex_direction:
+                                        FlexDirection::Row,
+                                    column_gap: px(8),
+                                    ..default()
+                                })
+                                .with_children(|columns| {
+                                    columns
+                                        .spawn((
+                                            skills_card_node(
+                                                Val::Percent(
+                                                    49.5,
+                                                ),
+                                                150.0,
+                                            ),
+                                            BackgroundColor(
+                                                Color::srgba(
+                                                    0.015,
+                                                    0.03,
+                                                    0.022,
+                                                    0.98,
+                                                ),
+                                            ),
+                                            BorderColor::all(
+                                                theme::BUTTON_BORDER,
+                                            ),
+                                        ))
+                                        .with_children(|gathering| {
+                                            gathering.spawn((
+                                                Text::new(
+                                                    "GATHERING   2 / 2",
+                                                ),
+                                                TextFont {
+                                                    font_size:
+                                                        FontSize::Px(
+                                                            9.0,
+                                                        ),
+                                                    ..default()
+                                                },
+                                                TextColor(
+                                                    theme::GOLD,
+                                                ),
+                                            ));
+
+                                            spawn_skills_profession_card(
+                                                gathering,
+                                                0,
+                                            );
+                                            spawn_skills_profession_card(
+                                                gathering,
+                                                1,
+                                            );
+                                        });
+
+                                    columns
+                                        .spawn((
+                                            skills_card_node(
+                                                Val::Percent(
+                                                    49.5,
+                                                ),
+                                                150.0,
+                                            ),
+                                            BackgroundColor(
+                                                Color::srgba(
+                                                    0.015,
+                                                    0.03,
+                                                    0.022,
+                                                    0.98,
+                                                ),
+                                            ),
+                                            BorderColor::all(
+                                                theme::BUTTON_BORDER,
+                                            ),
+                                        ))
+                                        .with_children(|crafting| {
+                                            crafting.spawn((
+                                                Text::new(
+                                                    "CRAFTING   2 / 2",
+                                                ),
+                                                TextFont {
+                                                    font_size:
+                                                        FontSize::Px(
+                                                            9.0,
+                                                        ),
+                                                    ..default()
+                                                },
+                                                TextColor(
+                                                    theme::GOLD,
+                                                ),
+                                            ));
+
+                                            spawn_skills_profession_card(
+                                                crafting,
+                                                2,
+                                            );
+                                            spawn_skills_profession_card(
+                                                crafting,
+                                                3,
+                                            );
+                                        });
+                                });
+                        });
+
+                    panel
+                        .spawn((
+                            native_modal::footer_node(),
+                            native_modal::divider_border(),
+                        ))
+                        .with_children(|footer| {
+                            footer.spawn((
+                                Text::new(
+                                    "K / Esc closes  ·  Character progression updates live",
+                                ),
+                                TextFont {
+                                    font_size:
+                                        FontSize::Px(
+                                            9.0,
+                                        ),
+                                    ..default()
+                                },
+                                TextColor(MUTED),
+                            ));
+                        });
+                });
         });
 }
 
@@ -1521,6 +3296,9 @@ fn spawn_spellbook_panel(commands: &mut Commands) {
         .spawn((
             Name::new("Native gameplay HUD · spellbook"),
             NativeUiPanel::Spells,
+            native_modal::NativeDraggableSurface(
+                native_modal::NativeModalWindow::Spells,
+            ),
             Visibility::Hidden,
             Node {
                 position_type: PositionType::Absolute,
@@ -1557,43 +3335,675 @@ fn spawn_spellbook_panel(commands: &mut Commands) {
 }
 
 
+fn crafting_column_node(
+    width: Val,
+) -> Node {
+    Node {
+        width,
+        height: Val::Percent(100.0),
+        min_height: px(520),
+        padding: UiRect::all(px(10)),
+        border: UiRect::all(px(1)),
+        border_radius: BorderRadius::all(px(7)),
+        flex_direction: FlexDirection::Column,
+        row_gap: px(8),
+        ..default()
+    }
+}
+
+fn spawn_crafting_column_heading(
+    parent: &mut ChildSpawnerCommands,
+    eyebrow: &str,
+    title: &str,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: px(2),
+            ..default()
+        })
+        .with_children(|copy| {
+            copy.spawn((
+                Text::new(eyebrow),
+                TextFont {
+                    font_size: FontSize::Px(8.0),
+                    ..default()
+                },
+                TextColor(theme::GOLD),
+            ));
+
+            copy.spawn((
+                Text::new(title),
+                TextFont {
+                    font_size: FontSize::Px(13.0),
+                    ..default()
+                },
+                TextColor(theme::GOLD_BRIGHT),
+            ));
+        });
+}
+
+fn spawn_crafting_category_button(
+    parent: &mut ChildSpawnerCommands,
+    index: usize,
+) {
+    parent
+        .spawn((
+            Button,
+            NativeCraftingButton::Category(index),
+            Node {
+                width: Val::Percent(100.0),
+                min_height: px(44),
+                padding: UiRect::horizontal(px(10)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(6)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::SpaceBetween,
+                ..default()
+            },
+            BackgroundColor(theme::BUTTON_BG),
+            BorderColor::all(theme::BUTTON_BORDER),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Text::new("◇"),
+                TextFont {
+                    font_size: FontSize::Px(12.0),
+                    ..default()
+                },
+                TextColor(theme::GOLD),
+            ));
+
+            row.spawn((
+                NativeCraftingCategoryText(index),
+                Text::new(""),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(TEXT),
+            ));
+        });
+}
+
+fn spawn_crafting_recipe_button(
+    parent: &mut ChildSpawnerCommands,
+    index: usize,
+) {
+    parent
+        .spawn((
+            Button,
+            NativeCraftingButton::Recipe(index),
+            Node {
+                width: Val::Percent(100.0),
+                min_height: px(56),
+                padding: UiRect::all(px(8)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(6)),
+                flex_direction: FlexDirection::Column,
+                row_gap: px(3),
+                ..default()
+            },
+            BackgroundColor(theme::BUTTON_BG),
+            BorderColor::all(theme::BUTTON_BORDER),
+        ))
+        .with_children(|card| {
+            card.spawn((
+                NativeCraftingRecipeText {
+                    index,
+                    field: NativeCraftingRecipeField::Name,
+                },
+                Text::new(""),
+                TextFont {
+                    font_size: FontSize::Px(9.5),
+                    ..default()
+                },
+                TextColor(TEXT),
+            ));
+
+            card.spawn((
+                NativeCraftingRecipeText {
+                    index,
+                    field: NativeCraftingRecipeField::Meta,
+                },
+                Text::new(""),
+                TextFont {
+                    font_size: FontSize::Px(7.5),
+                    ..default()
+                },
+                TextColor(MUTED),
+            ));
+        });
+}
+
+fn spawn_crafting_detail_text(
+    parent: &mut ChildSpawnerCommands,
+    kind: NativeCraftingDetailText,
+    value: &str,
+    size: f32,
+    color: Color,
+) {
+    parent.spawn((
+        kind,
+        Text::new(value),
+        TextFont {
+            font_size: FontSize::Px(size),
+            ..default()
+        },
+        TextColor(color),
+    ));
+}
+
+fn spawn_crafting_item_preview(
+    parent: &mut ChildSpawnerCommands,
+    input: bool,
+) {
+    let marker =
+        if input {
+            NativeCraftingItemImage::Input {
+                definition_id: None,
+            }
+        } else {
+            NativeCraftingItemImage::Output {
+                definition_id: None,
+            }
+        };
+
+    parent
+        .spawn((
+            marker,
+            ImageNode::default(),
+            Visibility::Hidden,
+            Node {
+                width: px(66),
+                height: px(66),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(6)),
+                ..default()
+            },
+            BorderColor::all(theme::GOLD_DARK),
+        ));
+}
+
+fn spawn_crafting_action_button(
+    parent: &mut ChildSpawnerCommands,
+    action: NativeCraftingButton,
+    label: &str,
+    primary: bool,
+    width: f32,
+) {
+    parent
+        .spawn((
+            Button,
+            action,
+            Node {
+                width: px(width),
+                height: px(38),
+                padding: UiRect::horizontal(px(10)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(6)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(
+                if primary {
+                    Color::srgba(0.24, 0.16, 0.035, 0.90)
+                } else {
+                    theme::BUTTON_BG
+                },
+            ),
+            BorderColor::all(
+                if primary {
+                    theme::GOLD
+                } else {
+                    theme::BUTTON_BORDER
+                },
+            ),
+        ))
+        .with_child((
+            Text::new(label),
+            TextFont {
+                font_size: FontSize::Px(9.0),
+                ..default()
+            },
+            TextColor(
+                if primary {
+                    theme::GOLD_BRIGHT
+                } else {
+                    TEXT
+                },
+            ),
+        ));
+}
+
 fn spawn_crafting_panel(commands: &mut Commands) {
     commands
         .spawn((
-            Name::new("Native gameplay HUD · crafting"),
+            Name::new("Native modal · crafting · Greyhaven reference"),
             NativeUiPanel::Crafting,
+            native_modal::NativeModalRoot,
+            GlobalZIndex(193),
             Visibility::Hidden,
-            Node {
-                position_type: PositionType::Absolute,
-                top: Val::Percent(10.0),
-                left: Val::Percent(50.0),
-                width: px(560),
-                margin: UiRect::left(px(-280)),
-                min_height: px(540),
-                padding: UiRect::all(px(12)),
-                flex_direction: FlexDirection::Column,
-                ..default()
-            },
-            BackgroundColor(PANEL),
+            native_modal::root_node(),
+            native_modal::backdrop(),
         ))
-        .with_children(|parent| {
-            spawn_panel_header(
-                parent,
-                "CRAFTING",
-                NativePanelCloseButton::Crafting,
-            );
-            parent.spawn(text_bundle(
-                "",
-                NativeUiText::Crafting,
-                13.0,
-                TEXT,
-            ));
-            parent.spawn(text_bundle(
-                "",
-                NativeUiText::CraftingDetail,
-                12.0,
-                MUTED,
-            ));
+        .with_children(|root| {
+            root
+                .spawn((
+                    Name::new("Greyhaven Crafting interface"),
+                    native_modal::NativeModalSurface,
+                    native_modal::NativeDraggableSurface(
+                        native_modal::NativeModalWindow::Crafting,
+                    ),
+                    native_modal::panel_node(
+                        1060.0,
+                        690.0,
+                    ),
+                    native_modal::surface(),
+                    native_modal::surface_border(),
+                ))
+                .with_children(|panel| {
+                    panel
+                        .spawn((
+                            native_modal::header_node(),
+                            native_modal::divider_border(),
+                        ))
+                        .with_children(|header| {
+                            header
+                                .spawn((
+                                    Button,
+                                    native_modal::NativeDragHandle(
+                                        native_modal::NativeModalWindow::Crafting,
+                                    ),
+                                    Node {
+                                        flex_grow: 1.0,
+                                        flex_direction: FlexDirection::Column,
+                                        align_items: AlignItems::FlexStart,
+                                        justify_content: JustifyContent::Center,
+                                        row_gap: px(3),
+                                        ..default()
+                                    },
+                                ))
+                                .with_children(|copy| {
+                                    copy.spawn((
+                                        Text::new("GREYHAVEN INTERFACE"),
+                                        TextFont {
+                                            font_size: FontSize::Px(10.0),
+                                            ..default()
+                                        },
+                                        TextColor(theme::GOLD),
+                                    ));
+
+                                    copy.spawn((
+                                        Text::new("CRAFTING & PRODUCTION"),
+                                        TextFont {
+                                            font_size: FontSize::Px(21.0),
+                                            ..default()
+                                        },
+                                        TextColor(theme::GOLD_BRIGHT),
+                                    ));
+                                });
+
+                            header
+                                .spawn((
+                                    Button,
+                                    NativePanelCloseButton::Crafting,
+                                    Node {
+                                        width: px(38),
+                                        height: px(36),
+                                        border: UiRect::all(px(1)),
+                                        border_radius: BorderRadius::all(px(6)),
+                                        align_items: AlignItems::Center,
+                                        justify_content: JustifyContent::Center,
+                                        ..default()
+                                    },
+                                    BackgroundColor(theme::BUTTON_BG),
+                                    BorderColor::all(theme::BUTTON_BORDER),
+                                ))
+                                .with_child((
+                                    Text::new("X"),
+                                    TextFont {
+                                        font_size: FontSize::Px(12.0),
+                                        ..default()
+                                    },
+                                    TextColor(TEXT),
+                                ));
+                        });
+
+                    panel
+                        .spawn(Node {
+                            width: Val::Percent(100.0),
+                            flex_grow: 1.0,
+                            min_height: px(530),
+                            flex_direction: FlexDirection::Row,
+                            align_items: AlignItems::Stretch,
+                            column_gap: px(10),
+                            ..default()
+                        })
+                        .with_children(|columns| {
+                            columns
+                                .spawn((
+                                    crafting_column_node(
+                                        Val::Percent(22.0),
+                                    ),
+                                    BackgroundColor(
+                                        Color::srgba(
+                                            0.015,
+                                            0.03,
+                                            0.022,
+                                            0.98,
+                                        ),
+                                    ),
+                                    BorderColor::all(
+                                        theme::BUTTON_BORDER,
+                                    ),
+                                ))
+                                .with_children(|disciplines| {
+                                    spawn_crafting_column_heading(
+                                        disciplines,
+                                        "PRODUCTION",
+                                        "DISCIPLINES",
+                                    );
+
+                                    for index in 0..6usize {
+                                        spawn_crafting_category_button(
+                                            disciplines,
+                                            index,
+                                        );
+                                    }
+                                });
+
+                            columns
+                                .spawn((
+                                    crafting_column_node(
+                                        Val::Percent(34.0),
+                                    ),
+                                    BackgroundColor(PANEL_SOFT),
+                                    BorderColor::all(
+                                        theme::BUTTON_BORDER,
+                                    ),
+                                ))
+                                .with_children(|recipes| {
+                                    spawn_crafting_column_heading(
+                                        recipes,
+                                        "KNOWN FORMULAS",
+                                        "RECIPES",
+                                    );
+
+                                    for index in 0..8usize {
+                                        spawn_crafting_recipe_button(
+                                            recipes,
+                                            index,
+                                        );
+                                    }
+                                });
+
+                            columns
+                                .spawn((
+                                    crafting_column_node(
+                                        Val::Percent(44.0),
+                                    ),
+                                    BackgroundColor(PANEL_SOFT),
+                                    BorderColor::all(
+                                        theme::BUTTON_BORDER,
+                                    ),
+                                ))
+                                .with_children(|detail| {
+                                    spawn_crafting_column_heading(
+                                        detail,
+                                        "RECIPE DETAIL",
+                                        "PRODUCTION",
+                                    );
+
+                                    spawn_crafting_detail_text(
+                                        detail,
+                                        NativeCraftingDetailText::Name,
+                                        "Select a recipe",
+                                        15.0,
+                                        theme::GOLD_BRIGHT,
+                                    );
+
+                                    spawn_crafting_detail_text(
+                                        detail,
+                                        NativeCraftingDetailText::Kind,
+                                        "",
+                                        8.5,
+                                        MUTED,
+                                    );
+
+                                    detail
+                                        .spawn(Node {
+                                            width: Val::Percent(100.0),
+                                            min_height: px(112),
+                                            padding: UiRect::all(px(9)),
+                                            border: UiRect::all(px(1)),
+                                            border_radius: BorderRadius::all(px(6)),
+                                            flex_direction: FlexDirection::Row,
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::SpaceBetween,
+                                            column_gap: px(8),
+                                            ..default()
+                                        })
+                                        .with_children(|flow| {
+                                            flow
+                                                .spawn(Node {
+                                                    width: Val::Percent(42.0),
+                                                    flex_direction: FlexDirection::Column,
+                                                    align_items: AlignItems::Center,
+                                                    row_gap: px(5),
+                                                    ..default()
+                                                })
+                                                .with_children(|input| {
+                                                    input.spawn((
+                                                        Text::new("INPUT"),
+                                                        TextFont {
+                                                            font_size: FontSize::Px(7.5),
+                                                            ..default()
+                                                        },
+                                                        TextColor(theme::GOLD),
+                                                    ));
+                                                    spawn_crafting_item_preview(
+                                                        input,
+                                                        true,
+                                                    );
+                                                    spawn_crafting_detail_text(
+                                                        input,
+                                                        NativeCraftingDetailText::Input,
+                                                        "—",
+                                                        8.5,
+                                                        TEXT,
+                                                    );
+                                                });
+
+                                            flow.spawn((
+                                                Text::new("→"),
+                                                TextFont {
+                                                    font_size: FontSize::Px(20.0),
+                                                    ..default()
+                                                },
+                                                TextColor(theme::GOLD_BRIGHT),
+                                            ));
+
+                                            flow
+                                                .spawn(Node {
+                                                    width: Val::Percent(42.0),
+                                                    flex_direction: FlexDirection::Column,
+                                                    align_items: AlignItems::Center,
+                                                    row_gap: px(5),
+                                                    ..default()
+                                                })
+                                                .with_children(|output| {
+                                                    output.spawn((
+                                                        Text::new("OUTPUT"),
+                                                        TextFont {
+                                                            font_size: FontSize::Px(7.5),
+                                                            ..default()
+                                                        },
+                                                        TextColor(theme::GOLD),
+                                                    ));
+                                                    spawn_crafting_item_preview(
+                                                        output,
+                                                        false,
+                                                    );
+                                                    spawn_crafting_detail_text(
+                                                        output,
+                                                        NativeCraftingDetailText::Output,
+                                                        "—",
+                                                        8.5,
+                                                        TEXT,
+                                                    );
+                                                });
+                                        });
+
+                                    detail
+                                        .spawn((
+                                            Node {
+                                                width: Val::Percent(100.0),
+                                                padding: UiRect::all(px(9)),
+                                                border: UiRect::all(px(1)),
+                                                border_radius: BorderRadius::all(px(6)),
+                                                flex_direction: FlexDirection::Column,
+                                                row_gap: px(5),
+                                                ..default()
+                                            },
+                                            BackgroundColor(PANEL_DEEP),
+                                            BorderColor::all(theme::BUTTON_BORDER),
+                                        ))
+                                        .with_children(|requirements| {
+                                            requirements.spawn((
+                                                Text::new("REQUIREMENTS"),
+                                                TextFont {
+                                                    font_size: FontSize::Px(8.0),
+                                                    ..default()
+                                                },
+                                                TextColor(theme::GOLD),
+                                            ));
+
+                                            spawn_crafting_detail_text(
+                                                requirements,
+                                                NativeCraftingDetailText::Requirements,
+                                                "—",
+                                                8.5,
+                                                TEXT,
+                                            );
+                                        });
+
+                                    detail
+                                        .spawn((
+                                            Node {
+                                                width: Val::Percent(100.0),
+                                                min_height: px(56),
+                                                padding: UiRect::all(px(8)),
+                                                border: UiRect::all(px(1)),
+                                                border_radius: BorderRadius::all(px(6)),
+                                                flex_direction: FlexDirection::Row,
+                                                align_items: AlignItems::Center,
+                                                justify_content: JustifyContent::SpaceBetween,
+                                                ..default()
+                                            },
+                                            BackgroundColor(PANEL_DEEP),
+                                            BorderColor::all(theme::BUTTON_BORDER),
+                                        ))
+                                        .with_children(|batch| {
+                                            batch.spawn((
+                                                Text::new("BATCH"),
+                                                TextFont {
+                                                    font_size: FontSize::Px(8.0),
+                                                    ..default()
+                                                },
+                                                TextColor(theme::GOLD),
+                                            ));
+
+                                            batch
+                                                .spawn(Node {
+                                                    flex_direction: FlexDirection::Row,
+                                                    align_items: AlignItems::Center,
+                                                    column_gap: px(6),
+                                                    ..default()
+                                                })
+                                                .with_children(|controls| {
+                                                    spawn_crafting_action_button(
+                                                        controls,
+                                                        NativeCraftingButton::QuantityDown,
+                                                        "−",
+                                                        false,
+                                                        36.0,
+                                                    );
+
+                                                    spawn_crafting_detail_text(
+                                                        controls,
+                                                        NativeCraftingDetailText::Quantity,
+                                                        "×1",
+                                                        10.5,
+                                                        theme::GOLD_BRIGHT,
+                                                    );
+
+                                                    spawn_crafting_action_button(
+                                                        controls,
+                                                        NativeCraftingButton::QuantityUp,
+                                                        "+",
+                                                        false,
+                                                        36.0,
+                                                    );
+                                                });
+                                        });
+
+                                    detail
+                                        .spawn(Node {
+                                            width: Val::Percent(100.0),
+                                            flex_direction: FlexDirection::Row,
+                                            justify_content: JustifyContent::FlexEnd,
+                                            column_gap: px(7),
+                                            ..default()
+                                        })
+                                        .with_children(|actions| {
+                                            spawn_crafting_action_button(
+                                                actions,
+                                                NativeCraftingButton::Cancel,
+                                                "CANCEL",
+                                                false,
+                                                86.0,
+                                            );
+
+                                            spawn_crafting_action_button(
+                                                actions,
+                                                NativeCraftingButton::Craft,
+                                                "CRAFT",
+                                                true,
+                                                112.0,
+                                            );
+                                        });
+
+                                    spawn_crafting_detail_text(
+                                        detail,
+                                        NativeCraftingDetailText::Active,
+                                        "No active production.",
+                                        8.0,
+                                        MUTED,
+                                    );
+                                });
+                        });
+
+                    panel
+                        .spawn((
+                            native_modal::footer_node(),
+                            native_modal::divider_border(),
+                        ))
+                        .with_children(|footer| {
+                            footer.spawn((
+                                Text::new(
+                                    "Tab discipline  ·  ↑/↓ recipe  ·  ←/→ batch  ·  F craft  ·  X cancel",
+                                ),
+                                TextFont {
+                                    font_size: FontSize::Px(8.5),
+                                    ..default()
+                                },
+                                TextColor(MUTED),
+                            ));
+                        });
+                });
         });
 }
 
@@ -1603,6 +4013,9 @@ fn spawn_npc_panel(commands: &mut Commands) {
         .spawn((
             Name::new("Native gameplay HUD · NPC"),
             NativeUiPanel::Npc,
+            native_modal::NativeDraggableSurface(
+                native_modal::NativeModalWindow::Npc,
+            ),
             Visibility::Hidden,
             Node {
                 position_type: PositionType::Absolute,
@@ -3455,6 +5868,498 @@ fn craft_selected_recipe(
     }
 }
 
+pub(crate) fn handle_crafting_modal_buttons(
+    network: Res<NativeNetwork>,
+    mut game_state: ResMut<NativeGameState>,
+    mut panels: ResMut<NativePanelState>,
+    mut buttons: Query<
+        (
+            &Interaction,
+            &NativeCraftingButton,
+            &mut BackgroundColor,
+            &mut BorderColor,
+        ),
+        (
+            Changed<Interaction>,
+            With<Button>,
+        ),
+    >,
+) {
+    if !panels.crafting_open {
+        return;
+    }
+
+    for (
+        interaction,
+        action,
+        mut background,
+        mut border,
+    ) in &mut buttons
+    {
+        match *interaction {
+            Interaction::Hovered => {
+                background.0 = theme::BUTTON_HOVER;
+                *border = BorderColor::all(theme::GOLD);
+            }
+            Interaction::None => {}
+            Interaction::Pressed => {
+                background.0 = theme::BUTTON_PRESSED;
+                *border = BorderColor::all(theme::GOLD_BRIGHT);
+
+                match *action {
+                    NativeCraftingButton::Category(index) => {
+                        let categories = crafting_categories(&game_state);
+
+                        if index < categories.len() {
+                            panels.crafting_category = index;
+                            panels.selected_recipe_id = None;
+                            ensure_recipe_selection(
+                                &game_state,
+                                &mut panels,
+                            );
+                        }
+                    }
+                    NativeCraftingButton::Recipe(index) => {
+                        let recipes = recipes_sorted(
+                            &game_state,
+                            &panels,
+                        );
+
+                        if let Some((recipe_id, _)) = recipes.get(index) {
+                            panels.selected_recipe_id = Some(recipe_id.clone());
+                        }
+                    }
+                    NativeCraftingButton::QuantityDown => {
+                        panels.crafting_quantity =
+                            panels
+                                .crafting_quantity
+                                .saturating_sub(1)
+                                .max(1);
+                    }
+                    NativeCraftingButton::QuantityUp => {
+                        panels.crafting_quantity =
+                            panels
+                                .crafting_quantity
+                                .saturating_add(1)
+                                .min(99);
+                    }
+                    NativeCraftingButton::Craft => {
+                        craft_selected_recipe(
+                            &network,
+                            &mut game_state,
+                            &panels,
+                        );
+                    }
+                    NativeCraftingButton::Cancel => {
+                        if network
+                            .outbound
+                            .send(ClientMessage::CancelRuneCrafting)
+                            .is_err()
+                        {
+                            game_state.push_system_message(
+                                "The game connection is offline.",
+                            );
+                        } else {
+                            game_state.push_system_message(
+                                "Cancel crafting requested.",
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub(crate) fn update_crafting_modal_ui(
+    asset_server: Res<AssetServer>,
+    game_state: Res<NativeGameState>,
+    panels: Res<NativePanelState>,
+    mut text_queries: ParamSet<(
+        Query<
+            (
+                &NativeCraftingCategoryText,
+                &mut Text,
+                &mut TextColor,
+            ),
+        >,
+        Query<
+            (
+                &NativeCraftingRecipeText,
+                &mut Text,
+                &mut TextColor,
+            ),
+        >,
+        Query<
+            (
+                &NativeCraftingDetailText,
+                &mut Text,
+                &mut TextColor,
+            ),
+        >,
+    )>,
+    mut buttons: Query<
+        (
+            &NativeCraftingButton,
+            &Interaction,
+            &mut BackgroundColor,
+            &mut BorderColor,
+        ),
+    >,
+    mut images: Query<
+        (
+            &mut NativeCraftingItemImage,
+            &mut ImageNode,
+            &mut Visibility,
+        ),
+    >,
+) {
+    if !panels.crafting_open {
+        return;
+    }
+
+    let categories = crafting_categories(&game_state);
+    let recipes = recipes_sorted(&game_state, &panels);
+
+    for (
+        slot,
+        mut text,
+        mut color,
+    ) in &mut text_queries.p0()
+    {
+        if let Some(category) = categories.get(slot.0) {
+            text.0 =
+                if category == "all" {
+                    "All recipes".into()
+                } else {
+                    title_case(category)
+                };
+
+            color.0 =
+                if panels.crafting_category == slot.0 {
+                    theme::GOLD_BRIGHT
+                } else {
+                    TEXT
+                };
+        } else {
+            text.0.clear();
+            color.0 = MUTED;
+        }
+    }
+
+    for (
+        view,
+        mut text,
+        mut color,
+    ) in &mut text_queries.p1()
+    {
+        let Some((recipe_id, recipe_name)) = recipes.get(view.index) else {
+            text.0.clear();
+            color.0 = MUTED;
+            continue;
+        };
+
+        let learned =
+            game_state
+                .learned_recipe_ids
+                .contains(recipe_id);
+
+        let selected =
+            panels
+                .selected_recipe_id
+                .as_deref()
+                == Some(recipe_id.as_str());
+
+        match view.field {
+            NativeCraftingRecipeField::Name => {
+                text.0 = format!(
+                    "{}{}",
+                    if learned { "✓ " } else { "× " },
+                    recipe_name,
+                );
+
+                color.0 =
+                    if selected {
+                        theme::GOLD_BRIGHT
+                    } else if learned {
+                        TEXT
+                    } else {
+                        MUTED
+                    };
+            }
+            NativeCraftingRecipeField::Meta => {
+                if let Some(recipe) = game_state.rune_recipes.get(recipe_id) {
+                    let input_name =
+                        game_state
+                            .item_definitions
+                            .get(&recipe.input_definition_id)
+                            .map(|definition| definition.name.as_str())
+                            .unwrap_or(recipe.input_definition_id.as_str());
+
+                    text.0 = format!(
+                        "{}× {}  →  {}× output  ·  {} mana",
+                        recipe.input_quantity,
+                        input_name,
+                        recipe.output_quantity,
+                        recipe.mana_cost,
+                    );
+                } else {
+                    text.0.clear();
+                }
+
+                color.0 = MUTED;
+            }
+        }
+    }
+
+    let selected_recipe =
+        panels
+            .selected_recipe_id
+            .as_deref()
+            .and_then(|recipe_id| {
+                game_state.rune_recipes.get(recipe_id)
+            });
+
+    let quantity = panels.crafting_quantity.max(1);
+
+    for (
+        kind,
+        mut text,
+        mut color,
+    ) in &mut text_queries.p2()
+    {
+        let Some(recipe) = selected_recipe else {
+            match kind {
+                NativeCraftingDetailText::Name => {
+                    text.0 = "Select a recipe".into();
+                    color.0 = theme::GOLD_BRIGHT;
+                }
+                NativeCraftingDetailText::Quantity => {
+                    text.0 = format!("×{}", quantity);
+                    color.0 = theme::GOLD_BRIGHT;
+                }
+                NativeCraftingDetailText::Active => {
+                    text.0 =
+                        if let Some(crafting) = game_state.crafting.as_ref() {
+                            format!(
+                                "ACTIVE  ·  {} remaining  ·  {}",
+                                crafting.remaining,
+                                title_case(&crafting.status),
+                            )
+                        } else {
+                            "No active production.".into()
+                        };
+                    color.0 = MUTED;
+                }
+                _ => {
+                    text.0.clear();
+                    color.0 = MUTED;
+                }
+            }
+
+            continue;
+        };
+
+        let input_name =
+            game_state
+                .item_definitions
+                .get(&recipe.input_definition_id)
+                .map(|definition| definition.name.as_str())
+                .unwrap_or(recipe.input_definition_id.as_str());
+
+        let output_name =
+            game_state
+                .item_definitions
+                .get(&recipe.output_definition_id)
+                .map(|definition| definition.name.as_str())
+                .unwrap_or(recipe.output_definition_id.as_str());
+
+        let carried =
+            inventory_definition_quantity(
+                &game_state,
+                &recipe.input_definition_id,
+            );
+
+        let required_items =
+            u64::from(recipe.input_quantity)
+                .saturating_mul(u64::from(quantity));
+
+        let required_mana =
+            u64::from(recipe.mana_cost)
+                .saturating_mul(u64::from(quantity));
+
+        let total_output =
+            u64::from(recipe.output_quantity)
+                .saturating_mul(u64::from(quantity));
+
+        let learned =
+            game_state
+                .learned_recipe_ids
+                .contains(&recipe.id);
+
+        match kind {
+            NativeCraftingDetailText::Name => {
+                text.0 = recipe.name.clone();
+                color.0 = theme::GOLD_BRIGHT;
+            }
+            NativeCraftingDetailText::Kind => {
+                text.0 = format!(
+                    "{}  ·  {}",
+                    title_case(&recipe.craft_kind),
+                    if learned { "Learned" } else { "Not learned" },
+                );
+                color.0 = if learned { TEXT } else { MUTED };
+            }
+            NativeCraftingDetailText::Input => {
+                text.0 = format!(
+                    "{} × {}\nCarried {} / required {}",
+                    recipe.input_quantity,
+                    input_name,
+                    carried,
+                    required_items,
+                );
+                color.0 =
+                    if carried >= required_items {
+                        TEXT
+                    } else {
+                        theme::TARGET_HP
+                    };
+            }
+            NativeCraftingDetailText::Output => {
+                text.0 = format!(
+                    "{} × {}",
+                    total_output,
+                    output_name,
+                );
+                color.0 = TEXT;
+            }
+            NativeCraftingDetailText::Requirements => {
+                text.0 = format!(
+                    "Mana total {}  ·  {:.2}s / craft  ·  required skill {}",
+                    required_mana,
+                    recipe.craft_time_ms as f32 / 1000.0,
+                    recipe.required_skill_level,
+                );
+                color.0 = TEXT;
+            }
+            NativeCraftingDetailText::Quantity => {
+                text.0 = format!("×{}", quantity);
+                color.0 = theme::GOLD_BRIGHT;
+            }
+            NativeCraftingDetailText::Active => {
+                text.0 =
+                    if let Some(crafting) = game_state.crafting.as_ref() {
+                        let active_name =
+                            crafting
+                                .recipe_id
+                                .as_ref()
+                                .and_then(|id| game_state.rune_recipes.get(id))
+                                .map(|active_recipe| active_recipe.name.as_str())
+                                .unwrap_or("Crafting");
+
+                        format!(
+                            "ACTIVE  ·  {}  ·  {} remaining  ·  {}",
+                            active_name,
+                            crafting.remaining,
+                            title_case(&crafting.status),
+                        )
+                    } else {
+                        "No active production.".into()
+                    };
+
+                color.0 = MUTED;
+            }
+        }
+    }
+
+    for (
+        action,
+        interaction,
+        mut background,
+        mut border,
+    ) in &mut buttons
+    {
+        let selected =
+            match *action {
+                NativeCraftingButton::Category(index) => {
+                    index < categories.len()
+                        && panels.crafting_category == index
+                }
+                NativeCraftingButton::Recipe(index) => {
+                    recipes
+                        .get(index)
+                        .is_some_and(|(recipe_id, _)| {
+                            panels
+                                .selected_recipe_id
+                                .as_deref()
+                                == Some(recipe_id.as_str())
+                        })
+                }
+                _ => false,
+            };
+
+        if selected {
+            background.0 =
+                Color::srgba(0.22, 0.145, 0.035, 0.72);
+            *border = BorderColor::all(theme::GOLD_BRIGHT);
+        } else if *interaction == Interaction::Hovered {
+            background.0 = theme::BUTTON_HOVER;
+            *border = BorderColor::all(theme::GOLD);
+        } else {
+            background.0 = theme::BUTTON_BG;
+            *border = BorderColor::all(theme::BUTTON_BORDER);
+        }
+    }
+
+    let input_definition =
+        selected_recipe.map(|recipe| recipe.input_definition_id.as_str());
+
+    let output_definition =
+        selected_recipe.map(|recipe| recipe.output_definition_id.as_str());
+
+    for (
+        mut marker,
+        mut image,
+        mut visibility,
+    ) in &mut images
+    {
+        let (definition_id, remembered) =
+            match &mut *marker {
+                NativeCraftingItemImage::Input {
+                    definition_id,
+                } => (
+                    input_definition,
+                    definition_id,
+                ),
+                NativeCraftingItemImage::Output {
+                    definition_id,
+                } => (
+                    output_definition,
+                    definition_id,
+                ),
+            };
+
+        let Some(definition_id) = definition_id else {
+            *remembered = None;
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+
+        if remembered.as_deref() != Some(definition_id) {
+            image.image = asset_server.load(
+                format!(
+                    "sprites/items/{}.png",
+                    definition_id,
+                ),
+            );
+
+            *remembered = Some(definition_id.to_owned());
+        }
+
+        *visibility = Visibility::Visible;
+    }
+}
+
 fn crafting_panel_text(
     game_state: &NativeGameState,
     panels: &NativePanelState,
@@ -3711,6 +6616,400 @@ fn inventory_definition_quantity(
         .sum()
 }
 
+pub(crate) fn update_skills_modal_ui(
+    game_state: Res<NativeGameState>,
+    panels: Res<NativePanelState>,
+    mut text_queries: ParamSet<(
+        Query<
+            (
+                &NativeSkillsCoreText,
+                &mut Text,
+                &mut TextColor,
+            ),
+        >,
+        Query<
+            (
+                &NativeSkillsAbilityText,
+                &mut Text,
+                &mut TextColor,
+            ),
+        >,
+        Query<
+            (
+                &NativeSkillsProfessionText,
+                &mut Text,
+                &mut TextColor,
+            ),
+        >,
+    )>,
+    mut bar_queries: ParamSet<(
+        Query<
+            (
+                &NativeSkillsCoreBar,
+                &mut Node,
+            ),
+        >,
+        Query<
+            (
+                &NativeSkillsProfessionBar,
+                &mut Node,
+            ),
+        >,
+    )>,
+) {
+    if !panels.skills_open {
+        return;
+    }
+
+    let Some(player) =
+        game_state.local_player()
+    else {
+        for (_, mut text, mut color)
+            in &mut text_queries.p0()
+        {
+            text.0 = "—".into();
+            color.0 = MUTED;
+        }
+
+        for (_, mut text, mut color)
+            in &mut text_queries.p1()
+        {
+            text.0.clear();
+            color.0 = MUTED;
+        }
+
+        for (_, mut text, mut color)
+            in &mut text_queries.p2()
+        {
+            text.0 = "Empty".into();
+            color.0 = MUTED;
+        }
+
+        for (_, mut node)
+            in &mut bar_queries.p0()
+        {
+            node.width =
+                Val::Percent(0.0);
+        }
+
+        for (_, mut node)
+            in &mut bar_queries.p1()
+        {
+            node.width =
+                Val::Percent(0.0);
+        }
+
+        return;
+    };
+
+    for (
+        view,
+        mut text,
+        mut color,
+    ) in &mut text_queries.p0()
+    {
+        let (level, tries) =
+            match view.skill {
+                NativeSkillsCore::Melee => (
+                    player.sword_skill,
+                    player.sword_tries,
+                ),
+                NativeSkillsCore::Distance => (
+                    player.distance_skill,
+                    player.distance_tries,
+                ),
+                NativeSkillsCore::Shielding => (
+                    player.shielding_skill,
+                    player.shielding_tries,
+                ),
+                NativeSkillsCore::Fletching => (
+                    player.fletching_skill,
+                    player.fletching_tries,
+                ),
+                NativeSkillsCore::Magic => (
+                    player.magic_level,
+                    player.magic_tries,
+                ),
+            };
+
+        match view.field {
+            NativeSkillsCoreField::Level => {
+                text.0 =
+                    level.to_string();
+
+                color.0 =
+                    theme::GOLD_BRIGHT;
+            }
+            NativeSkillsCoreField::Tries => {
+                text.0 =
+                    format!(
+                        "{} tries",
+                        tries,
+                    );
+
+                color.0 = MUTED;
+            }
+        }
+    }
+
+    for (
+        bar,
+        mut node,
+    ) in &mut bar_queries.p0()
+    {
+        let level =
+            match bar.0 {
+                NativeSkillsCore::Melee => {
+                    player.sword_skill
+                }
+                NativeSkillsCore::Distance => {
+                    player.distance_skill
+                }
+                NativeSkillsCore::Shielding => {
+                    player.shielding_skill
+                }
+                NativeSkillsCore::Fletching => {
+                    player.fletching_skill
+                }
+                NativeSkillsCore::Magic => {
+                    player.magic_level
+                }
+            };
+
+        node.width =
+            Val::Percent(
+                f32::from(level.min(100)),
+            );
+    }
+
+    let mut learned: Vec<_> =
+        game_state
+            .learned_spell_ids
+            .iter()
+            .filter_map(|id| {
+                game_state
+                    .spells
+                    .get(id)
+            })
+            .collect();
+
+    learned.sort_by(|left, right| {
+        left.name.cmp(&right.name)
+    });
+
+    for (
+        view,
+        mut text,
+        mut color,
+    ) in &mut text_queries.p1()
+    {
+        if view.index == 0 {
+            match view.field {
+                NativeSkillsAbilityField::Name => {
+                    text.0 = "Attack".into();
+                    color.0 =
+                        theme::GOLD_BRIGHT;
+                }
+                NativeSkillsAbilityField::Detail => {
+                    text.0 =
+                        "Basic equipped-weapon attack"
+                            .into();
+                    color.0 = MUTED;
+                }
+                NativeSkillsAbilityField::Cost => {
+                    text.0 =
+                        "WEAPON".into();
+                    color.0 =
+                        theme::GOLD;
+                }
+            }
+
+            continue;
+        }
+
+        let Some(spell) =
+            learned.get(
+                view.index - 1,
+            )
+        else {
+            match view.field {
+                NativeSkillsAbilityField::Name => {
+                    text.0 =
+                        "Empty ability".into();
+                }
+                NativeSkillsAbilityField::Detail => {
+                    text.0 =
+                        "Learn more spells to fill this card"
+                            .into();
+                }
+                NativeSkillsAbilityField::Cost => {
+                    text.0.clear();
+                }
+            }
+
+            color.0 = MUTED;
+            continue;
+        };
+
+        match view.field {
+            NativeSkillsAbilityField::Name => {
+                text.0 =
+                    spell.name.clone();
+                color.0 =
+                    theme::GOLD_BRIGHT;
+            }
+            NativeSkillsAbilityField::Detail => {
+                text.0 =
+                    spell.description.clone();
+                color.0 = MUTED;
+            }
+            NativeSkillsAbilityField::Cost => {
+                text.0 =
+                    format!(
+                        "{} mana\n{:.1}s CD",
+                        spell.mana_cost,
+                        spell.cooldown_ms
+                            as f32
+                            / 1000.0,
+                    );
+
+                color.0 =
+                    theme::GOLD;
+            }
+        }
+    }
+
+    let gathering: Vec<_> =
+        player
+            .secondary_skills
+            .iter()
+            .filter(|skill_id| {
+                game_types::GATHERING_SKILLS
+                    .contains(
+                        &skill_id.as_str(),
+                    )
+            })
+            .collect();
+
+    let crafting: Vec<_> =
+        player
+            .secondary_skills
+            .iter()
+            .filter(|skill_id| {
+                game_types::CRAFTING_SKILLS
+                    .contains(
+                        &skill_id.as_str(),
+                    )
+            })
+            .collect();
+
+    for (
+        view,
+        mut text,
+        mut color,
+    ) in &mut text_queries.p2()
+    {
+        let skill_id =
+            if view.index < 2 {
+                gathering.get(view.index)
+            } else {
+                crafting.get(
+                    view.index - 2,
+                )
+            };
+
+        let Some(skill_id) = skill_id else {
+            match view.field {
+                NativeSkillsProfessionField::Name => {
+                    text.0 =
+                        "Empty slot".into();
+                }
+                NativeSkillsProfessionField::Detail => {
+                    text.0 =
+                        "No profession selected"
+                            .into();
+                }
+            }
+
+            color.0 = MUTED;
+            continue;
+        };
+
+        let state =
+            game_state
+                .profession_skills
+                .get(*skill_id);
+
+        let level =
+            state
+                .map(|skill| {
+                    skill.level
+                })
+                .unwrap_or(0);
+
+        let tries =
+            state
+                .map(|skill| {
+                    skill.tries
+                })
+                .unwrap_or(0);
+
+        match view.field {
+            NativeSkillsProfessionField::Name => {
+                text.0 =
+                    title_case(skill_id);
+                color.0 =
+                    theme::GOLD_BRIGHT;
+            }
+            NativeSkillsProfessionField::Detail => {
+                text.0 =
+                    format!(
+                        "Level {}  ·  {} tries  ·  mastery {}",
+                        level,
+                        tries,
+                        game_types::skill_mastery_cost(
+                            level,
+                        ),
+                    );
+
+                color.0 = MUTED;
+            }
+        }
+    }
+
+    for (
+        slot,
+        mut node,
+    ) in &mut bar_queries.p1()
+    {
+        let skill_id =
+            if slot.0 < 2 {
+                gathering.get(slot.0)
+            } else {
+                crafting.get(
+                    slot.0 - 2,
+                )
+            };
+
+        let level =
+            skill_id
+                .and_then(|id| {
+                    game_state
+                        .profession_skills
+                        .get(*id)
+                })
+                .map(|skill| {
+                    skill.level
+                })
+                .unwrap_or(0);
+
+        node.width =
+            Val::Percent(
+                f32::from(level.min(100)),
+            );
+    }
+}
+
 fn skills_panel_text(game_state: &NativeGameState) -> String {
     let Some(player) = game_state.local_player() else {
         return "SKILLS\nNo local player.".into();
@@ -3944,6 +7243,614 @@ fn spell_detail_text(
         spell.required_magic_level,
     )
 }
+
+pub(crate) fn handle_inventory_modal_buttons(
+    game_state:
+        Res<NativeGameState>,
+    mut panels:
+        ResMut<NativePanelState>,
+    mut interactions: Query<
+        (
+            &Interaction,
+            &NativeInventoryButton,
+        ),
+        (
+            Changed<Interaction>,
+            With<Button>,
+        ),
+    >,
+) {
+    if !panels.inventory_open {
+        return;
+    }
+
+    for (
+        interaction,
+        button,
+    ) in &mut interactions
+    {
+        if *interaction
+            != Interaction::Pressed
+        {
+            continue;
+        }
+
+        match *button {
+            NativeInventoryButton::Slot(
+                index,
+            ) => {
+                let items =
+                    inventory_reference_ids(
+                        &game_state,
+                        &panels,
+                    );
+
+                panels.selected_item =
+                    items
+                        .get(index)
+                        .copied();
+            }
+            NativeInventoryButton::Action(
+                NativeInventoryAction::Search,
+            ) => {
+                panels.inventory_search_active =
+                    true;
+            }
+            NativeInventoryButton::Action(
+                NativeInventoryAction::Back,
+            ) => {
+                if let Some(container_id) =
+                    panels.inventory_container_id
+                {
+                    panels.inventory_container_id =
+                        game_state
+                            .inventory
+                            .iter()
+                            .find(|item| {
+                                item.instance_id
+                                    == container_id
+                            })
+                            .and_then(|container| {
+                                container.container_id
+                            });
+
+                    panels.selected_item = None;
+
+                    ensure_inventory_selection(
+                        &game_state,
+                        &mut panels,
+                    );
+                }
+            }
+            NativeInventoryButton::Action(
+                NativeInventoryAction::Close,
+            ) => {
+                panels.inventory_open = false;
+                panels.inventory_search_active =
+                    false;
+                panels.split_item_id = None;
+                panels.split_quantity = 0;
+            }
+        }
+    }
+
+    // Keep selection valid after authoritative inventory changes while the
+    // graphical window is open.
+    ensure_inventory_selection(
+        &game_state,
+        &mut panels,
+    );
+}
+
+pub(crate) fn update_inventory_modal_ui(
+    asset_server: Res<AssetServer>,
+    game_state: Res<NativeGameState>,
+    panels: Res<NativePanelState>,
+    mut text_queries: ParamSet<(
+        Query<
+            (
+                &NativeInventoryText,
+                &mut Text,
+                &mut TextColor,
+            ),
+        >,
+        Query<
+            (
+                &NativeInventorySlotText,
+                &mut Text,
+                &mut TextColor,
+            ),
+        >,
+    )>,
+    mut buttons: Query<
+        (
+            &NativeInventoryButton,
+            &Interaction,
+            &mut BackgroundColor,
+            &mut BorderColor,
+        ),
+    >,
+    mut capacity_bar: Query<
+        &mut Node,
+        With<NativeInventoryCapacityBar>,
+    >,
+    mut images: Query<
+        (
+            &mut NativeInventorySlotImage,
+            &mut ImageNode,
+            &mut Visibility,
+        ),
+    >,
+) {
+    if !panels.inventory_open {
+        return;
+    }
+
+    let items =
+        inventory_reference_ids(
+            &game_state,
+            &panels,
+        );
+
+    let capacity =
+        inventory_reference_capacity(
+            &game_state,
+            &panels,
+        );
+
+    let location =
+        inventory_reference_location(
+            &game_state,
+            &panels,
+        );
+
+    let gold: u64 =
+        game_state
+            .inventory
+            .iter()
+            .filter(|item| {
+                item.definition_id
+                    == "gold_coin"
+            })
+            .map(|item| {
+                u64::from(item.quantity)
+            })
+            .sum();
+
+    let selected_detail =
+        panels
+            .selected_item
+            .and_then(|instance_id| {
+                game_state
+                    .inventory
+                    .iter()
+                    .find(|item| {
+                        item.instance_id
+                            == instance_id
+                    })
+            })
+            .map(|item| {
+                let definition =
+                    game_state
+                        .item_definitions
+                        .get(
+                            &item.definition_id,
+                        );
+
+                let name =
+                    definition
+                        .map(|value| {
+                            value.name.as_str()
+                        })
+                        .unwrap_or(
+                            item.definition_id
+                                .as_str(),
+                        );
+
+                let weight =
+                    definition
+                        .map(|value| {
+                            value.weight
+                        })
+                        .unwrap_or(0.0);
+
+                format!(
+                    "{}  ·  ×{}  ·  {:.1} weight  ·  Enter open  E equip  F6 split",
+                    name,
+                    item.quantity,
+                    weight,
+                )
+            })
+            .unwrap_or_else(|| {
+                "Select an item  ·  / search  ·  Backspace parent"
+                    .into()
+            });
+
+    for (
+        kind,
+        mut text,
+        mut color,
+    ) in &mut text_queries.p0()
+    {
+        match kind {
+            NativeInventoryText::Location => {
+                text.0 =
+                    location.clone()
+                        .to_uppercase();
+
+                color.0 = theme::GOLD;
+            }
+            NativeInventoryText::Usage => {
+                text.0 = format!(
+                    "{} / {} SLOTS USED",
+                    items.len(),
+                    capacity,
+                );
+
+                color.0 = TEXT;
+            }
+            NativeInventoryText::Capacity => {
+                text.0 = format!(
+                    "{:.1} / {:.1} CAPACITY",
+                    game_state
+                        .inventory_weight,
+                    game_state
+                        .max_capacity,
+                );
+
+                color.0 = TEXT;
+            }
+            NativeInventoryText::Search => {
+                text.0 =
+                    if panels
+                        .inventory_search_active
+                    {
+                        format!(
+                            "Search: {}_",
+                            panels
+                                .inventory_search,
+                        )
+                    } else if panels
+                        .inventory_search
+                        .is_empty()
+                    {
+                        "SEARCH INVENTORY"
+                            .into()
+                    } else {
+                        format!(
+                            "Filter: {}",
+                            panels
+                                .inventory_search,
+                        )
+                    };
+
+                color.0 =
+                    if panels
+                        .inventory_search_active
+                    {
+                        theme::GOLD_BRIGHT
+                    } else {
+                        MUTED
+                    };
+            }
+            NativeInventoryText::Detail => {
+                text.0 =
+                    selected_detail.clone();
+
+                color.0 = MUTED;
+            }
+            NativeInventoryText::Gold => {
+                text.0 = format!(
+                    "{} GOLD COINS",
+                    gold,
+                );
+
+                color.0 =
+                    theme::GOLD_BRIGHT;
+            }
+        }
+    }
+
+    for (
+        slot,
+        mut text,
+        mut color,
+    ) in &mut text_queries.p1()
+    {
+        let Some(instance_id) =
+            items.get(slot.index)
+        else {
+            text.0.clear();
+            color.0 = MUTED;
+            continue;
+        };
+
+        let Some(item) =
+            game_state
+                .inventory
+                .iter()
+                .find(|item| {
+                    item.instance_id
+                        == *instance_id
+                })
+        else {
+            text.0.clear();
+            color.0 = MUTED;
+            continue;
+        };
+
+        let definition =
+            game_state
+                .item_definitions
+                .get(
+                    &item.definition_id,
+                );
+
+        let name =
+            definition
+                .map(|value| {
+                    value.name.as_str()
+                })
+                .unwrap_or(
+                    item.definition_id
+                        .as_str(),
+                );
+
+        match slot.field {
+            NativeInventorySlotField::Quantity => {
+                text.0 =
+                    if item.quantity > 1 {
+                        item.quantity
+                            .to_string()
+                    } else {
+                        String::new()
+                    };
+
+                color.0 =
+                    theme::GOLD_BRIGHT;
+            }
+            NativeInventorySlotField::Name => {
+                text.0 =
+                    name.to_owned();
+
+                color.0 =
+                    if Some(*instance_id)
+                        == panels
+                            .selected_item
+                    {
+                        theme::GOLD_BRIGHT
+                    } else {
+                        TEXT
+                    };
+            }
+        }
+    }
+
+    for (
+        mut slot,
+        mut image,
+        mut visibility,
+    ) in &mut images
+    {
+        let item =
+            items
+                .get(slot.index)
+                .and_then(|instance_id| {
+                    game_state
+                        .inventory
+                        .iter()
+                        .find(|item| {
+                            item.instance_id
+                                == *instance_id
+                        })
+                });
+
+        let Some(item) = item else {
+            slot.definition_id = None;
+            *visibility =
+                Visibility::Hidden;
+            continue;
+        };
+
+        if slot
+            .definition_id
+            .as_deref()
+            != Some(
+                item.definition_id
+                    .as_str(),
+            )
+        {
+            image.image =
+                asset_server.load(
+                    format!(
+                        "sprites/items/{}.png",
+                        item.definition_id,
+                    ),
+                );
+
+            slot.definition_id =
+                Some(
+                    item.definition_id
+                        .clone(),
+                );
+        }
+
+        *visibility =
+            Visibility::Visible;
+    }
+
+    for (
+        button,
+        interaction,
+        mut background,
+        mut border,
+    ) in &mut buttons
+    {
+        match *button {
+            NativeInventoryButton::Slot(
+                index,
+            ) => {
+                let selected =
+                    items
+                        .get(index)
+                        .copied()
+                        == panels
+                            .selected_item;
+
+                let hovered =
+                    *interaction
+                        == Interaction::Hovered;
+
+                background.0 =
+                    if selected {
+                        Color::srgba(
+                            0.22,
+                            0.145,
+                            0.035,
+                            0.72,
+                        )
+                    } else if hovered {
+                        theme::BUTTON_HOVER
+                    } else {
+                        Color::srgba(
+                            0.015,
+                            0.035,
+                            0.026,
+                            0.98,
+                        )
+                    };
+
+                *border =
+                    BorderColor::all(
+                        if selected {
+                            theme::GOLD_BRIGHT
+                        } else if hovered {
+                            theme::GOLD
+                        } else {
+                            theme::BUTTON_BORDER
+                        },
+                    );
+            }
+            NativeInventoryButton::Action(
+                _,
+            ) => {
+                let hovered =
+                    *interaction
+                        == Interaction::Hovered;
+
+                background.0 =
+                    if hovered {
+                        theme::BUTTON_HOVER
+                    } else {
+                        theme::BUTTON_BG
+                    };
+
+                *border =
+                    BorderColor::all(
+                        if hovered {
+                            theme::GOLD
+                        } else {
+                            theme::BUTTON_BORDER
+                        },
+                    );
+            }
+        }
+    }
+
+    let used =
+        if game_state.max_capacity > 0.0 {
+            (
+                game_state
+                    .inventory_weight
+                / game_state
+                    .max_capacity
+            )
+            .clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+
+    for mut node in &mut capacity_bar {
+        node.width =
+            Val::Percent(
+                used * 100.0,
+            );
+    }
+}
+
+fn inventory_reference_ids(
+    game_state: &NativeGameState,
+    panels: &NativePanelState,
+) -> Vec<game_types::EntityId> {
+    selectable_inventory_ids(
+        game_state,
+        panels,
+    )
+    .into_iter()
+    .take(12)
+    .collect()
+}
+
+fn inventory_reference_capacity(
+    game_state: &NativeGameState,
+    panels: &NativePanelState,
+) -> usize {
+    panels
+        .inventory_container_id
+        .and_then(|container_id| {
+            game_state
+                .inventory
+                .iter()
+                .find(|item| {
+                    item.instance_id
+                        == container_id
+                })
+        })
+        .and_then(|item| {
+            game_state
+                .item_definitions
+                .get(&item.definition_id)
+        })
+        .and_then(|definition| {
+            definition.container_slots
+        })
+        .map(usize::from)
+        .unwrap_or(12)
+        .max(1)
+}
+
+fn inventory_reference_location(
+    game_state: &NativeGameState,
+    panels: &NativePanelState,
+) -> String {
+    panels
+        .inventory_container_id
+        .and_then(|container_id| {
+            game_state
+                .inventory
+                .iter()
+                .find(|item| {
+                    item.instance_id
+                        == container_id
+                })
+        })
+        .map(|item| {
+            game_state
+                .item_definitions
+                .get(&item.definition_id)
+                .map(|definition| {
+                    definition.name.clone()
+                })
+                .unwrap_or_else(|| {
+                    item.definition_id.clone()
+                })
+        })
+        .unwrap_or_else(|| {
+            "Root inventory".into()
+        })
+}
+
+
 
 fn inventory_panel_text(
     game_state: &NativeGameState,

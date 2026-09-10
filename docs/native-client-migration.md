@@ -1516,3 +1516,117 @@ protocol contract; no fake network action is introduced.
 
 No server authority, loading/GPU gate, movement, floor-transition or creature
 safety behavior changes.
+
+
+<!-- TIBIAGAME_V36_51_0_INVENTORY_DRAGGABLE_WINDOWS -->
+
+V36.51.0 ports the in-game Inventory window toward the old React Greyhaven
+interface and introduces reusable draggable gameplay windows.
+
+Inventory now uses:
+- GREYHAVEN INTERFACE / INVENTORY header
+- location + used/capacity summary
+- keyboard-backed search presentation and Search button
+- graphical capacity bar
+- fixed 12-slot backpack-style grid
+- per-slot quantity, actual old-client item sprite and item name
+- selected-slot gold treatment
+- gold currency footer
+- live selected-item detail/help
+- Back and Close actions
+
+Inventory images are loaded from the existing old-client sprite convention:
+sprites/items/{definition_id}.png. The native AssetPlugin already points at the
+shared apps/client/public/assets root, so the React-era item art is reused rather
+than approximated with placeholder glyphs.
+
+Window dragging:
+- Character, Inventory, Skills, Spellbook, Crafting and NPC windows are movable
+- drag by the title/header area
+- each window retains its own position for the current client session
+- close buttons remain separately clickable
+- the drag system operates only on Bevy UiTransform translation and does not
+  alter world, network or gameplay state
+
+No server authority, startup loading/GPU gate, movement protocol,
+floor-transition safety or creature-visibility safety behavior changes.
+
+
+<!-- TIBIAGAME_V36_51_1_CHARACTER_DRAG_DELIMITER_HOTFIX -->
+
+V36.51.1 fixes the Rust delimiter error introduced by the Character header drag
+conversion in V36.51.0. The transformed spawn tuple retained one closing
+parenthesis from the old Node spawn, producing three closing parentheses before
+the child-builder call.
+
+The Character drag spawn now has the correct two closing parentheses.
+
+No Inventory, drag semantics, gameplay, loading, network, floor or creature
+behavior changes.
+
+
+<!-- TIBIAGAME_V36_52_0_REACT_FAITHFUL_SKILLS -->
+
+V36.52.0 migrates the in-game Skills window from the legacy monolithic Text
+panel to the old React Greyhaven visual hierarchy.
+
+The new Skills interface contains:
+- draggable Greyhaven header
+- Combat & Core skill-card grid
+- per-skill icon tile, level badge, raw tries and level/mastery bar
+- Abilities section with Attack plus up to three learned spells
+- live spell description, mana and cooldown
+- Professions section split into Gathering and Crafting columns
+- up to 2 gathering + 2 crafting slots
+- live profession level, tries and mastery cost
+- profession level bars
+- existing K / Escape / X close behavior
+
+No fake next-level threshold is invented. Combat bars visualize the current
+0-100 skill level scale, while raw authoritative tries remain displayed as text.
+
+No server, network, action-bar binding, loading, floor or creature-safety
+behavior changes.
+
+
+<!-- TIBIAGAME_V36_52_1_SKILLS_NODE_PARAMSET_B0001 -->
+
+V36.52.1 fixes the Bevy B0001 runtime panic introduced by the V36.52 Skills
+modal updater.
+
+update_skills_modal_ui had two independent mutable Node queries:
+- NativeSkillsCoreBar + &mut Node
+- NativeSkillsProfessionBar + &mut Node
+
+Bevy cannot prove those entity sets are disjoint during schedule initialization,
+so startup panicked before the launcher became usable.
+
+Both Node queries now live in one ParamSet and are borrowed sequentially through
+p0()/p1().
+
+No Skills presentation, drag, Inventory, gameplay, network, loading, floor or
+creature-safety behavior changes.
+
+
+<!-- TIBIAGAME_V36_53_0_REACT_FAITHFUL_CRAFTING -->
+
+V36.53.0 migrates the in-game Crafting window from the legacy monolithic Text
+panel to the old React Greyhaven three-column production interface.
+
+The native Crafting window now contains:
+- draggable GREYHAVEN INTERFACE / CRAFTING & PRODUCTION header
+- Disciplines column with live category buttons
+- Recipes column with up to 8 live recipe cards
+- Production detail column
+- actual item sprite previews for input/output
+- carried/required material counts
+- output totals, total mana, craft time and required skill
+- batch minus/plus controls
+- Craft and Cancel mouse buttons
+- active production status
+- existing Tab/arrows/F/X keyboard controls remain
+
+All actions reuse the existing authoritative ClientMessage paths and existing
+craft_selected_recipe helper. No client-side crafting result is invented.
+
+No loading, movement, floor-transition or creature-safety behavior changes.
