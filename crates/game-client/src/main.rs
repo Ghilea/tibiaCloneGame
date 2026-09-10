@@ -736,6 +736,12 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                     .after(native_settings::sync_world_music),
             ),
         )
+        .add_systems(
+            Update,
+            native_map_ui::handle_buttons
+                .after(native_map_ui::handle_input)
+                .before(native_map_ui::update_ui),
+        )
         // TIBIAGAME_V36_58_1_SPLIT_DIRECT_DRAG_SCHEDULE
         // Keep this separate from the already-full UI tuple. Bevy's tuple
         // schedule configuration has a finite arity; V36.58.0 exceeded it by

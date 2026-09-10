@@ -52,9 +52,9 @@ pub(crate) const BUTTON_BORDER: Color =
     Color::srgb(0.337, 0.396, 0.361);
 
 pub(crate) const HP: Color =
-    Color::srgb(0.706, 0.188, 0.157);
+    Color::srgb(0.75, 0.025, 0.035);
 pub(crate) const MANA: Color =
-    Color::srgb(0.161, 0.353, 0.722);
+    Color::srgb(0.04, 0.12, 0.88);
 pub(crate) const XP: Color =
     Color::srgb(0.824, 0.647, 0.267);
 pub(crate) const CAP: Color =

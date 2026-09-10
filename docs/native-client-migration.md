@@ -1836,3 +1836,28 @@ V36.59.1 retries the first WoW-inspired HUD pass with more robust function-range
 <!-- TIBIAGAME_V36_60_0_WOW_HUD_VISUAL_OVERHAUL -->
 
 V36.60.0 replaces the layout-only first HUD pass with a visual MMO HUD pass: custom surfaces are excluded from legacy theme flattening, player/target unit frames use gold portrait-style chrome and overlaid health/mana text, the minimap becomes circular, the battle list gains a framed title bar, chat receives General/Combat/Loot tabs and fades after inactivity, the action bar receives a stronger fantasy frame, and the bottom-right dock uses generated image icons instead of unsupported emoji glyphs.
+
+
+<!-- TIBIAGAME_V36_60_1_WOW_HUD_POLISH_PASS -->
+
+V36.60.1 is a visual polish pass on the WoW-inspired native HUD. It enlarges the icon art inside action slots and the bottom-right dock buttons, moves the chat tabs above the chat panel instead of inside the message area, adds side utility icons around the action bar, and refines the player and target unit frames so they read closer to the approved mockup.
+
+
+<!-- TIBIAGAME_V36_60_2_WOW_HUD_COMPILE_HOTFIX -->
+
+V36.60.2 is a compile-only hotfix for the V36.60.1 WoW-inspired HUD polish pass. It removes the accidentally duplicated spawn_chat implementation and updates the three Bevy UI overflow declarations from the invalid Overflow::Visible form to Overflow::visible(). No HUD layout or gameplay behavior is otherwise changed.
+
+
+<!-- TIBIAGAME_V36_61_0_WOW_HUD_FRAMES_ACTIONBAR_PASS -->
+
+V36.61.0 is a second visual pass on the WoW-inspired native HUD. It focuses on the player frame, target frame, action bar, and utility icon clusters. The unit frames are widened with clearer portraits and larger text, action bar icons are enlarged to better fill their containers, and the bottom-right dock uses larger icon art in a tighter WoW-like control group.
+
+
+<!-- TIBIAGAME_V36_61_1_WOW_HUD_FRAME_SHAPE_FIX -->
+
+V36.61.1 corrects the visual direction of the WoW-inspired HUD by reshaping the player and target frames so their portraits sit outside the main body instead of inside a large rectangular backing, and by replacing the duplicated dock icons inside the action bar with a dedicated set of side utility icons drawn from the ability atlas. The right-side dock remains the primary panel launcher, while the central action bar regains distinct side ornaments/icons closer to the approved mockup.
+
+
+<!-- TIBIAGAME_V36_62_0_WOW_HUD_ICON_FIDELITY_PASS -->
+
+V36.62.0 is a mockup-fidelity pass for the WoW-inspired HUD. It introduces newly drawn dock and action-bar side icons staged under assets/ui/hud_v36_62, reduces and separates the bottom-right dock from the ping widget, makes the dock icons fill their containers, swaps the action bar side art to dedicated mockup-style icons instead of reused dock buttons, and reshapes the player and target frames so the portrait sits clearly outside a slimmer main body closer to the approved mockup.

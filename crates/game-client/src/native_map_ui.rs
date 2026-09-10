@@ -199,6 +199,7 @@ pub(crate) struct NativeMapUiState {
     center_y: i32,
     floor: i16,
     zoom: i32,
+    minimap_step: i32,
     initialized: bool,
     show_buildings: bool,
     show_npcs: bool,
@@ -215,6 +216,7 @@ impl Default for NativeMapUiState {
             center_y: 0,
             floor: 7,
             zoom: 1,
+            minimap_step: 1,
             initialized: false,
             show_buildings: true,
             show_npcs: true,
@@ -253,6 +255,9 @@ pub(crate) struct NativeWorldMapCell {
 
 #[derive(Component, Clone, Copy)]
 pub(crate) enum NativeWorldMapAction {
+    OpenWorld,
+    MinimapZoomIn,
+    MinimapZoomOut,
     Zone,
     World,
     Player,
@@ -283,10 +288,10 @@ pub fn setup(mut commands: Commands) {
             Name::new("Native minimap"),
             Node {
                 position_type: PositionType::Absolute,
-                top: px(18),
+                top: px(28),
                 right: px(18),
-                width: px(250),
-                height: px(270),
+                width: px(180),
+                height: px(178),
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
                 row_gap: px(5),
@@ -299,9 +304,10 @@ pub fn setup(mut commands: Commands) {
             parent
                 .spawn((
                     Node {
-                        width: px(220),
-                        height: px(220),
-                        padding: UiRect::all(px(8)),
+                        width: px(164),
+                        height: px(164),
+                        flex_shrink: 0.0,
+                        padding: UiRect::all(px(4)),
                         border: UiRect::all(px(3)),
                         border_radius: BorderRadius::all(px(110)),
                         overflow: Overflow::clip(),
@@ -321,10 +327,10 @@ pub fn setup(mut commands: Commands) {
                 .spawn((
                     Node {
                         position_type: PositionType::Absolute,
-                        top: px(-7),
-                        left: px(108),
-                        width: px(34),
-                        height: px(34),
+                        top: px(-14),
+                        left: px(75),
+                        width: px(28),
+                        height: px(28),
                         border: UiRect::all(px(2)),
                         border_radius: BorderRadius::all(px(17)),
                         align_items: AlignItems::Center,
@@ -343,18 +349,37 @@ pub fn setup(mut commands: Commands) {
                     TextColor(theme::GOLD_BRIGHT),
                 ));
 
-            parent.spawn(map_text(
-                "",
-                NativeMapText::MinimapHeader,
-                9.0,
-                theme::GOLD_BRIGHT,
-            ));
-            parent.spawn(map_text(
-                "M  WORLD MAP",
-                NativeMapText::MinimapFooter,
-                7.5,
-                MUTED,
-            ));
+            for (label, action, top) in [
+                ("+", NativeWorldMapAction::MinimapZoomIn, 12),
+                ("-", NativeWorldMapAction::MinimapZoomOut, 44),
+                ("M", NativeWorldMapAction::OpenWorld, 108),
+            ] {
+                parent.spawn((
+                    Button, NativeWorldMapButton(action),
+                    Node {
+                        position_type: PositionType::Absolute, right: px(-8), top: px(top),
+                        width: px(26), height: px(26), border: UiRect::all(px(2)),
+                        border_radius: BorderRadius::all(px(13)),
+                        align_items: AlignItems::Center, justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(0.025, 0.025, 0.018)),
+                    BorderColor::all(theme::GOLD),
+                    Outline::new(px(1), px(1), Color::srgb(0.08, 0.06, 0.02)),
+                )).with_child((Text::new(label), TextFont {font_size: FontSize::Px(16.0), ..default()}, TextColor(theme::GOLD_BRIGHT)));
+            }
+
+            parent.spawn((
+                Node {
+                    width: px(80), height: px(24), flex_shrink: 0.0,
+                    margin: UiRect::top(px(-8)),
+                    border: UiRect::all(px(1)), border_radius: BorderRadius::all(px(5)),
+                    align_items: AlignItems::Center, justify_content: JustifyContent::Center,
+                    ..default()
+                },
+                BackgroundColor(Color::srgb(0.02, 0.025, 0.02)),
+                BorderColor::all(theme::GOLD),
+            )).with_child(map_text("", NativeMapText::MinimapHeader, 9.0, TEXT));
         });
 
     commands
@@ -857,8 +882,8 @@ fn spawn_native_minimap_grid(
         .spawn((
             Name::new("Native minimap grid"),
             Node {
-                width: px(198),
-                height: px(198),
+                width: px(150),
+                height: px(150),
                 border_radius: BorderRadius::all(px(99)),
                 overflow: Overflow::clip(),
                 flex_direction: FlexDirection::Column,
@@ -1047,10 +1072,6 @@ pub fn handle_buttons(
         ),
     >,
 ) {
-    if !state.world_map_open {
-        return;
-    }
-
     for (
         interaction,
         button,
@@ -1058,6 +1079,8 @@ pub fn handle_buttons(
         mut border,
     ) in &mut buttons
     {
+        let minimap_button = matches!(button.0, NativeWorldMapAction::OpenWorld | NativeWorldMapAction::MinimapZoomIn | NativeWorldMapAction::MinimapZoomOut);
+        if !state.world_map_open && !minimap_button { continue; }
         match *interaction {
             Interaction::Hovered => {
                 background.0 = theme::BUTTON_HOVER;
@@ -1072,6 +1095,18 @@ pub fn handle_buttons(
                 *border = BorderColor::all(theme::GOLD_BRIGHT);
 
                 match button.0 {
+                    NativeWorldMapAction::OpenWorld => {
+                        state.world_map_open = !state.world_map_open;
+                        recenter(&movement, &mut state);
+                    }
+                    NativeWorldMapAction::MinimapZoomIn => {
+                        state.minimap_step = (state.minimap_step / 2).max(1);
+                        state.next_minimap_at = 0.0;
+                    }
+                    NativeWorldMapAction::MinimapZoomOut => {
+                        state.minimap_step = (state.minimap_step * 2).min(4);
+                        state.next_minimap_at = 0.0;
+                    }
                     NativeWorldMapAction::Zone => {
                         recenter(&movement, &mut state);
                         state.zoom = 1;
@@ -1198,8 +1233,8 @@ pub fn update_ui(
             }
 
             let position = Position {
-                x: center.x + cell.dx,
-                y: center.y + cell.dy,
+                x: center.x + cell.dx * ui_state.minimap_step,
+                y: center.y + cell.dy * ui_state.minimap_step,
                 z: center.z,
             };
 
