@@ -435,6 +435,9 @@ impl Plugin for SingleWindowGameplayPlugin {
                     native_ui::handle_spellbook_modal_buttons
                         .run_if(native_game_menu::menu_closed)
                         .after(native_ui::handle_panel_close_buttons),
+                    native_ui::handle_npc_modal_buttons
+                        .run_if(native_game_menu::menu_closed)
+                        .after(native_ui::handle_panel_close_buttons),
                     native_ui::handle_character_modal_buttons
                         .run_if(native_game_menu::menu_closed)
                         .after(native_ui::handle_panel_close_buttons),
@@ -445,6 +448,8 @@ impl Plugin for SingleWindowGameplayPlugin {
                     native_ui::update_crafting_modal_ui
                         .after(native_ui::update_ui),
                     native_ui::update_spellbook_modal_ui
+                        .after(native_ui::update_ui),
+                    native_ui::update_npc_modal_ui
                         .after(native_ui::update_ui),
                     native_ui::update_character_modal_ui
                         .after(native_ui::update_ui),

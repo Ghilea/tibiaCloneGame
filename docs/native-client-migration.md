@@ -1742,3 +1742,55 @@ existing selected attack target and uses cast_selected_spell / ClientMessage.
 
 No loading, floor-transition, creature-safety, movement or network-authority
 behavior changes.
+
+
+<!-- TIBIAGAME_V36_56_0_NATIVE_NPC_SERVICES -->
+
+V36.56.0 migrates the NPC interaction window from the legacy monolithic Text
+panel to a structured Greyhaven Services modal.
+
+The new interface has:
+- draggable full-width NPC title/header
+- live NPC name, service label and player gold
+- service tabs generated from the existing npc_tabs() model
+- Shop / Spells / Recipes / Depot support
+- 8 live service rows
+- selected-row detail panel
+- real old-client item sprite for Shop/Depot selections
+- Buy / Learn Spell / Learn Recipe / Withdraw primary action
+- Sell Selected for Shop
+- Deposit Selected for Depot
+- selected inventory item hint
+- existing N/Esc, Tab, arrows, Enter, S and D keyboard flow retained
+
+Mouse actions call the existing authoritative helpers:
+- npc_primary_action
+- npc_sell_selected_item
+- npc_deposit_selected_item
+
+No new NPC commerce/training/storage protocol is introduced.
+
+The detail ImageNode is explicitly hidden while the NPC modal is closed, so it
+cannot leak onto the game world like the earlier Inventory/Crafting image bug.
+
+No loading, movement, floor-transition, creature-safety or server-authority
+behavior changes.
+
+
+<!-- TIBIAGAME_V36_56_1_NPC_COMPILER_HOTFIX -->
+
+V36.56.1 fixes the two Rust compiler errors introduced by V36.56.0.
+
+E0106:
+npc_modal_image_definition returned Option<&str> while borrowing both
+NativeGameState and NativePanelState. The returned definition id always comes
+from NativeGameState, so the function now declares that lifetime explicitly.
+
+E0277:
+spawn_npc_modal_action tried to include Option<NativeNpcDetailText> in a Bevy
+bundle. Option<Component> is not a Bundle. The label is now spawned as a normal
+Text bundle and NativeNpcDetailText::PrimaryLabel is inserted only on the
+primary-action label entity.
+
+No NPC behavior, protocol, inventory, loading, floor-transition or
+creature-safety logic changes.

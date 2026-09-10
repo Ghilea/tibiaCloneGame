@@ -126,6 +126,54 @@ pub(crate) enum NativePanelCloseButton {
 }
 
 #[derive(Component, Clone, Copy)]
+pub(crate) enum NativeNpcModalButton {
+    Tab(usize),
+    Row(usize),
+    Primary,
+    Sell,
+    Deposit,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeNpcHeaderText {
+    Name,
+    Service,
+    Currency,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeNpcTabText(
+    pub(crate) usize,
+);
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeNpcRowField {
+    Name,
+    Meta,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeNpcRowText {
+    pub(crate) index: usize,
+    pub(crate) field: NativeNpcRowField,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeNpcDetailText {
+    Section,
+    Title,
+    Body,
+    PrimaryLabel,
+    InventoryHint,
+}
+
+#[derive(Component)]
+pub(crate) struct NativeNpcDetailImage {
+    definition_id: Option<String>,
+}
+
+
+#[derive(Component, Clone, Copy)]
 pub(crate) enum NativeSpellbookButton {
     Learned(usize),
     Cast,
@@ -4952,47 +5000,856 @@ fn spawn_crafting_panel(commands: &mut Commands) {
 }
 
 
+fn npc_modal_card_node() -> Node {
+    Node {
+        width: Val::Percent(100.0),
+        padding: UiRect::all(px(10)),
+        border: UiRect::all(px(1)),
+        border_radius:
+            BorderRadius::all(px(7)),
+        flex_direction:
+            FlexDirection::Column,
+        row_gap: px(6),
+        ..default()
+    }
+}
+
+fn spawn_npc_modal_heading(
+    parent: &mut ChildSpawnerCommands,
+    eyebrow: &str,
+    title: &str,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            flex_direction:
+                FlexDirection::Column,
+            row_gap: px(2),
+            ..default()
+        })
+        .with_children(|copy| {
+            copy.spawn((
+                Text::new(eyebrow),
+                TextFont {
+                    font_size:
+                        FontSize::Px(8.0),
+                    ..default()
+                },
+                TextColor(theme::GOLD),
+            ));
+
+            copy.spawn((
+                Text::new(title),
+                TextFont {
+                    font_size:
+                        FontSize::Px(13.0),
+                    ..default()
+                },
+                TextColor(
+                    theme::GOLD_BRIGHT,
+                ),
+            ));
+        });
+}
+
+fn spawn_npc_service_tab(
+    parent: &mut ChildSpawnerCommands,
+    index: usize,
+) {
+    parent
+        .spawn((
+            Button,
+            NativeNpcModalButton::Tab(index),
+            Node {
+                min_width: px(94),
+                height: px(34),
+                padding:
+                    UiRect::horizontal(
+                        px(10),
+                    ),
+                border:
+                    UiRect::all(px(1)),
+                border_radius:
+                    BorderRadius::all(px(5)),
+                align_items:
+                    AlignItems::Center,
+                justify_content:
+                    JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(
+                theme::BUTTON_BG,
+            ),
+            BorderColor::all(
+                theme::BUTTON_BORDER,
+            ),
+        ))
+        .with_child((
+            NativeNpcTabText(index),
+            Text::new(""),
+            TextFont {
+                font_size:
+                    FontSize::Px(8.5),
+                ..default()
+            },
+            TextColor(TEXT),
+        ));
+}
+
+fn spawn_npc_service_row(
+    parent: &mut ChildSpawnerCommands,
+    index: usize,
+) {
+    parent
+        .spawn((
+            Button,
+            NativeNpcModalButton::Row(index),
+            Node {
+                width: Val::Percent(100.0),
+                min_height: px(56),
+                padding:
+                    UiRect::all(px(8)),
+                border:
+                    UiRect::all(px(1)),
+                border_radius:
+                    BorderRadius::all(px(6)),
+                flex_direction:
+                    FlexDirection::Column,
+                row_gap: px(3),
+                ..default()
+            },
+            BackgroundColor(
+                theme::BUTTON_BG,
+            ),
+            BorderColor::all(
+                theme::BUTTON_BORDER,
+            ),
+        ))
+        .with_children(|card| {
+            card.spawn((
+                NativeNpcRowText {
+                    index,
+                    field:
+                        NativeNpcRowField::Name,
+                },
+                Text::new(""),
+                TextFont {
+                    font_size:
+                        FontSize::Px(10.0),
+                    ..default()
+                },
+                TextColor(TEXT),
+            ));
+
+            card.spawn((
+                NativeNpcRowText {
+                    index,
+                    field:
+                        NativeNpcRowField::Meta,
+                },
+                Text::new(""),
+                TextFont {
+                    font_size:
+                        FontSize::Px(7.7),
+                    ..default()
+                },
+                TextColor(MUTED),
+            ));
+        });
+}
+
+fn spawn_npc_detail_text(
+    parent: &mut ChildSpawnerCommands,
+    kind: NativeNpcDetailText,
+    value: &str,
+    size: f32,
+    color: Color,
+) {
+    parent.spawn((
+        kind,
+        Text::new(value),
+        TextFont {
+            font_size:
+                FontSize::Px(size),
+            ..default()
+        },
+        TextColor(color),
+    ));
+}
+
+fn spawn_npc_modal_action(
+    parent: &mut ChildSpawnerCommands,
+    action: NativeNpcModalButton,
+    label: &str,
+    primary: bool,
+    width: f32,
+) {
+    let text_color =
+        if primary {
+            theme::GOLD_BRIGHT
+        } else {
+            TEXT
+        };
+
+    let mut button =
+        parent.spawn((
+            Button,
+            action,
+            Node {
+                width: px(width),
+                height: px(38),
+                padding:
+                    UiRect::horizontal(
+                        px(10),
+                    ),
+                border:
+                    UiRect::all(px(1)),
+                border_radius:
+                    BorderRadius::all(px(6)),
+                align_items:
+                    AlignItems::Center,
+                justify_content:
+                    JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(
+                if primary {
+                    Color::srgba(
+                        0.24,
+                        0.16,
+                        0.035,
+                        0.90,
+                    )
+                } else {
+                    theme::BUTTON_BG
+                },
+            ),
+            BorderColor::all(
+                if primary {
+                    theme::GOLD
+                } else {
+                    theme::BUTTON_BORDER
+                },
+            ),
+        ));
+
+    button.with_children(|button| {
+        let mut label_entity =
+            button.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size:
+                        FontSize::Px(8.5),
+                    ..default()
+                },
+                TextColor(text_color),
+            ));
+
+        if matches!(
+            action,
+            NativeNpcModalButton::Primary
+        ) {
+            label_entity.insert(
+                NativeNpcDetailText::PrimaryLabel,
+            );
+        }
+    });
+}
+
 fn spawn_npc_panel(commands: &mut Commands) {
     commands
         .spawn((
-            Name::new("Native gameplay HUD · NPC"),
+            Name::new("Native modal · NPC services · Greyhaven reference"),
             NativeUiPanel::Npc,
-            native_modal::NativeDraggableSurface(
-                native_modal::NativeModalWindow::Npc,
-            ),
+            native_modal::NativeModalRoot,
+            GlobalZIndex(195),
             Visibility::Hidden,
-            Node {
-                position_type: PositionType::Absolute,
-                top: Val::Percent(9.0),
-                left: Val::Percent(50.0),
-                width: px(600),
-                margin: UiRect::left(px(-300)),
-                min_height: px(570),
-                max_height: Val::Percent(82.0),
-                padding: UiRect::all(px(12)),
-                flex_direction: FlexDirection::Column,
-                ..default()
-            },
-            BackgroundColor(PANEL),
+            native_modal::root_node(),
+            native_modal::backdrop(),
         ))
-        .with_children(|parent| {
-            spawn_panel_header(
-                parent,
-                "NPC",
-                NativePanelCloseButton::Npc,
-            );
-            parent.spawn(text_bundle(
-                "",
-                NativeUiText::Npc,
-                13.0,
-                TEXT,
-            ));
-            parent.spawn(text_bundle(
-                "",
-                NativeUiText::NpcDetail,
-                12.0,
-                MUTED,
-            ));
+        .with_children(|root| {
+            root
+                .spawn((
+                    Name::new("Greyhaven NPC services interface"),
+                    native_modal::NativeModalSurface,
+                    native_modal::NativeDraggableSurface(
+                        native_modal::NativeModalWindow::Npc,
+                    ),
+                    native_modal::panel_node(
+                        920.0,
+                        640.0,
+                    ),
+                    native_modal::surface(),
+                    native_modal::surface_border(),
+                ))
+                .with_children(|panel| {
+                    panel
+                        .spawn((
+                            native_modal::header_node(),
+                            native_modal::divider_border(),
+                        ))
+                        .with_children(|header| {
+                            header
+                                .spawn((
+                                    Button,
+                                    native_modal::NativeDragHandle(
+                                        native_modal::NativeModalWindow::Npc,
+                                    ),
+                                    Node {
+                                        flex_grow: 1.0,
+                                        height:
+                                            Val::Percent(
+                                                100.0,
+                                            ),
+                                        min_height:
+                                            px(48),
+                                        flex_direction:
+                                            FlexDirection::Column,
+                                        align_items:
+                                            AlignItems::FlexStart,
+                                        justify_content:
+                                            JustifyContent::Center,
+                                        row_gap: px(3),
+                                        ..default()
+                                    },
+                                ))
+                                .with_children(|copy| {
+                                    copy.spawn((
+                                        Text::new(
+                                            "GREYHAVEN SERVICES",
+                                        ),
+                                        TextFont {
+                                            font_size:
+                                                FontSize::Px(
+                                                    10.0,
+                                                ),
+                                            ..default()
+                                        },
+                                        TextColor(
+                                            theme::GOLD,
+                                        ),
+                                    ));
+
+                                    copy.spawn((
+                                        NativeNpcHeaderText::Name,
+                                        Text::new(
+                                            "NPC",
+                                        ),
+                                        TextFont {
+                                            font_size:
+                                                FontSize::Px(
+                                                    21.0,
+                                                ),
+                                            ..default()
+                                        },
+                                        TextColor(
+                                            theme::GOLD_BRIGHT,
+                                        ),
+                                    ));
+
+                                    copy.spawn((
+                                        NativeNpcHeaderText::Service,
+                                        Text::new(""),
+                                        TextFont {
+                                            font_size:
+                                                FontSize::Px(
+                                                    8.0,
+                                                ),
+                                            ..default()
+                                        },
+                                        TextColor(
+                                            MUTED,
+                                        ),
+                                    ));
+                                });
+
+                            header
+                                .spawn((
+                                    Button,
+                                    NativePanelCloseButton::Npc,
+                                    Node {
+                                        width: px(38),
+                                        height: px(36),
+                                        border:
+                                            UiRect::all(
+                                                px(1),
+                                            ),
+                                        border_radius:
+                                            BorderRadius::all(
+                                                px(6),
+                                            ),
+                                        align_items:
+                                            AlignItems::Center,
+                                        justify_content:
+                                            JustifyContent::Center,
+                                        ..default()
+                                    },
+                                    BackgroundColor(
+                                        theme::BUTTON_BG,
+                                    ),
+                                    BorderColor::all(
+                                        theme::BUTTON_BORDER,
+                                    ),
+                                ))
+                                .with_child((
+                                    Text::new("X"),
+                                    TextFont {
+                                        font_size:
+                                            FontSize::Px(
+                                                12.0,
+                                            ),
+                                        ..default()
+                                    },
+                                    TextColor(TEXT),
+                                ));
+                        });
+
+                    panel
+                        .spawn((
+                            npc_modal_card_node(),
+                            BackgroundColor(
+                                PANEL_SOFT,
+                            ),
+                            BorderColor::all(
+                                theme::BUTTON_BORDER,
+                            ),
+                        ))
+                        .with_children(|summary| {
+                            summary
+                                .spawn(Node {
+                                    width:
+                                        Val::Percent(
+                                            100.0,
+                                        ),
+                                    flex_direction:
+                                        FlexDirection::Row,
+                                    align_items:
+                                        AlignItems::Center,
+                                    justify_content:
+                                        JustifyContent::SpaceBetween,
+                                    ..default()
+                                })
+                                .with_children(|row| {
+                                    row.spawn((
+                                        Text::new(
+                                            "SERVICE DESK",
+                                        ),
+                                        TextFont {
+                                            font_size:
+                                                FontSize::Px(
+                                                    8.0,
+                                                ),
+                                            ..default()
+                                        },
+                                        TextColor(
+                                            theme::GOLD,
+                                        ),
+                                    ));
+
+                                    row.spawn((
+                                        NativeNpcHeaderText::Currency,
+                                        Text::new(
+                                            "0 GOLD",
+                                        ),
+                                        TextFont {
+                                            font_size:
+                                                FontSize::Px(
+                                                    9.0,
+                                                ),
+                                            ..default()
+                                        },
+                                        TextColor(
+                                            theme::GOLD_BRIGHT,
+                                        ),
+                                    ));
+                                });
+
+                            summary
+                                .spawn(Node {
+                                    width:
+                                        Val::Percent(
+                                            100.0,
+                                        ),
+                                    flex_direction:
+                                        FlexDirection::Row,
+                                    flex_wrap:
+                                        FlexWrap::Wrap,
+                                    column_gap:
+                                        px(6),
+                                    row_gap:
+                                        px(6),
+                                    ..default()
+                                })
+                                .with_children(|tabs| {
+                                    for index
+                                        in 0..4usize
+                                    {
+                                        spawn_npc_service_tab(
+                                            tabs,
+                                            index,
+                                        );
+                                    }
+                                });
+                        });
+
+                    panel
+                        .spawn(Node {
+                            width:
+                                Val::Percent(100.0),
+                            flex_grow: 1.0,
+                            min_height: px(430),
+                            flex_direction:
+                                FlexDirection::Row,
+                            column_gap: px(10),
+                            ..default()
+                        })
+                        .with_children(|columns| {
+                            columns
+                                .spawn((
+                                    Node {
+                                        width:
+                                            Val::Percent(
+                                                43.0,
+                                            ),
+                                        height:
+                                            Val::Percent(
+                                                100.0,
+                                            ),
+                                        padding:
+                                            UiRect::all(
+                                                px(10),
+                                            ),
+                                        border:
+                                            UiRect::all(
+                                                px(1),
+                                            ),
+                                        border_radius:
+                                            BorderRadius::all(
+                                                px(7),
+                                            ),
+                                        flex_direction:
+                                            FlexDirection::Column,
+                                        row_gap:
+                                            px(7),
+                                        ..default()
+                                    },
+                                    BackgroundColor(
+                                        Color::srgba(
+                                            0.015,
+                                            0.03,
+                                            0.022,
+                                            0.98,
+                                        ),
+                                    ),
+                                    BorderColor::all(
+                                        theme::BUTTON_BORDER,
+                                    ),
+                                ))
+                                .with_children(|list| {
+                                    spawn_npc_modal_heading(
+                                        list,
+                                        "AVAILABLE",
+                                        "SERVICE ITEMS",
+                                    );
+
+                                    for index
+                                        in 0..8usize
+                                    {
+                                        spawn_npc_service_row(
+                                            list,
+                                            index,
+                                        );
+                                    }
+                                });
+
+                            columns
+                                .spawn((
+                                    Node {
+                                        width:
+                                            Val::Percent(
+                                                57.0,
+                                            ),
+                                        height:
+                                            Val::Percent(
+                                                100.0,
+                                            ),
+                                        padding:
+                                            UiRect::all(
+                                                px(10),
+                                            ),
+                                        border:
+                                            UiRect::all(
+                                                px(1),
+                                            ),
+                                        border_radius:
+                                            BorderRadius::all(
+                                                px(7),
+                                            ),
+                                        flex_direction:
+                                            FlexDirection::Column,
+                                        row_gap:
+                                            px(9),
+                                        ..default()
+                                    },
+                                    BackgroundColor(
+                                        PANEL_SOFT,
+                                    ),
+                                    BorderColor::all(
+                                        theme::BUTTON_BORDER,
+                                    ),
+                                ))
+                                .with_children(|detail| {
+                                    spawn_npc_modal_heading(
+                                        detail,
+                                        "SELECTED",
+                                        "SERVICE DETAIL",
+                                    );
+
+                                    detail
+                                        .spawn((
+                                            Node {
+                                                width:
+                                                    Val::Percent(
+                                                        100.0,
+                                                    ),
+                                                min_height:
+                                                    px(116),
+                                                padding:
+                                                    UiRect::all(
+                                                        px(12),
+                                                    ),
+                                                border:
+                                                    UiRect::all(
+                                                        px(1),
+                                                    ),
+                                                border_radius:
+                                                    BorderRadius::all(
+                                                        px(7),
+                                                    ),
+                                                flex_direction:
+                                                    FlexDirection::Row,
+                                                align_items:
+                                                    AlignItems::Center,
+                                                column_gap:
+                                                    px(12),
+                                                ..default()
+                                            },
+                                            BackgroundColor(
+                                                PANEL_DEEP,
+                                            ),
+                                            BorderColor::all(
+                                                theme::GOLD_DARK,
+                                            ),
+                                        ))
+                                        .with_children(|hero| {
+                                            hero
+                                                .spawn((
+                                                    NativeNpcDetailImage {
+                                                        definition_id:
+                                                            None,
+                                                    },
+                                                    ImageNode::default(),
+                                                    Visibility::Hidden,
+                                                    Node {
+                                                        width:
+                                                            px(70),
+                                                        height:
+                                                            px(70),
+                                                        border:
+                                                            UiRect::all(
+                                                                px(1),
+                                                            ),
+                                                        border_radius:
+                                                            BorderRadius::all(
+                                                                px(7),
+                                                            ),
+                                                        ..default()
+                                                    },
+                                                    BorderColor::all(
+                                                        theme::GOLD_DARK,
+                                                    ),
+                                                ));
+
+                                            hero
+                                                .spawn(Node {
+                                                    flex_grow:
+                                                        1.0,
+                                                    flex_direction:
+                                                        FlexDirection::Column,
+                                                    row_gap:
+                                                        px(5),
+                                                    ..default()
+                                                })
+                                                .with_children(|copy| {
+                                                    spawn_npc_detail_text(
+                                                        copy,
+                                                        NativeNpcDetailText::Section,
+                                                        "SERVICE",
+                                                        8.0,
+                                                        theme::GOLD,
+                                                    );
+
+                                                    spawn_npc_detail_text(
+                                                        copy,
+                                                        NativeNpcDetailText::Title,
+                                                        "Select an entry",
+                                                        15.0,
+                                                        theme::GOLD_BRIGHT,
+                                                    );
+                                                });
+                                        });
+
+                                    detail
+                                        .spawn((
+                                            npc_modal_card_node(),
+                                            BackgroundColor(
+                                                PANEL_DEEP,
+                                            ),
+                                            BorderColor::all(
+                                                theme::BUTTON_BORDER,
+                                            ),
+                                        ))
+                                        .with_children(|facts| {
+                                            facts.spawn((
+                                                Text::new(
+                                                    "DETAILS",
+                                                ),
+                                                TextFont {
+                                                    font_size:
+                                                        FontSize::Px(
+                                                            8.0,
+                                                        ),
+                                                    ..default()
+                                                },
+                                                TextColor(
+                                                    theme::GOLD,
+                                                ),
+                                            ));
+
+                                            spawn_npc_detail_text(
+                                                facts,
+                                                NativeNpcDetailText::Body,
+                                                "Select an entry to inspect it.",
+                                                9.0,
+                                                TEXT,
+                                            );
+                                        });
+
+                                    detail
+                                        .spawn((
+                                            npc_modal_card_node(),
+                                            BackgroundColor(
+                                                PANEL_DEEP,
+                                            ),
+                                            BorderColor::all(
+                                                theme::BUTTON_BORDER,
+                                            ),
+                                        ))
+                                        .with_children(|inventory| {
+                                            inventory.spawn((
+                                                Text::new(
+                                                    "YOUR INVENTORY",
+                                                ),
+                                                TextFont {
+                                                    font_size:
+                                                        FontSize::Px(
+                                                            8.0,
+                                                        ),
+                                                    ..default()
+                                                },
+                                                TextColor(
+                                                    theme::GOLD,
+                                                ),
+                                            ));
+
+                                            spawn_npc_detail_text(
+                                                inventory,
+                                                NativeNpcDetailText::InventoryHint,
+                                                "Select an inventory item before Sell or Deposit.",
+                                                8.0,
+                                                MUTED,
+                                            );
+
+                                            inventory
+                                                .spawn(Node {
+                                                    width:
+                                                        Val::Percent(
+                                                            100.0,
+                                                        ),
+                                                    flex_direction:
+                                                        FlexDirection::Row,
+                                                    column_gap:
+                                                        px(7),
+                                                    ..default()
+                                                })
+                                                .with_children(|actions| {
+                                                    spawn_npc_modal_action(
+                                                        actions,
+                                                        NativeNpcModalButton::Sell,
+                                                        "SELL SELECTED",
+                                                        false,
+                                                        126.0,
+                                                    );
+
+                                                    spawn_npc_modal_action(
+                                                        actions,
+                                                        NativeNpcModalButton::Deposit,
+                                                        "DEPOSIT SELECTED",
+                                                        false,
+                                                        142.0,
+                                                    );
+                                                });
+                                        });
+
+                                    detail
+                                        .spawn(Node {
+                                            width:
+                                                Val::Percent(
+                                                    100.0,
+                                                ),
+                                            margin:
+                                                UiRect::top(
+                                                    px(3),
+                                                ),
+                                            flex_direction:
+                                                FlexDirection::Row,
+                                            justify_content:
+                                                JustifyContent::FlexEnd,
+                                            ..default()
+                                        })
+                                        .with_children(|actions| {
+                                            spawn_npc_modal_action(
+                                                actions,
+                                                NativeNpcModalButton::Primary,
+                                                "USE SERVICE",
+                                                true,
+                                                142.0,
+                                            );
+                                        });
+                                });
+                        });
+
+                    panel
+                        .spawn((
+                            native_modal::footer_node(),
+                            native_modal::divider_border(),
+                        ))
+                        .with_children(|footer| {
+                            footer.spawn((
+                                Text::new(
+                                    "N / Esc close  ·  Tab service  ·  ↑/↓ select  ·  Enter use  ·  S sell  ·  D deposit",
+                                ),
+                                TextFont {
+                                    font_size:
+                                        FontSize::Px(
+                                            8.3,
+                                        ),
+                                    ..default()
+                                },
+                                TextColor(MUTED),
+                            ));
+                        });
+                });
         });
 }
 
@@ -6370,6 +7227,831 @@ fn npc_deposit_selected_item(
         game_state.push_system_message("The game connection is offline.");
     } else {
         game_state.push_system_message(format!("Deposit {item_name}."));
+    }
+}
+
+fn npc_tab_label(
+    tab: NativeNpcTab,
+) -> &'static str {
+    match tab {
+        NativeNpcTab::Shop => "SHOP",
+        NativeNpcTab::Spells => "SPELLS",
+        NativeNpcTab::Recipes => "RECIPES",
+        NativeNpcTab::Depot => "DEPOT",
+    }
+}
+
+fn npc_modal_row_copy(
+    game_state: &NativeGameState,
+    panels: &NativePanelState,
+    index: usize,
+) -> Option<(String, String)> {
+    let npc =
+        selected_npc(
+            game_state,
+            panels,
+        )?;
+
+    match current_npc_tab(
+        game_state,
+        panels,
+    )? {
+        NativeNpcTab::Shop => {
+            let offer =
+                npc.offers.get(index)?;
+
+            let name =
+                game_state
+                    .item_definitions
+                    .get(
+                        &offer
+                            .item_definition_id,
+                    )
+                    .map(|definition| {
+                        definition
+                            .name
+                            .clone()
+                    })
+                    .unwrap_or_else(|| {
+                        offer
+                            .item_definition_id
+                            .clone()
+                    });
+
+            Some((
+                name,
+                format!(
+                    "×{}  ·  {} gold",
+                    offer.quantity,
+                    offer.price,
+                ),
+            ))
+        }
+        NativeNpcTab::Spells => {
+            let spell_id =
+                npc.spell_ids.get(index)?;
+
+            let spell =
+                game_state
+                    .spells
+                    .get(spell_id);
+
+            Some(
+                spell
+                    .map(|spell| {
+                        (
+                            spell.name.clone(),
+                            format!(
+                                "ML {}  ·  {} gold  ·  {}",
+                                spell.required_magic_level,
+                                spell.price,
+                                if game_state
+                                    .learned_spell_ids
+                                    .contains(
+                                        &spell.id,
+                                    )
+                                {
+                                    "LEARNED"
+                                } else {
+                                    "AVAILABLE"
+                                },
+                            ),
+                        )
+                    })
+                    .unwrap_or_else(|| {
+                        (
+                            spell_id.clone(),
+                            "Unknown spell"
+                                .into(),
+                        )
+                    }),
+            )
+        }
+        NativeNpcTab::Recipes => {
+            let recipe_id =
+                npc.recipe_ids.get(index)?;
+
+            let recipe =
+                game_state
+                    .rune_recipes
+                    .get(recipe_id);
+
+            Some(
+                recipe
+                    .map(|recipe| {
+                        (
+                            recipe.name.clone(),
+                            format!(
+                                "Skill {}  ·  {} mana  ·  {:.1}s  ·  {}",
+                                recipe.required_skill_level,
+                                recipe.mana_cost,
+                                recipe.craft_time_ms
+                                    as f32
+                                    / 1000.0,
+                                if game_state
+                                    .learned_recipe_ids
+                                    .contains(
+                                        &recipe.id,
+                                    )
+                                {
+                                    "LEARNED"
+                                } else {
+                                    "AVAILABLE"
+                                },
+                            ),
+                        )
+                    })
+                    .unwrap_or_else(|| {
+                        (
+                            recipe_id.clone(),
+                            "Unknown recipe"
+                                .into(),
+                        )
+                    }),
+            )
+        }
+        NativeNpcTab::Depot => {
+            let item =
+                game_state
+                    .depot
+                    .get(index)?;
+
+            let name =
+                game_state
+                    .item_definitions
+                    .get(
+                        &item
+                            .definition_id,
+                    )
+                    .map(|definition| {
+                        definition
+                            .name
+                            .clone()
+                    })
+                    .unwrap_or_else(|| {
+                        item
+                            .definition_id
+                            .clone()
+                    });
+
+            Some((
+                name,
+                format!(
+                    "×{} stored  ·  Enter withdraw one",
+                    item.quantity,
+                ),
+            ))
+        }
+    }
+}
+
+fn npc_modal_image_definition<'a>(
+    game_state: &'a NativeGameState,
+    panels: &NativePanelState,
+) -> Option<&'a str> {
+    let npc =
+        selected_npc(
+            game_state,
+            panels,
+        )?;
+
+    match current_npc_tab(
+        game_state,
+        panels,
+    )? {
+        NativeNpcTab::Shop => {
+            npc
+                .offers
+                .get(panels.npc_index)
+                .map(|offer| {
+                    offer
+                        .item_definition_id
+                        .as_str()
+                })
+        }
+        NativeNpcTab::Depot => {
+            game_state
+                .depot
+                .get(panels.npc_index)
+                .map(|item| {
+                    item
+                        .definition_id
+                        .as_str()
+                })
+        }
+        NativeNpcTab::Spells
+        | NativeNpcTab::Recipes => None,
+    }
+}
+
+pub(crate) fn handle_npc_modal_buttons(
+    network: Res<NativeNetwork>,
+    mut game_state: ResMut<NativeGameState>,
+    mut panels: ResMut<NativePanelState>,
+    mut buttons: Query<
+        (
+            &Interaction,
+            &NativeNpcModalButton,
+            &mut BackgroundColor,
+            &mut BorderColor,
+        ),
+        (
+            Changed<Interaction>,
+            With<Button>,
+        ),
+    >,
+) {
+    if !panels.npc_open {
+        return;
+    }
+
+    for (
+        interaction,
+        action,
+        mut background,
+        mut border,
+    ) in &mut buttons
+    {
+        match *interaction {
+            Interaction::Hovered => {
+                background.0 =
+                    theme::BUTTON_HOVER;
+                *border =
+                    BorderColor::all(
+                        theme::GOLD,
+                    );
+            }
+            Interaction::None => {}
+            Interaction::Pressed => {
+                background.0 =
+                    theme::BUTTON_PRESSED;
+                *border =
+                    BorderColor::all(
+                        theme::GOLD_BRIGHT,
+                    );
+
+                match *action {
+                    NativeNpcModalButton::Tab(
+                        index,
+                    ) => {
+                        let tabs =
+                            npc_tabs(
+                                &game_state,
+                                &panels,
+                            );
+
+                        if index < tabs.len() {
+                            panels.npc_tab =
+                                index;
+                            panels.npc_index =
+                                0;
+
+                            normalize_npc_tab(
+                                &game_state,
+                                &mut panels,
+                            );
+                        }
+                    }
+                    NativeNpcModalButton::Row(
+                        index,
+                    ) => {
+                        let Some(tab) =
+                            current_npc_tab(
+                                &game_state,
+                                &panels,
+                            )
+                        else {
+                            continue;
+                        };
+
+                        let count =
+                            npc_tab_len(
+                                &game_state,
+                                &panels,
+                                tab,
+                            );
+
+                        if index < count {
+                            panels.npc_index =
+                                index;
+                        }
+                    }
+                    NativeNpcModalButton::Primary => {
+                        npc_primary_action(
+                            &network,
+                            &mut game_state,
+                            &panels,
+                        );
+                    }
+                    NativeNpcModalButton::Sell => {
+                        if matches!(
+                            current_npc_tab(
+                                &game_state,
+                                &panels,
+                            ),
+                            Some(
+                                NativeNpcTab::Shop,
+                            )
+                        ) {
+                            npc_sell_selected_item(
+                                &network,
+                                &mut game_state,
+                                &panels,
+                            );
+                        }
+                    }
+                    NativeNpcModalButton::Deposit => {
+                        if matches!(
+                            current_npc_tab(
+                                &game_state,
+                                &panels,
+                            ),
+                            Some(
+                                NativeNpcTab::Depot,
+                            )
+                        ) {
+                            npc_deposit_selected_item(
+                                &network,
+                                &mut game_state,
+                                &panels,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub(crate) fn update_npc_modal_ui(
+    asset_server: Res<AssetServer>,
+    game_state: Res<NativeGameState>,
+    panels: Res<NativePanelState>,
+    mut text_queries: ParamSet<(
+        Query<
+            (
+                &NativeNpcHeaderText,
+                &mut Text,
+                &mut TextColor,
+            ),
+        >,
+        Query<
+            (
+                &NativeNpcTabText,
+                &mut Text,
+                &mut TextColor,
+            ),
+        >,
+        Query<
+            (
+                &NativeNpcRowText,
+                &mut Text,
+                &mut TextColor,
+            ),
+        >,
+        Query<
+            (
+                &NativeNpcDetailText,
+                &mut Text,
+                &mut TextColor,
+            ),
+        >,
+    )>,
+    mut buttons: Query<
+        (
+            &NativeNpcModalButton,
+            &Interaction,
+            &mut BackgroundColor,
+            &mut BorderColor,
+            &mut Visibility,
+        ),
+    >,
+    mut images: Query<
+        (
+            &mut NativeNpcDetailImage,
+            &mut ImageNode,
+            &mut Visibility,
+        ),
+    >,
+) {
+    if !panels.npc_open {
+        // Like Inventory/Crafting, the detail item preview uses explicit
+        // Visibility::Visible while open. Always reset it when NPC closes.
+        for (
+            _,
+            _,
+            mut visibility,
+        ) in &mut images
+        {
+            *visibility =
+                Visibility::Hidden;
+        }
+
+        return;
+    }
+
+    let npc =
+        selected_npc(
+            &game_state,
+            &panels,
+        );
+
+    let tabs =
+        npc_tabs(
+            &game_state,
+            &panels,
+        );
+
+    let current_tab =
+        current_npc_tab(
+            &game_state,
+            &panels,
+        );
+
+    let gold: u64 =
+        game_state
+            .inventory
+            .iter()
+            .filter(|item| {
+                item.definition_id
+                    == "gold_coin"
+            })
+            .map(|item| {
+                u64::from(item.quantity)
+            })
+            .sum();
+
+    for (
+        kind,
+        mut text,
+        mut color,
+    ) in &mut text_queries.p0()
+    {
+        match kind {
+            NativeNpcHeaderText::Name => {
+                text.0 =
+                    npc
+                        .map(|npc| {
+                            npc.name
+                                .clone()
+                        })
+                        .unwrap_or_else(|| {
+                            "NPC".into()
+                        });
+
+                color.0 =
+                    theme::GOLD_BRIGHT;
+            }
+            NativeNpcHeaderText::Service => {
+                text.0 =
+                    npc
+                        .map(|npc| {
+                            npc.service
+                                .clone()
+                        })
+                        .unwrap_or_else(|| {
+                            "No active service"
+                                .into()
+                        });
+
+                color.0 = MUTED;
+            }
+            NativeNpcHeaderText::Currency => {
+                text.0 =
+                    format!(
+                        "{} GOLD",
+                        gold,
+                    );
+
+                color.0 =
+                    theme::GOLD_BRIGHT;
+            }
+        }
+    }
+
+    for (
+        tab_text,
+        mut text,
+        mut color,
+    ) in &mut text_queries.p1()
+    {
+        if let Some(tab) =
+            tabs.get(tab_text.0)
+        {
+            text.0 =
+                npc_tab_label(*tab)
+                    .into();
+
+            color.0 =
+                if panels.npc_tab
+                    == tab_text.0
+                {
+                    theme::GOLD_BRIGHT
+                } else {
+                    TEXT
+                };
+        } else {
+            text.0.clear();
+            color.0 = MUTED;
+        }
+    }
+
+    for (
+        row,
+        mut text,
+        mut color,
+    ) in &mut text_queries.p2()
+    {
+        let Some((name, meta)) =
+            npc_modal_row_copy(
+                &game_state,
+                &panels,
+                row.index,
+            )
+        else {
+            text.0.clear();
+            color.0 = MUTED;
+            continue;
+        };
+
+        match row.field {
+            NativeNpcRowField::Name => {
+                text.0 = name;
+
+                color.0 =
+                    if panels.npc_index
+                        == row.index
+                    {
+                        theme::GOLD_BRIGHT
+                    } else {
+                        TEXT
+                    };
+            }
+            NativeNpcRowField::Meta => {
+                text.0 = meta;
+                color.0 = MUTED;
+            }
+        }
+    }
+
+    let detail =
+        npc_detail_text(
+            &game_state,
+            &panels,
+        );
+
+    let selected_copy =
+        npc_modal_row_copy(
+            &game_state,
+            &panels,
+            panels.npc_index,
+        );
+
+    for (
+        kind,
+        mut text,
+        mut color,
+    ) in &mut text_queries.p3()
+    {
+        match kind {
+            NativeNpcDetailText::Section => {
+                text.0 =
+                    current_tab
+                        .map(npc_tab_label)
+                        .unwrap_or(
+                            "SERVICE",
+                        )
+                        .into();
+
+                color.0 =
+                    theme::GOLD;
+            }
+            NativeNpcDetailText::Title => {
+                text.0 =
+                    selected_copy
+                        .as_ref()
+                        .map(|(name, _)| {
+                            name.clone()
+                        })
+                        .unwrap_or_else(|| {
+                            "Select an entry"
+                                .into()
+                        });
+
+                color.0 =
+                    theme::GOLD_BRIGHT;
+            }
+            NativeNpcDetailText::Body => {
+                text.0 =
+                    if detail.is_empty() {
+                        "Select an entry to inspect it."
+                            .into()
+                    } else {
+                        detail.clone()
+                    };
+
+                color.0 = TEXT;
+            }
+            NativeNpcDetailText::PrimaryLabel => {
+                text.0 =
+                    match current_tab {
+                        Some(
+                            NativeNpcTab::Shop,
+                        ) => "BUY",
+                        Some(
+                            NativeNpcTab::Spells,
+                        ) => "LEARN SPELL",
+                        Some(
+                            NativeNpcTab::Recipes,
+                        ) => "LEARN RECIPE",
+                        Some(
+                            NativeNpcTab::Depot,
+                        ) => "WITHDRAW",
+                        None => "USE SERVICE",
+                    }
+                    .into();
+
+                color.0 =
+                    theme::GOLD_BRIGHT;
+            }
+            NativeNpcDetailText::InventoryHint => {
+                text.0 =
+                    panels
+                        .selected_item
+                        .and_then(|id| {
+                            item_display_name(
+                                &game_state,
+                                id,
+                            )
+                        })
+                        .map(|name| {
+                            format!(
+                                "Selected inventory item: {}",
+                                name,
+                            )
+                        })
+                        .unwrap_or_else(|| {
+                            "Select an inventory item before Sell or Deposit."
+                                .into()
+                        });
+
+                color.0 = MUTED;
+            }
+        }
+    }
+
+    for (
+        action,
+        interaction,
+        mut background,
+        mut border,
+        mut visibility,
+    ) in &mut buttons
+    {
+        let (
+            visible,
+            selected,
+        ) =
+            match *action {
+                NativeNpcModalButton::Tab(
+                    index,
+                ) => (
+                    index < tabs.len(),
+                    index
+                        == panels.npc_tab,
+                ),
+                NativeNpcModalButton::Row(
+                    index,
+                ) => {
+                    let count =
+                        current_tab
+                            .map(|tab| {
+                                npc_tab_len(
+                                    &game_state,
+                                    &panels,
+                                    tab,
+                                )
+                            })
+                            .unwrap_or(0);
+
+                    (
+                        index < count,
+                        index
+                            == panels.npc_index,
+                    )
+                }
+                NativeNpcModalButton::Primary => (
+                    current_tab.is_some(),
+                    false,
+                ),
+                NativeNpcModalButton::Sell => (
+                    matches!(
+                        current_tab,
+                        Some(
+                            NativeNpcTab::Shop,
+                        )
+                    ),
+                    false,
+                ),
+                NativeNpcModalButton::Deposit => (
+                    matches!(
+                        current_tab,
+                        Some(
+                            NativeNpcTab::Depot,
+                        )
+                    ),
+                    false,
+                ),
+            };
+
+        *visibility =
+            if visible {
+                Visibility::Visible
+            } else {
+                Visibility::Hidden
+            };
+
+        if !visible {
+            continue;
+        }
+
+        if selected {
+            background.0 =
+                Color::srgba(
+                    0.22,
+                    0.145,
+                    0.035,
+                    0.72,
+                );
+            *border =
+                BorderColor::all(
+                    theme::GOLD_BRIGHT,
+                );
+        } else if *interaction
+            == Interaction::Hovered
+        {
+            background.0 =
+                theme::BUTTON_HOVER;
+            *border =
+                BorderColor::all(
+                    theme::GOLD,
+                );
+        } else {
+            background.0 =
+                theme::BUTTON_BG;
+            *border =
+                BorderColor::all(
+                    theme::BUTTON_BORDER,
+                );
+        }
+    }
+
+    let image_definition =
+        npc_modal_image_definition(
+            &game_state,
+            &panels,
+        );
+
+    for (
+        mut marker,
+        mut image,
+        mut visibility,
+    ) in &mut images
+    {
+        let Some(definition_id) =
+            image_definition
+        else {
+            marker.definition_id =
+                None;
+
+            *visibility =
+                Visibility::Hidden;
+
+            continue;
+        };
+
+        if marker
+            .definition_id
+            .as_deref()
+            != Some(definition_id)
+        {
+            image.image =
+                asset_server.load(
+                    format!(
+                        "sprites/items/{}.png",
+                        definition_id,
+                    ),
+                );
+
+            marker.definition_id =
+                Some(
+                    definition_id
+                        .to_owned(),
+                );
+        }
+
+        *visibility =
+            Visibility::Visible;
     }
 }
 
