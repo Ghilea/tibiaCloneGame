@@ -226,6 +226,7 @@ impl Default for NativeMapUiState {
 }
 
 #[derive(Component, Clone, Copy)]
+#[allow(dead_code)]
 pub(crate) enum NativeMapText {
     MinimapHeader,
     #[allow(dead_code)]
@@ -1394,6 +1395,7 @@ fn atlas_tone(
     tone
 }
 
+#[allow(dead_code)]
 fn render_minimap(
     map_state: &NativeMapState,
     game_state: &NativeGameState,
@@ -1425,6 +1427,7 @@ fn render_minimap(
     lines.join("\n")
 }
 
+#[allow(dead_code)]
 fn minimap_glyph(
     map_state: &NativeMapState,
     game_state: &NativeGameState,
@@ -1462,6 +1465,7 @@ fn minimap_glyph(
     tone_glyph(map_state.lookup.tone(position))
 }
 
+#[allow(dead_code)]
 fn render_world_map(
     map_state: &NativeMapState,
     game_state: &NativeGameState,
@@ -1523,6 +1527,7 @@ fn render_world_map(
     lines.join("\n")
 }
 
+#[allow(dead_code)]
 fn world_dynamic_glyph(
     game_state: &NativeGameState,
     floor: i16,
@@ -1557,6 +1562,7 @@ fn world_dynamic_glyph(
     None
 }
 
+#[allow(dead_code)]
 fn atlas_glyph(
     map_state: &NativeMapState,
     floor: i16,
@@ -1583,6 +1589,7 @@ fn atlas_glyph(
     tone.map(tone_glyph).unwrap_or(' ')
 }
 
+#[allow(dead_code)]
 fn tone_glyph(tone: MapTone) -> char {
     match tone {
         MapTone::Ground => '.',

@@ -18,6 +18,13 @@ const RESOURCE_PICK_RADIUS_PX: f32 = 38.0;
 const DOOR_PICK_RADIUS_PX: f32 = 38.0;
 const NPC_PICK_RADIUS_PX: f32 = 38.0;
 const OBJECT_PICK_RADIUS_PX: f32 = 36.0;
+const ATTACK_REPEAT_SECONDS: f64 = 0.150;
+
+#[derive(Default)]
+pub(crate) struct AttackRepeatState {
+    target_id: Option<EntityId>,
+    next_send_at: f64,
+}
 
 #[derive(Component)]
 pub(crate) struct TargetIndicator;
@@ -273,6 +280,50 @@ fn select_and_attack(
     send(
         network,
         game_state,
+        ClientMessage::AttackRequest { target_id },
+    );
+}
+
+pub fn repeat_attack_intent(
+    time: Res<Time>,
+    network: Res<NativeNetwork>,
+    mut game_state: ResMut<NativeGameState>,
+    mut repeat: Local<AttackRepeatState>,
+) {
+    let now = time.elapsed_secs_f64();
+    let target_id = game_state.attack_target_id;
+
+    if repeat.target_id != target_id {
+        repeat.target_id = target_id;
+        repeat.next_send_at = now + ATTACK_REPEAT_SECONDS;
+        return;
+    }
+
+    let Some(target_id) = target_id else {
+        repeat.next_send_at = 0.0;
+        return;
+    };
+
+    let alive = game_state
+        .creatures
+        .get(&target_id)
+        .is_some_and(|creature| creature.health > 0 && creature.state != "dead");
+
+    if !alive {
+        game_state.set_attack_target(None);
+        repeat.target_id = None;
+        repeat.next_send_at = 0.0;
+        return;
+    }
+
+    if now < repeat.next_send_at {
+        return;
+    }
+
+    repeat.next_send_at = now + ATTACK_REPEAT_SECONDS;
+    send(
+        &network,
+        &mut game_state,
         ClientMessage::AttackRequest { target_id },
     );
 }

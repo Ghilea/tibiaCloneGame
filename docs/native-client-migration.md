@@ -1806,3 +1806,23 @@ primary-action label entity.
 
 No NPC behavior, protocol, inventory, loading, floor-transition or
 creature-safety logic changes.
+
+
+<!-- TIBIAGAME_V36_58_0_RUST_COMBAT_DRAG_PARITY -->
+## V36.58.0 — Rust combat + drag/drop parity
+
+- Restores continuous 150 ms attack intent while a living target stays locked, matching the removed client and the server-authoritative attack cooldown model.
+- Adds native pointer drag/drop for Inventory and Character equipment slots using the existing `MoveItem` protocol destinations.
+- Adds a mutable native action-bar assignment model. Learned spells can be dragged from Spellbook to slots 2-9, moved between hotbar slots, or dragged out to clear an assignment.
+- Action-bar clicks now activate on release so starting a drag does not cast accidentally. Number-key hotkeys use the same configured slot model.
+- Character can keep Inventory open so the two windows can participate in the same equipment drag workflow.
+
+
+<!-- TIBIAGAME_V36_58_1_COMPILE_HOTFIX -->
+
+V36.58.1 is a compile-only integration hotfix for V36.58.0. The textual action-bar helper now consumes NativeActionBarState, matching the new configured hotbar call site. The direct native entry also schedules native_drag::handle_drag_drop in its own add_systems call so the UI system tuple remains within Bevy's supported tuple arity. Combat and drag/drop behavior from V36.58.0 is otherwise unchanged.
+
+
+<!-- TIBIAGAME_V36_58_2_VISIBILITY_WARNING_CLEANUP -->
+
+V36.58.2 fixes the Bevy system-interface visibility errors exposed by V36.58.1 by making AttackRepeatState and NativeDragDropState pub(crate), matching the visibility of the systems that use them as Local<T> params. It also removes the 20 known dead_code warnings from intentionally retained legacy native UI/map text helpers with item-scoped allow(dead_code) attributes. No global warning suppression is added and V36.58 combat/drag behavior is unchanged.

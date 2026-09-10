@@ -25,6 +25,10 @@ pub(crate) const PANEL_BG_SOFT: Color =
     Color::srgba(0.035, 0.055, 0.047, 0.92);
 pub(crate) const PANEL_BG_DEEP: Color =
     Color::srgba(0.024, 0.035, 0.031, 0.98);
+pub(crate) const PLAYER_FRAME_BG: Color =
+    Color::srgba(0.025, 0.028, 0.024, 0.97);
+pub(crate) const PLAYER_FRAME_BORDER: Color =
+    Color::srgb(0.29, 0.27, 0.18);
 
 pub(crate) const GOLD: Color =
     Color::srgb(0.824, 0.678, 0.408);
@@ -59,6 +63,10 @@ pub(crate) const TARGET_HP: Color =
     Color::srgb(0.788, 0.204, 0.165);
 
 fn surface_style(name: &str) -> Option<(Color, Color, f32)> {
+    if name.ends_with("player") {
+        return Some((PLAYER_FRAME_BG, PLAYER_FRAME_BORDER, 8.0));
+    }
+
     match name {
         "Native gameplay HUD · world header" => {
             Some((HEADER_BG, GOLD_DARK, 0.0))

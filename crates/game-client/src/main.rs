@@ -5,6 +5,7 @@ mod interaction;
 mod native_ui;
 mod native_ui_theme;
 mod native_modal;
+mod native_drag;
 mod native_game_menu;
 mod native_loading;
 mod native_map_ui;
@@ -230,6 +231,7 @@ impl Plugin for SingleWindowGameplayPlugin {
             .init_resource::<streaming::RegionStream>()
             .init_resource::<native_ui::NativeChatState>()
             .init_resource::<native_ui::NativePanelState>()
+            .init_resource::<native_drag::NativeActionBarState>()
             .init_resource::<native_map_ui::NativeMapUiState>()
             .init_resource::<native_trade_ui::NativeTradeUiState>()
             .init_resource::<native_settings::NativeSettingsState>()
@@ -325,6 +327,10 @@ impl Plugin for SingleWindowGameplayPlugin {
                         .run_if(native_loading::gameplay_ready)
                         .run_if(native_game_menu::menu_closed)
                         .after(native_loading::update)
+                        .after(pump_network),
+                    interaction::repeat_attack_intent
+                        .run_if(native_loading::gameplay_ready)
+                        .after(interaction::handle_pointer_interactions)
                         .after(pump_network),
                     interaction::sync_target_visual
                         .after(
@@ -430,6 +436,10 @@ impl Plugin for SingleWindowGameplayPlugin {
                         .run_if(native_game_menu::menu_closed)
                         .after(native_map_ui::handle_input),
                     native_modal::handle_window_drag,
+                    native_drag::handle_drag_drop
+                        .run_if(native_loading::gameplay_ready)
+                        .run_if(native_game_menu::menu_closed)
+                        .after(native_modal::handle_window_drag),
                     native_ui::handle_inventory_modal_buttons
                         .run_if(native_game_menu::menu_closed)
                         .after(
@@ -592,6 +602,7 @@ fn run_game(session: network::NativeSession) -> Result<()> {
         .init_resource::<streaming::RegionStream>()
         .init_resource::<native_ui::NativeChatState>()
         .init_resource::<native_ui::NativePanelState>()
+        .init_resource::<native_drag::NativeActionBarState>()
         .init_resource::<native_map_ui::NativeMapUiState>()
         .init_resource::<native_trade_ui::NativeTradeUiState>()
         .init_resource::<native_settings::NativeSettingsState>()
@@ -675,6 +686,10 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                     .run_if(native_loading::gameplay_ready)
                     .after(native_loading::update)
                     .after(pump_network),
+                interaction::repeat_attack_intent
+                    .run_if(native_loading::gameplay_ready)
+                    .after(interaction::handle_pointer_interactions)
+                    .after(pump_network),
                 interaction::sync_target_visual
                     .after(creature_sprites::interpolate_creature_motion),
                 interaction::update_hud
@@ -720,6 +735,16 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                 native_settings::apply_audio_settings
                     .after(native_settings::sync_world_music),
             ),
+        )
+        // TIBIAGAME_V36_58_1_SPLIT_DIRECT_DRAG_SCHEDULE
+        // Keep this separate from the already-full UI tuple. Bevy's tuple
+        // schedule configuration has a finite arity; V36.58.0 exceeded it by
+        // inserting one more system into that tuple.
+        .add_systems(
+            Update,
+            native_drag::handle_drag_drop
+                .run_if(native_loading::gameplay_ready)
+                .after(native_ui::handle_action_slot_buttons),
         )
         .run();
 

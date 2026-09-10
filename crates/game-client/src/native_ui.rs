@@ -6,6 +6,7 @@ use bevy::{
 use game_protocol::ClientMessage;
 
 use crate::{
+    native_drag::NativeActionBarState,
     native_modal,
     native_ui_theme as theme,
     state::{NativeGameState, NativeMessageKind},
@@ -55,9 +56,11 @@ impl NativePingState {
 }
 
 #[derive(Component, Clone, Copy)]
+#[allow(dead_code)]
 pub(crate) enum NativeUiText {
     WorldHeader,
     Identity,
+    IdentityLevel,
     Health,
     Mana,
     Experience,
@@ -134,6 +137,7 @@ pub(crate) struct NativeLootSlotText(pub(crate) usize);
 pub(crate) struct NativeLootAllText;
 
 #[derive(Component, Clone, Copy)]
+#[allow(dead_code)]
 pub(crate) enum NativePanelCloseButton {
     Inventory,
     Character,
@@ -347,6 +351,7 @@ pub(crate) struct NativeSkillsProfessionBar(
 
 
 #[derive(Component, Clone, Copy)]
+#[allow(dead_code)]
 pub(crate) enum NativeCharacterModalText {
     HeaderContext,
     Avatar,
@@ -365,6 +370,7 @@ pub(crate) enum NativeCharacterModalText {
 }
 
 #[derive(Component, Clone, Copy)]
+#[allow(dead_code)]
 pub(crate) enum NativeCharacterModalBar {
     Health,
     Mana,
@@ -393,6 +399,7 @@ pub(crate) struct NativeCharacterProfessionSlot(
 
 
 #[derive(Component, Clone, Copy)]
+#[allow(dead_code)]
 pub(crate) enum NativeCharacterModalAction {
     Inventory,
     Skills,
@@ -595,8 +602,8 @@ fn spawn_bar(
         .spawn((
             Node {
                 width: Val::Percent(100.0),
-                height: px(10),
-                margin: UiRect::vertical(px(2)),
+            height: px(8),
+            margin: UiRect::vertical(px(1)),
                 border: UiRect::all(px(1)),
                 border_radius: BorderRadius::all(px(3)),
                 ..default()
@@ -756,26 +763,38 @@ fn spawn_player_frame(commands: &mut Commands) {
             Name::new("Native gameplay HUD · player"),
             Node {
                 position_type: PositionType::Absolute,
-                top: px(62),
+                top: px(58),
                 left: px(14),
-                width: px(320),
-                padding: UiRect::all(px(12)),
+                width: px(306),
+                padding: UiRect::all(px(10)),
                 flex_direction: FlexDirection::Column,
+                row_gap: px(1),
                 ..default()
             },
-            BackgroundColor(PANEL),
+            BackgroundColor(theme::PLAYER_FRAME_BG),
         ))
         .with_children(|parent| {
-            parent.spawn(text_bundle("", NativeUiText::Identity, 20.0, TEXT));
-            parent.spawn(text_bundle("", NativeUiText::Health, 14.0, TEXT));
+            parent.spawn((
+                Node {
+                    width: Val::Percent(100.0),
+                    margin: UiRect::bottom(px(2)),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::SpaceBetween,
+                    ..default()
+                },
+            )).with_children(|identity| {
+                identity.spawn(text_bundle("", NativeUiText::Identity, 18.0, TEXT));
+                identity.spawn(text_bundle("", NativeUiText::IdentityLevel, 17.0, TEXT));
+            });
+            parent.spawn(text_bundle("", NativeUiText::Health, 12.0, TEXT));
             spawn_bar(parent, NativeUiBar::Health, HP);
-            parent.spawn(text_bundle("", NativeUiText::Mana, 14.0, TEXT));
+            parent.spawn(text_bundle("", NativeUiText::Mana, 12.0, TEXT));
             spawn_bar(parent, NativeUiBar::Mana, MANA);
-            parent.spawn(text_bundle("", NativeUiText::Experience, 13.0, MUTED));
+            parent.spawn(text_bundle("", NativeUiText::Experience, 11.0, MUTED));
             spawn_bar(parent, NativeUiBar::Experience, XP);
-            parent.spawn(text_bundle("", NativeUiText::Capacity, 13.0, MUTED));
+            parent.spawn(text_bundle("", NativeUiText::Capacity, 11.0, MUTED));
             spawn_bar(parent, NativeUiBar::Capacity, CAP);
-            parent.spawn(text_bundle("", NativeUiText::Ping, 12.0, MUTED));
+            parent.spawn(text_bundle("", NativeUiText::Ping, 10.0, MUTED));
         });
 }
 
@@ -946,6 +965,7 @@ fn spawn_action_slot(
 
 
 
+#[allow(dead_code)]
 fn spawn_panel_header(
     parent: &mut ChildSpawnerCommands,
     title: &str,
@@ -1711,6 +1731,7 @@ fn spawn_character_modal_text(
     ));
 }
 
+#[allow(dead_code)]
 fn character_card_node() -> Node {
     Node {
         width: Val::Percent(100.0),
@@ -1723,6 +1744,7 @@ fn character_card_node() -> Node {
     }
 }
 
+#[allow(dead_code)]
 fn spawn_character_section_title(
     parent: &mut ChildSpawnerCommands,
     title: &str,
@@ -1747,6 +1769,7 @@ fn spawn_character_section_title(
     });
 }
 
+#[allow(dead_code)]
 fn spawn_character_vital(
     parent: &mut ChildSpawnerCommands,
     label: &str,
@@ -1798,6 +1821,7 @@ fn spawn_character_vital(
     });
 }
 
+#[allow(dead_code)]
 fn spawn_character_skill_row(
     parent: &mut ChildSpawnerCommands,
     label: &str,
@@ -1827,6 +1851,7 @@ fn spawn_character_skill_row(
     });
 }
 
+#[allow(dead_code)]
 fn spawn_character_modal_button(
     parent: &mut ChildSpawnerCommands,
     action: NativeCharacterModalAction,
@@ -2083,6 +2108,8 @@ fn spawn_character_equipment_slot(
 ) {
     parent
         .spawn((
+            Button,
+            slot,
             Node {
                 position_type: PositionType::Absolute,
                 left,
@@ -6002,6 +6029,7 @@ fn spawn_npc_panel(commands: &mut Commands) {
 
 pub fn update_ui(
     game_state: Res<NativeGameState>,
+    mut action_bar: ResMut<NativeActionBarState>,
     ping: Res<NativePingState>,
     chat: Res<NativeChatState>,
     panel_state: Res<NativePanelState>,
@@ -6032,12 +6060,7 @@ pub fn update_ui(
         .attack_target_id
         .and_then(|id| game_state.creatures.get(&id));
 
-    let mut learned: Vec<_> = game_state
-        .learned_spell_ids
-        .iter()
-        .filter_map(|id| game_state.spells.get(id))
-        .collect();
-    learned.sort_by(|a, b| a.name.cmp(&b.name));
+    action_bar.sync(&game_state);
 
     let battle_list_text = match game_state.local_player() {
         Some(local) => {
@@ -6095,7 +6118,7 @@ pub fn update_ui(
         None => "BATTLE LIST\nNo local player.".to_owned(),
     };
 
-    let action_line = action_bar_text(&learned);
+    let action_line = action_bar_text(&game_state, &action_bar);
     let inventory_text =
         inventory_panel_text(&game_state, &panel_state);
     let inventory_detail =
@@ -6138,8 +6161,14 @@ pub fn update_ui(
             }
             NativeUiText::Identity => {
                 text.0 = player
-                    .map(|p| format!("{}   ·   Level {}", p.name, p.level))
+                    .map(|p| p.name.clone())
                     .unwrap_or_else(|| "Aldoria".into());
+                color.0 = TEXT;
+            }
+            NativeUiText::IdentityLevel => {
+                text.0 = player
+                    .map(|p| format!("Level {}", p.level))
+                    .unwrap_or_else(|| "Level —".into());
                 color.0 = TEXT;
             }
             NativeUiText::Health => {
@@ -6257,15 +6286,11 @@ pub fn update_ui(
         text.0 = if slot.0 == 0 {
             "1\nATTACK".into()
         } else {
-            let spell_index = slot.0 - 1;
-            match learned.get(spell_index) {
-                Some(spell) => {
-                    format!("{}\n{}", slot.0 + 1, spell.name)
-                }
-                None => {
-                    format!("{}\n—", slot.0 + 1)
-                }
-            }
+            action_bar
+                .spell_id(slot.0)
+                .and_then(|spell_id| game_state.spells.get(spell_id))
+                .map(|spell| format!("{}\n{}", slot.0 + 1, spell.name))
+                .unwrap_or_else(|| format!("{}\n—", slot.0 + 1))
         };
     }
 
@@ -6275,8 +6300,9 @@ pub fn update_ui(
         let icon = if slot.0 == 0 {
             Some((0, 0))
         } else {
-            learned
-                .get(slot.0.saturating_sub(1))
+            action_bar
+                .spell_id(slot.0)
+                .and_then(|spell_id| game_state.spells.get(spell_id))
                 .and_then(|spell| {
                     ability_icon_tile(&spell.id)
                         .or_else(|| ability_icon_tile(&spell.name))
@@ -11461,7 +11487,9 @@ pub(crate) fn handle_character_modal_buttons(
 
                 match *action {
                     NativeCharacterModalAction::Inventory => {
-                        panels.character_open = false;
+                        // Keep Character open so equipment and Inventory can be
+                        // used together as drag source/destination windows.
+                        panels.character_open = true;
                         panels.skills_open = false;
                         panels.inventory_open = true;
                         panels.npc_open = false;
@@ -11805,6 +11833,7 @@ fn character_equipment_slot_name(
         })
 }
 
+#[allow(dead_code)]
 fn character_equipment_summary(game_state: &NativeGameState) -> String {
     let mut equipped: Vec<_> = game_state.inventory.iter().filter_map(|item| {
         item.equipped_slot.as_deref().map(|slot| {
@@ -11827,6 +11856,7 @@ fn character_equipment_summary(game_state: &NativeGameState) -> String {
     }).collect::<Vec<_>>().join("\n")
 }
 
+#[allow(dead_code)]
 fn character_professions_summary(game_state: &NativeGameState) -> String {
     let Some(player) = game_state.local_player() else {
         return "No professions selected.".into();
@@ -12109,6 +12139,7 @@ pub fn handle_action_hotkeys(
     chat: Res<NativeChatState>,
     network: Res<NativeNetwork>,
     mut game_state: ResMut<NativeGameState>,
+    mut action_bar: ResMut<NativeActionBarState>,
 ) {
     if chat.active {
         return;
@@ -12132,10 +12163,12 @@ pub fn handle_action_hotkeys(
         return;
     };
 
+    action_bar.sync(&game_state);
     activate_action_slot(
         slot,
         &network,
         &mut game_state,
+        &action_bar,
     );
 }
 
@@ -12320,9 +12353,6 @@ pub fn handle_nearby_loot(
 }
 
 pub fn handle_action_slot_buttons(
-    chat: Res<NativeChatState>,
-    network: Res<NativeNetwork>,
-    mut game_state: ResMut<NativeGameState>,
     mut buttons: Query<
         (
             &Interaction,
@@ -12333,19 +12363,13 @@ pub fn handle_action_slot_buttons(
         (Changed<Interaction>, With<Button>),
     >,
 ) {
-    for (interaction, slot, mut background, mut border) in &mut buttons {
+    // Activation happens on pointer release in native_drag so a press can turn
+    // into a drag without accidentally casting the spell first.
+    for (interaction, _, mut background, mut border) in &mut buttons {
         match *interaction {
             Interaction::Pressed => {
                 background.0 = theme::BUTTON_PRESSED;
                 *border = BorderColor::all(theme::GOLD_BRIGHT);
-
-                if !chat.active {
-                    activate_action_slot(
-                        slot.0,
-                        &network,
-                        &mut game_state,
-                    );
-                }
             }
             Interaction::Hovered => {
                 background.0 = theme::BUTTON_HOVER;
@@ -12359,10 +12383,11 @@ pub fn handle_action_slot_buttons(
     }
 }
 
-fn activate_action_slot(
+pub(crate) fn activate_action_slot(
     slot: usize,
     network: &NativeNetwork,
     game_state: &mut NativeGameState,
+    action_bar: &NativeActionBarState,
 ) {
     let Some(target_id) = game_state.attack_target_id else {
         game_state.push_system_message(
@@ -12384,17 +12409,11 @@ fn activate_action_slot(
         return;
     }
 
-    let mut learned: Vec<_> = game_state
-        .learned_spell_ids
-        .iter()
-        .filter_map(|id| game_state.spells.get(id))
-        .collect();
+    let Some(spell_id) = action_bar.spell_id(slot) else {
+        return;
+    };
 
-    learned.sort_by(|a, b| a.name.cmp(&b.name));
-
-    let spell_index = slot - 1;
-
-    let Some(spell) = learned.get(spell_index) else {
+    let Some(spell) = game_state.spells.get(spell_id) else {
         return;
     };
 
@@ -12441,11 +12460,20 @@ pub fn ping_server(
     }
 }
 
-fn action_bar_text(spells: &[&game_types::SpellDefinition]) -> String {
+fn action_bar_text(
+    game_state: &NativeGameState,
+    action_bar: &NativeActionBarState,
+) -> String {
     let mut slots = vec!["[1] Attack".to_owned()];
 
-    for (index, spell) in spells.iter().take(8).enumerate() {
-        slots.push(format!("[{}] {}", index + 2, spell.name));
+    for action_slot in 1..=8usize {
+        let label = action_bar
+            .spell_id(action_slot)
+            .and_then(|spell_id| game_state.spells.get(spell_id))
+            .map(|spell| spell.name.as_str())
+            .unwrap_or("—");
+
+        slots.push(format!("[{}] {}", action_slot + 1, label));
     }
 
     slots.join("    ")
