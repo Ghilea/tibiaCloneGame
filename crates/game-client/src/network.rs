@@ -112,6 +112,37 @@ pub fn login_and_list_characters_with_urls(
     })
 }
 
+#[derive(serde::Serialize)]
+struct CreateCharacterPayload {
+    name: String,
+}
+
+pub fn create_character(
+    api_url: String,
+    session_token: String,
+    name: String,
+) -> Result<CharacterSummary> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("failed to create character network runtime")?;
+
+    runtime.block_on(async move {
+        let response = reqwest::Client::builder()
+            .user_agent("Embers-of-Aldoria-Native/36.63")
+            .build()
+            .context("failed to create HTTP client")?
+            .post(format!("{api_url}/characters"))
+            .bearer_auth(session_token)
+            .json(&CreateCharacterPayload { name })
+            .send()
+            .await
+            .context("could not reach the create-character endpoint")?;
+
+        decode_api_response(response, "create character").await
+    })
+}
+
 
 
 pub fn connect_direct_from_env() -> Result<NativeSession> {

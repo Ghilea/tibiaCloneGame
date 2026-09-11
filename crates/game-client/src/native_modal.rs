@@ -220,6 +220,7 @@ pub(crate) fn header_node() -> Node {
             bottom: px(1),
         },
         flex_direction: FlexDirection::Row,
+        flex_wrap: FlexWrap::Wrap,
         align_items: AlignItems::Center,
         justify_content: JustifyContent::SpaceBetween,
         column_gap: px(20),
@@ -299,6 +300,7 @@ pub(crate) fn footer_node() -> Node {
             bottom: px(0),
         },
         flex_direction: FlexDirection::Row,
+        flex_wrap: FlexWrap::Wrap,
         align_items: AlignItems::Center,
         justify_content: JustifyContent::SpaceBetween,
         column_gap: px(12),
@@ -309,6 +311,7 @@ pub(crate) fn footer_node() -> Node {
 pub(crate) fn footer_actions_node() -> Node {
     Node {
         flex_direction: FlexDirection::Row,
+        flex_wrap: FlexWrap::Wrap,
         align_items: AlignItems::Center,
         column_gap: px(8),
         ..default()
@@ -317,8 +320,9 @@ pub(crate) fn footer_actions_node() -> Node {
 
 pub(crate) fn action_button_node() -> Node {
     Node {
-        min_width: px(138),
+        min_width: px(112),
         height: px(42),
+        flex_shrink: 1.0,
         padding: UiRect::horizontal(px(16)),
         border: UiRect::all(px(1)),
         border_radius: BorderRadius::all(px(6)),

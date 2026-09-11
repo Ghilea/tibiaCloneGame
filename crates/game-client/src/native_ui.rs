@@ -1287,12 +1287,18 @@ fn spawn_action_bar(commands: &mut Commands, asset_server: &AssetServer) {
             parent.spawn((
                 Node {
                     position_type: PositionType::Absolute,
-                    left: if mirrored { Val::Auto } else { px(-39) },
-                    right: if mirrored { px(-39) } else { Val::Auto },
-                    bottom: px(-5), width: px(52), height: px(80),
+                    left: if mirrored { Val::Auto } else { px(-45) },
+                    right: if mirrored { px(-45) } else { Val::Auto },
+                    bottom: px(-1), width: px(60), height: px(92),
                     ..default()
                 },
-                ImageNode { image: ornament.clone(), flip_x: mirrored, ..default() },
+                ImageNode {
+                    image: ornament.clone(),
+                    // Keep the complete lower scrollwork visible. A slightly wider
+                    // render than the source aspect ratio preserves readability.
+                    flip_x: mirrored,
+                    ..default()
+                },
                 // Decorative art must not intercept slot dragging or clicks.
                 Pickable::IGNORE,
             ));

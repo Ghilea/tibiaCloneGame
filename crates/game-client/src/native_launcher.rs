@@ -11,6 +11,7 @@ use std::{
 use anyhow::{Context, Result};
 use bevy::{
     asset::AssetPlugin,
+    image::{ImageLoaderSettings, ImageSampler},
     input::{ButtonState, keyboard::KeyboardInput},
     prelude::*,
     window::WindowResolution,
@@ -53,15 +54,22 @@ type PendingGameSession = Arc<
     >,
 >;
 
+type PendingCharacterCreate = Arc<
+    Mutex<Receiver<Result<game_protocol::CharacterSummary, String>>>,
+>;
+
 #[derive(Resource)]
 pub(crate) struct NativeLauncherState {
     mode: LauncherMode,
     field: LoginField,
     username: String,
     password: String,
+    character_name: String,
+    character_name_active: bool,
     selected_character: usize,
     login: Option<NativeLoginResult>,
     pending_login: Option<PendingLogin>,
+    pending_character_create: Option<PendingCharacterCreate>,
     pending_game_session: Option<PendingGameSession>,
     launch_exit_timer: Option<Timer>,
     status: String,
@@ -74,9 +82,12 @@ impl Default for NativeLauncherState {
             field: LoginField::Account,
             username: String::new(),
             password: String::new(),
+            character_name: String::new(),
+            character_name_active: false,
             selected_character: 0,
             login: None,
             pending_login: None,
+            pending_character_create: None,
             pending_game_session: None,
             launch_exit_timer: None,
             status: "Enter your account credentials.".into(),
@@ -122,6 +133,12 @@ struct LauncherCharacterCardText(usize);
 struct LauncherCharacterLobbySummary;
 
 #[derive(Component)]
+struct LauncherCharacterNameFrame;
+
+#[derive(Component)]
+struct LauncherCharacterNameText;
+
+#[derive(Component)]
 struct LauncherModalActionButton;
 
 #[derive(Component)]
@@ -142,6 +159,8 @@ enum LauncherAction {
     FocusAccount,
     FocusPassword,
     Login,
+    FocusCharacterName,
+    CreateCharacter,
     PreviousCharacter,
     NextCharacter,
     EnterWorld,
@@ -167,6 +186,11 @@ pub fn run() -> Result<()> {
                         ),
                     resolution:
                         WindowResolution::new(960, 660),
+                    resize_constraints: bevy::window::WindowResizeConstraints {
+                        min_width: 640.0,
+                        min_height: 480.0,
+                        ..default()
+                    },
                     resizable: true,
                     ..default()
                 }),
@@ -190,7 +214,8 @@ pub fn run() -> Result<()> {
             (
                 crate::native_updater::poll,
                 poll_login_worker.after(crate::native_updater::poll),
-                poll_game_session_worker.after(poll_login_worker),
+                poll_character_create_worker.after(poll_login_worker),
+                poll_game_session_worker.after(poll_character_create_worker),
                 update_world_loading_overlay.after(poll_game_session_worker),
                 update_adaptive_ui_scale.after(update_world_loading_overlay),
                 handle_launcher_text_input.after(update_adaptive_ui_scale),
@@ -257,11 +282,7 @@ fn spawn_launcher_background(
             height: Val::Percent(100.0),
             ..default()
         },
-        ImageNode::new(
-            asset_server.load(
-                "ui/launcher/aldoria_launcher_background.png",
-            ),
-        )
+        ImageNode::new(load_launcher_background(asset_server))
         .with_mode(
             bevy::ui::widget::NodeImageMode::Stretch,
         ),
@@ -283,6 +304,15 @@ fn spawn_launcher_background(
         },
         BackgroundColor(Color::srgba(0.02, 0.03, 0.04, 0.28)),
     ));
+}
+
+fn load_launcher_background(asset_server: &AssetServer) -> Handle<Image> {
+    asset_server
+        .load_builder()
+        .with_settings::<ImageLoaderSettings>(|settings| {
+            settings.sampler = ImageSampler::linear();
+        })
+        .load("ui/launcher/aldoria_launcher_background.png")
 }
 
 fn spawn_launcher_world_loading_overlay(
@@ -310,11 +340,7 @@ fn spawn_launcher_world_loading_overlay(
             BackgroundColor(
                 Color::srgb(0.015, 0.02, 0.018),
             ),
-            ImageNode::new(
-                asset_server.load(
-                    "ui/launcher/aldoria_launcher_background.png",
-                ),
-            )
+            ImageNode::new(load_launcher_background(asset_server))
             .with_mode(
                 bevy::ui::widget::NodeImageMode::Stretch,
             ),
@@ -605,11 +631,6 @@ fn spawn_launcher_controls(commands: &mut Commands) {
         .with_children(|parent| {
             spawn_launcher_button(
                 parent,
-                LauncherAction::Login,
-                "LOG IN",
-            );
-            spawn_launcher_button(
-                parent,
                 LauncherAction::PreviousCharacter,
                 "< PREV",
             );
@@ -647,12 +668,12 @@ fn update_adaptive_ui_scale(
     let height =
         window.resolution.height().max(1.0);
 
-    // Native HUD was laid out around 1280x800. Scale only fixed pixel
-    // dimensions; percentage anchors keep their existing behavior.
+    // Let the launcher continue shrinking on genuinely small windows. The old
+    // 0.58 floor could make a panel taller or wider than the available view.
     let target =
         (width / 1280.0)
             .min(height / 800.0)
-            .clamp(0.58, 1.0);
+            .clamp(0.40, 1.0);
 
     if (ui_scale.0 - target).abs() > 0.005 {
         ui_scale.0 = target;
@@ -663,7 +684,12 @@ fn handle_launcher_text_input(
     mut keyboard: MessageReader<KeyboardInput>,
     mut state: ResMut<NativeLauncherState>,
 ) {
-    if state.mode != LauncherMode::Login {
+    let editing_login = state.mode == LauncherMode::Login;
+    let editing_character = state.mode == LauncherMode::Characters
+        && state.character_name_active
+        && state.pending_character_create.is_none();
+
+    if !editing_login && !editing_character {
         for _ in keyboard.read() {}
         return;
     }
@@ -675,12 +701,16 @@ fn handle_launcher_text_input(
 
         match event.key_code {
             KeyCode::Backspace => {
-                match state.field {
-                    LoginField::Account => {
-                        state.username.pop();
-                    }
-                    LoginField::Password => {
-                        state.password.pop();
+                if editing_character {
+                    state.character_name.pop();
+                } else {
+                    match state.field {
+                        LoginField::Account => {
+                            state.username.pop();
+                        }
+                        LoginField::Password => {
+                            state.password.pop();
+                        }
                     }
                 }
                 continue;
@@ -697,6 +727,15 @@ fn handle_launcher_text_input(
 
         for character in input.chars() {
             if character.is_control() {
+                continue;
+            }
+
+            if editing_character {
+                if (character.is_alphabetic() || character == ' ')
+                    && state.character_name.chars().count() < 20
+                {
+                    state.character_name.push(character);
+                }
                 continue;
             }
 
@@ -730,6 +769,7 @@ fn spawn_login_field(
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
+            min_width: px(0),
             flex_direction: FlexDirection::Column,
             row_gap: px(6),
             ..default()
@@ -751,11 +791,13 @@ fn spawn_login_field(
                     LauncherFieldFrame(field),
                     Node {
                         width: Val::Percent(100.0),
+                        min_width: px(0),
                         height: px(48),
                         padding: UiRect::horizontal(px(14)),
                         border: UiRect::all(px(1)),
                         border_radius: BorderRadius::all(px(7)),
                         align_items: AlignItems::Center,
+                        overflow: Overflow::clip(),
                         ..default()
                     },
                     BackgroundColor(theme::PANEL_BG_SOFT),
@@ -789,7 +831,7 @@ fn spawn_launcher_login_form(commands: &mut Commands) {
                     left: px(48),
                     right: px(48),
                     top: px(70),
-                    bottom: px(128),
+                    bottom: px(70),
                 },
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
@@ -800,8 +842,9 @@ fn spawn_launcher_login_form(commands: &mut Commands) {
             root.spawn((
                 Node {
                     width: Val::Percent(100.0),
-                    max_width: px(980),
-                    min_height: px(520),
+                    min_width: px(0),
+                    max_width: px(780),
+                    min_height: px(460),
                     padding: UiRect::all(px(34)),
                     border: UiRect::all(px(1)),
                     border_radius: BorderRadius::all(px(10)),
@@ -885,6 +928,22 @@ fn spawn_launcher_login_form(commands: &mut Commands) {
                     },
                     TextColor(theme::MUTED),
                 ));
+
+                form
+                    .spawn(Node {
+                        width: Val::Percent(100.0),
+                        flex_direction: FlexDirection::Row,
+                        justify_content: JustifyContent::FlexEnd,
+                        ..default()
+                    })
+                    .with_children(|actions| {
+                        spawn_modal_action_button(
+                            actions,
+                            LauncherAction::Login,
+                            "LOG IN",
+                            true,
+                        );
+                    });
             });
         });
 }
@@ -1085,6 +1144,55 @@ fn spawn_launcher_character_lobby(
                                             }
                                         });
                                 });
+
+                            body
+                                .spawn(Node {
+                                    width: Val::Percent(100.0),
+                                    min_width: px(0),
+                                    flex_direction: FlexDirection::Row,
+                                    flex_wrap: FlexWrap::Wrap,
+                                    column_gap: px(8),
+                                    row_gap: px(8),
+                                    align_items: AlignItems::Center,
+                                    ..default()
+                                })
+                                .with_children(|create| {
+                                    create.spawn((
+                                        Button,
+                                        LauncherAction::FocusCharacterName,
+                                        LauncherModalActionButton,
+                                        LauncherCharacterNameFrame,
+                                        Node {
+                                            min_width: px(180),
+                                            height: px(42),
+                                            flex_grow: 1.0,
+                                            flex_shrink: 1.0,
+                                            padding: UiRect::horizontal(px(12)),
+                                            border: UiRect::all(px(1)),
+                                            border_radius: BorderRadius::all(px(6)),
+                                            align_items: AlignItems::Center,
+                                            overflow: Overflow::clip(),
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme::PANEL_BG_SOFT),
+                                        BorderColor::all(theme::BUTTON_BORDER),
+                                    )).with_child((
+                                        LauncherCharacterNameText,
+                                        Text::new("New character name"),
+                                        TextFont {
+                                            font_size: FontSize::Px(12.0),
+                                            ..default()
+                                        },
+                                        TextColor(theme::MUTED),
+                                    ));
+
+                                    spawn_modal_action_button(
+                                        create,
+                                        LauncherAction::CreateCharacter,
+                                        "CREATE CHARACTER",
+                                        false,
+                                    );
+                                });
                         });
 
                     panel
@@ -1158,18 +1266,21 @@ fn handle_keyboard(
         }
         LauncherMode::LoggingIn => {}
         LauncherMode::Characters => {
+            if state.character_name_active {
+                if keys.just_pressed(KeyCode::Escape) {
+                    state.character_name_active = false;
+                    state.status = "Character creation cancelled.".into();
+                } else if keys.just_pressed(KeyCode::Enter) {
+                    begin_create_character(&mut state);
+                }
+                return;
+            }
+
             let count = state
                 .login
                 .as_ref()
                 .map(|login| login.characters.len())
                 .unwrap_or(0);
-
-            if count == 0 {
-                state.mode = LauncherMode::Error;
-                state.status =
-                    "This account has no characters.".into();
-                return;
-            }
 
             if keys.just_pressed(KeyCode::ArrowDown) {
                 step_character(&mut state, 1);
@@ -1190,7 +1301,7 @@ fn handle_keyboard(
                 return;
             }
 
-            if keys.just_pressed(KeyCode::Enter) {
+            if keys.just_pressed(KeyCode::Enter) && count > 0 {
                 if updater.blocks_online_play() {
                     state.status =
                         updater.gate_message().into();
@@ -1288,6 +1399,21 @@ fn handle_launcher_buttons(
                             }
                         }
                     }
+                    LauncherAction::FocusCharacterName => {
+                        if state.mode == LauncherMode::Characters
+                            && state.pending_character_create.is_none()
+                        {
+                            state.character_name_active = true;
+                            state.status =
+                                "Enter a name with 2-20 letters.".into();
+                        }
+                    }
+                    LauncherAction::CreateCharacter => {
+                        if state.mode == LauncherMode::Characters {
+                            state.character_name_active = true;
+                            begin_create_character(&mut state);
+                        }
+                    }
                     LauncherAction::PreviousCharacter => {
                         if state.mode
                             == LauncherMode::Characters
@@ -1345,7 +1471,10 @@ fn handle_launcher_buttons(
                                 LauncherMode::Login;
                             state.pending_login =
                                 None;
+                            state.pending_character_create = None;
                             state.login = None;
+                            state.character_name.clear();
+                            state.character_name_active = false;
                             state.selected_character =
                                 0;
                             state.status =
@@ -1451,6 +1580,14 @@ fn update_character_lobby(
         (
             Without<LauncherCharacterLobby>,
             Without<LauncherLegacyPanel>,
+            Without<LauncherCharacterNameFrame>,
+        ),
+    >,
+    mut character_name_frame: Query<
+        &mut BorderColor,
+        (
+            With<LauncherCharacterNameFrame>,
+            Without<LauncherCharacterCard>,
         ),
     >,
     mut text_queries: ParamSet<(
@@ -1464,6 +1601,10 @@ fn update_character_lobby(
         Query<
             &mut Text,
             With<LauncherCharacterLobbySummary>,
+        >,
+        Query<
+            (&mut Text, &mut TextColor),
+            With<LauncherCharacterNameText>,
         >,
     )>,
 ) {
@@ -1518,7 +1659,7 @@ fn update_character_lobby(
 
     for mut text in &mut text_queries.p1() {
         text.0 = format!(
-            "{} character{} available  |  Selected: {}",
+            "{} character{} available  |  Selected: {}\n{}",
             characters.len(),
             if characters.len() == 1 {
                 ""
@@ -1526,7 +1667,31 @@ fn update_character_lobby(
                 "s"
             },
             selected_name,
+            state.status,
         );
+    }
+
+    for mut border in &mut character_name_frame {
+        *border = BorderColor::all(
+            if state.character_name_active {
+                theme::GOLD_BRIGHT
+            } else {
+                theme::BUTTON_BORDER
+            },
+        );
+    }
+
+    for (mut text, mut color) in &mut text_queries.p2() {
+        text.0 = if state.character_name.is_empty() {
+            "New character name".into()
+        } else {
+            format!("{}{}", state.character_name, if state.character_name_active { "_" } else { "" })
+        };
+        color.0 = if state.character_name.is_empty() {
+            theme::MUTED
+        } else {
+            theme::TEXT
+        };
     }
 
     for (
@@ -1895,23 +2060,109 @@ fn poll_login_worker(
 
     match result {
         Ok(login) => {
-            if login.characters.is_empty() {
-                state.mode = LauncherMode::Error;
-                state.status =
-                    "This account has no characters."
-                        .into();
-                return;
-            }
-
+            let empty = login.characters.is_empty();
             state.login = Some(login);
             state.selected_character = 0;
             state.mode = LauncherMode::Characters;
-            state.status =
-                "Choose a character and press Enter."
-                    .into();
+            state.character_name_active = empty;
+            state.status = if empty {
+                "No characters yet. Enter a name to create one.".into()
+            } else {
+                "Choose a character and press Enter.".into()
+            };
         }
         Err(error) => {
             state.mode = LauncherMode::Error;
+            state.status = error;
+        }
+    }
+}
+
+fn begin_create_character(state: &mut NativeLauncherState) {
+    if state.pending_character_create.is_some() {
+        return;
+    }
+
+    let name = state.character_name.trim().to_owned();
+    if !(2..=20).contains(&name.chars().count())
+        || !name.chars().all(|character| character.is_alphabetic() || character == ' ')
+    {
+        state.status = "Character names must contain 2-20 letters.".into();
+        return;
+    }
+
+    let Some(login) = state.login.as_ref() else {
+        state.status = "The authenticated account is unavailable.".into();
+        return;
+    };
+    if login.characters.len() >= 4 {
+        state.status = "This account already has four characters.".into();
+        return;
+    }
+
+    let api_url = login.api_url.clone();
+    let session_token = login.session_token.clone();
+    let (tx, rx) = mpsc::channel::<Result<game_protocol::CharacterSummary, String>>();
+
+    match thread::Builder::new()
+        .name("aldoria-create-character".into())
+        .spawn(move || {
+            let result = network::create_character(api_url, session_token, name)
+                .map_err(|error| format!("{error:#}"));
+            let _ = tx.send(result);
+        })
+    {
+        Ok(_) => {
+            state.pending_character_create = Some(Arc::new(Mutex::new(rx)));
+            state.character_name_active = false;
+            state.status = "Creating character...".into();
+        }
+        Err(error) => {
+            state.status = format!("Could not start character creation: {error}");
+        }
+    }
+}
+
+fn poll_character_create_worker(mut state: ResMut<NativeLauncherState>) {
+    let Some(receiver) = state.pending_character_create.as_ref().cloned() else {
+        return;
+    };
+
+    let result = {
+        let Ok(receiver) = receiver.lock() else {
+            state.pending_character_create = None;
+            state.status = "Character creation worker lock failed.".into();
+            return;
+        };
+        match receiver.try_recv() {
+            Ok(result) => Some(result),
+            Err(TryRecvError::Empty) => None,
+            Err(TryRecvError::Disconnected) => {
+                state.pending_character_create = None;
+                state.status = "Character creation stopped unexpectedly.".into();
+                return;
+            }
+        }
+    };
+
+    let Some(result) = result else {
+        return;
+    };
+    state.pending_character_create = None;
+
+    match result {
+        Ok(character) => {
+            let created_name = character.name.clone();
+            if let Some(login) = state.login.as_mut() {
+                login.characters.push(character);
+                state.selected_character = login.characters.len().saturating_sub(1);
+            }
+            state.character_name.clear();
+            state.character_name_active = false;
+            state.status = format!("{created_name} created and selected.");
+        }
+        Err(error) => {
+            state.character_name_active = true;
             state.status = error;
         }
     }

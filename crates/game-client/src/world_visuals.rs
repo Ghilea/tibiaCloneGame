@@ -243,7 +243,8 @@ fn load_repeating(
             settings
                 .sampler
                 .get_or_init_descriptor()
-                .set_address_mode(ImageAddressMode::Repeat);
+                .set_address_mode(ImageAddressMode::Repeat)
+                .set_anisotropic_filter(8);
         })
         .load(path)
 }

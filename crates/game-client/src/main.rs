@@ -1021,6 +1021,7 @@ fn setup(
         Name::new("Main Camera"),
         MainCamera,
         Camera3d::default(),
+        Msaa::Sample4,
         Projection::from(OrthographicProjection {
             scaling_mode: ScalingMode::FixedVertical {
                 viewport_height: 18.0,
