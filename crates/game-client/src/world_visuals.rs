@@ -66,13 +66,7 @@ pub fn create_materials(
     asset_server: &AssetServer,
     materials: &mut Assets<StandardMaterial>,
 ) -> WorldMaterialSet {
-    let floor = add_textured(
-        asset_server,
-        materials,
-        GRASS,
-        Color::WHITE,
-        0.98,
-    );
+    let floor = add_textured(asset_server, materials, GRASS, Color::WHITE, 0.98);
 
     // V36.9.3: this is not the old flat-green "lawn skirt".
     // It is the real grass texture with a repeating linear sampler, placed
@@ -81,54 +75,16 @@ pub fn create_materials(
         base_color: Color::WHITE,
         base_color_texture: Some(load_repeating(asset_server, GRASS)),
         perceptual_roughness: 0.98,
-        uv_transform: Affine2::from_scale(Vec2::splat(
-            GROUND_CHUNK_TEXTURE_REPEAT,
-        )),
+        uv_transform: Affine2::from_scale(Vec2::splat(GROUND_CHUNK_TEXTURE_REPEAT)),
         ..default()
     });
 
-    let road = add_textured(
-        asset_server,
-        materials,
-        ROAD,
-        Color::WHITE,
-        1.0,
-    );
-    let bridge = add_textured(
-        asset_server,
-        materials,
-        BRIDGE,
-        Color::WHITE,
-        0.88,
-    );
-    let house_wall = add_textured(
-        asset_server,
-        materials,
-        TIMBER_PLASTER,
-        Color::WHITE,
-        0.86,
-    );
-    let castle_wall = add_textured(
-        asset_server,
-        materials,
-        CASTLE_STONE,
-        Color::WHITE,
-        0.82,
-    );
-    let building_floor = add_textured(
-        asset_server,
-        materials,
-        WOOD_PLANKS,
-        Color::WHITE,
-        0.93,
-    );
-    let roof = add_textured(
-        asset_server,
-        materials,
-        ROOF_TILES,
-        Color::WHITE,
-        0.90,
-    );
+    let road = add_textured(asset_server, materials, ROAD, Color::WHITE, 1.0);
+    let bridge = add_textured(asset_server, materials, BRIDGE, Color::WHITE, 0.88);
+    let house_wall = add_textured(asset_server, materials, TIMBER_PLASTER, Color::WHITE, 0.86);
+    let castle_wall = add_textured(asset_server, materials, CASTLE_STONE, Color::WHITE, 0.82);
+    let building_floor = add_textured(asset_server, materials, WOOD_PLANKS, Color::WHITE, 0.93);
+    let roof = add_textured(asset_server, materials, ROOF_TILES, Color::WHITE, 0.90);
 
     let water = materials.add(StandardMaterial {
         base_color: Color::srgba(0.80, 0.91, 1.0, 0.82),
@@ -149,69 +105,15 @@ pub fn create_materials(
         castle_wall,
         building_floor,
         roof,
-        packed_earth: add_textured(
-            asset_server,
-            materials,
-            PACKED_EARTH,
-            Color::WHITE,
-            0.98,
-        ),
-        moss_stone: add_textured(
-            asset_server,
-            materials,
-            MOSS_STONE,
-            Color::WHITE,
-            0.92,
-        ),
-        sandstone: add_textured(
-            asset_server,
-            materials,
-            SANDSTONE,
-            Color::WHITE,
-            0.94,
-        ),
-        mud: add_textured(
-            asset_server,
-            materials,
-            MUD,
-            Color::WHITE,
-            1.0,
-        ),
-        gravel: add_textured(
-            asset_server,
-            materials,
-            GRAVEL,
-            Color::WHITE,
-            1.0,
-        ),
-        crypt_stone: add_textured(
-            asset_server,
-            materials,
-            CRYPT_STONE,
-            Color::WHITE,
-            0.92,
-        ),
-        wood_planks: add_textured(
-            asset_server,
-            materials,
-            WOOD_PLANKS,
-            Color::WHITE,
-            0.92,
-        ),
-        marsh_grass: add_textured(
-            asset_server,
-            materials,
-            MARSH_GRASS,
-            Color::WHITE,
-            0.98,
-        ),
-        ash_soil: add_textured(
-            asset_server,
-            materials,
-            ASH_SOIL,
-            Color::WHITE,
-            1.0,
-        ),
+        packed_earth: add_textured(asset_server, materials, PACKED_EARTH, Color::WHITE, 0.98),
+        moss_stone: add_textured(asset_server, materials, MOSS_STONE, Color::WHITE, 0.92),
+        sandstone: add_textured(asset_server, materials, SANDSTONE, Color::WHITE, 0.94),
+        mud: add_textured(asset_server, materials, MUD, Color::WHITE, 1.0),
+        gravel: add_textured(asset_server, materials, GRAVEL, Color::WHITE, 1.0),
+        crypt_stone: add_textured(asset_server, materials, CRYPT_STONE, Color::WHITE, 0.92),
+        wood_planks: add_textured(asset_server, materials, WOOD_PLANKS, Color::WHITE, 0.92),
+        marsh_grass: add_textured(asset_server, materials, MARSH_GRASS, Color::WHITE, 0.98),
+        ash_soil: add_textured(asset_server, materials, ASH_SOIL, Color::WHITE, 1.0),
     }
 }
 
@@ -230,10 +132,7 @@ fn add_textured(
     })
 }
 
-fn load_repeating(
-    asset_server: &AssetServer,
-    path: &'static str,
-) -> Handle<Image> {
+fn load_repeating(asset_server: &AssetServer, path: &'static str) -> Handle<Image> {
     asset_server
         .load_builder()
         .with_settings::<ImageLoaderSettings>(|settings| {

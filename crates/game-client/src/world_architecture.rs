@@ -76,10 +76,7 @@ impl WallEdges {
     }
 
     fn count(self) -> usize {
-        self.north as usize
-            + self.south as usize
-            + self.west as usize
-            + self.east as usize
+        self.north as usize + self.south as usize + self.west as usize + self.east as usize
     }
 }
 
@@ -91,10 +88,7 @@ pub struct ArchitectureCatalog {
 }
 
 impl ArchitectureCatalog {
-    pub fn new(
-        meshes: &mut Assets<Mesh>,
-        materials: &mut Assets<StandardMaterial>,
-    ) -> Self {
+    pub fn new(meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>) -> Self {
         Self {
             cube: meshes.add(Cuboid::default()),
             timber: materials.add(StandardMaterial {
@@ -111,11 +105,7 @@ impl ArchitectureCatalog {
     }
 }
 
-pub fn has_opening(
-    position: Position,
-    doors: &[DoorView],
-    windows: &[WindowView],
-) -> bool {
+pub fn has_opening(position: Position, doors: &[DoorView], windows: &[WindowView]) -> bool {
     doors.iter().any(|door| door.position == position)
         || windows.iter().any(|window| window.position == position)
 }
@@ -132,10 +122,8 @@ pub fn infer_wall_axes(
             .any(|wall| wall.z == position.z && wall.x == x && wall.y == y)
     };
 
-    let horizontal = has(position.x - 1, position.y)
-        || has(position.x + 1, position.y);
-    let vertical = has(position.x, position.y - 1)
-        || has(position.x, position.y + 1);
+    let horizontal = has(position.x - 1, position.y) || has(position.x + 1, position.y);
+    let vertical = has(position.x, position.y - 1) || has(position.x, position.y + 1);
 
     if !horizontal && !vertical {
         WallAxes {
@@ -201,17 +189,18 @@ pub fn infer_opening_edge(
     house_walls: &[Position],
     castle_walls: &[Position],
 ) -> WallEdge {
-    let edges = infer_house_wall_edges(
-        position,
-        buildings,
-        house_walls,
-        castle_walls,
-    );
+    let edges = infer_house_wall_edges(position, buildings, house_walls, castle_walls);
 
     if edges.count() == 1 {
-        if edges.north { return WallEdge::North; }
-        if edges.south { return WallEdge::South; }
-        if edges.west { return WallEdge::West; }
+        if edges.north {
+            return WallEdge::North;
+        }
+        if edges.south {
+            return WallEdge::South;
+        }
+        if edges.west {
+            return WallEdge::West;
+        }
         return WallEdge::East;
     }
 
@@ -224,15 +213,19 @@ pub fn infer_opening_edge(
             .chain(castle_walls.iter())
             .any(|wall| wall.z == position.z && wall.x == x && wall.y == y)
     };
-    let horizontal_score = has(position.x - 1, position.y) as usize
-        + has(position.x + 1, position.y) as usize;
-    let vertical_score = has(position.x, position.y - 1) as usize
-        + has(position.x, position.y + 1) as usize;
+    let horizontal_score =
+        has(position.x - 1, position.y) as usize + has(position.x + 1, position.y) as usize;
+    let vertical_score =
+        has(position.x, position.y - 1) as usize + has(position.x, position.y + 1) as usize;
 
     if horizontal_score >= vertical_score {
-        if edges.north { WallEdge::North }
-        else if edges.south { WallEdge::South }
-        else { WallEdge::North }
+        if edges.north {
+            WallEdge::North
+        } else if edges.south {
+            WallEdge::South
+        } else {
+            WallEdge::North
+        }
     } else if edges.west {
         WallEdge::West
     } else if edges.east {
@@ -315,10 +308,26 @@ fn spawn_wall_edge(
     edge: WallEdge,
     castle: bool,
 ) {
-    let height = if castle { CASTLE_WALL_HEIGHT } else { HOUSE_WALL_HEIGHT };
-    let thickness = if castle { CASTLE_WALL_THICKNESS } else { HOUSE_WALL_THICKNESS };
-    let length = if castle { CASTLE_WALL_LENGTH } else { HOUSE_WALL_LENGTH };
-    let rows = if castle { CASTLE_WALL_PANEL_ROWS } else { HOUSE_WALL_PANEL_ROWS };
+    let height = if castle {
+        CASTLE_WALL_HEIGHT
+    } else {
+        HOUSE_WALL_HEIGHT
+    };
+    let thickness = if castle {
+        CASTLE_WALL_THICKNESS
+    } else {
+        HOUSE_WALL_THICKNESS
+    };
+    let length = if castle {
+        CASTLE_WALL_LENGTH
+    } else {
+        HOUSE_WALL_LENGTH
+    };
+    let rows = if castle {
+        CASTLE_WALL_PANEL_ROWS
+    } else {
+        HOUSE_WALL_PANEL_ROWS
+    };
     let horizontal = edge.horizontal();
     let axis_offset = edge.local_offset();
     let panel_height = height / rows.max(1) as f32;
@@ -457,8 +466,7 @@ pub fn ground_chunk_centers(center: Position, radius: i32) -> Vec<Vec2> {
     let left = min_x as f32 - 0.5;
     let top = min_y as f32 - 0.5;
 
-    let mut centers =
-        Vec::with_capacity((chunks_per_axis * chunks_per_axis) as usize);
+    let mut centers = Vec::with_capacity((chunks_per_axis * chunks_per_axis) as usize);
 
     for chunk_y in 0..chunks_per_axis {
         for chunk_x in 0..chunks_per_axis {
@@ -685,17 +693,9 @@ pub fn spawn_building(
                     Mesh3d(catalog.cube.clone()),
                     MeshMaterial3d(roof_material.clone()),
                     Transform {
-                        translation: Vec3::new(
-                            sign * half_offset,
-                            ROOF_EAVE_Y + rise * 0.5,
-                            0.0,
-                        ),
+                        translation: Vec3::new(sign * half_offset, ROOF_EAVE_Y + rise * 0.5, 0.0),
                         rotation: Quat::from_rotation_z(-sign * ROOF_ANGLE),
-                        scale: Vec3::new(
-                            slope_length,
-                            0.14,
-                            depth + ROOF_OVERHANG,
-                        ),
+                        scale: Vec3::new(slope_length, 0.14, depth + ROOF_OVERHANG),
                         ..default()
                     },
                 ));
@@ -727,17 +727,9 @@ pub fn spawn_building(
                     Mesh3d(catalog.cube.clone()),
                     MeshMaterial3d(roof_material.clone()),
                     Transform {
-                        translation: Vec3::new(
-                            0.0,
-                            ROOF_EAVE_Y + rise * 0.5,
-                            sign * half_offset,
-                        ),
+                        translation: Vec3::new(0.0, ROOF_EAVE_Y + rise * 0.5, sign * half_offset),
                         rotation: Quat::from_rotation_x(sign * ROOF_ANGLE),
-                        scale: Vec3::new(
-                            width + ROOF_OVERHANG,
-                            0.14,
-                            slope_length,
-                        ),
+                        scale: Vec3::new(width + ROOF_OVERHANG, 0.14, slope_length),
                         ..default()
                     },
                 ));
@@ -775,7 +767,6 @@ fn spawn_gable_fill(
     let rows = (rise / GABLE_STEP_HEIGHT).ceil().max(1.0) as usize;
     let row_height = rise / rows as f32;
 
-
     // V36.16.1: continue the half-timber language into the gable.
     parent.spawn((
         Name::new("Gable timber tie beam"),
@@ -810,8 +801,7 @@ fn spawn_gable_fill(
     for row in 0..rows {
         let center_y = row_height * (row as f32 + 0.5);
         let normalized_height = center_y / rise;
-        let row_span = (span * (1.0 - normalized_height))
-            .max(HOUSE_WALL_THICKNESS * 1.35);
+        let row_span = (span * (1.0 - normalized_height)).max(HOUSE_WALL_THICKNESS * 1.35);
 
         parent.spawn((
             Name::new("Gable fill"),
@@ -820,17 +810,9 @@ fn spawn_gable_fill(
             Transform {
                 translation: base_translation + Vec3::new(0.0, center_y, 0.0),
                 scale: if horizontal {
-                    Vec3::new(
-                        row_span,
-                        row_height + 0.015,
-                        HOUSE_WALL_THICKNESS,
-                    )
+                    Vec3::new(row_span, row_height + 0.015, HOUSE_WALL_THICKNESS)
                 } else {
-                    Vec3::new(
-                        HOUSE_WALL_THICKNESS,
-                        row_height + 0.015,
-                        row_span,
-                    )
+                    Vec3::new(HOUSE_WALL_THICKNESS, row_height + 0.015, row_span)
                 },
                 ..default()
             },

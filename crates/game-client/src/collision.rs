@@ -78,7 +78,8 @@ impl LocalCollision {
         );
 
         self.npc_positions.clear();
-        self.npc_positions.extend(npcs.iter().map(|npc| npc.position));
+        self.npc_positions
+            .extend(npcs.iter().map(|npc| npc.position));
 
         self.stairs.clear();
         for stair in &map.stairs {
@@ -178,10 +179,7 @@ impl LocalCollision {
 
 fn build_house_wall_indexes(
     map: &MapView,
-) -> (
-    HashMap<(Position, Position), Position>,
-    HashSet<Position>,
-) {
+) -> (HashMap<(Position, Position), Position>, HashSet<Position>) {
     let mut crossings = HashMap::new();
     let mut anchors = HashSet::new();
 

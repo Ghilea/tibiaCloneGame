@@ -5,9 +5,9 @@ use game_protocol::ClientMessage;
 use game_types::{EntityId, Position};
 
 use crate::{
+    CreatureActor, MainCamera, MovementState, NativeNetwork, NpcActor,
     state::{NativeGameState, NativeMessageKind},
     world_details::{WorldDoor, WorldObjectActor, WorldResource},
-    CreatureActor, MainCamera, MovementState, NativeNetwork, NpcActor,
 };
 
 // Screen-space radii are intentional. Projecting an isometric cursor ray to
@@ -55,10 +55,8 @@ pub fn setup(
         TargetIndicator,
         Mesh3d(indicator_mesh),
         MeshMaterial3d(indicator_material),
-        Transform::from_rotation(Quat::from_rotation_x(
-            -std::f32::consts::FRAC_PI_2,
-        ))
-        .with_translation(Vec3::new(0.0, 0.075, 0.0)),
+        Transform::from_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2))
+            .with_translation(Vec3::new(0.0, 0.075, 0.0)),
         Visibility::Hidden,
     ));
 
@@ -138,9 +136,7 @@ pub fn handle_pointer_interactions(
         creatures
             .iter()
             .filter(|(_, _, visibility)| **visibility != Visibility::Hidden)
-            .map(|(actor, transform, _)| {
-                (actor.0, transform.translation(), 0.42)
-            }),
+            .map(|(actor, transform, _)| (actor.0, transform.translation(), 0.42)),
     );
 
     // Creatures always win an overlapping pick. Both mouse buttons select and
@@ -161,19 +157,14 @@ pub fn handle_pointer_interactions(
             .iter()
             .filter(|(_, _, visibility)| **visibility != Visibility::Hidden)
             .map(|(resource, transform, _)| {
-            (
-                resource.id.clone(),
-                transform.translation() + Vec3::Y * 0.38,
-                0.38,
-            )
-        }),
+                (
+                    resource.id.clone(),
+                    transform.translation() + Vec3::Y * 0.38,
+                    0.38,
+                )
+            }),
     ) {
-        interact_resource(
-            &network,
-            &movement,
-            &mut game_state,
-            &resource_id,
-        );
+        interact_resource(&network, &movement, &mut game_state, &resource_id);
         return;
     }
 
@@ -186,12 +177,12 @@ pub fn handle_pointer_interactions(
             .iter()
             .filter(|(_, _, visibility)| **visibility != Visibility::Hidden)
             .map(|(door, transform, _)| {
-            (
-                (door.id.clone(), door.position),
-                transform.translation(),
-                0.44,
-            )
-        }),
+                (
+                    (door.id.clone(), door.position),
+                    transform.translation(),
+                    0.44,
+                )
+            }),
     ) {
         interact_door(
             &network,
@@ -208,12 +199,9 @@ pub fn handle_pointer_interactions(
         camera,
         camera_transform,
         NPC_PICK_RADIUS_PX * pick_scale,
-        npcs
-            .iter()
+        npcs.iter()
             .filter(|(_, _, visibility)| **visibility != Visibility::Hidden)
-            .map(|(npc, transform, _)| {
-                (npc.0.clone(), transform.translation(), 0.44)
-            }),
+            .map(|(npc, transform, _)| (npc.0.clone(), transform.translation(), 0.44)),
     ) {
         interact_npc(&movement, &mut game_state, &npc_id);
         return;
@@ -228,12 +216,12 @@ pub fn handle_pointer_interactions(
             .iter()
             .filter(|(_, _, visibility)| **visibility != Visibility::Hidden)
             .map(|(object, transform, _)| {
-            (
-                (object.id.clone(), object.position),
-                transform.translation() + Vec3::Y * 0.34,
-                0.34,
-            )
-        }),
+                (
+                    (object.id.clone(), object.position),
+                    transform.translation() + Vec3::Y * 0.34,
+                    0.34,
+                )
+            }),
     ) {
         interact_world_object(
             &network,
@@ -349,9 +337,12 @@ fn interact_resource(
         return;
     }
 
-    let mining_selected = game_state
-        .local_player()
-        .is_some_and(|player| player.secondary_skills.iter().any(|skill| skill == "mining"));
+    let mining_selected = game_state.local_player().is_some_and(|player| {
+        player
+            .secondary_skills
+            .iter()
+            .any(|skill| skill == "mining")
+    });
     if resource.kind.contains("ore")
         || resource.kind.contains("vein")
         || resource.kind.contains("copper")
@@ -394,11 +385,7 @@ fn interact_door(
     );
 }
 
-fn interact_npc(
-    movement: &MovementState,
-    game_state: &mut NativeGameState,
-    npc_id: &str,
-) {
+fn interact_npc(movement: &MovementState, game_state: &mut NativeGameState, npc_id: &str) {
     let Some(npc) = game_state.npcs.get(npc_id).cloned() else {
         game_state.push_system_message("That NPC is no longer here.");
         return;
@@ -411,10 +398,7 @@ fn interact_npc(
 
     game_state.set_attack_target(None);
     game_state.focus_npc(Some(npc.id.clone()));
-    game_state.push_system_message(format!(
-        "{} — {}: {}",
-        npc.name, npc.title, npc.dialogue,
-    ));
+    game_state.push_system_message(format!("{} — {}: {}", npc.name, npc.title, npc.dialogue,));
 }
 
 fn interact_world_object(
@@ -454,9 +438,7 @@ pub fn sync_target_visual(
         return;
     };
 
-    let Some((_, target_transform)) = creatures
-        .iter()
-        .find(|(actor, _)| actor.0 == target_id)
+    let Some((_, target_transform)) = creatures.iter().find(|(actor, _)| actor.0 == target_id)
     else {
         *visibility = Visibility::Hidden;
         return;
@@ -486,10 +468,7 @@ pub fn update_hud(
             .map(|creature| {
                 format!(
                     "TARGET · {}\nHP {}/{} · {}",
-                    creature.name,
-                    creature.health,
-                    creature.max_health,
-                    creature.state,
+                    creature.name, creature.health, creature.max_health, creature.state,
                 )
             })
             .unwrap_or_default();
@@ -513,11 +492,7 @@ pub fn update_hud(
     }
 }
 
-fn send(
-    network: &NativeNetwork,
-    game_state: &mut NativeGameState,
-    message: ClientMessage,
-) -> bool {
+fn send(network: &NativeNetwork, game_state: &mut NativeGameState, message: ClientMessage) -> bool {
     if network.outbound.send(message).is_ok() {
         true
     } else {
@@ -544,15 +519,12 @@ fn nearest_screen<T: Clone>(
 
         for y_offset in [-half_height, 0.0, half_height] {
             let world_position = center + Vec3::Y * y_offset;
-            let Ok(screen_position) =
-                camera.world_to_viewport(camera_transform, world_position)
+            let Ok(screen_position) = camera.world_to_viewport(camera_transform, world_position)
             else {
                 continue;
             };
 
-            candidate_distance = candidate_distance.min(
-                screen_position.distance_squared(cursor),
-            );
+            candidate_distance = candidate_distance.min(screen_position.distance_squared(cursor));
         }
 
         if candidate_distance > max_distance {
@@ -571,9 +543,7 @@ fn nearest_screen<T: Clone>(
 }
 
 fn within_one_tile(player: Position, target: Position) -> bool {
-    player.z == target.z
-        && (player.x - target.x).abs() <= 1
-        && (player.y - target.y).abs() <= 1
+    player.z == target.z && (player.x - target.x).abs() <= 1 && (player.y - target.y).abs() <= 1
 }
 
 fn message_prefix(kind: NativeMessageKind) -> &'static str {

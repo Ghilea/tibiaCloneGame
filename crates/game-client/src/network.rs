@@ -13,13 +13,9 @@ use game_protocol::{
 };
 use reqwest::StatusCode;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
-use tokio_tungstenite::{
-    connect_async_with_config,
-    tungstenite::Message,
-};
+use tokio_tungstenite::{connect_async_with_config, tungstenite::Message};
 
 use crate::version;
-
 
 pub struct NativeSession {
     pub welcome: Box<WelcomePayload>,
@@ -37,27 +33,22 @@ pub struct NativeLoginResult {
 }
 
 pub fn configured_api_url() -> String {
-    env::var("ALDORIA_API_URL")
-        .unwrap_or_else(|_| {
-            option_env!("ALDORIA_DEFAULT_API_URL")
-                .unwrap_or("http://127.0.0.1:4000/api")
-                .to_owned()
-        })
+    env::var("ALDORIA_API_URL").unwrap_or_else(|_| {
+        option_env!("ALDORIA_DEFAULT_API_URL")
+            .unwrap_or("http://127.0.0.1:4000/api")
+            .to_owned()
+    })
 }
 
 pub fn configured_ws_url() -> String {
-    env::var("ALDORIA_WS_URL")
-        .unwrap_or_else(|_| {
-            option_env!("ALDORIA_DEFAULT_WS_URL")
-                .unwrap_or("ws://127.0.0.1:4000/ws")
-                .to_owned()
-        })
+    env::var("ALDORIA_WS_URL").unwrap_or_else(|_| {
+        option_env!("ALDORIA_DEFAULT_WS_URL")
+            .unwrap_or("ws://127.0.0.1:4000/ws")
+            .to_owned()
+    })
 }
 
-pub fn login_and_list_characters(
-    username: String,
-    password: String,
-) -> Result<NativeLoginResult> {
+pub fn login_and_list_characters(username: String, password: String) -> Result<NativeLoginResult> {
     login_and_list_characters_with_urls(
         configured_api_url(),
         configured_ws_url(),
@@ -90,8 +81,7 @@ pub fn login_and_list_characters_with_urls(
             .await
             .context("could not reach the login endpoint")?;
 
-        let auth: AuthResponse =
-            decode_api_response(auth_response, "login").await?;
+        let auth: AuthResponse = decode_api_response(auth_response, "login").await?;
 
         let characters_response = http
             .get(format!("{api_url}/characters"))
@@ -143,21 +133,15 @@ pub fn create_character(
     })
 }
 
-
-
 pub fn connect_direct_from_env() -> Result<NativeSession> {
-    let session_token = env::var("ALDORIA_SESSION_TOKEN")
-        .context("native launcher session token is missing")?;
+    let session_token =
+        env::var("ALDORIA_SESSION_TOKEN").context("native launcher session token is missing")?;
     let character_id = env::var("ALDORIA_CHARACTER_ID")
         .context("native launcher character id is missing")?
         .parse::<game_types::EntityId>()
         .context("native launcher character id is invalid")?;
 
-    connect_selected_character(
-        configured_ws_url(),
-        session_token,
-        character_id,
-    )
+    connect_selected_character(configured_ws_url(), session_token, character_id)
 }
 
 pub fn connect_selected_character(
@@ -165,37 +149,27 @@ pub fn connect_selected_character(
     session_token: String,
     character_id: game_types::EntityId,
 ) -> Result<NativeSession> {
-    let (ready_tx, ready_rx) =
-        mpsc::sync_channel::<Result<Box<WelcomePayload>, String>>(1);
-    let (incoming_tx, incoming_rx) =
-        mpsc::channel::<ServerMessage>();
-    let (outbound_tx, mut outbound_rx) =
-        unbounded_channel::<ClientMessage>();
+    let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<Box<WelcomePayload>, String>>(1);
+    let (incoming_tx, incoming_rx) = mpsc::channel::<ServerMessage>();
+    let (outbound_tx, mut outbound_rx) = unbounded_channel::<ClientMessage>();
 
     thread::Builder::new()
         .name("aldoria-network".into())
         .spawn(move || {
-            let runtime =
-                match tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                {
-                    Ok(runtime) => runtime,
-                    Err(error) => {
-                        let _ = ready_tx.send(Err(format!(
-                            "failed to create network runtime: {error}"
-                        )));
-                        return;
-                    }
-                };
+            let runtime = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => runtime,
+                Err(error) => {
+                    let _ =
+                        ready_tx.send(Err(format!("failed to create network runtime: {error}")));
+                    return;
+                }
+            };
 
             runtime.block_on(async move {
-                let result = open_selected_session(
-                    ws_url,
-                    session_token,
-                    character_id,
-                )
-                .await;
+                let result = open_selected_session(ws_url, session_token, character_id).await;
 
                 let (mut socket, welcome) = match result {
                     Ok(value) => value,
@@ -309,21 +283,15 @@ async fn open_selected_session(
     session_token: String,
     character_id: game_types::EntityId,
 ) -> Result<(
-    tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
     Box<WelcomePayload>,
 )> {
-    let (mut socket, response) =
-        connect_async_with_config(ws_url.as_str(), None, true)
-            .await
-            .context("failed to connect to the game WebSocket")?;
+    let (mut socket, response) = connect_async_with_config(ws_url.as_str(), None, true)
+        .await
+        .context("failed to connect to the game WebSocket")?;
 
     if response.status().as_u16() != 101 {
-        bail!(
-            "WebSocket upgrade failed with {}",
-            response.status(),
-        );
+        bail!("WebSocket upgrade failed with {}", response.status(),);
     }
 
     let hello = ClientMessage::Hello {
@@ -335,23 +303,17 @@ async fn open_selected_session(
     };
 
     socket
-        .send(Message::Text(
-            serde_json::to_string(&hello)?.into(),
-        ))
+        .send(Message::Text(serde_json::to_string(&hello)?.into()))
         .await
         .context("failed to send native Hello")?;
 
     while let Some(frame) = socket.next().await {
-        let frame =
-            frame.context("WebSocket failed during Welcome")?;
+        let frame = frame.context("WebSocket failed during Welcome")?;
 
         match frame {
             Message::Text(text) => {
-                let message: ServerMessage =
-                    serde_json::from_str(text.as_str())
-                        .context(
-                            "server sent invalid protocol JSON",
-                        )?;
+                let message: ServerMessage = serde_json::from_str(text.as_str())
+                    .context("server sent invalid protocol JSON")?;
 
                 match message {
                     ServerMessage::Welcome { payload } => {
@@ -386,7 +348,10 @@ async fn open_selected_session(
 
 #[allow(dead_code)]
 pub fn connect_interactive() -> Result<NativeSession> {
-    println!("Embers of Aldoria — Native client V{}", version::MIGRATION_VERSION);
+    println!(
+        "Embers of Aldoria — Native client V{}",
+        version::MIGRATION_VERSION
+    );
     println!("--------------------------------------");
 
     let api_url = configured_api_url();
@@ -427,22 +392,15 @@ pub fn connect_interactive() -> Result<NativeSession> {
             {
                 Ok(runtime) => runtime,
                 Err(error) => {
-                    let _ = ready_tx.send(Err(format!(
-                        "failed to create network runtime: {error}"
-                    )));
+                    let _ =
+                        ready_tx.send(Err(format!("failed to create network runtime: {error}")));
                     return;
                 }
             };
 
             runtime.block_on(async move {
-                let result = open_session(
-                    api_url,
-                    ws_url,
-                    username,
-                    password,
-                    character_hint,
-                )
-                .await;
+                let result =
+                    open_session(api_url, ws_url, username, password, character_hint).await;
 
                 let (mut socket, welcome) = match result {
                     Ok(value) => value,
@@ -537,13 +495,14 @@ async fn open_session(
     password: String,
     character_hint: Option<String>,
 ) -> Result<(
-    tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
     Box<WelcomePayload>,
 )> {
     let http = reqwest::Client::builder()
-        .user_agent(format!("Embers-of-Aldoria-Native/{}", version::MIGRATION_VERSION))
+        .user_agent(format!(
+            "Embers-of-Aldoria-Native/{}",
+            version::MIGRATION_VERSION
+        ))
         .build()
         .context("failed to create HTTP client")?;
 
@@ -574,10 +533,9 @@ async fn open_session(
         character.position.z,
     );
 
-    let (mut socket, response) =
-        connect_async_with_config(ws_url.as_str(), None, true)
-            .await
-            .context("failed to connect to the game WebSocket")?;
+    let (mut socket, response) = connect_async_with_config(ws_url.as_str(), None, true)
+        .await
+        .context("failed to connect to the game WebSocket")?;
 
     // TIBIAGAME_V36_2_2_WEBSOCKET_101_FIX
     // A successful WebSocket HTTP upgrade is 101 Switching Protocols, not 2xx.
@@ -645,10 +603,7 @@ async fn open_session(
     bail!("WebSocket ended before Welcome")
 }
 
-async fn decode_api_response<T>(
-    response: reqwest::Response,
-    operation: &str,
-) -> Result<T>
+async fn decode_api_response<T>(response: reqwest::Response, operation: &str) -> Result<T>
 where
     T: serde::de::DeserializeOwned,
 {

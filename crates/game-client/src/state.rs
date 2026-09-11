@@ -5,9 +5,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use bevy::prelude::Resource;
 use game_protocol::{ServerMessage, WelcomePayload};
 use game_types::{
-    CreatureView, EntityId, GroundItem, ItemDefinition, ItemInstance, NpcView,
-    PlayerView, Position, ProfessionSkillView, ResourceNodeView, RuneRecipe,
-    SpellDefinition,
+    CreatureView, EntityId, GroundItem, ItemDefinition, ItemInstance, NpcView, PlayerView,
+    Position, ProfessionSkillView, ResourceNodeView, RuneRecipe, SpellDefinition,
 };
 
 const MAX_MESSAGE_LINES: usize = 256;
@@ -162,11 +161,7 @@ impl NativeGameState {
                 .cloned()
                 .map(|skill| (skill.id.clone(), skill))
                 .collect(),
-            discovered_knowledge_ids: welcome
-                .discovered_knowledge_ids
-                .iter()
-                .cloned()
-                .collect(),
+            discovered_knowledge_ids: welcome.discovered_knowledge_ids.iter().cloned().collect(),
             food_remaining_ms: 0,
             crafting: None,
             last_ability: None,
@@ -285,10 +280,7 @@ impl NativeGameState {
             ServerMessage::Spoken {
                 player_name, text, ..
             } => {
-                self.push_message(
-                    NativeMessageKind::Chat,
-                    format!("{player_name}: {text}"),
-                );
+                self.push_message(NativeMessageKind::Chat, format!("{player_name}: {text}"));
             }
             ServerMessage::PlayerOutfitChanged { player_id, outfit } => {
                 if let Some(player) = self.players.get_mut(player_id) {
@@ -331,10 +323,7 @@ impl NativeGameState {
                 learned_spell_ids,
             } if *player_id == self.local_player_id => {
                 self.learned_spell_ids = learned_spell_ids.iter().cloned().collect();
-                self.push_message(
-                    NativeMessageKind::System,
-                    "Your learned spells changed.",
-                );
+                self.push_message(NativeMessageKind::System, "Your learned spells changed.");
             }
             ServerMessage::RecipesChanged {
                 player_id,
@@ -370,10 +359,7 @@ impl NativeGameState {
                     .and_then(|id| self.item_definitions.get(id))
                     .map(|definition| format!(" Reward: {}.", definition.name))
                     .unwrap_or_default();
-                self.push_message(
-                    NativeMessageKind::Discovery,
-                    format!("{text}{reward}"),
-                );
+                self.push_message(NativeMessageKind::Discovery, format!("{text}{reward}"));
             }
             ServerMessage::GroundItemsChanged { ground_items } => {
                 self.ground_items = ground_items.clone();
@@ -601,18 +587,12 @@ impl NativeGameState {
                 if *player_id == self.local_player_id {
                     self.attack_target_id = None;
                     self.focused_npc_id = None;
-                    self.push_message(
-                        NativeMessageKind::System,
-                        "You died.",
-                    );
+                    self.push_message(NativeMessageKind::System, "You died.");
                 }
             }
             ServerMessage::Error { code, message } => {
                 self.last_error = Some((code.clone(), message.clone()));
-                self.push_message(
-                    NativeMessageKind::Error,
-                    format!("{code}: {message}"),
-                );
+                self.push_message(NativeMessageKind::Error, format!("{code}: {message}"));
             }
 
             // These messages are represented by dedicated world/render systems,
@@ -635,11 +615,7 @@ impl NativeGameState {
         }
     }
 
-    fn push_message(
-        &mut self,
-        kind: NativeMessageKind,
-        text: impl Into<String>,
-    ) {
+    fn push_message(&mut self, kind: NativeMessageKind, text: impl Into<String>) {
         self.messages.push_back(NativeMessageLine {
             kind,
             text: text.into(),

@@ -2,38 +2,24 @@
 use std::{fs, path::PathBuf};
 
 use bevy::{
-    audio::{
-        AudioPlayer,
-        AudioSink,
-        AudioSinkPlayback,
-        AudioSource,
-        PlaybackSettings,
-        Volume,
-    },
+    audio::{AudioPlayer, AudioSink, AudioSinkPlayback, AudioSource, PlaybackSettings, Volume},
     prelude::*,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    native_modal,
-    native_map_ui::NativeMapUiState,
-    native_ui_theme as theme,
-    native_ui::NativePanelState,
-    state::NativeGameState,
+    native_map_ui::NativeMapUiState, native_modal, native_ui::NativePanelState,
+    native_ui_theme as theme, state::NativeGameState,
 };
 
 const DEFAULT_MASTER: u8 = 100;
 const DEFAULT_MUSIC: u8 = 18;
 const DEFAULT_EFFECTS: u8 = 80;
 
-const TOWN_TRACK: &str =
-    "audio/music/medieval-harvest-season.mp3";
-const WILDERNESS_TRACK: &str =
-    "audio/music/medieval-exploration.mp3";
-const SWAMP_TRACK: &str =
-    "audio/music/swamp-theme-loop.ogg";
-const BATTLE_TRACK: &str =
-    "audio/music/battle-theme.mp3";
+const TOWN_TRACK: &str = "audio/music/medieval-harvest-season.mp3";
+const WILDERNESS_TRACK: &str = "audio/music/medieval-exploration.mp3";
+const SWAMP_TRACK: &str = "audio/music/swamp-theme-loop.ogg";
+const BATTLE_TRACK: &str = "audio/music/battle-theme.mp3";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -66,10 +52,7 @@ impl NativeSettings {
             return Self::default();
         };
         let Ok(mut value) = serde_json::from_str::<Self>(&raw) else {
-            warn!(
-                "ALDORIA SETTINGS · could not parse {}",
-                path.display(),
-            );
+            warn!("ALDORIA SETTINGS · could not parse {}", path.display(),);
             return Self::default();
         };
         value.normalize();
@@ -113,8 +96,7 @@ impl NativeSettings {
             return 0.0;
         }
 
-        (self.master_volume as f32 / 100.0)
-            * (self.music_volume as f32 / 100.0)
+        (self.master_volume as f32 / 100.0) * (self.music_volume as f32 / 100.0)
     }
 }
 
@@ -172,9 +154,7 @@ pub(crate) enum NativeSettingsText {
 }
 
 #[derive(Component, Clone, Copy)]
-pub(crate) struct NativeSettingsValue(
-    pub(crate) usize,
-);
+pub(crate) struct NativeSettingsValue(pub(crate) usize);
 
 #[derive(Component, Clone, Copy)]
 pub(crate) enum NativeSettingsAction {
@@ -215,144 +195,88 @@ pub fn setup(mut commands: Commands) {
             native_modal::backdrop(),
         ))
         .with_children(|root| {
-            root
-                .spawn((
-                    Name::new("Native modal surface · options"),
-                    native_modal::NativeModalSurface,
-                    native_modal::panel_node(
-                        720.0,
-                        520.0,
-                    ),
-                    native_modal::surface(),
-                    native_modal::surface_border(),
-                ))
-                .with_children(|panel| {
-                    panel
-                        .spawn((
-                            native_modal::header_node(),
-                            native_modal::divider_border(),
-                        ))
-                        .with_children(|header| {
-                            header
-                                .spawn(
-                                    native_modal::header_copy_node(),
-                                )
-                                .with_children(|copy| {
-                                    copy.spawn((
-                                        Text::new("OPTIONS"),
-                                        TextFont {
-                                            font_size:
-                                                FontSize::Px(
-                                                    24.0,
-                                                ),
-                                            ..default()
-                                        },
-                                        TextColor(
-                                            theme::GOLD_BRIGHT,
-                                        ),
-                                    ));
+            root.spawn((
+                Name::new("Native modal surface · options"),
+                native_modal::NativeModalSurface,
+                native_modal::panel_node(720.0, 520.0),
+                native_modal::surface(),
+                native_modal::surface_border(),
+            ))
+            .with_children(|panel| {
+                panel
+                    .spawn((native_modal::header_node(), native_modal::divider_border()))
+                    .with_children(|header| {
+                        header
+                            .spawn(native_modal::header_copy_node())
+                            .with_children(|copy| {
+                                copy.spawn((
+                                    Text::new("OPTIONS"),
+                                    TextFont {
+                                        font_size: FontSize::Px(24.0),
+                                        ..default()
+                                    },
+                                    TextColor(theme::GOLD_BRIGHT),
+                                ));
 
-                                    copy.spawn((
-                                        Text::new(
-                                            "Audio, accessibility and diagnostics",
-                                        ),
-                                        TextFont {
-                                            font_size:
-                                                FontSize::Px(
-                                                    11.0,
-                                                ),
-                                            ..default()
-                                        },
-                                        TextColor(
-                                            theme::MUTED,
-                                        ),
-                                    ));
-                                });
+                                copy.spawn((
+                                    Text::new("Audio, accessibility and diagnostics"),
+                                    TextFont {
+                                        font_size: FontSize::Px(11.0),
+                                        ..default()
+                                    },
+                                    TextColor(theme::MUTED),
+                                ));
+                            });
 
-                            spawn_settings_button(
-                                header,
-                                NativeSettingsAction::Close,
-                                "X",
-                                42.0,
-                            );
-                        });
+                        spawn_settings_button(header, NativeSettingsAction::Close, "X", 42.0);
+                    });
 
-                    panel
-                        .spawn(
-                            native_modal::body_node(),
-                        )
-                        .with_children(|body| {
-                            spawn_volume_row(
-                                body,
-                                0,
-                                "MASTER VOLUME",
-                                "Overall output level",
-                            );
+                panel
+                    .spawn(native_modal::body_node())
+                    .with_children(|body| {
+                        spawn_volume_row(body, 0, "MASTER VOLUME", "Overall output level");
 
-                            spawn_volume_row(
-                                body,
-                                1,
-                                "MUSIC VOLUME",
-                                "World and combat music",
-                            );
+                        spawn_volume_row(body, 1, "MUSIC VOLUME", "World and combat music");
 
-                            spawn_volume_row(
-                                body,
-                                2,
-                                "EFFECTS VOLUME",
-                                "Gameplay sound effects",
-                            );
+                        spawn_volume_row(body, 2, "EFFECTS VOLUME", "Gameplay sound effects");
 
-                            spawn_toggle_row(
-                                body,
-                                3,
-                                "MUTE ALL AUDIO",
-                                "Temporarily silence native audio",
-                            );
+                        spawn_toggle_row(
+                            body,
+                            3,
+                            "MUTE ALL AUDIO",
+                            "Temporarily silence native audio",
+                        );
 
-                            spawn_toggle_row(
-                                body,
-                                4,
-                                "REDUCED MOTION",
-                                "Reduce non-essential movement effects",
-                            );
+                        spawn_toggle_row(
+                            body,
+                            4,
+                            "REDUCED MOTION",
+                            "Reduce non-essential movement effects",
+                        );
 
-                            spawn_toggle_row(
-                                body,
-                                5,
-                                "PERFORMANCE HUD",
-                                "Show FPS and frame-time diagnostics",
-                            );
-                        });
+                        spawn_toggle_row(
+                            body,
+                            5,
+                            "PERFORMANCE HUD",
+                            "Show FPS and frame-time diagnostics",
+                        );
+                    });
 
-                    panel
-                        .spawn((
-                            native_modal::footer_node(),
-                            native_modal::divider_border(),
-                        ))
-                        .with_children(|footer| {
-                            footer.spawn((
-                                Text::new(
-                                    "F10 / Esc closes  |  Arrow keys and Space still work",
-                                ),
-                                TextFont {
-                                    font_size:
-                                        FontSize::Px(
-                                            9.8,
-                                        ),
-                                    ..default()
-                                },
-                                TextColor(theme::MUTED),
-                            ));
+                panel
+                    .spawn((native_modal::footer_node(), native_modal::divider_border()))
+                    .with_children(|footer| {
+                        footer.spawn((
+                            Text::new("F10 / Esc closes  |  Arrow keys and Space still work"),
+                            TextFont {
+                                font_size: FontSize::Px(9.8),
+                                ..default()
+                            },
+                            TextColor(theme::MUTED),
+                        ));
 
-                            spawn_settings_button(
-                                footer,
-                                NativeSettingsAction::Close,
-                                "DONE",
-                                118.0,
-                            );
-                        });
-                });
+                        spawn_settings_button(footer, NativeSettingsAction::Close, "DONE", 118.0);
+                    });
+            });
         });
 
     commands
@@ -361,35 +285,21 @@ pub fn setup(mut commands: Commands) {
             NativePerformancePanel,
             Visibility::Hidden,
             Node {
-                position_type:
-                    PositionType::Absolute,
+                position_type: PositionType::Absolute,
                 top: px(14),
                 left: Val::Percent(50.0),
                 width: px(310),
-                margin:
-                    UiRect::left(px(-155)),
-                padding:
-                    UiRect::all(px(7)),
+                margin: UiRect::left(px(-155)),
+                padding: UiRect::all(px(7)),
                 ..default()
             },
-            BackgroundColor(
-                Color::srgba(
-                    0.015,
-                    0.020,
-                    0.018,
-                    0.82,
-                ),
-            ),
+            BackgroundColor(Color::srgba(0.015, 0.020, 0.018, 0.82)),
         ))
         .with_child(settings_text(
             "",
             NativeSettingsText::Performance,
             11.0,
-            Color::srgb(
-                0.72,
-                0.78,
-                0.73,
-            ),
+            Color::srgb(0.72, 0.78, 0.73),
         ));
 }
 
@@ -406,28 +316,19 @@ fn spawn_settings_button(
             Node {
                 width: px(width),
                 height: px(38),
-                border:
-                    UiRect::all(px(1)),
-                border_radius:
-                    BorderRadius::all(px(6)),
-                align_items:
-                    AlignItems::Center,
-                justify_content:
-                    JustifyContent::Center,
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(6)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
                 ..default()
             },
-            BackgroundColor(
-                theme::BUTTON_BG,
-            ),
-            BorderColor::all(
-                theme::BUTTON_BORDER,
-            ),
+            BackgroundColor(theme::BUTTON_BG),
+            BorderColor::all(theme::BUTTON_BORDER),
         ))
         .with_child((
             Text::new(label),
             TextFont {
-                font_size:
-                    FontSize::Px(11.0),
+                font_size: FontSize::Px(11.0),
                 ..default()
             },
             TextColor(theme::TEXT),
@@ -444,31 +345,21 @@ fn settings_row_node() -> Node {
             top: px(8),
             bottom: px(8),
         },
-        border:
-            UiRect::all(px(1)),
-        border_radius:
-            BorderRadius::all(px(7)),
-        flex_direction:
-            FlexDirection::Row,
-        align_items:
-            AlignItems::Center,
-        justify_content:
-            JustifyContent::SpaceBetween,
+        border: UiRect::all(px(1)),
+        border_radius: BorderRadius::all(px(7)),
+        flex_direction: FlexDirection::Row,
+        align_items: AlignItems::Center,
+        justify_content: JustifyContent::SpaceBetween,
         column_gap: px(12),
         ..default()
     }
 }
 
-fn settings_row_copy(
-    parent: &mut ChildSpawnerCommands,
-    title: &str,
-    detail: &str,
-) {
+fn settings_row_copy(parent: &mut ChildSpawnerCommands, title: &str, detail: &str) {
     parent
         .spawn(Node {
             flex_grow: 1.0,
-            flex_direction:
-                FlexDirection::Column,
+            flex_direction: FlexDirection::Column,
             row_gap: px(3),
             ..default()
         })
@@ -476,8 +367,7 @@ fn settings_row_copy(
             copy.spawn((
                 Text::new(title),
                 TextFont {
-                    font_size:
-                        FontSize::Px(12.0),
+                    font_size: FontSize::Px(12.0),
                     ..default()
                 },
                 TextColor(theme::TEXT),
@@ -486,8 +376,7 @@ fn settings_row_copy(
             copy.spawn((
                 Text::new(detail),
                 TextFont {
-                    font_size:
-                        FontSize::Px(9.5),
+                    font_size: FontSize::Px(9.5),
                     ..default()
                 },
                 TextColor(theme::MUTED),
@@ -495,146 +384,79 @@ fn settings_row_copy(
         });
 }
 
-fn spawn_volume_row(
-    parent: &mut ChildSpawnerCommands,
-    index: usize,
-    title: &str,
-    detail: &str,
-) {
+fn spawn_volume_row(parent: &mut ChildSpawnerCommands, index: usize, title: &str, detail: &str) {
     parent
         .spawn((
             settings_row_node(),
-            BackgroundColor(
-                theme::PANEL_BG_SOFT,
-            ),
-            BorderColor::all(
-                theme::BUTTON_BORDER,
-            ),
+            BackgroundColor(theme::PANEL_BG_SOFT),
+            BorderColor::all(theme::BUTTON_BORDER),
         ))
         .with_children(|row| {
-            settings_row_copy(
-                row,
-                title,
-                detail,
-            );
+            settings_row_copy(row, title, detail);
 
-            row
-                .spawn(Node {
-                    flex_direction:
-                        FlexDirection::Row,
-                    align_items:
-                        AlignItems::Center,
-                    column_gap: px(6),
-                    ..default()
-                })
-                .with_children(|controls| {
-                    spawn_settings_button(
-                        controls,
-                        NativeSettingsAction::Decrease(
-                            index,
-                        ),
-                        "-",
-                        38.0,
-                    );
+            row.spawn(Node {
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                column_gap: px(6),
+                ..default()
+            })
+            .with_children(|controls| {
+                spawn_settings_button(controls, NativeSettingsAction::Decrease(index), "-", 38.0);
 
-                    controls.spawn((
-                        NativeSettingsValue(
-                            index,
-                        ),
-                        Text::new("0%"),
-                        TextFont {
-                            font_size:
-                                FontSize::Px(
-                                    12.0,
-                                ),
-                            ..default()
-                        },
-                        TextColor(
-                            theme::GOLD_BRIGHT,
-                        ),
-                        Node {
-                            width: px(54),
-                            justify_content:
-                                JustifyContent::Center,
-                            ..default()
-                        },
-                    ));
+                controls.spawn((
+                    NativeSettingsValue(index),
+                    Text::new("0%"),
+                    TextFont {
+                        font_size: FontSize::Px(12.0),
+                        ..default()
+                    },
+                    TextColor(theme::GOLD_BRIGHT),
+                    Node {
+                        width: px(54),
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                ));
 
-                    spawn_settings_button(
-                        controls,
-                        NativeSettingsAction::Increase(
-                            index,
-                        ),
-                        "+",
-                        38.0,
-                    );
-                });
+                spawn_settings_button(controls, NativeSettingsAction::Increase(index), "+", 38.0);
+            });
         });
 }
 
-fn spawn_toggle_row(
-    parent: &mut ChildSpawnerCommands,
-    index: usize,
-    title: &str,
-    detail: &str,
-) {
+fn spawn_toggle_row(parent: &mut ChildSpawnerCommands, index: usize, title: &str, detail: &str) {
     parent
         .spawn((
             settings_row_node(),
-            BackgroundColor(
-                theme::PANEL_BG_SOFT,
-            ),
-            BorderColor::all(
-                theme::BUTTON_BORDER,
-            ),
+            BackgroundColor(theme::PANEL_BG_SOFT),
+            BorderColor::all(theme::BUTTON_BORDER),
         ))
         .with_children(|row| {
-            settings_row_copy(
-                row,
-                title,
-                detail,
-            );
+            settings_row_copy(row, title, detail);
 
-            row
-                .spawn((
-                    Button,
-                    NativeSettingsAction::Toggle(
-                        index,
-                    ),
-                    Node {
-                        width: px(92),
-                        height: px(38),
-                        border:
-                            UiRect::all(px(1)),
-                        border_radius:
-                            BorderRadius::all(
-                                px(6),
-                            ),
-                        align_items:
-                            AlignItems::Center,
-                        justify_content:
-                            JustifyContent::Center,
-                        ..default()
-                    },
-                    BackgroundColor(
-                        theme::BUTTON_BG,
-                    ),
-                    BorderColor::all(
-                        theme::BUTTON_BORDER,
-                    ),
-                ))
-                .with_child((
-                    NativeSettingsValue(index),
-                    Text::new("OFF"),
-                    TextFont {
-                        font_size:
-                            FontSize::Px(11.0),
-                        ..default()
-                    },
-                    TextColor(
-                        theme::TEXT,
-                    ),
-                ));
+            row.spawn((
+                Button,
+                NativeSettingsAction::Toggle(index),
+                Node {
+                    width: px(92),
+                    height: px(38),
+                    border: UiRect::all(px(1)),
+                    border_radius: BorderRadius::all(px(6)),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                },
+                BackgroundColor(theme::BUTTON_BG),
+                BorderColor::all(theme::BUTTON_BORDER),
+            ))
+            .with_child((
+                NativeSettingsValue(index),
+                Text::new("OFF"),
+                TextFont {
+                    font_size: FontSize::Px(11.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+            ));
         });
 }
 
@@ -688,8 +510,11 @@ pub fn handle_input(
     }
 
     if keys.just_pressed(KeyCode::ArrowUp) {
-        state.selected =
-            if state.selected == 0 { 5 } else { state.selected - 1 };
+        state.selected = if state.selected == 0 {
+            5
+        } else {
+            state.selected - 1
+        };
     }
 
     let decrease = keys.just_pressed(KeyCode::ArrowLeft);
@@ -699,35 +524,24 @@ pub fn handle_input(
 
     match state.selected {
         0 if decrease || increase => {
-            changed = adjust_volume(
-                &mut state.settings.master_volume,
-                increase,
-            );
+            changed = adjust_volume(&mut state.settings.master_volume, increase);
         }
         1 if decrease || increase => {
-            changed = adjust_volume(
-                &mut state.settings.music_volume,
-                increase,
-            );
+            changed = adjust_volume(&mut state.settings.music_volume, increase);
         }
         2 if decrease || increase => {
-            changed = adjust_volume(
-                &mut state.settings.effects_volume,
-                increase,
-            );
+            changed = adjust_volume(&mut state.settings.effects_volume, increase);
         }
         3 if keys.just_pressed(KeyCode::Space) => {
             state.settings.muted = !state.settings.muted;
             changed = true;
         }
         4 if keys.just_pressed(KeyCode::Space) => {
-            state.settings.reduced_motion =
-                !state.settings.reduced_motion;
+            state.settings.reduced_motion = !state.settings.reduced_motion;
             changed = true;
         }
         5 if keys.just_pressed(KeyCode::Space) => {
-            state.settings.show_performance =
-                !state.settings.show_performance;
+            state.settings.show_performance = !state.settings.show_performance;
             changed = true;
         }
         _ => {}
@@ -738,10 +552,7 @@ pub fn handle_input(
     }
 }
 
-fn close_other_panels(
-    panels: &mut NativePanelState,
-    map_ui: &mut NativeMapUiState,
-) {
+fn close_other_panels(panels: &mut NativePanelState, map_ui: &mut NativeMapUiState) {
     panels.inventory_open = false;
     panels.character_open = false;
     panels.skills_open = false;
@@ -751,10 +562,7 @@ fn close_other_panels(
     map_ui.world_map_open = false;
 }
 
-fn adjust_volume(
-    value: &mut u8,
-    increase: bool,
-) -> bool {
+fn adjust_volume(value: &mut u8, increase: bool) -> bool {
     let before = *value;
 
     if increase {
@@ -767,8 +575,7 @@ fn adjust_volume(
 }
 
 pub(crate) fn handle_buttons(
-    mut state:
-        ResMut<NativeSettingsState>,
+    mut state: ResMut<NativeSettingsState>,
     mut buttons: Query<
         (
             &Interaction,
@@ -776,43 +583,22 @@ pub(crate) fn handle_buttons(
             &mut BackgroundColor,
             &mut BorderColor,
         ),
-        (
-            Changed<Interaction>,
-            With<Button>,
-        ),
+        (Changed<Interaction>, With<Button>),
     >,
 ) {
-    for (
-        interaction,
-        action,
-        mut background,
-        mut border,
-    ) in &mut buttons
-    {
+    for (interaction, action, mut background, mut border) in &mut buttons {
         match *interaction {
             Interaction::Hovered => {
-                background.0 =
-                    theme::BUTTON_HOVER;
-                *border =
-                    BorderColor::all(
-                        theme::GOLD,
-                    );
+                background.0 = theme::BUTTON_HOVER;
+                *border = BorderColor::all(theme::GOLD);
             }
             Interaction::None => {
-                background.0 =
-                    theme::BUTTON_BG;
-                *border =
-                    BorderColor::all(
-                        theme::BUTTON_BORDER,
-                    );
+                background.0 = theme::BUTTON_BG;
+                *border = BorderColor::all(theme::BUTTON_BORDER);
             }
             Interaction::Pressed => {
-                background.0 =
-                    theme::BUTTON_PRESSED;
-                *border =
-                    BorderColor::all(
-                        theme::GOLD_BRIGHT,
-                    );
+                background.0 = theme::BUTTON_PRESSED;
+                *border = BorderColor::all(theme::GOLD_BRIGHT);
 
                 if !state.options_open {
                     continue;
@@ -821,38 +607,17 @@ pub(crate) fn handle_buttons(
                 let mut changed = false;
 
                 match *action {
-                    NativeSettingsAction::Decrease(
-                        index,
-                    ) => {
-                        changed =
-                            adjust_setting_index(
-                                &mut state,
-                                index,
-                                false,
-                            );
+                    NativeSettingsAction::Decrease(index) => {
+                        changed = adjust_setting_index(&mut state, index, false);
                     }
-                    NativeSettingsAction::Increase(
-                        index,
-                    ) => {
-                        changed =
-                            adjust_setting_index(
-                                &mut state,
-                                index,
-                                true,
-                            );
+                    NativeSettingsAction::Increase(index) => {
+                        changed = adjust_setting_index(&mut state, index, true);
                     }
-                    NativeSettingsAction::Toggle(
-                        index,
-                    ) => {
-                        changed =
-                            toggle_setting_index(
-                                &mut state,
-                                index,
-                            );
+                    NativeSettingsAction::Toggle(index) => {
+                        changed = toggle_setting_index(&mut state, index);
                     }
                     NativeSettingsAction::Close => {
-                        state.options_open =
-                            false;
+                        state.options_open = false;
                     }
                 }
 
@@ -864,67 +629,44 @@ pub(crate) fn handle_buttons(
     }
 }
 
-fn adjust_setting_index(
-    state: &mut NativeSettingsState,
-    index: usize,
-    increase: bool,
-) -> bool {
+fn adjust_setting_index(state: &mut NativeSettingsState, index: usize, increase: bool) -> bool {
     state.selected = index.min(5);
 
     match index {
-        0 => adjust_volume(
-            &mut state.settings.master_volume,
-            increase,
-        ),
-        1 => adjust_volume(
-            &mut state.settings.music_volume,
-            increase,
-        ),
-        2 => adjust_volume(
-            &mut state.settings.effects_volume,
-            increase,
-        ),
+        0 => adjust_volume(&mut state.settings.master_volume, increase),
+        1 => adjust_volume(&mut state.settings.music_volume, increase),
+        2 => adjust_volume(&mut state.settings.effects_volume, increase),
         _ => false,
     }
 }
 
-fn toggle_setting_index(
-    state: &mut NativeSettingsState,
-    index: usize,
-) -> bool {
+fn toggle_setting_index(state: &mut NativeSettingsState, index: usize) -> bool {
     state.selected = index.min(5);
 
     match index {
         3 => {
-            state.settings.muted =
-                !state.settings.muted;
+            state.settings.muted = !state.settings.muted;
             true
         }
         4 => {
-            state.settings.reduced_motion =
-                !state.settings.reduced_motion;
+            state.settings.reduced_motion = !state.settings.reduced_motion;
             true
         }
         5 => {
-            state.settings.show_performance =
-                !state.settings.show_performance;
+            state.settings.show_performance = !state.settings.show_performance;
             true
         }
         _ => false,
     }
 }
 
-pub fn update_performance_probe(
-    time: Res<Time>,
-    mut state: ResMut<NativeSettingsState>,
-) {
+pub fn update_performance_probe(time: Res<Time>, mut state: ResMut<NativeSettingsState>) {
     let frame_seconds = time.delta().as_secs_f64();
     let frame_ms = frame_seconds * 1000.0;
 
     state.sample_frames += 1;
     state.sample_total_ms += frame_ms;
-    state.sample_max_ms =
-        state.sample_max_ms.max(frame_ms);
+    state.sample_max_ms = state.sample_max_ms.max(frame_ms);
     state.sample_elapsed += frame_seconds;
 
     if state.sample_elapsed < 0.5 {
@@ -947,130 +689,69 @@ pub fn update_performance_probe(
 pub fn update_ui(
     state: Res<NativeSettingsState>,
     mut queries: ParamSet<(
-        Query<
-            (
-                &NativeSettingsText,
-                &mut Text,
-            ),
-        >,
-        Query<
-            (
-                &NativeSettingsValue,
-                &mut Text,
-                &mut TextColor,
-            ),
-        >,
-        Query<
-            &mut Visibility,
-            With<NativeOptionsPanel>,
-        >,
-        Query<
-            &mut Visibility,
-            With<NativePerformancePanel>,
-        >,
+        Query<(&NativeSettingsText, &mut Text)>,
+        Query<(&NativeSettingsValue, &mut Text, &mut TextColor)>,
+        Query<&mut Visibility, With<NativeOptionsPanel>>,
+        Query<&mut Visibility, With<NativePerformancePanel>>,
     )>,
 ) {
     for mut visibility in &mut queries.p2() {
-        *visibility =
-            if state.options_open {
-                Visibility::Visible
-            } else {
-                Visibility::Hidden
-            };
+        *visibility = if state.options_open {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
     }
 
     for mut visibility in &mut queries.p3() {
-        *visibility =
-            if state.settings.show_performance {
-                Visibility::Visible
-            } else {
-                Visibility::Hidden
-            };
+        *visibility = if state.settings.show_performance {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
     }
 
     let performance = format!(
         "FPS {:>5.1}   |   avg {:>5.2} ms   |   max {:>5.2} ms",
-        state.fps,
-        state.average_ms,
-        state.max_ms,
+        state.fps, state.average_ms, state.max_ms,
     );
 
     for (kind, mut text) in &mut queries.p0() {
         match kind {
             NativeSettingsText::Performance => {
-                text.0 =
-                    performance.clone();
+                text.0 = performance.clone();
             }
         }
     }
 
-    for (
-        value,
-        mut text,
-        mut color,
-    ) in &mut queries.p1()
-    {
-        text.0 =
-            settings_value_label(
-                &state,
-                value.0,
-            );
+    for (value, mut text, mut color) in &mut queries.p1() {
+        text.0 = settings_value_label(&state, value.0);
 
-        color.0 =
-            if state.selected == value.0 {
-                theme::GOLD_BRIGHT
-            } else {
-                theme::TEXT
-            };
+        color.0 = if state.selected == value.0 {
+            theme::GOLD_BRIGHT
+        } else {
+            theme::TEXT
+        };
     }
 }
 
-fn settings_value_label(
-    state: &NativeSettingsState,
-    index: usize,
-) -> String {
+fn settings_value_label(state: &NativeSettingsState, index: usize) -> String {
     match index {
         0 => {
-            format!(
-                "{}%",
-                state.settings.master_volume,
-            )
+            format!("{}%", state.settings.master_volume,)
         }
         1 => {
-            format!(
-                "{}%",
-                state.settings.music_volume,
-            )
+            format!("{}%", state.settings.music_volume,)
         }
         2 => {
-            format!(
-                "{}%",
-                state.settings.effects_volume,
-            )
+            format!("{}%", state.settings.effects_volume,)
         }
-        3 => {
-            toggle_label(
-                state.settings.muted,
-            )
-            .into()
-        }
-        4 => {
-            toggle_label(
-                state.settings.reduced_motion,
-            )
-            .into()
-        }
-        5 => {
-            toggle_label(
-                state.settings.show_performance,
-            )
-            .into()
-        }
+        3 => toggle_label(state.settings.muted).into(),
+        4 => toggle_label(state.settings.reduced_motion).into(),
+        5 => toggle_label(state.settings.show_performance).into(),
         _ => String::new(),
     }
 }
-
-
 
 fn toggle_label(value: bool) -> &'static str {
     if value { "ON" } else { "OFF" }
@@ -1104,8 +785,7 @@ pub fn sync_world_music(
         MusicMood::Battle => BATTLE_TRACK,
     };
 
-    let initial_volume =
-        Volume::Linear(settings.settings.effective_music_volume());
+    let initial_volume = Volume::Linear(settings.settings.effective_music_volume());
 
     let playback = if mood == MusicMood::Swamp {
         PlaybackSettings::LOOP.with_volume(initial_volume)
@@ -1125,8 +805,7 @@ pub fn apply_audio_settings(
     state: Res<NativeSettingsState>,
     mut sinks: Query<&mut AudioSink, With<NativeMusic>>,
 ) {
-    let volume =
-        Volume::Linear(state.settings.effective_music_volume());
+    let volume = Volume::Linear(state.settings.effective_music_volume());
 
     for mut sink in &mut sinks {
         sink.set_volume(volume);
@@ -1139,9 +818,7 @@ pub fn apply_audio_settings(
     }
 }
 
-fn resolve_music_mood(
-    game_state: &NativeGameState,
-) -> MusicMood {
+fn resolve_music_mood(game_state: &NativeGameState) -> MusicMood {
     if game_state.attack_target_id.is_some() {
         return MusicMood::Battle;
     }
@@ -1152,34 +829,25 @@ fn resolve_music_mood(
 
     let position = player.position;
 
-    let swamp = game_state
-        .creatures
-        .values()
-        .any(|creature| {
-            creature.position.z == position.z
-                && matches!(
-                    creature.definition_id.as_str(),
-                    "mireling"
-                        | "mire_skulker"
-                        | "reed_stalker"
-                        | "fen_brute"
-                )
-                && (creature.position.x - position.x).abs() <= 18
-                && (creature.position.y - position.y).abs() <= 18
-        });
+    let swamp = game_state.creatures.values().any(|creature| {
+        creature.position.z == position.z
+            && matches!(
+                creature.definition_id.as_str(),
+                "mireling" | "mire_skulker" | "reed_stalker" | "fen_brute"
+            )
+            && (creature.position.x - position.x).abs() <= 18
+            && (creature.position.y - position.y).abs() <= 18
+    });
 
     if swamp {
         return MusicMood::Swamp;
     }
 
-    let town = game_state
-        .npcs
-        .values()
-        .any(|npc| {
-            npc.position.z == position.z
-                && (npc.position.x - position.x).abs() <= 14
-                && (npc.position.y - position.y).abs() <= 14
-        });
+    let town = game_state.npcs.values().any(|npc| {
+        npc.position.z == position.z
+            && (npc.position.x - position.x).abs() <= 14
+            && (npc.position.y - position.y).abs() <= 14
+    });
 
     if town {
         MusicMood::Town

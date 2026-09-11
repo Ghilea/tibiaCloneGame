@@ -5,12 +5,7 @@ use bevy::prelude::*;
 use game_protocol::{MapView, WelcomePayload};
 use game_types::Position;
 
-use crate::{
-    native_modal,
-    native_ui_theme as theme,
-    state::NativeGameState,
-    MovementState,
-};
+use crate::{MovementState, native_modal, native_ui_theme as theme, state::NativeGameState};
 
 const ATLAS_CHUNK: i32 = 4;
 const MINIMAP_RADIUS: i32 = 13;
@@ -120,14 +115,10 @@ impl NativeMapState {
     }
 
     fn capture_region(&mut self) {
-        let min_x = (self.region_center.x - self.region_radius)
-            .div_euclid(ATLAS_CHUNK);
-        let max_x = (self.region_center.x + self.region_radius)
-            .div_euclid(ATLAS_CHUNK);
-        let min_y = (self.region_center.y - self.region_radius)
-            .div_euclid(ATLAS_CHUNK);
-        let max_y = (self.region_center.y + self.region_radius)
-            .div_euclid(ATLAS_CHUNK);
+        let min_x = (self.region_center.x - self.region_radius).div_euclid(ATLAS_CHUNK);
+        let max_x = (self.region_center.x + self.region_radius).div_euclid(ATLAS_CHUNK);
+        let min_y = (self.region_center.y - self.region_radius).div_euclid(ATLAS_CHUNK);
+        let max_y = (self.region_center.y + self.region_radius).div_euclid(ATLAS_CHUNK);
 
         let min_z = self
             .region_center
@@ -272,9 +263,7 @@ pub(crate) enum NativeWorldMapAction {
 }
 
 #[derive(Component, Clone, Copy)]
-pub(crate) struct NativeWorldMapButton(
-    pub(crate) NativeWorldMapAction,
-);
+pub(crate) struct NativeWorldMapButton(pub(crate) NativeWorldMapAction);
 
 #[derive(Component, Clone, Copy)]
 pub(crate) struct NativeMinimapCell {
@@ -354,32 +343,53 @@ pub fn setup(mut commands: Commands) {
                 ("-", NativeWorldMapAction::MinimapZoomOut, 44),
                 ("M", NativeWorldMapAction::OpenWorld, 108),
             ] {
-                parent.spawn((
-                    Button, NativeWorldMapButton(action),
-                    Node {
-                        position_type: PositionType::Absolute, right: px(-8), top: px(top),
-                        width: px(26), height: px(26), border: UiRect::all(px(2)),
-                        border_radius: BorderRadius::all(px(13)),
-                        align_items: AlignItems::Center, justify_content: JustifyContent::Center,
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgb(0.025, 0.025, 0.018)),
-                    BorderColor::all(theme::GOLD),
-                    Outline::new(px(1), px(1), Color::srgb(0.08, 0.06, 0.02)),
-                )).with_child((Text::new(label), TextFont {font_size: FontSize::Px(16.0), ..default()}, TextColor(theme::GOLD_BRIGHT)));
+                parent
+                    .spawn((
+                        Button,
+                        NativeWorldMapButton(action),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            right: px(-8),
+                            top: px(top),
+                            width: px(26),
+                            height: px(26),
+                            border: UiRect::all(px(2)),
+                            border_radius: BorderRadius::all(px(13)),
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::Center,
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.025, 0.025, 0.018)),
+                        BorderColor::all(theme::GOLD),
+                        Outline::new(px(1), px(1), Color::srgb(0.08, 0.06, 0.02)),
+                    ))
+                    .with_child((
+                        Text::new(label),
+                        TextFont {
+                            font_size: FontSize::Px(16.0),
+                            ..default()
+                        },
+                        TextColor(theme::GOLD_BRIGHT),
+                    ));
             }
 
-            parent.spawn((
-                Node {
-                    width: px(80), height: px(24), flex_shrink: 0.0,
-                    margin: UiRect::top(px(-8)),
-                    border: UiRect::all(px(1)), border_radius: BorderRadius::all(px(5)),
-                    align_items: AlignItems::Center, justify_content: JustifyContent::Center,
-                    ..default()
-                },
-                BackgroundColor(Color::srgb(0.02, 0.025, 0.02)),
-                BorderColor::all(theme::GOLD),
-            )).with_child(map_text("", NativeMapText::MinimapHeader, 9.0, TEXT));
+            parent
+                .spawn((
+                    Node {
+                        width: px(80),
+                        height: px(24),
+                        flex_shrink: 0.0,
+                        margin: UiRect::top(px(-8)),
+                        border: UiRect::all(px(1)),
+                        border_radius: BorderRadius::all(px(5)),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(0.02, 0.025, 0.02)),
+                    BorderColor::all(theme::GOLD),
+                ))
+                .with_child(map_text("", NativeMapText::MinimapHeader, 9.0, TEXT));
         });
 
     commands
@@ -393,300 +403,269 @@ pub fn setup(mut commands: Commands) {
             native_modal::backdrop(),
         ))
         .with_children(|root| {
-            root
-                .spawn((
-                    Name::new("Greyhaven World Map interface"),
-                    native_modal::NativeModalSurface,
-                    native_modal::NativeDraggableSurface(
-                        native_modal::NativeModalWindow::WorldMap,
-                    ),
-                    world_map_surface_node(),
-                    native_modal::surface(),
-                    native_modal::surface_border(),
-                ))
-                .with_children(|panel| {
-                    panel
-                        .spawn((
-                            world_map_header_node(),
-                            native_modal::divider_border(),
-                        ))
-                        .with_children(|header| {
-                            header
-                                .spawn((
-                                    Button,
-                                    native_modal::NativeDragHandle(
-                                        native_modal::NativeModalWindow::WorldMap,
-                                    ),
-                                    Node {
-                                        flex_grow: 1.0,
-                                        flex_direction: FlexDirection::Column,
-                                        align_items: AlignItems::FlexStart,
-                                        justify_content: JustifyContent::Center,
-                                        row_gap: px(2),
+            root.spawn((
+                Name::new("Greyhaven World Map interface"),
+                native_modal::NativeModalSurface,
+                native_modal::NativeDraggableSurface(native_modal::NativeModalWindow::WorldMap),
+                world_map_surface_node(),
+                native_modal::surface(),
+                native_modal::surface_border(),
+            ))
+            .with_children(|panel| {
+                panel
+                    .spawn((world_map_header_node(), native_modal::divider_border()))
+                    .with_children(|header| {
+                        header
+                            .spawn((
+                                Button,
+                                native_modal::NativeDragHandle(
+                                    native_modal::NativeModalWindow::WorldMap,
+                                ),
+                                Node {
+                                    flex_grow: 1.0,
+                                    flex_direction: FlexDirection::Column,
+                                    align_items: AlignItems::FlexStart,
+                                    justify_content: JustifyContent::Center,
+                                    row_gap: px(2),
+                                    ..default()
+                                },
+                            ))
+                            .with_children(|copy| {
+                                copy.spawn((
+                                    Text::new("WORLD MAP"),
+                                    TextFont {
+                                        font_size: FontSize::Px(8.0),
                                         ..default()
                                     },
-                                ))
-                                .with_children(|copy| {
-                                    copy.spawn((
-                                        Text::new("WORLD MAP"),
-                                        TextFont {
-                                            font_size: FontSize::Px(8.0),
-                                            ..default()
-                                        },
-                                        TextColor(theme::GOLD),
-                                    ));
+                                    TextColor(theme::GOLD),
+                                ));
 
-                                    copy.spawn((
-                                        Text::new("THE FIRST MARCHES"),
-                                        TextFont {
-                                            font_size: FontSize::Px(17.0),
-                                            ..default()
-                                        },
-                                        TextColor(theme::GOLD_BRIGHT),
-                                    ));
-                                });
+                                copy.spawn((
+                                    Text::new("THE FIRST MARCHES"),
+                                    TextFont {
+                                        font_size: FontSize::Px(17.0),
+                                        ..default()
+                                    },
+                                    TextColor(theme::GOLD_BRIGHT),
+                                ));
+                            });
 
-                            header
+                        header
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Row,
+                                align_items: AlignItems::Center,
+                                column_gap: px(5),
+                                ..default()
+                            })
+                            .with_children(|actions| {
+                                spawn_world_map_button(
+                                    actions,
+                                    NativeWorldMapAction::Zone,
+                                    "ZONE",
+                                    56.0,
+                                );
+                                spawn_world_map_button(
+                                    actions,
+                                    NativeWorldMapAction::World,
+                                    "WORLD",
+                                    60.0,
+                                );
+                                spawn_world_map_button(
+                                    actions,
+                                    NativeWorldMapAction::Player,
+                                    "PLAYER",
+                                    64.0,
+                                );
+                                spawn_world_map_button(
+                                    actions,
+                                    NativeWorldMapAction::Close,
+                                    "X",
+                                    38.0,
+                                );
+                            });
+                    });
+
+                panel
+                    .spawn(Node {
+                        width: Val::Percent(100.0),
+                        flex_grow: 1.0,
+                        flex_direction: FlexDirection::Row,
+                        column_gap: px(8),
+                        ..default()
+                    })
+                    .with_children(|body| {
+                        body.spawn((
+                            Node {
+                                width: px(128),
+                                height: Val::Percent(100.0),
+                                min_height: px(470),
+                                padding: UiRect::all(px(10)),
+                                border: UiRect::all(px(1)),
+                                flex_direction: FlexDirection::Column,
+                                row_gap: px(10),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgba(0.012, 0.027, 0.020, 0.98)),
+                            BorderColor::all(theme::BUTTON_BORDER),
+                        ))
+                        .with_children(|sidebar| {
+                            sidebar.spawn((
+                                Text::new("FLOOR"),
+                                TextFont {
+                                    font_size: FontSize::Px(8.0),
+                                    ..default()
+                                },
+                                TextColor(theme::GOLD),
+                            ));
+
+                            sidebar
                                 .spawn(Node {
+                                    width: Val::Percent(100.0),
                                     flex_direction: FlexDirection::Row,
                                     align_items: AlignItems::Center,
-                                    column_gap: px(5),
+                                    justify_content: JustifyContent::SpaceBetween,
                                     ..default()
                                 })
-                                .with_children(|actions| {
+                                .with_children(|floor| {
                                     spawn_world_map_button(
-                                        actions,
-                                        NativeWorldMapAction::Zone,
-                                        "ZONE",
-                                        56.0,
+                                        floor,
+                                        NativeWorldMapAction::FloorUp,
+                                        "▲",
+                                        34.0,
                                     );
+
+                                    floor.spawn(map_text(
+                                        "z7",
+                                        NativeMapText::WorldFloor,
+                                        9.5,
+                                        theme::GOLD_BRIGHT,
+                                    ));
+
                                     spawn_world_map_button(
-                                        actions,
-                                        NativeWorldMapAction::World,
-                                        "WORLD",
-                                        60.0,
-                                    );
-                                    spawn_world_map_button(
-                                        actions,
-                                        NativeWorldMapAction::Player,
-                                        "PLAYER",
-                                        64.0,
-                                    );
-                                    spawn_world_map_button(
-                                        actions,
-                                        NativeWorldMapAction::Close,
-                                        "X",
-                                        38.0,
+                                        floor,
+                                        NativeWorldMapAction::FloorDown,
+                                        "▼",
+                                        34.0,
                                     );
                                 });
+
+                            sidebar.spawn((
+                                Text::new("MAP FILTERS"),
+                                TextFont {
+                                    font_size: FontSize::Px(8.0),
+                                    ..default()
+                                },
+                                TextColor(theme::GOLD),
+                            ));
+
+                            spawn_world_map_filter(
+                                sidebar,
+                                NativeWorldMapAction::ToggleBuildings,
+                                NativeMapText::WorldBuildingsFilter,
+                            );
+
+                            spawn_world_map_filter(
+                                sidebar,
+                                NativeWorldMapAction::ToggleNpcs,
+                                NativeMapText::WorldNpcsFilter,
+                            );
+
+                            spawn_world_map_filter(
+                                sidebar,
+                                NativeWorldMapAction::ToggleResources,
+                                NativeMapText::WorldResourcesFilter,
+                            );
+
+                            sidebar.spawn((
+                                Node {
+                                    width: Val::Percent(100.0),
+                                    height: px(1),
+                                    margin: UiRect::vertical(px(4)),
+                                    ..default()
+                                },
+                                BackgroundColor(theme::GOLD_DARK),
+                            ));
+
+                            sidebar.spawn((
+                                Text::new("Gold  Player\nGreen NPC\nCyan  Resource"),
+                                TextFont {
+                                    font_size: FontSize::Px(7.5),
+                                    ..default()
+                                },
+                                TextColor(MUTED),
+                            ));
                         });
 
-                    panel
-                        .spawn(Node {
-                            width: Val::Percent(100.0),
-                            flex_grow: 1.0,
-                            flex_direction: FlexDirection::Row,
-                            column_gap: px(8),
-                            ..default()
-                        })
-                        .with_children(|body| {
-                            body
-                                .spawn((
-                                    Node {
-                                        width: px(128),
-                                        height: Val::Percent(100.0),
-                                        min_height: px(470),
-                                        padding: UiRect::all(px(10)),
-                                        border: UiRect::all(px(1)),
-                                        flex_direction: FlexDirection::Column,
-                                        row_gap: px(10),
-                                        ..default()
-                                    },
-                                    BackgroundColor(
-                                        Color::srgba(
-                                            0.012,
-                                            0.027,
-                                            0.020,
-                                            0.98,
-                                        ),
-                                    ),
-                                    BorderColor::all(theme::BUTTON_BORDER),
-                                ))
-                                .with_children(|sidebar| {
-                                    sidebar.spawn((
-                                        Text::new("FLOOR"),
-                                        TextFont {
-                                            font_size: FontSize::Px(8.0),
-                                            ..default()
-                                        },
-                                        TextColor(theme::GOLD),
-                                    ));
-
-                                    sidebar
-                                        .spawn(Node {
-                                            width: Val::Percent(100.0),
-                                            flex_direction: FlexDirection::Row,
-                                            align_items: AlignItems::Center,
-                                            justify_content: JustifyContent::SpaceBetween,
-                                            ..default()
-                                        })
-                                        .with_children(|floor| {
-                                            spawn_world_map_button(
-                                                floor,
-                                                NativeWorldMapAction::FloorUp,
-                                                "▲",
-                                                34.0,
-                                            );
-
-                                            floor.spawn(map_text(
-                                                "z7",
-                                                NativeMapText::WorldFloor,
-                                                9.5,
-                                                theme::GOLD_BRIGHT,
-                                            ));
-
-                                            spawn_world_map_button(
-                                                floor,
-                                                NativeWorldMapAction::FloorDown,
-                                                "▼",
-                                                34.0,
-                                            );
-                                        });
-
-                                    sidebar.spawn((
-                                        Text::new("MAP FILTERS"),
-                                        TextFont {
-                                            font_size: FontSize::Px(8.0),
-                                            ..default()
-                                        },
-                                        TextColor(theme::GOLD),
-                                    ));
-
-                                    spawn_world_map_filter(
-                                        sidebar,
-                                        NativeWorldMapAction::ToggleBuildings,
-                                        NativeMapText::WorldBuildingsFilter,
-                                    );
-
-                                    spawn_world_map_filter(
-                                        sidebar,
-                                        NativeWorldMapAction::ToggleNpcs,
-                                        NativeMapText::WorldNpcsFilter,
-                                    );
-
-                                    spawn_world_map_filter(
-                                        sidebar,
-                                        NativeWorldMapAction::ToggleResources,
-                                        NativeMapText::WorldResourcesFilter,
-                                    );
-
-                                    sidebar.spawn((
-                                        Node {
-                                            width: Val::Percent(100.0),
-                                            height: px(1),
-                                            margin: UiRect::vertical(px(4)),
-                                            ..default()
-                                        },
-                                        BackgroundColor(theme::GOLD_DARK),
-                                    ));
-
-                                    sidebar.spawn((
-                                        Text::new(
-                                            "Gold  Player\nGreen NPC\nCyan  Resource",
-                                        ),
-                                        TextFont {
-                                            font_size: FontSize::Px(7.5),
-                                            ..default()
-                                        },
-                                        TextColor(MUTED),
-                                    ));
-                                });
-
-                            body
-                                .spawn((
-                                    Node {
-                                        flex_grow: 1.0,
-                                        height: Val::Percent(100.0),
-                                        min_height: px(470),
-                                        border: UiRect::all(px(1)),
-                                        flex_direction: FlexDirection::Column,
-                                        ..default()
-                                    },
-                                    BackgroundColor(
-                                        Color::srgb(
-                                            0.008,
-                                            0.018,
-                                            0.013,
-                                        ),
-                                    ),
-                                    BorderColor::all(theme::GOLD_DARK),
-                                ))
-                                .with_children(|viewport| {
-                                    viewport
-                                        .spawn(Node {
-                                            width: Val::Percent(100.0),
-                                            height: px(36),
-                                            padding: UiRect::horizontal(px(8)),
-                                            flex_direction: FlexDirection::Row,
-                                            align_items: AlignItems::Center,
-                                            justify_content: JustifyContent::SpaceBetween,
-                                            ..default()
-                                        })
-                                        .with_children(|toolbar| {
-                                            toolbar.spawn(map_text(
-                                                "",
-                                                NativeMapText::WorldHeader,
-                                                8.0,
-                                                MUTED,
-                                            ));
-
-                                            toolbar
-                                                .spawn(Node {
-                                                    flex_direction: FlexDirection::Row,
-                                                    column_gap: px(4),
-                                                    ..default()
-                                                })
-                                                .with_children(|zoom| {
-                                                    spawn_world_map_button(
-                                                        zoom,
-                                                        NativeWorldMapAction::ZoomIn,
-                                                        "+",
-                                                        34.0,
-                                                    );
-                                                    spawn_world_map_button(
-                                                        zoom,
-                                                        NativeWorldMapAction::ZoomOut,
-                                                        "−",
-                                                        34.0,
-                                                    );
-                                                });
-                                        });
-
-                                    spawn_native_world_map_grid(viewport);
-                                });
-                        });
-
-                    panel
-                        .spawn((
-                            world_map_footer_node(),
-                            native_modal::divider_border(),
+                        body.spawn((
+                            Node {
+                                flex_grow: 1.0,
+                                height: Val::Percent(100.0),
+                                min_height: px(470),
+                                border: UiRect::all(px(1)),
+                                flex_direction: FlexDirection::Column,
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.008, 0.018, 0.013)),
+                            BorderColor::all(theme::GOLD_DARK),
                         ))
-                        .with_children(|footer| {
-                            footer.spawn(map_text(
-                                "Drag title · Arrows pan · M/Esc close",
-                                NativeMapText::WorldFooter,
-                                8.0,
-                                MUTED,
-                            ));
+                        .with_children(|viewport| {
+                            viewport
+                                .spawn(Node {
+                                    width: Val::Percent(100.0),
+                                    height: px(36),
+                                    padding: UiRect::horizontal(px(8)),
+                                    flex_direction: FlexDirection::Row,
+                                    align_items: AlignItems::Center,
+                                    justify_content: JustifyContent::SpaceBetween,
+                                    ..default()
+                                })
+                                .with_children(|toolbar| {
+                                    toolbar.spawn(map_text(
+                                        "",
+                                        NativeMapText::WorldHeader,
+                                        8.0,
+                                        MUTED,
+                                    ));
 
-                            footer.spawn(map_text(
-                                "",
-                                NativeMapText::WorldScale,
-                                8.0,
-                                theme::GOLD,
-                            ));
+                                    toolbar
+                                        .spawn(Node {
+                                            flex_direction: FlexDirection::Row,
+                                            column_gap: px(4),
+                                            ..default()
+                                        })
+                                        .with_children(|zoom| {
+                                            spawn_world_map_button(
+                                                zoom,
+                                                NativeWorldMapAction::ZoomIn,
+                                                "+",
+                                                34.0,
+                                            );
+                                            spawn_world_map_button(
+                                                zoom,
+                                                NativeWorldMapAction::ZoomOut,
+                                                "−",
+                                                34.0,
+                                            );
+                                        });
+                                });
+
+                            spawn_native_world_map_grid(viewport);
                         });
-                });
+                    });
+
+                panel
+                    .spawn((world_map_footer_node(), native_modal::divider_border()))
+                    .with_children(|footer| {
+                        footer.spawn(map_text(
+                            "Drag title · Arrows pan · M/Esc close",
+                            NativeMapText::WorldFooter,
+                            8.0,
+                            MUTED,
+                        ));
+
+                        footer.spawn(map_text("", NativeMapText::WorldScale, 8.0, theme::GOLD));
+                    });
+            });
         });
 }
 
@@ -805,17 +784,10 @@ fn spawn_world_map_filter(
             BackgroundColor(theme::BUTTON_BG),
             BorderColor::all(theme::BUTTON_BORDER),
         ))
-        .with_child(map_text(
-            "",
-            text_kind,
-            7.5,
-            TEXT,
-        ));
+        .with_child(map_text("", text_kind, 7.5, TEXT));
 }
 
-fn spawn_native_world_map_grid(
-    parent: &mut ChildSpawnerCommands,
-) {
+fn spawn_native_world_map_grid(parent: &mut ChildSpawnerCommands) {
     parent
         .spawn((
             Name::new("Native graphical world map grid"),
@@ -826,58 +798,34 @@ fn spawn_native_world_map_grid(
                 flex_direction: FlexDirection::Column,
                 ..default()
             },
-            BackgroundColor(
-                Color::srgb(
-                    0.006,
-                    0.014,
-                    0.010,
-                ),
-            ),
+            BackgroundColor(Color::srgb(0.006, 0.014, 0.010)),
         ))
         .with_children(|grid| {
-            for row in
-                -WORLD_MAP_HALF_HEIGHT
-                    ..=WORLD_MAP_HALF_HEIGHT
-            {
-                grid
-                    .spawn(Node {
-                        width: Val::Percent(100.0),
-                        flex_grow: 1.0,
-                        flex_direction: FlexDirection::Row,
-                        ..default()
-                    })
-                    .with_children(|line| {
-                        for column in
-                            -WORLD_MAP_HALF_WIDTH
-                                ..=WORLD_MAP_HALF_WIDTH
-                        {
-                            line.spawn((
-                                NativeWorldMapCell {
-                                    column,
-                                    row,
-                                },
-                                Node {
-                                    flex_grow: 1.0,
-                                    height: Val::Percent(100.0),
-                                    ..default()
-                                },
-                                BackgroundColor(
-                                    Color::srgb(
-                                        0.01,
-                                        0.02,
-                                        0.015,
-                                    ),
-                                ),
-                            ));
-                        }
-                    });
+            for row in -WORLD_MAP_HALF_HEIGHT..=WORLD_MAP_HALF_HEIGHT {
+                grid.spawn(Node {
+                    width: Val::Percent(100.0),
+                    flex_grow: 1.0,
+                    flex_direction: FlexDirection::Row,
+                    ..default()
+                })
+                .with_children(|line| {
+                    for column in -WORLD_MAP_HALF_WIDTH..=WORLD_MAP_HALF_WIDTH {
+                        line.spawn((
+                            NativeWorldMapCell { column, row },
+                            Node {
+                                flex_grow: 1.0,
+                                height: Val::Percent(100.0),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.01, 0.02, 0.015)),
+                        ));
+                    }
+                });
             }
         });
 }
 
-fn spawn_native_minimap_grid(
-    parent: &mut ChildSpawnerCommands,
-) {
+fn spawn_native_minimap_grid(parent: &mut ChildSpawnerCommands) {
     parent
         .spawn((
             Name::new("Native minimap grid"),
@@ -893,34 +841,28 @@ fn spawn_native_minimap_grid(
         ))
         .with_children(|grid| {
             for dy in -MINIMAP_RADIUS..=MINIMAP_RADIUS {
-                grid
-                    .spawn(Node {
-                        width: Val::Percent(100.0),
-                        flex_grow: 1.0,
-                        flex_direction: FlexDirection::Row,
-                        ..default()
-                    })
-                    .with_children(|row| {
-                        for dx in -MINIMAP_RADIUS..=MINIMAP_RADIUS {
-                            row.spawn((
-                                NativeMinimapCell { dx, dy },
-                                Node {
-                                    flex_grow: 1.0,
-                                    height: Val::Percent(100.0),
-                                    ..default()
-                                },
-                                BackgroundColor(Color::srgb(
-                                    0.055,
-                                    0.075,
-                                    0.063,
-                                )),
-                            ));
-                        }
-                    });
+                grid.spawn(Node {
+                    width: Val::Percent(100.0),
+                    flex_grow: 1.0,
+                    flex_direction: FlexDirection::Row,
+                    ..default()
+                })
+                .with_children(|row| {
+                    for dx in -MINIMAP_RADIUS..=MINIMAP_RADIUS {
+                        row.spawn((
+                            NativeMinimapCell { dx, dy },
+                            Node {
+                                flex_grow: 1.0,
+                                height: Val::Percent(100.0),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.055, 0.075, 0.063)),
+                        ));
+                    }
+                });
             }
         });
 }
-
 
 fn minimap_tone_color(tone: MapTone) -> Color {
     match tone {
@@ -947,44 +889,27 @@ fn minimap_cell_color(
     if game_state
         .creatures
         .values()
-        .any(|creature| {
-            creature.position == position
-                && creature.health > 0
-        })
+        .any(|creature| creature.position == position && creature.health > 0)
     {
         return Color::srgb(0.88, 0.18, 0.14);
     }
 
-    if game_state
-        .npcs
-        .values()
-        .any(|npc| npc.position == position)
-    {
+    if game_state.npcs.values().any(|npc| npc.position == position) {
         return Color::srgb(0.20, 0.78, 0.40);
     }
 
     if game_state
         .resource_nodes
         .values()
-        .any(|resource| {
-            resource.position == position
-                && resource.available
-        })
+        .any(|resource| resource.position == position && resource.available)
     {
         return Color::srgb(0.22, 0.72, 0.78);
     }
 
-    minimap_tone_color(
-        map_state.lookup.tone(position),
-    )
+    minimap_tone_color(map_state.lookup.tone(position))
 }
 
-fn map_text(
-    value: impl Into<String>,
-    kind: NativeMapText,
-    size: f32,
-    color: Color,
-) -> impl Bundle {
+fn map_text(value: impl Into<String>, kind: NativeMapText, size: f32, color: Color) -> impl Bundle {
     (
         kind,
         Text::new(value),
@@ -1066,21 +991,19 @@ pub fn handle_buttons(
             &mut BackgroundColor,
             &mut BorderColor,
         ),
-        (
-            Changed<Interaction>,
-            With<Button>,
-        ),
+        (Changed<Interaction>, With<Button>),
     >,
 ) {
-    for (
-        interaction,
-        button,
-        mut background,
-        mut border,
-    ) in &mut buttons
-    {
-        let minimap_button = matches!(button.0, NativeWorldMapAction::OpenWorld | NativeWorldMapAction::MinimapZoomIn | NativeWorldMapAction::MinimapZoomOut);
-        if !state.world_map_open && !minimap_button { continue; }
+    for (interaction, button, mut background, mut border) in &mut buttons {
+        let minimap_button = matches!(
+            button.0,
+            NativeWorldMapAction::OpenWorld
+                | NativeWorldMapAction::MinimapZoomIn
+                | NativeWorldMapAction::MinimapZoomOut
+        );
+        if !state.world_map_open && !minimap_button {
+            continue;
+        }
         match *interaction {
             Interaction::Hovered => {
                 background.0 = theme::BUTTON_HOVER;
@@ -1122,32 +1045,25 @@ pub fn handle_buttons(
                         state.world_map_open = false;
                     }
                     NativeWorldMapAction::FloorUp => {
-                        state.floor =
-                            state.floor.saturating_sub(1);
+                        state.floor = state.floor.saturating_sub(1);
                     }
                     NativeWorldMapAction::FloorDown => {
-                        state.floor =
-                            state.floor.saturating_add(1);
+                        state.floor = state.floor.saturating_add(1);
                     }
                     NativeWorldMapAction::ZoomIn => {
-                        state.zoom =
-                            (state.zoom / 2).max(1);
+                        state.zoom = (state.zoom / 2).max(1);
                     }
                     NativeWorldMapAction::ZoomOut => {
-                        state.zoom =
-                            (state.zoom * 2).min(8);
+                        state.zoom = (state.zoom * 2).min(8);
                     }
                     NativeWorldMapAction::ToggleBuildings => {
-                        state.show_buildings =
-                            !state.show_buildings;
+                        state.show_buildings = !state.show_buildings;
                     }
                     NativeWorldMapAction::ToggleNpcs => {
-                        state.show_npcs =
-                            !state.show_npcs;
+                        state.show_npcs = !state.show_npcs;
                     }
                     NativeWorldMapAction::ToggleResources => {
-                        state.show_resources =
-                            !state.show_resources;
+                        state.show_resources = !state.show_resources;
                     }
                 }
 
@@ -1158,10 +1074,7 @@ pub fn handle_buttons(
     }
 }
 
-fn recenter(
-    movement: &MovementState,
-    state: &mut NativeMapUiState,
-) {
+fn recenter(movement: &MovementState, state: &mut NativeMapUiState) {
     state.center_x = movement.logical.x;
     state.center_y = movement.logical.y;
     state.floor = movement.logical.z;
@@ -1176,58 +1089,34 @@ pub fn update_ui(
     mut ui_state: ResMut<NativeMapUiState>,
     mut texts: Query<(&NativeMapText, &mut Text)>,
     mut cell_queries: ParamSet<(
-        Query<
-            (
-                &NativeMinimapCell,
-                &mut BackgroundColor,
-            ),
-        >,
-        Query<
-            (
-                &NativeWorldMapCell,
-                &mut BackgroundColor,
-            ),
-        >,
+        Query<(&NativeMinimapCell, &mut BackgroundColor)>,
+        Query<(&NativeWorldMapCell, &mut BackgroundColor)>,
     )>,
-    mut world_panel: Query<
-        &mut Visibility,
-        With<NativeWorldMapPanel>,
-    >,
+    mut world_panel: Query<&mut Visibility, With<NativeWorldMapPanel>>,
 ) {
     if !ui_state.initialized {
         recenter(&movement, &mut ui_state);
     }
 
-    if let Ok(mut visibility) =
-        world_panel.single_mut()
-    {
-        *visibility =
-            if ui_state.world_map_open {
-                Visibility::Visible
-            } else {
-                Visibility::Hidden
-            };
+    if let Ok(mut visibility) = world_panel.single_mut() {
+        *visibility = if ui_state.world_map_open {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
     }
 
     let now = time.elapsed_secs_f64();
 
-    let refresh_minimap =
-        now >= ui_state.next_minimap_at;
+    let refresh_minimap = now >= ui_state.next_minimap_at;
 
     if refresh_minimap {
-        ui_state.next_minimap_at =
-            now + MINIMAP_INTERVAL;
+        ui_state.next_minimap_at = now + MINIMAP_INTERVAL;
 
         let center = movement.logical;
 
-        for (
-            cell,
-            mut background,
-        ) in &mut cell_queries.p0()
-        {
-            if cell.dx * cell.dx + cell.dy * cell.dy
-                > MINIMAP_RADIUS * MINIMAP_RADIUS
-            {
+        for (cell, mut background) in &mut cell_queries.p0() {
+            if cell.dx * cell.dx + cell.dy * cell.dy > MINIMAP_RADIUS * MINIMAP_RADIUS {
                 background.0 = Color::NONE;
                 continue;
             }
@@ -1238,37 +1127,18 @@ pub fn update_ui(
                 z: center.z,
             };
 
-            background.0 =
-                minimap_cell_color(
-                    &map_state,
-                    &game_state,
-                    center,
-                    position,
-                );
+            background.0 = minimap_cell_color(&map_state, &game_state, center, position);
         }
     }
 
-    let refresh_world =
-        ui_state.world_map_open
-            && now >= ui_state.next_world_map_at;
+    let refresh_world = ui_state.world_map_open && now >= ui_state.next_world_map_at;
 
     if refresh_world {
-        ui_state.next_world_map_at =
-            now + WORLD_MAP_INTERVAL;
+        ui_state.next_world_map_at = now + WORLD_MAP_INTERVAL;
 
-        for (
-            cell,
-            mut background,
-        ) in &mut cell_queries.p1()
-        {
+        for (cell, mut background) in &mut cell_queries.p1() {
             background.0 =
-                world_map_cell_color(
-                    &map_state,
-                    &game_state,
-                    &ui_state,
-                    movement.logical,
-                    *cell,
-                );
+                world_map_cell_color(&map_state, &game_state, &ui_state, movement.logical, *cell);
         }
     }
 
@@ -1277,9 +1147,7 @@ pub fn update_ui(
             NativeMapText::MinimapHeader => {
                 text.0 = format!(
                     "{}:{}:{}",
-                    movement.logical.x,
-                    movement.logical.y,
-                    movement.logical.z,
+                    movement.logical.x, movement.logical.y, movement.logical.z,
                 );
             }
             NativeMapText::MinimapBody => {}
@@ -1289,28 +1157,20 @@ pub fn update_ui(
             NativeMapText::WorldHeader => {
                 text.0 = format!(
                     "CENTER {},{}  ·  floor z{}",
-                    ui_state.center_x,
-                    ui_state.center_y,
-                    ui_state.floor,
+                    ui_state.center_x, ui_state.center_y, ui_state.floor,
                 );
             }
             NativeMapText::WorldBody => {}
             NativeMapText::WorldFooter => {
-                text.0 =
-                    "Drag title  ·  Arrows pan  ·  M/Esc close"
-                        .into();
+                text.0 = "Drag title  ·  Arrows pan  ·  M/Esc close".into();
             }
             NativeMapText::WorldFloor => {
-                text.0 =
-                    format!("z{}", ui_state.floor);
+                text.0 = format!("z{}", ui_state.floor);
             }
             NativeMapText::WorldScale => {
                 text.0 = format!(
                     "{}, {}, z{}   ·   {}x sample",
-                    ui_state.center_x,
-                    ui_state.center_y,
-                    ui_state.floor,
-                    ui_state.zoom,
+                    ui_state.center_x, ui_state.center_y, ui_state.floor, ui_state.zoom,
                 );
             }
             NativeMapText::WorldBuildingsFilter => {
@@ -1324,14 +1184,7 @@ pub fn update_ui(
                 );
             }
             NativeMapText::WorldNpcsFilter => {
-                text.0 = format!(
-                    "{} NPCs",
-                    if ui_state.show_npcs {
-                        "[x]"
-                    } else {
-                        "[ ]"
-                    },
-                );
+                text.0 = format!("{} NPCs", if ui_state.show_npcs { "[x]" } else { "[ ]" },);
             }
             NativeMapText::WorldResourcesFilter => {
                 text.0 = format!(
@@ -1355,84 +1208,42 @@ fn world_map_cell_color(
     cell: NativeWorldMapCell,
 ) -> Color {
     let sample = ui.zoom.max(1);
-    let center_chunk_x =
-        ui.center_x.div_euclid(ATLAS_CHUNK);
-    let center_chunk_y =
-        ui.center_y.div_euclid(ATLAS_CHUNK);
+    let center_chunk_x = ui.center_x.div_euclid(ATLAS_CHUNK);
+    let center_chunk_y = ui.center_y.div_euclid(ATLAS_CHUNK);
 
-    let chunk_x =
-        center_chunk_x + cell.column * sample;
-    let chunk_y =
-        center_chunk_y + cell.row * sample;
+    let chunk_x = center_chunk_x + cell.column * sample;
+    let chunk_y = center_chunk_y + cell.row * sample;
 
     let contains = |position: Position| {
         position.z == ui.floor
-            && position.x.div_euclid(ATLAS_CHUNK)
-                >= chunk_x
-            && position.x.div_euclid(ATLAS_CHUNK)
-                < chunk_x + sample
-            && position.y.div_euclid(ATLAS_CHUNK)
-                >= chunk_y
-            && position.y.div_euclid(ATLAS_CHUNK)
-                < chunk_y + sample
+            && position.x.div_euclid(ATLAS_CHUNK) >= chunk_x
+            && position.x.div_euclid(ATLAS_CHUNK) < chunk_x + sample
+            && position.y.div_euclid(ATLAS_CHUNK) >= chunk_y
+            && position.y.div_euclid(ATLAS_CHUNK) < chunk_y + sample
     };
 
     if contains(player) {
-        return Color::srgb(
-            0.95,
-            0.79,
-            0.25,
-        );
+        return Color::srgb(0.95, 0.79, 0.25);
     }
 
-    if ui.show_npcs
-        && game_state
-            .npcs
-            .values()
-            .any(|npc| contains(npc.position))
-    {
-        return Color::srgb(
-            0.36,
-            0.72,
-            0.49,
-        );
+    if ui.show_npcs && game_state.npcs.values().any(|npc| contains(npc.position)) {
+        return Color::srgb(0.36, 0.72, 0.49);
     }
 
     if ui.show_resources
         && game_state
             .resource_nodes
             .values()
-            .any(|resource| {
-                resource.available
-                    && contains(resource.position)
-            })
+            .any(|resource| resource.available && contains(resource.position))
     {
-        return Color::srgb(
-            0.20,
-            0.68,
-            0.74,
-        );
+        return Color::srgb(0.20, 0.68, 0.74);
     }
 
-    let Some(mut tone) =
-        atlas_tone(
-            map_state,
-            ui.floor,
-            chunk_x,
-            chunk_y,
-            sample,
-        )
-    else {
-        return Color::srgb(
-            0.006,
-            0.014,
-            0.010,
-        );
+    let Some(mut tone) = atlas_tone(map_state, ui.floor, chunk_x, chunk_y, sample) else {
+        return Color::srgb(0.006, 0.014, 0.010);
     };
 
-    if !ui.show_buildings
-        && tone == MapTone::Wall
-    {
+    if !ui.show_buildings && tone == MapTone::Wall {
         tone = MapTone::Ground;
     }
 
@@ -1450,26 +1261,11 @@ fn atlas_tone(
 
     for dy in 0..sample {
         for dx in 0..sample {
-            let Some(candidate) =
-                map_state
-                    .atlas
-                    .get(&(
-                        floor,
-                        chunk_x + dx,
-                        chunk_y + dy,
-                    ))
-            else {
+            let Some(candidate) = map_state.atlas.get(&(floor, chunk_x + dx, chunk_y + dy)) else {
                 continue;
             };
 
-            tone = Some(
-                tone.map_or(
-                    *candidate,
-                    |current: MapTone| {
-                        current.max(*candidate)
-                    },
-                ),
-            );
+            tone = Some(tone.map_or(*candidate, |current: MapTone| current.max(*candidate)));
         }
     }
 
@@ -1488,18 +1284,9 @@ fn render_minimap(
         let mut line = String::with_capacity((MINIMAP_RADIUS * 2 + 1) as usize);
 
         for x in (center.x - MINIMAP_RADIUS)..=(center.x + MINIMAP_RADIUS) {
-            let position = Position {
-                x,
-                y,
-                z: center.z,
-            };
+            let position = Position { x, y, z: center.z };
 
-            line.push(minimap_glyph(
-                map_state,
-                game_state,
-                center,
-                position,
-            ));
+            line.push(minimap_glyph(map_state, game_state, center, position));
         }
 
         lines.push(line);
@@ -1527,11 +1314,7 @@ fn minimap_glyph(
         return 'M';
     }
 
-    if game_state
-        .npcs
-        .values()
-        .any(|npc| npc.position == position)
-    {
+    if game_state.npcs.values().any(|npc| npc.position == position) {
         return 'N';
     }
 
@@ -1580,26 +1363,14 @@ fn render_world_map(
                 continue;
             }
 
-            let dynamic = world_dynamic_glyph(
-                game_state,
-                ui.floor,
-                chunk_x,
-                chunk_y,
-                sample,
-            );
+            let dynamic = world_dynamic_glyph(game_state, ui.floor, chunk_x, chunk_y, sample);
 
             if let Some(glyph) = dynamic {
                 line.push(glyph);
                 continue;
             }
 
-            line.push(atlas_glyph(
-                map_state,
-                ui.floor,
-                chunk_x,
-                chunk_y,
-                sample,
-            ));
+            line.push(atlas_glyph(map_state, ui.floor, chunk_x, chunk_y, sample));
         }
 
         lines.push(line);
@@ -1624,11 +1395,7 @@ fn world_dynamic_glyph(
             && position.y.div_euclid(ATLAS_CHUNK) < chunk_y + sample
     };
 
-    if game_state
-        .npcs
-        .values()
-        .any(|npc| in_sample(npc.position))
-    {
+    if game_state.npcs.values().any(|npc| in_sample(npc.position)) {
         return Some('N');
     }
 
@@ -1655,15 +1422,11 @@ fn atlas_glyph(
 
     for dy in 0..sample {
         for dx in 0..sample {
-            let Some(candidate) =
-                map_state.atlas.get(&(floor, chunk_x + dx, chunk_y + dy))
-            else {
+            let Some(candidate) = map_state.atlas.get(&(floor, chunk_x + dx, chunk_y + dy)) else {
                 continue;
             };
 
-            tone = Some(tone.map_or(*candidate, |current: MapTone| {
-                current.max(*candidate)
-            }));
+            tone = Some(tone.map_or(*candidate, |current: MapTone| current.max(*candidate)));
         }
     }
 

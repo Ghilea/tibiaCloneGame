@@ -124,14 +124,12 @@ impl Player {
     pub fn food_state(&self) -> Option<(u64, u16, u16)> {
         let food = self.active_food.as_ref()?;
         let remaining_ms = u64::try_from(
-            food.until.saturating_duration_since(Instant::now()).as_millis(),
+            food.until
+                .saturating_duration_since(Instant::now())
+                .as_millis(),
         )
         .unwrap_or(u64::MAX);
-        (remaining_ms > 0).then_some((
-            remaining_ms,
-            food.health_per_tick,
-            food.mana_per_tick,
-        ))
+        (remaining_ms > 0).then_some((remaining_ms, food.health_per_tick, food.mana_per_tick))
     }
 }
 
@@ -2457,13 +2455,13 @@ impl World {
             let mut inventory = player.inventory.clone();
             inventory.retain(|entry| entry.instance_id != instance_id);
             let mut depot = player.depot.clone();
-            merge_root_stack(
-                &mut depot,
-                &definition,
-                item.charges,
-                item.quantity,
-            );
-            if depot.iter().filter(|entry| entry.container_id.is_none()).count() > 200 {
+            merge_root_stack(&mut depot, &definition, item.charges, item.quantity);
+            if depot
+                .iter()
+                .filter(|entry| entry.container_id.is_none())
+                .count()
+                > 200
+            {
                 return Err("depot_full");
             }
 
@@ -2546,12 +2544,7 @@ impl World {
             }
 
             let mut inventory = player.inventory.clone();
-            merge_root_stack(
-                &mut inventory,
-                &definition,
-                item.charges,
-                quantity,
-            );
+            merge_root_stack(&mut inventory, &definition, item.charges, quantity);
 
             if self.inventory_weight(&inventory) > self.carry_capacity(player) + f32::EPSILON {
                 return Err("too_heavy");
@@ -4401,8 +4394,7 @@ impl World {
         player.view.level = level_for_experience(player.view.experience);
         if player.view.level > previous_level {
             let gained_levels = player.view.level - previous_level;
-            let resource_gain = u16::try_from(gained_levels.saturating_mul(5))
-                .unwrap_or(u16::MAX);
+            let resource_gain = u16::try_from(gained_levels.saturating_mul(5)).unwrap_or(u16::MAX);
             player.view.max_health = max_health_for_level(player.view.level);
             player.view.max_mana = max_mana_for_level(player.view.level);
             player.view.health = player

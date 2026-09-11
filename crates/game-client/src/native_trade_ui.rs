@@ -1,17 +1,16 @@
 // TIBIAGAME_V36_27_NATIVE_DIRECT_TRADE
-use bevy::prelude::*;
 use bevy::ecs::system::SystemParam;
+use bevy::prelude::*;
 use game_protocol::ClientMessage;
 use game_types::EntityId;
 
 use crate::{
+    NativeNetwork,
     native_map_ui::NativeMapUiState,
     native_settings::NativeSettingsState,
     native_ui::{NativeChatState, NativePanelState},
     state::{NativeGameState, NativeTradeState},
-    NativeNetwork,
 };
-
 
 #[derive(SystemParam)]
 pub(crate) struct MovementUiLocks<'w> {
@@ -22,9 +21,7 @@ pub(crate) struct MovementUiLocks<'w> {
 
 impl MovementUiLocks<'_> {
     pub(crate) fn blocks_movement(&self) -> bool {
-        self.map_ui.world_map_open
-            || self.trade_ui.block_movement
-            || self.settings_ui.options_open
+        self.map_ui.world_map_open || self.trade_ui.block_movement || self.settings_ui.options_open
     }
 }
 
@@ -126,12 +123,8 @@ pub fn handle_input(
         trade_ui.selected_index = 0;
 
         if keys.just_pressed(KeyCode::KeyT) {
-            let Some((target_id, target_name)) =
-                nearest_trade_partner(&game_state)
-            else {
-                game_state.push_system_message(
-                    "No other player is close enough to trade.",
-                );
+            let Some((target_id, target_name)) = nearest_trade_partner(&game_state) else {
+                game_state.push_system_message("No other player is close enough to trade.");
                 return;
             };
 
@@ -142,13 +135,9 @@ pub fn handle_input(
                 .send(ClientMessage::RequestTrade { target_id })
                 .is_err()
             {
-                game_state.push_system_message(
-                    "The game connection is offline.",
-                );
+                game_state.push_system_message("The game connection is offline.");
             } else {
-                game_state.push_system_message(format!(
-                    "Trade request sent to {target_name}.",
-                ));
+                game_state.push_system_message(format!("Trade request sent to {target_name}.",));
             }
         }
 
@@ -160,26 +149,12 @@ pub fn handle_input(
     if trade.status == "requested" {
         trade_ui.block_movement = true;
 
-        if keys.just_pressed(KeyCode::KeyY)
-            || keys.just_pressed(KeyCode::Enter)
-        {
-            send_trade_response(
-                &network,
-                &mut game_state,
-                trade.trade_id,
-                true,
-            );
+        if keys.just_pressed(KeyCode::KeyY) || keys.just_pressed(KeyCode::Enter) {
+            send_trade_response(&network, &mut game_state, trade.trade_id, true);
         }
 
-        if keys.just_pressed(KeyCode::Escape)
-            || keys.just_pressed(KeyCode::Backspace)
-        {
-            send_trade_response(
-                &network,
-                &mut game_state,
-                trade.trade_id,
-                false,
-            );
+        if keys.just_pressed(KeyCode::Escape) || keys.just_pressed(KeyCode::Backspace) {
+            send_trade_response(&network, &mut game_state, trade.trade_id, false);
         }
 
         return;
@@ -190,41 +165,29 @@ pub fn handle_input(
     if eligible.is_empty() {
         trade_ui.selected_index = 0;
     } else {
-        trade_ui.selected_index =
-            trade_ui.selected_index.min(eligible.len() - 1);
+        trade_ui.selected_index = trade_ui.selected_index.min(eligible.len() - 1);
 
         if keys.just_pressed(KeyCode::ArrowDown) {
-            trade_ui.selected_index =
-                (trade_ui.selected_index + 1) % eligible.len();
+            trade_ui.selected_index = (trade_ui.selected_index + 1) % eligible.len();
         }
 
         if keys.just_pressed(KeyCode::ArrowUp) {
-            trade_ui.selected_index =
-                if trade_ui.selected_index == 0 {
-                    eligible.len() - 1
-                } else {
-                    trade_ui.selected_index - 1
-                };
+            trade_ui.selected_index = if trade_ui.selected_index == 0 {
+                eligible.len() - 1
+            } else {
+                trade_ui.selected_index - 1
+            };
         }
 
         if keys.just_pressed(KeyCode::Space) {
             let selected_id = eligible[trade_ui.selected_index];
-            toggle_trade_item(
-                &network,
-                &mut game_state,
-                &trade,
-                selected_id,
-            );
+            toggle_trade_item(&network, &mut game_state, &trade, selected_id);
         }
     }
 
-    if keys.just_pressed(KeyCode::Enter)
-        || keys.just_pressed(KeyCode::KeyY)
-    {
+    if keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::KeyY) {
         if trade.you_confirmed {
-            game_state.push_system_message(
-                "You already confirmed this trade.",
-            );
+            game_state.push_system_message("You already confirmed this trade.");
         } else if network
             .outbound
             .send(ClientMessage::ConfirmTrade {
@@ -232,19 +195,13 @@ pub fn handle_input(
             })
             .is_err()
         {
-            game_state.push_system_message(
-                "The game connection is offline.",
-            );
+            game_state.push_system_message("The game connection is offline.");
         } else {
-            game_state.push_system_message(
-                "Trade confirmation sent.",
-            );
+            game_state.push_system_message("Trade confirmation sent.");
         }
     }
 
-    if keys.just_pressed(KeyCode::Escape)
-        || keys.just_pressed(KeyCode::Backspace)
-    {
+    if keys.just_pressed(KeyCode::Escape) || keys.just_pressed(KeyCode::Backspace) {
         if network
             .outbound
             .send(ClientMessage::CancelTrade {
@@ -252,21 +209,14 @@ pub fn handle_input(
             })
             .is_err()
         {
-            game_state.push_system_message(
-                "The game connection is offline.",
-            );
+            game_state.push_system_message("The game connection is offline.");
         } else {
-            game_state.push_system_message(
-                "Trade cancellation requested.",
-            );
+            game_state.push_system_message("Trade cancellation requested.");
         }
     }
 }
 
-fn close_other_panels(
-    panels: &mut NativePanelState,
-    map_ui: &mut NativeMapUiState,
-) {
+fn close_other_panels(panels: &mut NativePanelState, map_ui: &mut NativeMapUiState) {
     panels.inventory_open = false;
     panels.character_open = false;
     panels.skills_open = false;
@@ -276,9 +226,7 @@ fn close_other_panels(
     map_ui.world_map_open = false;
 }
 
-fn nearest_trade_partner(
-    game_state: &NativeGameState,
-) -> Option<(EntityId, String)> {
+fn nearest_trade_partner(game_state: &NativeGameState) -> Option<(EntityId, String)> {
     let player = game_state.local_player()?;
     let origin = player.position;
 
@@ -286,18 +234,13 @@ fn nearest_trade_partner(
         .players
         .values()
         .filter(|candidate| {
-            candidate.id != game_state.local_player_id
-                && candidate.position.z == origin.z
+            candidate.id != game_state.local_player_id && candidate.position.z == origin.z
         })
         .map(|candidate| {
             let dx = (candidate.position.x - origin.x).abs();
             let dy = (candidate.position.y - origin.y).abs();
 
-            (
-                dx.max(dy),
-                candidate.id,
-                candidate.name.clone(),
-            )
+            (dx.max(dy), candidate.id, candidate.name.clone())
         })
         .filter(|(distance, _, _)| *distance <= 2)
         .min_by_key(|(distance, _, _)| *distance)
@@ -312,29 +255,18 @@ fn send_trade_response(
 ) {
     if network
         .outbound
-        .send(ClientMessage::RespondTrade {
-            trade_id,
-            accept,
-        })
+        .send(ClientMessage::RespondTrade { trade_id, accept })
         .is_err()
     {
-        game_state.push_system_message(
-            "The game connection is offline.",
-        );
+        game_state.push_system_message("The game connection is offline.");
     } else if accept {
-        game_state.push_system_message(
-            "Trade request accepted.",
-        );
+        game_state.push_system_message("Trade request accepted.");
     } else {
-        game_state.push_system_message(
-            "Trade request declined.",
-        );
+        game_state.push_system_message("Trade request declined.");
     }
 }
 
-fn eligible_trade_items(
-    game_state: &NativeGameState,
-) -> Vec<EntityId> {
+fn eligible_trade_items(game_state: &NativeGameState) -> Vec<EntityId> {
     let mut items: Vec<_> = game_state
         .inventory
         .iter()
@@ -366,10 +298,7 @@ fn eligible_trade_items(
             .then_with(|| left.instance_id.cmp(&right.instance_id))
     });
 
-    items
-        .into_iter()
-        .map(|item| item.instance_id)
-        .collect()
+    items.into_iter().map(|item| item.instance_id).collect()
 }
 
 fn toggle_trade_item(
@@ -384,9 +313,7 @@ fn toggle_trade_item(
         .map(|item| item.instance_id)
         .collect();
 
-    if let Some(index) =
-        item_ids.iter().position(|id| *id == selected_id)
-    {
+    if let Some(index) = item_ids.iter().position(|id| *id == selected_id) {
         item_ids.remove(index);
     } else {
         item_ids.push(selected_id);
@@ -400,13 +327,10 @@ fn toggle_trade_item(
         })
         .is_err()
     {
-        game_state.push_system_message(
-            "The game connection is offline.",
-        );
+        game_state.push_system_message("The game connection is offline.");
     } else {
-        game_state.push_system_message(
-            "Trade offer updated. Confirmation will be reset by the server.",
-        );
+        game_state
+            .push_system_message("Trade offer updated. Confirmation will be reset by the server.");
     }
 }
 
@@ -414,10 +338,7 @@ pub fn update_ui(
     game_state: Res<NativeGameState>,
     trade_ui: Res<NativeTradeUiState>,
     mut texts: Query<(&NativeTradeText, &mut Text)>,
-    mut panel: Query<
-        &mut Visibility,
-        With<NativeTradePanel>,
-    >,
+    mut panel: Query<&mut Visibility, With<NativeTradePanel>>,
 ) {
     let visible = game_state.trade.is_some();
 
@@ -434,15 +355,11 @@ pub fn update_ui(
     };
 
     let header = if trade.status == "requested" {
-        format!(
-            "TRADE REQUEST   ·   {}",
-            trade.partner.name,
-        )
+        format!("TRADE REQUEST   ·   {}", trade.partner.name,)
     } else {
         format!(
             "DIRECT TRADE   ·   {}   ·   {}",
-            trade.partner.name,
-            trade.status,
+            trade.partner.name, trade.status,
         )
     };
 
@@ -452,11 +369,7 @@ pub fn update_ui(
             trade.partner.name,
         )
     } else {
-        render_active_trade(
-            &game_state,
-            trade,
-            trade_ui.selected_index,
-        )
+        render_active_trade(&game_state, trade, trade_ui.selected_index)
     };
 
     let footer = if trade.status == "requested" {
@@ -491,10 +404,7 @@ fn render_active_trade(
         lines.push("  — nothing offered —".into());
     } else {
         for item in &trade.your_offer {
-            lines.push(format!(
-                "  {}",
-                item_line(game_state, item),
-            ));
+            lines.push(format!("  {}", item_line(game_state, item),));
         }
     }
 
@@ -505,10 +415,7 @@ fn render_active_trade(
         lines.push("  — nothing offered —".into());
     } else {
         for item in &trade.their_offer {
-            lines.push(format!(
-                "  {}",
-                item_line(game_state, item),
-            ));
+            lines.push(format!("  {}", item_line(game_state, item),));
         }
     }
 
@@ -524,9 +431,7 @@ fn render_active_trade(
         let start = safe_index.saturating_sub(7);
         let end = (start + 16).min(eligible.len());
 
-        for (relative, instance_id) in
-            eligible[start..end].iter().enumerate()
-        {
+        for (relative, instance_id) in eligible[start..end].iter().enumerate() {
             let absolute = start + relative;
 
             let Some(item) = game_state
@@ -537,8 +442,7 @@ fn render_active_trade(
                 continue;
             };
 
-            let selected =
-                if absolute == safe_index { "▶" } else { " " };
+            let selected = if absolute == safe_index { "▶" } else { " " };
 
             let offered = if trade
                 .your_offer
@@ -558,18 +462,12 @@ fn render_active_trade(
     }
 
     lines.push(String::new());
-    lines.push(
-        "↑/↓ Select   ·   Space add/remove item   ·   Enter/Y confirm"
-            .into(),
-    );
+    lines.push("↑/↓ Select   ·   Space add/remove item   ·   Enter/Y confirm".into());
 
     lines.join("\n")
 }
 
-fn item_line(
-    game_state: &NativeGameState,
-    item: &game_types::ItemInstance,
-) -> String {
+fn item_line(game_state: &NativeGameState, item: &game_types::ItemInstance) -> String {
     let name = game_state
         .item_definitions
         .get(&item.definition_id)
@@ -584,9 +482,5 @@ fn item_line(
 }
 
 fn confirmation_label(value: bool) -> &'static str {
-    if value {
-        "CONFIRMED"
-    } else {
-        "waiting"
-    }
+    if value { "CONFIRMED" } else { "waiting" }
 }

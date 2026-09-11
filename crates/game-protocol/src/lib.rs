@@ -38,7 +38,6 @@ pub struct CharacterSummary {
 }
 // TIBIAGAME_V36_1_NATIVE_SERVER_HANDSHAKE
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {

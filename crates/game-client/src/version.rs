@@ -18,6 +18,5 @@ pub fn window_title() -> String {
 }
 
 pub fn native_release_version() -> &'static str {
-    option_env!("ALDORIA_NATIVE_RELEASE_VERSION")
-        .unwrap_or("dev")
+    option_env!("ALDORIA_NATIVE_RELEASE_VERSION").unwrap_or("dev")
 }

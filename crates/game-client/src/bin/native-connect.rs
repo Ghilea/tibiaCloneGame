@@ -11,10 +11,7 @@ use game_protocol::{
     PROTOCOL_VERSION, ServerMessage,
 };
 use reqwest::StatusCode;
-use tokio_tungstenite::{
-    connect_async_with_config,
-    tungstenite::Message,
-};
+use tokio_tungstenite::{connect_async_with_config, tungstenite::Message};
 
 const CLIENT_VERSION: &str = "0.1.0-native-v36.1";
 
@@ -23,10 +20,9 @@ async fn main() -> Result<()> {
     println!("Embers of Aldoria — Native server handshake V36.1");
     println!("--------------------------------------------------");
 
-    let api_url = env::var("ALDORIA_API_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:4000/api".to_owned());
-    let ws_url = env::var("ALDORIA_WS_URL")
-        .unwrap_or_else(|_| "ws://127.0.0.1:4000/ws".to_owned());
+    let api_url =
+        env::var("ALDORIA_API_URL").unwrap_or_else(|_| "http://127.0.0.1:4000/api".to_owned());
+    let ws_url = env::var("ALDORIA_WS_URL").unwrap_or_else(|_| "ws://127.0.0.1:4000/ws".to_owned());
 
     println!("API: {api_url}");
     println!("WS:  {ws_url}");
@@ -55,10 +51,7 @@ async fn main() -> Result<()> {
     println!("1/4 Authenticating...");
     let auth_response = http
         .post(format!("{api_url}/auth/login"))
-        .json(&AuthCredentials {
-            username,
-            password,
-        })
+        .json(&AuthCredentials { username, password })
         .send()
         .await
         .context("could not reach the login endpoint")?;
@@ -87,10 +80,9 @@ async fn main() -> Result<()> {
     );
 
     println!("3/4 Opening native WebSocket...");
-    let (mut socket, response) =
-        connect_async_with_config(ws_url.as_str(), None, true)
-            .await
-            .context("failed to connect to the game WebSocket")?;
+    let (mut socket, response) = connect_async_with_config(ws_url.as_str(), None, true)
+        .await
+        .context("failed to connect to the game WebSocket")?;
 
     println!("    WebSocket HTTP status {}", response.status());
 
@@ -188,8 +180,7 @@ async fn main() -> Result<()> {
                         ping_sent_at = Some(sent_at);
                         socket
                             .send(Message::Text(
-                                serde_json::to_string(&ClientMessage::Ping { sent_at })?
-                                    .into(),
+                                serde_json::to_string(&ClientMessage::Ping { sent_at })?.into(),
                             ))
                             .await
                             .context("failed to send native ping")?;
@@ -229,10 +220,7 @@ async fn main() -> Result<()> {
     bail!("WebSocket ended before native handshake completed")
 }
 
-async fn decode_api_response<T>(
-    response: reqwest::Response,
-    operation: &str,
-) -> Result<T>
+async fn decode_api_response<T>(response: reqwest::Response, operation: &str) -> Result<T>
 where
     T: serde::de::DeserializeOwned,
 {
@@ -265,9 +253,7 @@ where
 
 fn choose_character(characters: Vec<CharacterSummary>) -> Result<CharacterSummary> {
     if characters.is_empty() {
-        bail!(
-            "this account has no characters; create one in the existing client before V36.2"
-        );
+        bail!("this account has no characters; create one in the existing client before V36.2");
     }
 
     if let Some(wanted) = env::var("ALDORIA_CHARACTER")

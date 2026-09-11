@@ -343,7 +343,6 @@ impl Database {
         Ok(())
     }
 
-
     pub async fn load_food_state(
         &self,
         character_id: EntityId,
@@ -354,16 +353,14 @@ impl Database {
         .bind(character_id)
         .fetch_optional(&self.pool)
         .await?;
-        Ok(row.and_then(|(remaining_ms, health_per_tick, mana_per_tick)| {
-            let remaining_ms = u64::try_from(remaining_ms).ok()?;
-            let health_per_tick = u16::try_from(health_per_tick).ok()?;
-            let mana_per_tick = u16::try_from(mana_per_tick).ok()?;
-            (remaining_ms > 0).then_some((
-                remaining_ms,
-                health_per_tick,
-                mana_per_tick,
-            ))
-        }))
+        Ok(
+            row.and_then(|(remaining_ms, health_per_tick, mana_per_tick)| {
+                let remaining_ms = u64::try_from(remaining_ms).ok()?;
+                let health_per_tick = u16::try_from(health_per_tick).ok()?;
+                let mana_per_tick = u16::try_from(mana_per_tick).ok()?;
+                (remaining_ms > 0).then_some((remaining_ms, health_per_tick, mana_per_tick))
+            }),
+        )
     }
 
     pub async fn save_food_state(
@@ -371,8 +368,7 @@ impl Database {
         character_id: EntityId,
         food: Option<(u64, u16, u16)>,
     ) -> Result<(), sqlx::Error> {
-        let (remaining_ms, health_per_tick, mana_per_tick) =
-            food.unwrap_or((0, 0, 0));
+        let (remaining_ms, health_per_tick, mana_per_tick) = food.unwrap_or((0, 0, 0));
         sqlx::query(
             "UPDATE characters SET nourishment_remaining_ms = $2, food_health_per_tick = $3, food_mana_per_tick = $4, updated_at = NOW() WHERE id = $1",
         )
@@ -620,7 +616,6 @@ impl Database {
         Ok(())
     }
 
-
     pub async fn persist_food_consumption(
         &self,
         player: &game_types::PlayerView,
@@ -628,8 +623,7 @@ impl Database {
         ground_items: &[GroundItem],
         food: Option<(u64, u16, u16)>,
     ) -> Result<(), sqlx::Error> {
-        let (remaining_ms, health_per_tick, mana_per_tick) =
-            food.unwrap_or((0, 0, 0));
+        let (remaining_ms, health_per_tick, mana_per_tick) = food.unwrap_or((0, 0, 0));
         let mut transaction = self.pool.begin().await?;
         sqlx::query("UPDATE characters SET level = $2, experience = $3, health = $4, mana = $5, max_mana = $6, sword_skill = $7, sword_tries = $8, distance_skill = $9, distance_tries = $10, shielding_skill = $11, shielding_tries = $12, fletching_skill = $13, fletching_tries = $14, magic_level = $15, magic_tries = $16, nourishment_remaining_ms = $17, food_health_per_tick = $18, food_mana_per_tick = $19, updated_at = NOW() WHERE id = $1")
             .bind(player.id)

@@ -1,26 +1,26 @@
+mod interaction;
+mod native_drag;
+mod native_game_menu;
+mod native_launcher;
+mod native_loading;
+mod native_map_ui;
+mod native_modal;
+mod native_settings;
+mod native_trade_ui;
+mod native_ui;
+mod native_ui_theme;
+mod native_updater;
 mod network;
 mod state;
 mod version;
-mod interaction;
-mod native_ui;
-mod native_ui_theme;
-mod native_modal;
-mod native_drag;
-mod native_game_menu;
-mod native_loading;
-mod native_map_ui;
-mod native_trade_ui;
-mod native_settings;
-mod native_launcher;
-mod native_updater;
 // TIBIAGAME_V36_11_NATIVE_INTERACTION_FOUNDATION
 mod creature_sprites;
 // TIBIAGAME_V36_7_NATIVE_SPRITE_CREATURE_PIPELINE
 mod collision;
 mod streaming;
-mod world_visuals;
-mod world_details;
 mod world_architecture;
+mod world_details;
+mod world_visuals;
 // TIBIAGAME_V36_13_WORLD_BOUNDARY_FLOOR_PRELOAD
 // TIBIAGAME_V36_14_MEDIEVAL_FACADE_CREATURE_WARMUP
 // TIBIAGAME_V36_15_1_OPENING_FACADE_RAT_GPU_PREWARM
@@ -32,10 +32,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use std::sync::{
-    Mutex,
-    mpsc::Receiver,
-};
+use std::sync::{Mutex, mpsc::Receiver};
 
 use anyhow::Result;
 use bevy::{
@@ -51,9 +48,7 @@ use bevy::{
     window::{PresentMode, WindowResolution},
     winit::WinitSettings,
 };
-use game_protocol::{
-    ClientMessage, PROTOCOL_VERSION, ServerMessage, WelcomePayload,
-};
+use game_protocol::{ClientMessage, PROTOCOL_VERSION, ServerMessage, WelcomePayload};
 use game_types::{EntityId, Position};
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -214,21 +209,14 @@ impl Plugin for SingleWindowGameplayPlugin {
         // V36.45.15: Bevy's GPU pipelines live in RenderApp. Mirror their
         // readiness into NativeLoadingState through ExtractSchedule, following
         // Bevy 0.19's official loading-screen pattern.
-        if let Some(render_app) =
-            app.get_sub_app_mut(
-                bevy::render::RenderApp,
-            )
-        {
+        if let Some(render_app) = app.get_sub_app_mut(bevy::render::RenderApp) {
             render_app.add_systems(
                 bevy::render::ExtractSchedule,
-                native_loading::
-                    update_render_pipeline_readiness,
+                native_loading::update_render_pipeline_readiness,
             );
         }
 
-
-        app
-            .init_resource::<streaming::RegionStream>()
+        app.init_resource::<streaming::RegionStream>()
             .init_resource::<native_ui::NativeChatState>()
             .init_resource::<native_ui::NativePanelState>()
             .init_resource::<native_drag::NativeActionBarState>()
@@ -259,39 +247,26 @@ impl Plugin for SingleWindowGameplayPlugin {
                 Update,
                 (
                     pump_network,
-                    creature_sprites::reconcile_creature_visuals
-                        .after(schedule_tile_movement),
+                    creature_sprites::reconcile_creature_visuals.after(schedule_tile_movement),
                     creature_sprites::report_creature_render_visibility
-                        .after(
-                            creature_sprites::reconcile_creature_visuals,
-                        ),
+                        .after(creature_sprites::reconcile_creature_visuals),
                     creature_sprites::interpolate_creature_motion
-                        .after(
-                            creature_sprites::reconcile_creature_visuals,
-                        ),
+                        .after(creature_sprites::reconcile_creature_visuals),
                     creature_sprites::animate_creature_sprites
-                        .after(
-                            creature_sprites::reconcile_creature_visuals,
-                        ),
+                        .after(creature_sprites::reconcile_creature_visuals),
                     creature_sprites::face_creature_sprites_to_camera
-                        .after(
-                            creature_sprites::interpolate_creature_motion,
-                        ),
+                        .after(creature_sprites::interpolate_creature_motion),
                     setup_player_animation,
-                    streaming::apply_streamed_region
-                        .after(pump_network),
+                    streaming::apply_streamed_region.after(pump_network),
                     native_loading::update
                         .after(streaming::apply_streamed_region)
                         .before(schedule_tile_movement),
-                    native_launcher::sync_single_window_shell
-                        .after(native_loading::update),
+                    native_launcher::sync_single_window_shell.after(native_loading::update),
                     streaming::sync_streamed_floor_visibility
                         .after(streaming::apply_streamed_region)
                         .after(update_building_roofs),
                     streaming::cleanup_old_region_entities
-                        .after(
-                            streaming::sync_streamed_floor_visibility,
-                        ),
+                        .after(streaming::sync_streamed_floor_visibility),
                 )
                     .distributive_run_if(single_window_game_active),
             )
@@ -303,20 +278,14 @@ impl Plugin for SingleWindowGameplayPlugin {
                         .run_if(native_game_menu::menu_closed)
                         .after(native_loading::update)
                         .after(pump_network),
-                    update_player_facing
-                        .after(schedule_tile_movement),
-                    interpolate_player
-                        .after(schedule_tile_movement),
-                    update_player_animation
-                        .after(interpolate_player),
-                    update_building_roofs
-                        .after(interpolate_player),
-                    follow_camera
-                        .after(interpolate_player),
+                    update_player_facing.after(schedule_tile_movement),
+                    interpolate_player.after(schedule_tile_movement),
+                    update_player_animation.after(interpolate_player),
+                    update_building_roofs.after(interpolate_player),
+                    follow_camera.after(interpolate_player),
                     toggle_present_mode,
                     frame_pacing_probe,
-                    update_hud
-                        .after(frame_pacing_probe),
+                    update_hud.after(frame_pacing_probe),
                 )
                     .distributive_run_if(single_window_game_active),
             )
@@ -333,64 +302,51 @@ impl Plugin for SingleWindowGameplayPlugin {
                         .after(interaction::handle_pointer_interactions)
                         .after(pump_network),
                     interaction::sync_target_visual
-                        .after(
-                            creature_sprites::interpolate_creature_motion,
-                        ),
+                        .after(creature_sprites::interpolate_creature_motion),
                     interaction::update_hud
                         .after(pump_network)
-                        .after(
-                            interaction::handle_pointer_interactions,
-                        ),
+                        .after(interaction::handle_pointer_interactions),
                 )
                     .distributive_run_if(single_window_game_active),
             )
             .add_systems(
                 Update,
                 (
-                    native_ui_theme::apply_once
-                    .before(native_ui::update_ui),
-                    native_game_menu::handle_input
-                    .run_if(native_loading::gameplay_ready),
+                    native_ui_theme::apply_once.before(native_ui::update_ui),
+                    native_game_menu::handle_input.run_if(native_loading::gameplay_ready),
                     native_ui::handle_chat_input
-                    .run_if(native_game_menu::menu_closed)
-                    .after(native_game_menu::handle_input),
+                        .run_if(native_game_menu::menu_closed)
+                        .after(native_game_menu::handle_input),
                     native_map_ui::handle_input
-                    .run_if(native_game_menu::menu_closed)
-                    .after(native_game_menu::handle_input)
-                    .before(schedule_tile_movement),
+                        .run_if(native_game_menu::menu_closed)
+                        .after(native_game_menu::handle_input)
+                        .before(schedule_tile_movement),
                     native_trade_ui::handle_input
-                    .run_if(native_game_menu::menu_closed)
-                    .after(native_map_ui::handle_input)
-                    .before(schedule_tile_movement),
+                        .run_if(native_game_menu::menu_closed)
+                        .after(native_map_ui::handle_input)
+                        .before(schedule_tile_movement),
                     native_settings::handle_input
-                    .run_if(native_game_menu::menu_closed)
-                    .after(native_trade_ui::handle_input)
-                    .before(schedule_tile_movement),
-                    native_settings::handle_buttons
-                    .after(native_settings::handle_input),
+                        .run_if(native_game_menu::menu_closed)
+                        .after(native_trade_ui::handle_input)
+                        .before(schedule_tile_movement),
+                    native_settings::handle_buttons.after(native_settings::handle_input),
                     native_ui::handle_panel_hotkeys
-                    .run_if(native_game_menu::menu_closed)
-                    .after(native_ui::handle_chat_input),
+                        .run_if(native_game_menu::menu_closed)
+                        .after(native_ui::handle_chat_input),
                     native_ui::handle_panel_dock_buttons
-                    .run_if(native_game_menu::menu_closed)
-                    .after(
-                    native_ui::handle_panel_hotkeys,
-                    ),
+                        .run_if(native_game_menu::menu_closed)
+                        .after(native_ui::handle_panel_hotkeys),
                     native_ui::handle_panel_close_buttons
-                    .after(
-                    native_ui::handle_panel_dock_buttons,
-                    ),
+                        .after(native_ui::handle_panel_dock_buttons),
                     native_ui::handle_nearby_loot
-                    .run_if(native_loading::gameplay_ready)
-                    .run_if(native_game_menu::menu_closed)
-                    .after(native_ui::handle_panel_close_buttons),
+                        .run_if(native_loading::gameplay_ready)
+                        .run_if(native_game_menu::menu_closed)
+                        .after(native_ui::handle_panel_close_buttons),
                     native_ui::handle_action_hotkeys
-                    .run_if(native_loading::gameplay_ready)
-                    .run_if(native_game_menu::menu_closed)
-                    .after(native_loading::update)
-                    .after(
-                    native_ui::handle_panel_close_buttons,
-                    ),
+                        .run_if(native_loading::gameplay_ready)
+                        .run_if(native_game_menu::menu_closed)
+                        .after(native_loading::update)
+                        .after(native_ui::handle_panel_close_buttons),
                 )
                     .distributive_run_if(single_window_game_active),
             )
@@ -399,33 +355,22 @@ impl Plugin for SingleWindowGameplayPlugin {
                 Update,
                 (
                     native_ui::handle_action_slot_buttons
-                    .run_if(native_loading::gameplay_ready)
-                    .run_if(native_game_menu::menu_closed)
-                    .after(
-                    native_ui::handle_action_hotkeys,
-                    ),
-                    native_game_menu::handle_buttons
-                    .after(native_game_menu::handle_input),
+                        .run_if(native_loading::gameplay_ready)
+                        .run_if(native_game_menu::menu_closed)
+                        .after(native_ui::handle_action_hotkeys),
+                    native_game_menu::handle_buttons.after(native_game_menu::handle_input),
                     native_ui::ping_server,
-                    native_ui::update_ui
-                    .after(pump_network),
-                    native_ui::update_nearby_loot_ui
-                    .after(native_ui::update_ui),
+                    native_ui::update_ui.after(pump_network),
+                    native_ui::update_nearby_loot_ui.after(native_ui::update_ui),
                     native_map_ui::update_ui
-                    .after(pump_network)
-                    .after(native_map_ui::handle_buttons),
-                    native_trade_ui::update_ui
-                    .after(pump_network),
+                        .after(pump_network)
+                        .after(native_map_ui::handle_buttons),
+                    native_trade_ui::update_ui.after(pump_network),
                     native_settings::update_performance_probe,
                     native_settings::update_ui,
-                    native_game_menu::update_ui
-                    .after(native_settings::update_ui),
-                    native_settings::sync_world_music
-                    .after(pump_network),
-                    native_settings::apply_audio_settings
-                    .after(
-                    native_settings::sync_world_music,
-                    ),
+                    native_game_menu::update_ui.after(native_settings::update_ui),
+                    native_settings::sync_world_music.after(pump_network),
+                    native_settings::apply_audio_settings.after(native_settings::sync_world_music),
                 )
                     .distributive_run_if(single_window_game_active),
             )
@@ -442,9 +387,7 @@ impl Plugin for SingleWindowGameplayPlugin {
                         .after(native_modal::handle_window_drag),
                     native_ui::handle_inventory_modal_buttons
                         .run_if(native_game_menu::menu_closed)
-                        .after(
-                            native_ui::handle_panel_close_buttons,
-                        ),
+                        .after(native_ui::handle_panel_close_buttons),
                     native_ui::handle_crafting_modal_buttons
                         .run_if(native_game_menu::menu_closed)
                         .after(native_ui::handle_panel_close_buttons),
@@ -457,40 +400,27 @@ impl Plugin for SingleWindowGameplayPlugin {
                     native_ui::handle_character_modal_buttons
                         .run_if(native_game_menu::menu_closed)
                         .after(native_ui::handle_panel_close_buttons),
-                    native_ui::update_inventory_modal_ui
-                        .after(native_ui::update_ui),
-                    native_ui::update_skills_modal_ui
-                        .after(native_ui::update_ui),
-                    native_ui::update_crafting_modal_ui
-                        .after(native_ui::update_ui),
-                    native_ui::update_spellbook_modal_ui
-                        .after(native_ui::update_ui),
-                    native_ui::update_npc_modal_ui
-                        .after(native_ui::update_ui),
-                    native_ui::update_character_modal_ui
-                        .after(native_ui::update_ui),
+                    native_ui::update_inventory_modal_ui.after(native_ui::update_ui),
+                    native_ui::update_skills_modal_ui.after(native_ui::update_ui),
+                    native_ui::update_crafting_modal_ui.after(native_ui::update_ui),
+                    native_ui::update_spellbook_modal_ui.after(native_ui::update_ui),
+                    native_ui::update_npc_modal_ui.after(native_ui::update_ui),
+                    native_ui::update_character_modal_ui.after(native_ui::update_ui),
                 )
                     .distributive_run_if(single_window_game_active),
             );
     }
 }
 
-fn single_window_bootstrap_pending(
-    bootstrap: Option<Res<SingleWindowGameBootstrap>>,
-) -> bool {
+fn single_window_bootstrap_pending(bootstrap: Option<Res<SingleWindowGameBootstrap>>) -> bool {
     bootstrap.is_some()
 }
 
-fn single_window_game_active(
-    active: Option<Res<SingleWindowGameActive>>,
-) -> bool {
+fn single_window_game_active(active: Option<Res<SingleWindowGameActive>>) -> bool {
     active.is_some()
 }
 
-fn finish_single_window_bootstrap(
-    mut commands: Commands,
-    mut windows: Query<&mut Window>,
-) {
+fn finish_single_window_bootstrap(mut commands: Commands, mut windows: Query<&mut Window>) {
     commands.remove_resource::<SingleWindowGameBootstrap>();
     commands.remove_resource::<BootstrapWelcome>();
     commands.insert_resource(SingleWindowGameActive);
@@ -500,33 +430,21 @@ fn finish_single_window_bootstrap(
         window.resizable = true;
     }
 
-    info!(
-        "ALDORIA SINGLE WINDOW · gameplay bootstrap installed"
-    );
+    info!("ALDORIA SINGLE WINDOW · gameplay bootstrap installed");
 }
 
 pub(crate) fn install_single_window_session(
     commands: &mut Commands,
     session: network::NativeSession,
 ) {
-    let native_game_state =
-        state::NativeGameState::from_welcome(
-            session.welcome.as_ref(),
-        );
+    let native_game_state = state::NativeGameState::from_welcome(session.welcome.as_ref());
 
-    let initial_position =
-        session.welcome.player.position;
+    let initial_position = session.welcome.player.position;
 
     let initial_collision =
-        collision::LocalCollision::from_region(
-            session.welcome.map.as_ref(),
-            &session.welcome.npcs,
-        );
+        collision::LocalCollision::from_region(session.welcome.map.as_ref(), &session.welcome.npcs);
 
-    let native_map_state =
-        native_map_ui::NativeMapState::from_welcome(
-            session.welcome.as_ref(),
-        );
+    let native_map_state = native_map_ui::NativeMapState::from_welcome(session.welcome.as_ref());
 
     let identity = LocalIdentity {
         id: session.welcome.player.id,
@@ -536,9 +454,7 @@ pub(crate) fn install_single_window_session(
     };
 
     commands.insert_resource(native_game_state);
-    commands.insert_resource(
-        BootstrapWelcome(Some(session.welcome)),
-    );
+    commands.insert_resource(BootstrapWelcome(Some(session.welcome)));
     commands.insert_resource(native_map_state);
     commands.insert_resource(identity);
     commands.insert_resource(NativeNetwork {
@@ -546,12 +462,8 @@ pub(crate) fn install_single_window_session(
         incoming: Mutex::new(session.incoming),
     });
     commands.insert_resource(initial_collision);
-    commands.insert_resource(
-        MovementState::new(initial_position),
-    );
-    commands.insert_resource(
-        native_loading::NativeLoadingState::default(),
-    );
+    commands.insert_resource(MovementState::new(initial_position));
+    commands.insert_resource(native_loading::NativeLoadingState::default());
     commands.insert_resource(SingleWindowGameBootstrap);
 
     info!(
@@ -572,12 +484,9 @@ fn main() -> Result<()> {
 fn run_game(session: network::NativeSession) -> Result<()> {
     let native_game_state = state::NativeGameState::from_welcome(session.welcome.as_ref());
     let initial_position = session.welcome.player.position;
-    let initial_collision = collision::LocalCollision::from_region(
-        session.welcome.map.as_ref(),
-        &session.welcome.npcs,
-    );
-    let native_map_state =
-        native_map_ui::NativeMapState::from_welcome(session.welcome.as_ref());
+    let initial_collision =
+        collision::LocalCollision::from_region(session.welcome.map.as_ref(), &session.welcome.npcs);
+    let native_map_state = native_map_ui::NativeMapState::from_welcome(session.welcome.as_ref());
 
     let identity = LocalIdentity {
         id: session.welcome.player.id,
@@ -710,10 +619,8 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                     .after(native_trade_ui::handle_input)
                     .before(schedule_tile_movement),
                 native_ui::handle_panel_hotkeys.after(native_ui::handle_chat_input),
-                native_ui::handle_panel_dock_buttons
-                    .after(native_ui::handle_panel_hotkeys),
-                native_ui::handle_panel_close_buttons
-                    .after(native_ui::handle_panel_dock_buttons),
+                native_ui::handle_panel_dock_buttons.after(native_ui::handle_panel_hotkeys),
+                native_ui::handle_panel_close_buttons.after(native_ui::handle_panel_dock_buttons),
                 native_ui::handle_nearby_loot
                     .run_if(native_loading::gameplay_ready)
                     .after(native_ui::handle_panel_close_buttons),
@@ -732,8 +639,7 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                 native_settings::update_performance_probe,
                 native_settings::update_ui,
                 native_settings::sync_world_music.after(pump_network),
-                native_settings::apply_audio_settings
-                    .after(native_settings::sync_world_music),
+                native_settings::apply_audio_settings.after(native_settings::sync_world_music),
             ),
         )
         .add_systems(
@@ -770,11 +676,8 @@ fn native_asset_root() -> String {
     let installed = std::env::current_exe()
         .ok()
         .and_then(|path| path.parent().map(|parent| parent.join("assets")));
-    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../assets");
-    let candidate = installed
-        .filter(|path| path.is_dir())
-        .unwrap_or(repository);
+    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let candidate = installed.filter(|path| path.is_dir()).unwrap_or(repository);
 
     candidate
         .canonicalize()
@@ -802,7 +705,9 @@ fn warmup_creature_assets(asset_server: &AssetServer) -> CreatureWarmupHandles {
         textures.len(),
     );
 
-    CreatureWarmupHandles { _textures: textures }
+    CreatureWarmupHandles {
+        _textures: textures,
+    }
 }
 
 fn collect_creature_textures(
@@ -826,7 +731,10 @@ fn collect_creature_textures(
             continue;
         };
         let extension = extension.to_ascii_lowercase();
-        if !matches!(extension.as_str(), "png" | "jpg" | "jpeg" | "webp" | "ktx2" | "dds" | "basis") {
+        if !matches!(
+            extension.as_str(),
+            "png" | "jpg" | "jpeg" | "webp" | "ktx2" | "dds" | "basis"
+        ) {
             continue;
         }
 
@@ -878,34 +786,20 @@ fn setup(
     info!("ALDORIA ASSET ROOT · {}", native_asset_root());
     info!(
         "Player {} · level {} · {}:{}:{}",
-        identity.name,
-        identity.level,
-        movement.logical.x,
-        movement.logical.y,
-        movement.logical.z,
+        identity.name, identity.level, movement.logical.x, movement.logical.y, movement.logical.z,
     );
 
     let creature_sprite_catalog =
-        creature_sprites::CreatureSpriteCatalog::new(
-            &asset_server,
-            &mut meshes,
-        );
+        creature_sprites::CreatureSpriteCatalog::new(&asset_server, &mut meshes);
     creature_sprites::spawn_creature_render_warmup(
         &mut commands,
         &mut materials,
         &creature_sprite_catalog,
     );
     let world_detail_catalog =
-        world_details::WorldDetailCatalog::new(
-            &asset_server,
-            &mut meshes,
-            &mut materials,
-        );
+        world_details::WorldDetailCatalog::new(&asset_server, &mut meshes, &mut materials);
     let architecture_catalog =
-        world_architecture::ArchitectureCatalog::new(
-            &mut meshes,
-            &mut materials,
-        );
+        world_architecture::ArchitectureCatalog::new(&mut meshes, &mut materials);
     let creature_warmup = warmup_creature_assets(&asset_server);
     world_architecture::describe();
     world_details::describe();
@@ -938,11 +832,9 @@ fn setup(
     commands.insert_resource(creature_sprite_catalog);
     commands.insert_resource(world_detail_catalog);
     commands.insert_resource(architecture_catalog);
-// TIBIAGAME_V36_5_NATIVE_PLAYER_MODEL
-    let general_animation_path =
-        "models/kaykit-adventurers/Rig_Medium_General.glb";
-    let movement_animation_path =
-        "models/kaykit-adventurers/Rig_Medium_MovementBasic.glb";
+    // TIBIAGAME_V36_5_NATIVE_PLAYER_MODEL
+    let general_animation_path = "models/kaykit-adventurers/Rig_Medium_General.glb";
+    let movement_animation_path = "models/kaykit-adventurers/Rig_Medium_MovementBasic.glb";
 
     let general_gltf: Handle<Gltf> = asset_server.load(general_animation_path);
     let movement_gltf: Handle<Gltf> = asset_server.load(movement_animation_path);
@@ -959,9 +851,7 @@ fn setup(
         Name::new("KayKit animation target template"),
         AnimationTemplateRig,
         WorldAssetRoot(
-            asset_server.load(
-                GltfAssetLabel::Scene(0).from_asset(general_animation_path),
-            ),
+            asset_server.load(GltfAssetLabel::Scene(0).from_asset(general_animation_path)),
         ),
         Transform::from_xyz(0.0, -10_000.0, 0.0),
         Visibility::Hidden,
@@ -969,9 +859,7 @@ fn setup(
 
     let model_path = player_model_path(&identity.outfit);
     let model_scale = player_model_scale(&identity.outfit);
-    let model_scene = asset_server.load(
-        GltfAssetLabel::Scene(0).from_asset(model_path),
-    );
+    let model_scene = asset_server.load(GltfAssetLabel::Scene(0).from_asset(model_path));
 
     commands
         .spawn((
@@ -996,12 +884,8 @@ fn setup(
             shadow_maps_enabled: false,
             ..default()
         },
-        Transform::from_xyz(
-            movement.visual.x + 8.0,
-            14.0,
-            movement.visual.z + 6.0,
-        )
-        .looking_at(movement.visual, Vec3::Y),
+        Transform::from_xyz(movement.visual.x + 8.0, 14.0, movement.visual.z + 6.0)
+            .looking_at(movement.visual, Vec3::Y),
     ));
 
     commands.spawn((
@@ -1024,7 +908,7 @@ fn setup(
         Msaa::Sample4,
         Projection::from(OrthographicProjection {
             scaling_mode: ScalingMode::FixedVertical {
-                viewport_height: 18.0,
+                viewport_height: 16.0,
             },
             ..OrthographicProjection::default_3d()
         }),
@@ -1065,8 +949,7 @@ fn spawn_live_world(
     let tile_mesh = meshes.add(Cuboid::new(0.98, 0.045, 0.98));
     let actor_mesh = meshes.add(Cuboid::new(0.62, 0.95, 0.62));
 
-    let world_materials =
-        world_visuals::create_materials(asset_server, materials);
+    let world_materials = world_visuals::create_materials(asset_server, materials);
     world_visuals::describe();
 
     let floor_material = world_materials.floor.clone();
@@ -1081,10 +964,9 @@ fn spawn_live_world(
         perceptual_roughness: 0.7,
         ..default()
     });
-    for center in world_architecture::ground_chunk_centers(
-        welcome.region_center,
-        welcome.region_radius,
-    ) {
+    for center in
+        world_architecture::ground_chunk_centers(welcome.region_center, welcome.region_radius)
+    {
         world_architecture::spawn_ground_chunk(
             commands,
             architecture_catalog,
@@ -1138,15 +1020,8 @@ fn spawn_live_world(
         0.03,
         "Water",
     );
-    for position in map
-        .bridges
-        .iter()
-        .filter(|position| position.z == floor)
-    {
-        let edges = world_architecture::infer_bridge_edges(
-            *position,
-            &map.bridges,
-        );
+    for position in map.bridges.iter().filter(|position| position.z == floor) {
+        let edges = world_architecture::infer_bridge_edges(*position, &map.bridges);
         world_architecture::spawn_bridge(
             commands,
             architecture_catalog,
@@ -1161,11 +1036,7 @@ fn spawn_live_world(
         .iter()
         .filter(|position| position.z == floor)
     {
-        if world_architecture::has_opening(
-            *position,
-            &map.doors,
-            &map.windows,
-        ) {
+        if world_architecture::has_opening(*position, &map.doors, &map.windows) {
             continue;
         }
 
@@ -1190,19 +1061,12 @@ fn spawn_live_world(
         .iter()
         .filter(|position| position.z == floor)
     {
-        if world_architecture::has_opening(
-            *position,
-            &map.doors,
-            &map.windows,
-        ) {
+        if world_architecture::has_opening(*position, &map.doors, &map.windows) {
             continue;
         }
 
-        let axes = world_architecture::infer_wall_axes(
-            *position,
-            &map.house_walls,
-            &map.castle_walls,
-        );
+        let axes =
+            world_architecture::infer_wall_axes(*position, &map.house_walls, &map.castle_walls);
 
         world_architecture::spawn_wall(
             commands,
@@ -1215,11 +1079,7 @@ fn spawn_live_world(
     }
 
     for position in map.trees.iter().filter(|position| position.z == floor) {
-        world_details::spawn_tree(
-            commands,
-            world_detail_catalog,
-            *position,
-        );
+        world_details::spawn_tree(commands, world_detail_catalog, *position);
     }
 
     for object in map
@@ -1227,30 +1087,17 @@ fn spawn_live_world(
         .iter()
         .filter(|object| object.position.z == floor)
     {
-        world_details::spawn_world_object(
-            commands,
-            world_detail_catalog,
-            object,
-        );
+        world_details::spawn_world_object(commands, world_detail_catalog, object);
     }
 
-    for door in map
-        .doors
-        .iter()
-        .filter(|door| door.position.z == floor)
-    {
+    for door in map.doors.iter().filter(|door| door.position.z == floor) {
         let edge = world_architecture::infer_opening_edge(
             door.position,
             &map.buildings,
             &map.house_walls,
             &map.castle_walls,
         );
-        world_details::spawn_door(
-            commands,
-            world_detail_catalog,
-            door,
-            edge,
-        );
+        world_details::spawn_door(commands, world_detail_catalog, door, edge);
     }
 
     for window in map
@@ -1264,33 +1111,15 @@ fn spawn_live_world(
             &map.house_walls,
             &map.castle_walls,
         );
-        world_details::spawn_window(
-            commands,
-            world_detail_catalog,
-            window,
-            edge,
-        );
+        world_details::spawn_window(commands, world_detail_catalog, window, edge);
     }
 
-    for position in map
-        .torches
-        .iter()
-        .filter(|position| position.z == floor)
-    {
-        world_details::spawn_torch(
-            commands,
-            world_detail_catalog,
-            *position,
-        );
+    for position in map.torches.iter().filter(|position| position.z == floor) {
+        world_details::spawn_torch(commands, world_detail_catalog, *position);
     }
 
     for stair in &map.stairs {
-        world_details::spawn_stair(
-            commands,
-            world_detail_catalog,
-            stair,
-            floor,
-        );
+        world_details::spawn_stair(commands, world_detail_catalog, stair, floor);
     }
 
     for building in map
@@ -1342,11 +1171,7 @@ fn spawn_live_world(
         .iter()
         .filter(|resource| resource.position.z == floor)
     {
-        world_details::spawn_resource(
-            commands,
-            world_detail_catalog,
-            resource,
-        );
+        world_details::spawn_resource(commands, world_detail_catalog, resource);
     }
 
     info!(
@@ -1357,7 +1182,10 @@ fn spawn_live_world(
         count_floor(&map.water, floor),
         count_floor(&map.house_walls, floor) + count_floor(&map.castle_walls, floor),
         count_floor(&map.trees, floor),
-        map.buildings.iter().filter(|building| building.floor == floor).count(),
+        map.buildings
+            .iter()
+            .filter(|building| building.floor == floor)
+            .count(),
     );
     info!(
         "ALDORIA LIVE ACTORS · creatures {} · NPCs {} · resources {}",
@@ -1394,15 +1222,16 @@ fn spawn_tile_positions(
             WorldStatic,
             Mesh3d(mesh.clone()),
             MeshMaterial3d(material.clone()),
-            Transform::from_translation(
-                Vec3::new(position.x as f32, y, position.y as f32),
-            ),
+            Transform::from_translation(Vec3::new(position.x as f32, y, position.y as f32)),
         ));
     }
 }
 
 fn count_floor(positions: &[Position], floor: i16) -> usize {
-    positions.iter().filter(|position| position.z == floor).count()
+    positions
+        .iter()
+        .filter(|position| position.z == floor)
+        .count()
 }
 
 // TIBIAGAME_V36_8_4_PUMP_NETWORK_PARAMSET_FIX
@@ -1467,11 +1296,7 @@ fn pump_network(
             } if player_id == identity.id => {
                 warn!(
                     "ALDORIA MOVE REJECTED · seq {} · {} · authoritative {}:{}:{}",
-                    sequence,
-                    reason,
-                    position.x,
-                    position.y,
-                    position.z,
+                    sequence, reason, position.x, position.y, position.z,
                 );
                 movement.last_ack_sequence = movement.last_ack_sequence.max(sequence);
                 movement.reconcile(position, time.elapsed_secs_f64());
@@ -1529,19 +1354,13 @@ fn pump_network(
             ServerMessage::DoorChanged { door } => {
                 {
                     let mut doors = actor_queries.p0();
-                    world_details::apply_door_change(
-                        &door,
-                        &mut doors,
-                    );
+                    world_details::apply_door_change(&door, &mut doors);
                 }
                 collision.update_door(door);
             }
             ServerMessage::WindowChanged { window } => {
                 let mut windows = actor_queries.p1();
-                world_details::apply_window_change(
-                    &window,
-                    &mut windows,
-                );
+                world_details::apply_window_change(&window, &mut windows);
             }
             ServerMessage::CombatEffect { source_id, .. } => {
                 let now = time.elapsed_secs_f64();
@@ -1596,10 +1415,7 @@ fn schedule_tile_movement(
     creature_catalog: Res<creature_sprites::CreatureSpriteCatalog>,
     region_stream: Res<streaming::RegionStream>,
     game_state: Res<state::NativeGameState>,
-    creature_visuals: Query<
-        &CreatureActor,
-        With<creature_sprites::PersistentCreatureVisual>,
-    >,
+    creature_visuals: Query<&CreatureActor, With<creature_sprites::PersistentCreatureVisual>>,
     mut floor_visual_ready_since: Local<Option<(i16, f64)>>,
     mut floor_asset_wait_logged: Local<bool>,
     mut sequence: ResMut<MoveSequence>,
@@ -1617,15 +1433,11 @@ fn schedule_tile_movement(
         return;
     }
 
-    if (panel_state.inventory_open
-        || panel_state.spells_open
-        || panel_state.crafting_open)
-        && (
-            keys.pressed(KeyCode::ArrowUp)
-                || keys.pressed(KeyCode::ArrowDown)
-                || keys.pressed(KeyCode::ArrowLeft)
-                || keys.pressed(KeyCode::ArrowRight)
-        )
+    if (panel_state.inventory_open || panel_state.spells_open || panel_state.crafting_open)
+        && (keys.pressed(KeyCode::ArrowUp)
+            || keys.pressed(KeyCode::ArrowDown)
+            || keys.pressed(KeyCode::ArrowLeft)
+            || keys.pressed(KeyCode::ArrowRight))
     {
         return;
     }
@@ -1684,19 +1496,16 @@ fn schedule_tile_movement(
     // on the destination floor.
     if predicted_step.destination.z != movement.logical.z {
         let destination_floor = predicted_step.destination.z;
-        let assets_ready =
-            creature_sprites::floor_transition_creature_assets_ready(
-                &asset_server,
-                &creature_catalog,
-            );
+        let assets_ready = creature_sprites::floor_transition_creature_assets_ready(
+            &asset_server,
+            &creature_catalog,
+        );
         let floor_ready = region_stream.floor_ready(destination_floor);
 
         let expected_actor_count = game_state
             .creatures
             .values()
-            .filter(|creature| {
-                creature.position.z == destination_floor && creature.health > 0
-            })
+            .filter(|creature| creature.position.z == destination_floor && creature.health > 0)
             .count();
 
         let cached_actor_count = game_state
@@ -1705,9 +1514,7 @@ fn schedule_tile_movement(
             .filter(|creature| {
                 creature.position.z == destination_floor
                     && creature.health > 0
-                    && creature_visuals
-                        .iter()
-                        .any(|actor| actor.0 == creature.id)
+                    && creature_visuals.iter().any(|actor| actor.0 == creature.id)
             })
             .count();
 
@@ -1719,9 +1526,7 @@ fn schedule_tile_movement(
         // gives deferred actor spawns/extraction time to land.
         let visual_settled = if assets_ready && floor_ready && actor_cache_ready {
             match *floor_visual_ready_since {
-                Some((floor, since)) if floor == destination_floor => {
-                    now - since >= 0.30
-                }
+                Some((floor, since)) if floor == destination_floor => now - since >= 0.30,
                 _ => {
                     *floor_visual_ready_since = Some((destination_floor, now));
                     false
@@ -1732,11 +1537,7 @@ fn schedule_tile_movement(
             false
         };
 
-        if !assets_ready
-            || !floor_ready
-            || !actor_cache_ready
-            || !visual_settled
-        {
+        if !assets_ready || !floor_ready || !actor_cache_ready || !visual_settled {
             if !*floor_asset_wait_logged {
                 info!(
                     "ALDORIA FLOOR PRELOAD WAIT · destination floor {} · assets={} · static_cache={} · actors={}/{} · settled={}",
@@ -1757,9 +1558,7 @@ fn schedule_tile_movement(
         if *floor_asset_wait_logged {
             info!(
                 "ALDORIA FLOOR PRELOAD READY · destination floor {} · static + assets + actors {}/{} ready",
-                destination_floor,
-                cached_actor_count,
-                expected_actor_count,
+                destination_floor, cached_actor_count, expected_actor_count,
             );
             *floor_asset_wait_logged = false;
         }
@@ -1838,10 +1637,7 @@ fn setup_player_animation(
     children: Query<&Children>,
     names: Query<&Name>,
     animation_targets: Query<&AnimationTargetId>,
-    model_roots: Query<
-        Entity,
-        (With<PlayerModelRoot>, Without<PlayerAnimationController>),
-    >,
+    model_roots: Query<Entity, (With<PlayerModelRoot>, Without<PlayerAnimationController>)>,
     template_roots: Query<Entity, With<AnimationTemplateRig>>,
 ) {
     let Some(general) = gltfs.get(&sources.general) else {
@@ -1864,9 +1660,7 @@ fn setup_player_animation(
 
     let mut targets_by_name = HashMap::<String, AnimationTargetId>::new();
     for entity in children.iter_descendants(template_root) {
-        let (Ok(name), Ok(target)) =
-            (names.get(entity), animation_targets.get(entity))
-        else {
+        let (Ok(name), Ok(target)) = (names.get(entity), animation_targets.get(entity)) else {
             continue;
         };
         targets_by_name.insert(name.as_str().to_owned(), *target);
@@ -1902,9 +1696,7 @@ fn setup_player_animation(
 
         let mut player = AnimationPlayer::default();
         let mut transitions = AnimationTransitions::new();
-        transitions
-            .play(&mut player, idle, Duration::ZERO)
-            .repeat();
+        transitions.play(&mut player, idle, Duration::ZERO).repeat();
 
         commands.entity(model_root).insert((
             player,
@@ -1940,8 +1732,7 @@ fn update_player_animation(
     )>,
 ) {
     let moving = movement.from != movement.to
-        && time.elapsed_secs_f64()
-            < movement.started_at + movement.duration + 0.045;
+        && time.elapsed_secs_f64() < movement.started_at + movement.duration + 0.045;
 
     let desired = if moving {
         PlayerAnimationState::Walk
@@ -1959,11 +1750,7 @@ fn update_player_animation(
             PlayerAnimationState::Walk => controller.walk,
         };
 
-        let active = transitions.play(
-            &mut player,
-            node,
-            Duration::from_millis(140),
-        );
+        let active = transitions.play(&mut player, node, Duration::from_millis(140));
         active.repeat();
 
         if desired == PlayerAnimationState::Walk {
@@ -1980,10 +1767,7 @@ fn update_building_roofs(
     movement: Res<MovementState>,
     camera: Query<&Transform, (With<MainCamera>, Without<BuildingRoof>)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut roofs: Query<
-        (&mut BuildingRoof, &mut Visibility),
-        Without<MainCamera>,
-    >,
+    mut roofs: Query<(&mut BuildingRoof, &mut Visibility), Without<MainCamera>>,
     mut walls: Query<(&HouseWallOccluder, &mut Visibility), Without<BuildingRoof>>,
 ) {
     let Ok(camera) = camera.single() else {
@@ -2003,28 +1787,29 @@ fn update_building_roofs(
 
         *visibility = Visibility::Visible;
 
-        let inside =
-            player_2d.x >= roof.min_x
-                && player_2d.x <= roof.max_x
-                && player_2d.y >= roof.min_z
-                && player_2d.y <= roof.max_z;
+        let inside = player_2d.x >= roof.min_x
+            && player_2d.x <= roof.max_x
+            && player_2d.y >= roof.min_z
+            && player_2d.y <= roof.max_z;
 
-        let between_camera_and_player = segment_samples_rect(
-            player_2d,
-            camera_2d,
-            Vec2::new(roof.min_x - 0.12, roof.min_z - 0.12),
-            Vec2::new(roof.max_x + 0.12, roof.max_z + 0.12),
-        );
+        let roof_min = Vec2::new(roof.min_x - 0.12, roof.min_z - 0.12);
+        let roof_max = Vec2::new(roof.max_x + 0.12, roof.max_z + 0.12);
+        let close_to_house =
+            point_rect_distance_squared(player_2d, roof_min, roof_max) <= 0.9 * 0.9;
+        let between_camera_and_player =
+            close_to_house && segment_samples_rect(player_2d, camera_2d, roof_min, roof_max);
 
-        let target_opacity =
-            if inside || between_camera_and_player { 0.14 } else { 1.0 };
+        let target_opacity = if inside || between_camera_and_player {
+            0.14
+        } else {
+            1.0
+        };
         roof.opacity += (target_opacity - roof.opacity) * fade_step;
 
         for handle in [&roof.roof_material, &roof.gable_material] {
             if let Some(mut material) = materials.get_mut(handle) {
                 material.alpha_mode = AlphaMode::Blend;
-                material.base_color =
-                    Color::srgba(1.0, 1.0, 1.0, roof.opacity);
+                material.base_color = Color::srgba(1.0, 1.0, 1.0, roof.opacity);
             }
         }
     }
@@ -2039,9 +1824,9 @@ fn update_building_roofs(
         }
 
         let point = Vec2::new(wall.position.x as f32, wall.position.y as f32);
-        let occluding =
-            point_segment_distance_squared(point, player_2d, camera_2d)
-                <= 0.68 * 0.68;
+        let close_to_player = point.distance_squared(player_2d) <= 1.5 * 1.5;
+        let occluding = close_to_player
+            && point_segment_distance_squared(point, player_2d, camera_2d) <= 0.68 * 0.68;
 
         *visibility = if occluding {
             Visibility::Hidden
@@ -2051,34 +1836,25 @@ fn update_building_roofs(
     }
 }
 
-fn segment_samples_rect(
-    start: Vec2,
-    end: Vec2,
-    min: Vec2,
-    max: Vec2,
-) -> bool {
+fn segment_samples_rect(start: Vec2, end: Vec2, min: Vec2, max: Vec2) -> bool {
     // Houses are several tiles wide, so a short deterministic sample is both
     // cheaper and less error-prone than maintaining a custom ray/AABB solver.
     // Skip t=0 so merely standing beside a house does not count as occlusion.
     for index in 1..=24 {
         let t = index as f32 / 24.0;
         let point = start.lerp(end, t);
-        if point.x >= min.x
-            && point.x <= max.x
-            && point.y >= min.y
-            && point.y <= max.y
-        {
+        if point.x >= min.x && point.x <= max.x && point.y >= min.y && point.y <= max.y {
             return true;
         }
     }
     false
 }
 
-fn point_segment_distance_squared(
-    point: Vec2,
-    start: Vec2,
-    end: Vec2,
-) -> f32 {
+fn point_rect_distance_squared(point: Vec2, min: Vec2, max: Vec2) -> f32 {
+    point.distance_squared(point.clamp(min, max))
+}
+
+fn point_segment_distance_squared(point: Vec2, start: Vec2, end: Vec2) -> f32 {
     let segment = end - start;
     let length_squared = segment.length_squared();
     if length_squared <= f32::EPSILON {
@@ -2100,10 +1876,7 @@ fn follow_camera(
     *transform = Transform::from_translation(target + CAMERA_OFFSET).looking_at(target, Vec3::Y);
 }
 
-fn toggle_present_mode(
-    keys: Res<ButtonInput<KeyCode>>,
-    mut window: Single<&mut Window>,
-) {
+fn toggle_present_mode(keys: Res<ButtonInput<KeyCode>>, mut window: Single<&mut Window>) {
     if !keys.just_pressed(KeyCode::KeyV) {
         return;
     }
@@ -2150,11 +1923,7 @@ fn frame_pacing_probe(time: Res<Time>, mut probe: ResMut<FrameProbe>) {
 
     info!(
         "ALDORIA NATIVE PERF · avg={:.2}ms max={:.2}ms fps={:.1} drops24={} drops32={}",
-        probe.avg_ms,
-        probe.last_max_ms,
-        probe.fps,
-        probe.drops_24,
-        probe.drops_32,
+        probe.avg_ms, probe.last_max_ms, probe.fps, probe.drops_24, probe.drops_32,
     );
 
     probe.sample_started_at = now;

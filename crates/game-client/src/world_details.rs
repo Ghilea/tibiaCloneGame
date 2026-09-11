@@ -5,8 +5,8 @@ use game_protocol::{DoorView, StairView, WindowView, WorldObjectView};
 use game_types::{Position, ResourceNodeView};
 
 use crate::{
-    world_architecture::{WallEdge, HOUSE_WALL_HEIGHT},
     ResourceActor, WorldStatic,
+    world_architecture::{HOUSE_WALL_HEIGHT, WallEdge},
 };
 
 // TIBIAGAME_V36_8_2_BEVY_WORLDASSET_STREAM_BORROW_FIX
@@ -33,8 +33,7 @@ const PROP_MODELS: [(&str, &str); 15] = [
 
 // TIBIAGAME_V36_11_NATIVE_INTERACTION_FOUNDATION
 const COPPER_VEIN: &str = "models/world-props/copper_vein.glb";
-const COPPER_VEIN_DEPLETED: &str =
-    "models/world-props/copper_vein_depleted.glb";
+const COPPER_VEIN_DEPLETED: &str = "models/world-props/copper_vein_depleted.glb";
 
 #[derive(Component)]
 pub struct WorldDoor {
@@ -111,20 +110,15 @@ impl WorldDetailCatalog {
         for (kind, path) in PROP_MODELS {
             prop_scenes.insert(
                 kind.to_owned(),
-                asset_server.load(
-                    GltfAssetLabel::Scene(0).from_asset(path),
-                ),
+                asset_server.load(GltfAssetLabel::Scene(0).from_asset(path)),
             );
         }
 
         Self {
             prop_scenes,
-            copper_vein: asset_server.load(
-                GltfAssetLabel::Scene(0).from_asset(COPPER_VEIN),
-            ),
-            copper_vein_depleted: asset_server.load(
-                GltfAssetLabel::Scene(0).from_asset(COPPER_VEIN_DEPLETED),
-            ),
+            copper_vein: asset_server.load(GltfAssetLabel::Scene(0).from_asset(COPPER_VEIN)),
+            copper_vein_depleted: asset_server
+                .load(GltfAssetLabel::Scene(0).from_asset(COPPER_VEIN_DEPLETED)),
             trunk_mesh: meshes.add(Cylinder::default()),
             foliage_mesh: meshes.add(Cone::default()),
             detail_cube: meshes.add(Cuboid::default()),
@@ -199,11 +193,7 @@ pub fn spawn_tree(
         .spawn((
             Name::new("Tree"),
             WorldStatic,
-            Transform::from_xyz(
-                position.x as f32,
-                0.0,
-                position.y as f32,
-            ),
+            Transform::from_xyz(position.x as f32, 0.0, position.y as f32),
             Visibility::default(),
         ))
         .with_children(|parent| {
@@ -253,10 +243,7 @@ pub fn spawn_world_object(
     if let Some(scene) = catalog.prop_scene(&object.kind) {
         return commands
             .spawn((
-                Name::new(format!(
-                    "World Prop · {} · {}",
-                    object.kind, object.id
-                )),
+                Name::new(format!("World Prop · {} · {}", object.kind, object.id)),
                 WorldStatic,
                 WorldObjectActor {
                     id: object.id.clone(),
@@ -291,11 +278,7 @@ pub fn spawn_world_object(
             Mesh3d(catalog.detail_cube.clone()),
             MeshMaterial3d(catalog.generic.clone()),
             Transform {
-                translation: Vec3::new(
-                    object.position.x as f32,
-                    0.26,
-                    object.position.y as f32,
-                ),
+                translation: Vec3::new(object.position.x as f32, 0.26, object.position.y as f32),
                 rotation: Quat::from_rotation_y(rotation),
                 scale: Vec3::new(0.48, 0.52, 0.48),
             },
@@ -545,15 +528,11 @@ pub fn spawn_window(
         // V36.16.1: break up the plaster above and below the window with short
         // center studs. This makes those areas continue the surrounding facade
         // instead of reading as two separate flat panels.
-        for (label, y, height) in [
-            ("lower", 0.27f32, 0.42f32),
-            ("upper", 2.02f32, 0.68f32),
-        ] {
+        for (label, y, height) in [("lower", 0.27f32, 0.42f32), ("upper", 2.02f32, 0.68f32)] {
             parent.spawn((
                 Name::new(format!(
                     "Window facade center stud · {} · {}",
-                    window.id,
-                    label,
+                    window.id, label,
                 )),
                 Mesh3d(catalog.detail_cube.clone()),
                 MeshMaterial3d(catalog.facade_timber.clone()),
@@ -672,11 +651,7 @@ pub fn spawn_torch(
         .spawn((
             Name::new("Torch"),
             WorldStatic,
-            Transform::from_xyz(
-                position.x as f32,
-                0.0,
-                position.y as f32,
-            ),
+            Transform::from_xyz(position.x as f32, 0.0, position.y as f32),
             Visibility::default(),
         ))
         .with_children(|parent| {
@@ -741,11 +716,7 @@ pub fn spawn_stair(
         .spawn((
             Name::new(format!("Stair · {}", stair.id)),
             WorldStatic,
-            Transform::from_xyz(
-                position.x as f32,
-                0.0,
-                position.y as f32,
-            ),
+            Transform::from_xyz(position.x as f32, 0.0, position.y as f32),
             Visibility::default(),
         ))
         .id();
@@ -757,11 +728,7 @@ pub fn spawn_stair(
                 Mesh3d(catalog.detail_cube.clone()),
                 MeshMaterial3d(catalog.stone.clone()),
                 Transform {
-                    translation: Vec3::new(
-                        0.0,
-                        0.075 + t * 0.11,
-                        direction * (-0.30 + t * 0.20),
-                    ),
+                    translation: Vec3::new(0.0, 0.075 + t * 0.11, direction * (-0.30 + t * 0.20)),
                     scale: Vec3::new(0.86, 0.15 + t * 0.04, 0.28),
                     ..default()
                 },
@@ -772,10 +739,7 @@ pub fn spawn_stair(
     Some(root)
 }
 
-pub fn apply_door_change(
-    door: &DoorView,
-    doors: &mut Query<(&WorldDoorSwing, &mut Transform)>,
-) {
+pub fn apply_door_change(door: &DoorView, doors: &mut Query<(&WorldDoorSwing, &mut Transform)>) {
     for (visual, mut transform) in doors.iter_mut() {
         if visual.id != door.id {
             continue;
@@ -854,9 +818,7 @@ fn natural_rotation(object: &WorldObjectView) -> f32 {
             | "campfire"
             | "hay_bundle"
     ) {
-        let quarter =
-            (object.position.x * 13 + object.position.y * 7)
-                .rem_euclid(4);
+        let quarter = (object.position.x * 13 + object.position.y * 7).rem_euclid(4);
         quarter as f32 * std::f32::consts::FRAC_PI_2
     } else {
         0.0

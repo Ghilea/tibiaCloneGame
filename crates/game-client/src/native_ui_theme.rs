@@ -15,52 +15,31 @@
 use bevy::prelude::*;
 
 #[allow(dead_code)]
-pub(crate) const ROOT_BG: Color =
-    Color::srgb(0.031, 0.047, 0.039);
-pub(crate) const HEADER_BG: Color =
-    Color::srgba(0.047, 0.071, 0.059, 0.96);
-pub(crate) const PANEL_BG: Color =
-    Color::srgba(0.067, 0.102, 0.086, 0.95);
-pub(crate) const PANEL_BG_SOFT: Color =
-    Color::srgba(0.035, 0.055, 0.047, 0.92);
-pub(crate) const PANEL_BG_DEEP: Color =
-    Color::srgba(0.024, 0.035, 0.031, 0.98);
-pub(crate) const PLAYER_FRAME_BG: Color =
-    Color::srgba(0.025, 0.028, 0.024, 0.97);
-pub(crate) const PLAYER_FRAME_BORDER: Color =
-    Color::srgb(0.29, 0.27, 0.18);
+pub(crate) const ROOT_BG: Color = Color::srgb(0.031, 0.047, 0.039);
+pub(crate) const HEADER_BG: Color = Color::srgba(0.047, 0.071, 0.059, 0.96);
+pub(crate) const PANEL_BG: Color = Color::srgba(0.067, 0.102, 0.086, 0.95);
+pub(crate) const PANEL_BG_SOFT: Color = Color::srgba(0.035, 0.055, 0.047, 0.92);
+pub(crate) const PANEL_BG_DEEP: Color = Color::srgba(0.024, 0.035, 0.031, 0.98);
+pub(crate) const PLAYER_FRAME_BG: Color = Color::srgba(0.025, 0.028, 0.024, 0.97);
+pub(crate) const PLAYER_FRAME_BORDER: Color = Color::srgb(0.29, 0.27, 0.18);
 
-pub(crate) const GOLD: Color =
-    Color::srgb(0.824, 0.678, 0.408);
-pub(crate) const GOLD_BRIGHT: Color =
-    Color::srgb(0.941, 0.812, 0.518);
-pub(crate) const GOLD_DARK: Color =
-    Color::srgb(0.439, 0.392, 0.263);
+pub(crate) const GOLD: Color = Color::srgb(0.824, 0.678, 0.408);
+pub(crate) const GOLD_BRIGHT: Color = Color::srgb(0.941, 0.812, 0.518);
+pub(crate) const GOLD_DARK: Color = Color::srgb(0.439, 0.392, 0.263);
 
-pub(crate) const TEXT: Color =
-    Color::srgb(0.957, 0.918, 0.820);
-pub(crate) const MUTED: Color =
-    Color::srgb(0.518, 0.569, 0.541);
+pub(crate) const TEXT: Color = Color::srgb(0.957, 0.918, 0.820);
+pub(crate) const MUTED: Color = Color::srgb(0.518, 0.569, 0.541);
 
-pub(crate) const BUTTON_BG: Color =
-    Color::srgb(0.090, 0.129, 0.110);
-pub(crate) const BUTTON_HOVER: Color =
-    Color::srgb(0.204, 0.169, 0.110);
-pub(crate) const BUTTON_PRESSED: Color =
-    Color::srgb(0.278, 0.224, 0.122);
-pub(crate) const BUTTON_BORDER: Color =
-    Color::srgb(0.337, 0.396, 0.361);
+pub(crate) const BUTTON_BG: Color = Color::srgb(0.090, 0.129, 0.110);
+pub(crate) const BUTTON_HOVER: Color = Color::srgb(0.204, 0.169, 0.110);
+pub(crate) const BUTTON_PRESSED: Color = Color::srgb(0.278, 0.224, 0.122);
+pub(crate) const BUTTON_BORDER: Color = Color::srgb(0.337, 0.396, 0.361);
 
-pub(crate) const HP: Color =
-    Color::srgb(0.75, 0.025, 0.035);
-pub(crate) const MANA: Color =
-    Color::srgb(0.04, 0.12, 0.88);
-pub(crate) const XP: Color =
-    Color::srgb(0.824, 0.647, 0.267);
-pub(crate) const CAP: Color =
-    Color::srgb(0.329, 0.584, 0.384);
-pub(crate) const TARGET_HP: Color =
-    Color::srgb(0.788, 0.204, 0.165);
+pub(crate) const HP: Color = Color::srgb(0.75, 0.025, 0.035);
+pub(crate) const MANA: Color = Color::srgb(0.04, 0.12, 0.88);
+pub(crate) const XP: Color = Color::srgb(0.824, 0.647, 0.267);
+pub(crate) const CAP: Color = Color::srgb(0.329, 0.584, 0.384);
+pub(crate) const TARGET_HP: Color = Color::srgb(0.788, 0.204, 0.165);
 
 fn surface_style(name: &str) -> Option<(Color, Color, f32)> {
     // V36.60 HUD roots own their complete visual styling. Do not flatten them
@@ -83,21 +62,15 @@ fn surface_style(name: &str) -> Option<(Color, Color, f32)> {
     }
 
     match name {
-        "Native gameplay HUD · world header" => {
-            Some((HEADER_BG, GOLD_DARK, 0.0))
-        }
+        "Native gameplay HUD · world header" => Some((HEADER_BG, GOLD_DARK, 0.0)),
         "Native gameplay HUD · player"
         | "Native gameplay HUD · target"
         | "Native gameplay HUD · battle list"
         | "Native minimap"
-        | "Native performance HUD" => {
-            Some((PANEL_BG, GOLD_DARK, 7.0))
-        }
+        | "Native performance HUD" => Some((PANEL_BG, GOLD_DARK, 7.0)),
         "Native gameplay HUD · chat"
         | "Native gameplay HUD · action bar"
-        | "Native gameplay HUD · panel dock" => {
-            Some((PANEL_BG_SOFT, GOLD_DARK, 7.0))
-        }
+        | "Native gameplay HUD · panel dock" => Some((PANEL_BG_SOFT, GOLD_DARK, 7.0)),
         "Native gameplay HUD · inventory"
         | "Native gameplay HUD · character"
         | "Native gameplay HUD · skills"
@@ -106,9 +79,7 @@ fn surface_style(name: &str) -> Option<(Color, Color, f32)> {
         | "Native gameplay HUD · NPC"
         | "Native direct trade"
         | "Native options"
-        | "Native world map" => {
-            Some((PANEL_BG_DEEP, GOLD, 9.0))
-        }
+        | "Native world map" => Some((PANEL_BG_DEEP, GOLD, 9.0)),
         _ => None,
     }
 }
@@ -131,9 +102,7 @@ pub(crate) fn apply_once(
     let mut styled = 0usize;
 
     for (entity, name, mut node, mut background, border) in &mut surfaces {
-        let Some((surface, border_color, radius)) =
-            surface_style(name.as_str())
-        else {
+        let Some((surface, border_color, radius)) = surface_style(name.as_str()) else {
             continue;
         };
 
@@ -157,9 +126,7 @@ pub(crate) fn apply_once(
         styled += 1;
     }
 
-    info!(
-        "ALDORIA UI THEME · styled {styled} native surfaces from React CSS palette"
-    );
+    info!("ALDORIA UI THEME · styled {styled} native surfaces from React CSS palette");
 
     *applied = true;
 }

@@ -6,11 +6,10 @@ use bevy::{
 use game_protocol::ClientMessage;
 
 use crate::{
-    native_drag::NativeActionBarState,
-    native_modal,
-    native_ui_theme as theme,
-    state::{NativeGameState, NativeMessageKind},
     NativeNetwork,
+    native_drag::NativeActionBarState,
+    native_modal, native_ui_theme as theme,
+    state::{NativeGameState, NativeMessageKind},
 };
 
 #[derive(Resource, Default)]
@@ -75,7 +74,6 @@ fn ping_signal(ms: Option<u64>) -> (usize, Color) {
         None => (0, MUTED),
     }
 }
-
 
 #[derive(Component, Clone, Copy)]
 #[allow(dead_code)]
@@ -187,9 +185,7 @@ pub(crate) enum NativeNpcHeaderText {
 }
 
 #[derive(Component, Clone, Copy)]
-pub(crate) struct NativeNpcTabText(
-    pub(crate) usize,
-);
+pub(crate) struct NativeNpcTabText(pub(crate) usize);
 
 #[derive(Component, Clone, Copy)]
 pub(crate) enum NativeNpcRowField {
@@ -216,7 +212,6 @@ pub(crate) enum NativeNpcDetailText {
 pub(crate) struct NativeNpcDetailImage {
     definition_id: Option<String>,
 }
-
 
 #[derive(Component, Clone, Copy)]
 pub(crate) enum NativeSpellbookButton {
@@ -259,7 +254,6 @@ pub(crate) enum NativeSpellbookDetailText {
     CastHint,
 }
 
-
 #[derive(Component, Clone, Copy)]
 pub(crate) enum NativeCraftingButton {
     Category(usize),
@@ -271,9 +265,7 @@ pub(crate) enum NativeCraftingButton {
 }
 
 #[derive(Component, Clone, Copy)]
-pub(crate) struct NativeCraftingCategoryText(
-    pub(crate) usize,
-);
+pub(crate) struct NativeCraftingCategoryText(pub(crate) usize);
 
 #[derive(Component, Clone, Copy)]
 pub(crate) enum NativeCraftingRecipeField {
@@ -300,23 +292,11 @@ pub(crate) enum NativeCraftingDetailText {
 
 #[derive(Component)]
 pub(crate) enum NativeCraftingItemImage {
-    Input {
-        definition_id: Option<String>,
-    },
-    Output {
-        definition_id: Option<String>,
-    },
+    Input { definition_id: Option<String> },
+    Output { definition_id: Option<String> },
 }
 
-
-#[derive(
-    Component,
-    Clone,
-    Copy,
-    Debug,
-    PartialEq,
-    Eq,
-)]
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum NativeSkillsCore {
     Melee,
     Distance,
@@ -338,9 +318,7 @@ pub(crate) struct NativeSkillsCoreText {
 }
 
 #[derive(Component, Clone, Copy)]
-pub(crate) struct NativeSkillsCoreBar(
-    pub(crate) NativeSkillsCore,
-);
+pub(crate) struct NativeSkillsCoreBar(pub(crate) NativeSkillsCore);
 
 #[derive(Component, Clone, Copy)]
 pub(crate) enum NativeSkillsAbilityField {
@@ -368,10 +346,7 @@ pub(crate) struct NativeSkillsProfessionText {
 }
 
 #[derive(Component, Clone, Copy)]
-pub(crate) struct NativeSkillsProfessionBar(
-    pub(crate) usize,
-);
-
+pub(crate) struct NativeSkillsProfessionBar(pub(crate) usize);
 
 #[derive(Component, Clone, Copy)]
 #[allow(dead_code)]
@@ -416,10 +391,7 @@ pub(crate) enum NativeCharacterEquipmentSlot {
 }
 
 #[derive(Component, Clone, Copy)]
-pub(crate) struct NativeCharacterProfessionSlot(
-    pub(crate) usize,
-);
-
+pub(crate) struct NativeCharacterProfessionSlot(pub(crate) usize);
 
 #[derive(Component, Clone, Copy)]
 #[allow(dead_code)]
@@ -448,8 +420,7 @@ pub(crate) enum NativeInventorySlotField {
 #[derive(Component, Clone, Copy)]
 pub(crate) struct NativeInventorySlotText {
     pub(crate) index: usize,
-    pub(crate) field:
-        NativeInventorySlotField,
+    pub(crate) field: NativeInventorySlotField,
 }
 
 #[derive(Component)]
@@ -474,8 +445,6 @@ pub(crate) enum NativeInventoryButton {
     Action(NativeInventoryAction),
 }
 
-
-
 const PANEL: Color = theme::PANEL_BG;
 const PANEL_SOFT: Color = theme::PANEL_BG_SOFT;
 const PANEL_DEEP: Color = theme::PANEL_BG_DEEP;
@@ -488,10 +457,7 @@ const XP: Color = theme::XP;
 const CAP: Color = theme::CAP;
 const TARGET_HP: Color = theme::TARGET_HP;
 
-pub fn setup(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-) {
+pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     spawn_player_frame(&mut commands, &asset_server);
     spawn_target_frame(&mut commands, &asset_server);
     spawn_battle_list(&mut commands, &asset_server);
@@ -507,7 +473,6 @@ pub fn setup(
     spawn_crafting_panel(&mut commands);
     spawn_npc_panel(&mut commands);
 }
-
 
 fn spawn_nearby_loot(commands: &mut Commands) {
     commands
@@ -617,17 +582,13 @@ fn text_bundle(
     )
 }
 
-fn spawn_bar(
-    parent: &mut ChildSpawnerCommands,
-    kind: NativeUiBar,
-    color: Color,
-) {
+fn spawn_bar(parent: &mut ChildSpawnerCommands, kind: NativeUiBar, color: Color) {
     parent
         .spawn((
             Node {
                 width: Val::Percent(100.0),
-            height: px(8),
-            margin: UiRect::vertical(px(1)),
+                height: px(8),
+                margin: UiRect::vertical(px(1)),
                 border: UiRect::all(px(1)),
                 border_radius: BorderRadius::all(px(3)),
                 ..default()
@@ -662,47 +623,58 @@ fn spawn_world_header(commands: &mut Commands) {
             },
             Visibility::Hidden,
         ))
-        .with_child(text_bundle(
-            "",
-            NativeUiText::WorldHeader,
-            14.0,
-            TEXT,
-        ));
+        .with_child(text_bundle("", NativeUiText::WorldHeader, 14.0, TEXT));
 }
 
 fn spawn_ping_widget(commands: &mut Commands) {
-    commands.spawn((
-        Name::new("Native gameplay HUD · ping"),
-        Node {
-            position_type: PositionType::Absolute,
-            right: px(HUD_PING_RIGHT), bottom: px(18),
-            width: px(HUD_PING_WIDTH), height: px(24),
-            padding: UiRect::horizontal(px(6)),
-            border: UiRect::all(px(1)), border_radius: BorderRadius::all(px(5)),
-            column_gap: px(5), align_items: AlignItems::Center,
-            justify_content: JustifyContent::Center,
-            ..default()
-        },
-        BackgroundColor(Color::srgba(0.015, 0.018, 0.014, 0.92)),
-        BorderColor::all(Color::srgb(0.35, 0.28, 0.10)),
-        GlobalZIndex(190),
-    )).with_children(|badge| {
-        // Real geometry remains crisp at HUD scale and never depends on font glyphs.
-        badge.spawn(Node {
-            width: px(18), height: px(14), flex_shrink: 0.0,
-            column_gap: px(2), align_items: AlignItems::FlexEnd,
-            ..default()
-        }).with_children(|signal| {
-            for index in 0..4 {
-                signal.spawn((
-                    NativePingSignalBar(index),
-                    Node {width: px(3), height: px(5 + index as i32 * 3), flex_shrink: 0.0, ..default()},
-                    BackgroundColor(Color::srgb(0.12, 0.17, 0.12)),
-                ));
-            }
+    commands
+        .spawn((
+            Name::new("Native gameplay HUD · ping"),
+            Node {
+                position_type: PositionType::Absolute,
+                right: px(HUD_PING_RIGHT),
+                bottom: px(18),
+                width: px(HUD_PING_WIDTH),
+                height: px(24),
+                padding: UiRect::horizontal(px(6)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(5)),
+                column_gap: px(5),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.015, 0.018, 0.014, 0.92)),
+            BorderColor::all(Color::srgb(0.35, 0.28, 0.10)),
+            GlobalZIndex(190),
+        ))
+        .with_children(|badge| {
+            // Real geometry remains crisp at HUD scale and never depends on font glyphs.
+            badge
+                .spawn(Node {
+                    width: px(18),
+                    height: px(14),
+                    flex_shrink: 0.0,
+                    column_gap: px(2),
+                    align_items: AlignItems::FlexEnd,
+                    ..default()
+                })
+                .with_children(|signal| {
+                    for index in 0..4 {
+                        signal.spawn((
+                            NativePingSignalBar(index),
+                            Node {
+                                width: px(3),
+                                height: px(5 + index as i32 * 3),
+                                flex_shrink: 0.0,
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.12, 0.17, 0.12)),
+                        ));
+                    }
+                });
+            badge.spawn(text_bundle("-- ms", NativeUiText::Ping, 9.0, MUTED));
         });
-        badge.spawn(text_bundle("-- ms", NativeUiText::Ping, 9.0, MUTED));
-    });
 }
 
 fn spawn_battle_list(commands: &mut Commands, asset_server: &AssetServer) {
@@ -761,20 +733,11 @@ fn spawn_battle_list(commands: &mut Commands, asset_server: &AssetServer) {
                     padding: UiRect::all(px(6)),
                     ..default()
                 })
-                .with_child(text_bundle(
-                    "",
-                    NativeUiText::BattleList,
-                    9.5,
-                    TEXT,
-                ));
+                .with_child(text_bundle("", NativeUiText::BattleList, 9.5, TEXT));
         });
 }
 
-
-fn spawn_panel_dock(
-    commands: &mut Commands,
-    asset_server: &AssetServer,
-) {
+fn spawn_panel_dock(commands: &mut Commands, asset_server: &AssetServer) {
     commands
         .spawn((
             Name::new("Native gameplay HUD · panel dock"),
@@ -794,15 +757,39 @@ fn spawn_panel_dock(
             },
             BackgroundColor(Color::NONE),
             BorderColor::all(Color::srgb(0.61, 0.43, 0.12)),
-
             GlobalZIndex(182),
         ))
         .with_children(|parent| {
-            spawn_panel_dock_button(parent, NativePanelDockButton::Inventory, asset_server.load("ui/hud_v36_60/inventory.png"), "I");
-            spawn_panel_dock_button(parent, NativePanelDockButton::Character, asset_server.load("ui/hud_v36_60/character.png"), "C");
-            spawn_panel_dock_button(parent, NativePanelDockButton::Skills, asset_server.load("ui/hud_v36_60/skills.png"), "K");
-            spawn_panel_dock_button(parent, NativePanelDockButton::Spells, asset_server.load("ui/hud_v36_60/spells.png"), "P");
-            spawn_panel_dock_button(parent, NativePanelDockButton::Crafting, asset_server.load("ui/hud_v36_60/crafting.png"), "B");
+            spawn_panel_dock_button(
+                parent,
+                NativePanelDockButton::Inventory,
+                asset_server.load("ui/hud_v36_60/inventory.png"),
+                "I",
+            );
+            spawn_panel_dock_button(
+                parent,
+                NativePanelDockButton::Character,
+                asset_server.load("ui/hud_v36_60/character.png"),
+                "C",
+            );
+            spawn_panel_dock_button(
+                parent,
+                NativePanelDockButton::Skills,
+                asset_server.load("ui/hud_v36_60/skills.png"),
+                "K",
+            );
+            spawn_panel_dock_button(
+                parent,
+                NativePanelDockButton::Spells,
+                asset_server.load("ui/hud_v36_60/spells.png"),
+                "P",
+            );
+            spawn_panel_dock_button(
+                parent,
+                NativePanelDockButton::Crafting,
+                asset_server.load("ui/hud_v36_60/crafting.png"),
+                "B",
+            );
         });
 }
 
@@ -836,7 +823,8 @@ fn spawn_panel_dock_button(
             button.spawn((
                 Node {
                     position_type: PositionType::Absolute,
-                    left: px(0), top: px(0),
+                    left: px(0),
+                    top: px(0),
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
                     ..default()
@@ -888,8 +876,12 @@ fn spawn_hud_inset(parent: &mut ChildSpawnerCommands, radius: f32) {
     parent.spawn((
         Node {
             position_type: PositionType::Absolute,
-            left: px(1), right: px(1), top: px(1), bottom: px(1),
-            border: UiRect::all(px(1)), border_radius: BorderRadius::all(px(radius)),
+            left: px(1),
+            right: px(1),
+            top: px(1),
+            bottom: px(1),
+            border: UiRect::all(px(1)),
+            border_radius: BorderRadius::all(px(radius)),
             ..default()
         },
         BorderColor {
@@ -933,29 +925,30 @@ fn spawn_hud_resource_bar(
                     ..default()
                 },
                 BackgroundColor(color),
-            )).with_child((
-                Node { width: Val::Percent(100.0), height: Val::Percent(42.0), ..default() },
+            ))
+            .with_child((
+                Node {
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(42.0),
+                    ..default()
+                },
                 BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.16)),
             ));
-            bar
-                .spawn(Node {
-                    position_type: PositionType::Absolute,
-                    left: px(0),
-                    right: px(0),
-                    top: px(0),
-                    bottom: px(0),
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::Center,
-                    ..default()
-                })
-                .with_child(text_bundle("", text_kind, 9.2, TEXT));
+            bar.spawn(Node {
+                position_type: PositionType::Absolute,
+                left: px(0),
+                right: px(0),
+                top: px(0),
+                bottom: px(0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            })
+            .with_child(text_bundle("", text_kind, 9.2, TEXT));
         });
 }
 
-fn spawn_player_frame(
-    commands: &mut Commands,
-    asset_server: &AssetServer,
-) {
+fn spawn_player_frame(commands: &mut Commands, asset_server: &AssetServer) {
     let portrait = asset_server.load("ui/hud_v36_60/portrait.png");
 
     commands
@@ -997,7 +990,16 @@ fn spawn_player_frame(
             ))
             .with_children(|frame| {
                 spawn_hud_inset(frame, 5.0);
-                frame.spawn((NativeUiText::Identity, Text::new(""), TextFont { font: FontSource::Handle(asset_server.load("fonts/Cinzel.ttf")), font_size: FontSize::Px(12.0), ..default() }, TextColor(theme::GOLD_BRIGHT)));
+                frame.spawn((
+                    NativeUiText::Identity,
+                    Text::new(""),
+                    TextFont {
+                        font: FontSource::Handle(asset_server.load("fonts/Cinzel.ttf")),
+                        font_size: FontSize::Px(12.0),
+                        ..default()
+                    },
+                    TextColor(theme::GOLD_BRIGHT),
+                ));
                 spawn_hud_resource_bar(frame, NativeUiBar::Health, NativeUiText::Health, HP);
                 spawn_hud_resource_bar(frame, NativeUiBar::Mana, NativeUiText::Mana, MANA);
                 frame
@@ -1032,17 +1034,17 @@ fn spawn_player_frame(
             ))
             .with_children(|portrait_frame| {
                 portrait_frame.spawn((
-                ImageNode {
-                    image: portrait,
-                    image_mode: NodeImageMode::Stretch,
-                    ..default()
-                },
-                Node {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    ..default()
-                },
-            ));
+                    ImageNode {
+                        image: portrait,
+                        image_mode: NodeImageMode::Stretch,
+                        ..default()
+                    },
+                    Node {
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
+                        ..default()
+                    },
+                ));
                 spawn_hud_inset(portrait_frame, 36.0);
             });
 
@@ -1063,17 +1065,16 @@ fn spawn_player_frame(
                 hud_bevel(),
                 GlobalZIndex(181),
             ))
-            .with_child(text_bundle("", NativeUiText::IdentityLevel, 9.8, theme::GOLD_BRIGHT));
+            .with_child(text_bundle(
+                "",
+                NativeUiText::IdentityLevel,
+                9.8,
+                theme::GOLD_BRIGHT,
+            ));
         });
 }
 
-
-fn spawn_target_frame(
-    commands: &mut Commands,
-    asset_server: &AssetServer,
-) {
-
-
+fn spawn_target_frame(commands: &mut Commands, asset_server: &AssetServer) {
     commands
         .spawn((
             Name::new("Native gameplay HUD · target frame root"),
@@ -1114,8 +1115,22 @@ fn spawn_target_frame(
             ))
             .with_children(|frame| {
                 spawn_hud_inset(frame, 4.0);
-                frame.spawn((NativeUiText::Target, Text::new("No target"), TextFont {font: FontSource::Handle(asset_server.load("fonts/Cinzel.ttf")), font_size: FontSize::Px(11.0), ..default()}, TextColor(MUTED)));
-                spawn_hud_resource_bar(frame, NativeUiBar::TargetHealth, NativeUiText::TargetHealth, TARGET_HP);
+                frame.spawn((
+                    NativeUiText::Target,
+                    Text::new("No target"),
+                    TextFont {
+                        font: FontSource::Handle(asset_server.load("fonts/Cinzel.ttf")),
+                        font_size: FontSize::Px(11.0),
+                        ..default()
+                    },
+                    TextColor(MUTED),
+                ));
+                spawn_hud_resource_bar(
+                    frame,
+                    NativeUiBar::TargetHealth,
+                    NativeUiText::TargetHealth,
+                    TARGET_HP,
+                );
             });
 
             root.spawn((
@@ -1133,12 +1148,12 @@ fn spawn_target_frame(
                 BackgroundColor(Color::srgba(0.03, 0.035, 0.03, 0.98)),
                 hud_bevel(),
                 Outline::new(px(2), px(0), Color::srgb(0.09, 0.065, 0.025)),
-            )).with_children(|portrait_frame| {
+            ))
+            .with_children(|portrait_frame| {
                 spawn_hud_inset(portrait_frame, 30.0);
             });
         });
 }
-
 
 fn spawn_chat(commands: &mut Commands, asset_server: &AssetServer) {
     commands
@@ -1181,47 +1196,38 @@ fn spawn_chat(commands: &mut Commands, asset_server: &AssetServer) {
                     ..default()
                 })
                 .with_children(|tabs| {
-                    for (label, active) in [
-                        ("General", true),
-                        ("Combat", false),
-                        ("Loot", false),
-                    ] {
-                        tabs
-                            .spawn((
-                                Node {
-                                    min_width: px(74),
-                                    height: px(22),
-                                    padding: UiRect::horizontal(px(8)),
-                                    border: UiRect::all(px(1)),
-                                    border_radius: BorderRadius::all(px(5)),
-                                    align_items: AlignItems::Center,
-                                    justify_content: JustifyContent::Center,
-                                    ..default()
-                                },
-                                BackgroundColor(if active {
-                                    Color::srgba(0.12, 0.075, 0.018, 0.96)
-                                } else {
-                                    Color::srgba(0.015, 0.018, 0.015, 0.84)
-                                }),
-                                BorderColor::all(if active {
-                                    theme::GOLD
-                                } else {
-                                    theme::GOLD_DARK
-                                }),
-                            ))
-                            .with_child((
-                                Text::new(label),
-                                TextFont {
-                                    font_size: FontSize::Px(12.0),
-                                    font: FontSource::Handle(asset_server.load("fonts/Cinzel.ttf")),
-                                    ..default()
-                                },
-                                TextColor(if active {
-                                    theme::GOLD_BRIGHT
-                                } else {
-                                    MUTED
-                                }),
-                            ));
+                    for (label, active) in [("General", true), ("Combat", false), ("Loot", false)] {
+                        tabs.spawn((
+                            Node {
+                                min_width: px(74),
+                                height: px(22),
+                                padding: UiRect::horizontal(px(8)),
+                                border: UiRect::all(px(1)),
+                                border_radius: BorderRadius::all(px(5)),
+                                align_items: AlignItems::Center,
+                                justify_content: JustifyContent::Center,
+                                ..default()
+                            },
+                            BackgroundColor(if active {
+                                Color::srgba(0.12, 0.075, 0.018, 0.96)
+                            } else {
+                                Color::srgba(0.015, 0.018, 0.015, 0.84)
+                            }),
+                            BorderColor::all(if active {
+                                theme::GOLD
+                            } else {
+                                theme::GOLD_DARK
+                            }),
+                        ))
+                        .with_child((
+                            Text::new(label),
+                            TextFont {
+                                font_size: FontSize::Px(12.0),
+                                font: FontSource::Handle(asset_server.load("fonts/Cinzel.ttf")),
+                                ..default()
+                            },
+                            TextColor(if active { theme::GOLD_BRIGHT } else { MUTED }),
+                        ));
                     }
                 });
 
@@ -1256,61 +1262,63 @@ fn spawn_chat(commands: &mut Commands, asset_server: &AssetServer) {
         });
 }
 
-
 // Nine fixed-size slots match the reference. Ornaments are images, never buttons.
 fn spawn_action_bar(commands: &mut Commands, asset_server: &AssetServer) {
     let ability_icons = asset_server.load("ui/ability-icons-v35_12.png");
     let ornament: Handle<Image> = asset_server.load("ui/hud_v36_63/action-dragon-outward.png");
-    commands.spawn((
-        Name::new("Native gameplay HUD · action bar"),
-        Node {
-            position_type: PositionType::Absolute,
-            bottom: px(12), left: Val::Percent(50.0),
-            width: px(418), height: px(58),
-            margin: UiRect::left(px(-209)),
-            padding: UiRect::all(px(4)),
-            border: UiRect::all(px(2)),
-            border_radius: BorderRadius::all(px(8)),
-            column_gap: px(2), align_items: AlignItems::Center,
-            justify_content: JustifyContent::Center,
-            ..default()
-        },
-        BackgroundColor(Color::srgb(0.025, 0.025, 0.020)),
-        BorderColor::all(Color::srgb(0.65, 0.49, 0.22)),
-        Outline::new(px(2), px(1), Color::srgb(0.08, 0.06, 0.025)),
-        GlobalZIndex(181),
-    )).with_children(|parent| {
-        for slot in 0..9 {
-            spawn_action_slot(parent, slot, ability_icons.clone());
-        }
-        for mirrored in [false, true] {
-            parent.spawn((
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: if mirrored { Val::Auto } else { px(-45) },
-                    right: if mirrored { px(-45) } else { Val::Auto },
-                    bottom: px(-1), width: px(60), height: px(92),
-                    ..default()
-                },
-                ImageNode {
-                    image: ornament.clone(),
-                    // Keep the complete lower scrollwork visible. A slightly wider
-                    // render than the source aspect ratio preserves readability.
-                    flip_x: mirrored,
-                    ..default()
-                },
-                // Decorative art must not intercept slot dragging or clicks.
-                Pickable::IGNORE,
-            ));
-        }
-    });
+    commands
+        .spawn((
+            Name::new("Native gameplay HUD · action bar"),
+            Node {
+                position_type: PositionType::Absolute,
+                bottom: px(12),
+                left: Val::Percent(50.0),
+                width: px(418),
+                height: px(58),
+                margin: UiRect::left(px(-209)),
+                padding: UiRect::all(px(4)),
+                border: UiRect::all(px(2)),
+                border_radius: BorderRadius::all(px(8)),
+                column_gap: px(2),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgb(0.025, 0.025, 0.020)),
+            BorderColor::all(Color::srgb(0.65, 0.49, 0.22)),
+            Outline::new(px(2), px(1), Color::srgb(0.08, 0.06, 0.025)),
+            GlobalZIndex(181),
+        ))
+        .with_children(|parent| {
+            for slot in 0..9 {
+                spawn_action_slot(parent, slot, ability_icons.clone());
+            }
+            for mirrored in [false, true] {
+                parent.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: if mirrored { Val::Auto } else { px(-45) },
+                        right: if mirrored { px(-45) } else { Val::Auto },
+                        bottom: px(-1),
+                        width: px(60),
+                        height: px(92),
+                        ..default()
+                    },
+                    ImageNode {
+                        image: ornament.clone(),
+                        // Keep the complete lower scrollwork visible. A slightly wider
+                        // render than the source aspect ratio preserves readability.
+                        flip_x: mirrored,
+                        ..default()
+                    },
+                    // Decorative art must not intercept slot dragging or clicks.
+                    Pickable::IGNORE,
+                ));
+            }
+        });
 }
 
-fn spawn_action_slot(
-    parent: &mut ChildSpawnerCommands,
-    slot: usize,
-    ability_icons: Handle<Image>,
-) {
+fn spawn_action_slot(parent: &mut ChildSpawnerCommands, slot: usize, ability_icons: Handle<Image>) {
     parent
         .spawn((
             Button,
@@ -1382,27 +1390,14 @@ fn spawn_panel_header(
     title: &str,
     action: NativePanelCloseButton,
 ) {
-    let drag_window =
-        match action {
-            NativePanelCloseButton::Inventory => {
-                native_modal::NativeModalWindow::Inventory
-            }
-            NativePanelCloseButton::Character => {
-                native_modal::NativeModalWindow::Character
-            }
-            NativePanelCloseButton::Skills => {
-                native_modal::NativeModalWindow::Skills
-            }
-            NativePanelCloseButton::Spells => {
-                native_modal::NativeModalWindow::Spells
-            }
-            NativePanelCloseButton::Crafting => {
-                native_modal::NativeModalWindow::Crafting
-            }
-            NativePanelCloseButton::Npc => {
-                native_modal::NativeModalWindow::Npc
-            }
-        };
+    let drag_window = match action {
+        NativePanelCloseButton::Inventory => native_modal::NativeModalWindow::Inventory,
+        NativePanelCloseButton::Character => native_modal::NativeModalWindow::Character,
+        NativePanelCloseButton::Skills => native_modal::NativeModalWindow::Skills,
+        NativePanelCloseButton::Spells => native_modal::NativeModalWindow::Spells,
+        NativePanelCloseButton::Crafting => native_modal::NativeModalWindow::Crafting,
+        NativePanelCloseButton::Npc => native_modal::NativeModalWindow::Npc,
+    };
 
     parent
         .spawn(Node {
@@ -1418,27 +1413,21 @@ fn spawn_panel_header(
             header
                 .spawn((
                     Button,
-                    native_modal::NativeDragHandle(
-                        drag_window,
-                    ),
+                    native_modal::NativeDragHandle(drag_window),
                     Node {
                         flex_grow: 1.0,
                         height: px(30),
-                        align_items:
-                            AlignItems::Center,
+                        align_items: AlignItems::Center,
                         ..default()
                     },
                 ))
                 .with_child((
                     Text::new(title),
                     TextFont {
-                        font_size:
-                            FontSize::Px(15.0),
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
-                    TextColor(
-                        theme::GOLD_BRIGHT,
-                    ),
+                    TextColor(theme::GOLD_BRIGHT),
                 ));
 
             header
@@ -1448,30 +1437,19 @@ fn spawn_panel_header(
                     Node {
                         width: px(28),
                         height: px(26),
-                        border:
-                            UiRect::all(px(1)),
-                        border_radius:
-                            BorderRadius::all(
-                                px(5),
-                            ),
-                        align_items:
-                            AlignItems::Center,
-                        justify_content:
-                            JustifyContent::Center,
+                        border: UiRect::all(px(1)),
+                        border_radius: BorderRadius::all(px(5)),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
                         ..default()
                     },
-                    BackgroundColor(
-                        theme::BUTTON_BG,
-                    ),
-                    BorderColor::all(
-                        theme::BUTTON_BORDER,
-                    ),
+                    BackgroundColor(theme::BUTTON_BG),
+                    BorderColor::all(theme::BUTTON_BORDER),
                 ))
                 .with_child((
                     Text::new("X"),
                     TextFont {
-                        font_size:
-                            FontSize::Px(11.0),
+                        font_size: FontSize::Px(11.0),
                         ..default()
                     },
                     TextColor(TEXT),
@@ -1490,8 +1468,7 @@ fn spawn_inventory_text(
         kind,
         Text::new(value),
         TextFont {
-            font_size:
-                FontSize::Px(size),
+            font_size: FontSize::Px(size),
             ..default()
         },
         TextColor(color),
@@ -1507,48 +1484,31 @@ fn spawn_inventory_reference_button(
     parent
         .spawn((
             Button,
-            NativeInventoryButton::Action(
-                action,
-            ),
+            NativeInventoryButton::Action(action),
             Node {
                 width: px(width),
                 height: px(36),
-                padding:
-                    UiRect::horizontal(
-                        px(10),
-                    ),
-                border:
-                    UiRect::all(px(1)),
-                border_radius:
-                    BorderRadius::all(px(6)),
-                align_items:
-                    AlignItems::Center,
-                justify_content:
-                    JustifyContent::Center,
+                padding: UiRect::horizontal(px(10)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(6)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
                 ..default()
             },
-            BackgroundColor(
-                theme::BUTTON_BG,
-            ),
-            BorderColor::all(
-                theme::BUTTON_BORDER,
-            ),
+            BackgroundColor(theme::BUTTON_BG),
+            BorderColor::all(theme::BUTTON_BORDER),
         ))
         .with_child((
             Text::new(label),
             TextFont {
-                font_size:
-                    FontSize::Px(9.0),
+                font_size: FontSize::Px(9.0),
                 ..default()
             },
             TextColor(TEXT),
         ));
 }
 
-fn spawn_inventory_slot(
-    parent: &mut ChildSpawnerCommands,
-    index: usize,
-) {
+fn spawn_inventory_slot(parent: &mut ChildSpawnerCommands, index: usize) {
     parent
         .spawn((
             Button,
@@ -1556,105 +1516,75 @@ fn spawn_inventory_slot(
             Node {
                 width: Val::Percent(19.0),
                 height: px(116),
-                padding:
-                    UiRect::all(px(6)),
-                border:
-                    UiRect::all(px(1)),
-                border_radius:
-                    BorderRadius::all(px(5)),
-                flex_direction:
-                    FlexDirection::Column,
-                justify_content:
-                    JustifyContent::SpaceBetween,
+                padding: UiRect::all(px(6)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(5)),
+                flex_direction: FlexDirection::Column,
+                justify_content: JustifyContent::SpaceBetween,
                 ..default()
             },
-            BackgroundColor(
-                Color::srgba(
-                    0.015,
-                    0.035,
-                    0.026,
-                    0.98,
-                ),
-            ),
-            BorderColor::all(
-                theme::BUTTON_BORDER,
-            ),
+            BackgroundColor(Color::srgba(0.015, 0.035, 0.026, 0.98)),
+            BorderColor::all(theme::BUTTON_BORDER),
         ))
         .with_children(|slot| {
-            slot
-                .spawn(Node {
-                    width:
-                        Val::Percent(100.0),
-                    min_height: px(16),
-                    justify_content:
-                        JustifyContent::FlexEnd,
+            slot.spawn(Node {
+                width: Val::Percent(100.0),
+                min_height: px(16),
+                justify_content: JustifyContent::FlexEnd,
+                ..default()
+            })
+            .with_child((
+                NativeInventorySlotText {
+                    index,
+                    field: NativeInventorySlotField::Quantity,
+                },
+                Text::new(""),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
                     ..default()
-                })
-                .with_child((
-                    NativeInventorySlotText {
-                        index,
-                        field:
-                            NativeInventorySlotField::Quantity,
-                    },
-                    Text::new(""),
-                    TextFont {
-                        font_size:
-                            FontSize::Px(9.0),
-                        ..default()
-                    },
-                    TextColor(
-                        theme::GOLD_BRIGHT,
-                    ),
-                ));
+                },
+                TextColor(theme::GOLD_BRIGHT),
+            ));
 
-            slot
-                .spawn(Node {
-                    width:
-                        Val::Percent(100.0),
-                    flex_grow: 1.0,
-                    align_items:
-                        AlignItems::Center,
-                    justify_content:
-                        JustifyContent::Center,
+            slot.spawn(Node {
+                width: Val::Percent(100.0),
+                flex_grow: 1.0,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            })
+            .with_child((
+                NativeInventorySlotImage {
+                    index,
+                    definition_id: None,
+                },
+                ImageNode::default(),
+                Visibility::Hidden,
+                Node {
+                    width: px(54),
+                    height: px(54),
                     ..default()
-                })
-                .with_child((
-                    NativeInventorySlotImage {
-                        index,
-                        definition_id: None,
-                    },
-                    ImageNode::default(),
-                    Visibility::Hidden,
-                    Node {
-                        width: px(54),
-                        height: px(54),
-                        ..default()
-                    },
-                ));
+                },
+            ));
 
-            slot
-                .spawn(Node {
-                    width:
-                        Val::Percent(100.0),
-                    min_height: px(28),
-                    align_items:
-                        AlignItems::FlexEnd,
+            slot.spawn(Node {
+                width: Val::Percent(100.0),
+                min_height: px(28),
+                align_items: AlignItems::FlexEnd,
+                ..default()
+            })
+            .with_child((
+                NativeInventorySlotText {
+                    index,
+                    field: NativeInventorySlotField::Name,
+                },
+                Text::new(""),
+                TextFont {
+                    font_size: FontSize::Px(8.3),
                     ..default()
-                })
-                .with_child((
-                    NativeInventorySlotText {
-                        index,
-                        field:
-                            NativeInventorySlotField::Name,
-                    },
-                    Text::new(""),
-                    TextFont {
-                        font_size:
-                            FontSize::Px(8.3),
-                        ..default()
-                    },
-                    TextColor(TEXT),
-                ));
+                },
+                TextColor(TEXT),
+            ));
         });
 }
 
@@ -1670,460 +1600,290 @@ fn spawn_inventory_panel(commands: &mut Commands) {
             native_modal::backdrop(),
         ))
         .with_children(|root| {
-            root
-                .spawn((
-                    Name::new("Greyhaven Inventory interface"),
-                    native_modal::NativeModalSurface,
-                    native_modal::NativeDraggableSurface(
-                        native_modal::NativeModalWindow::Inventory,
-                    ),
-                    native_modal::panel_node(
-                        900.0,
-                        680.0,
-                    ),
-                    native_modal::surface(),
-                    native_modal::surface_border(),
-                ))
-                .with_children(|panel| {
-                    panel
-                        .spawn((
-                            native_modal::header_node(),
-                            native_modal::divider_border(),
-                        ))
-                        .with_children(|header| {
-                            header
-                                .spawn((
-                                    Button,
-                                    native_modal::NativeDragHandle(
-                                        native_modal::NativeModalWindow::Inventory,
-                                    ),
-                                    Node {
-                                        flex_grow: 1.0,
-                                        flex_direction:
-                                            FlexDirection::Column,
-                                        align_items:
-                                            AlignItems::FlexStart,
-                                        justify_content:
-                                            JustifyContent::Center,
-                                        row_gap: px(3),
-                                        ..default()
-                                    },
-                                ))
-                                .with_children(|copy| {
-                                    copy.spawn((
-                                        Text::new(
-                                            "GREYHAVEN INTERFACE",
-                                        ),
-                                        TextFont {
-                                            font_size:
-                                                FontSize::Px(
-                                                    10.0,
-                                                ),
-                                            ..default()
-                                        },
-                                        TextColor(
-                                            theme::GOLD,
-                                        ),
-                                    ));
-
-                                    copy.spawn((
-                                        Text::new(
-                                            "INVENTORY",
-                                        ),
-                                        TextFont {
-                                            font_size:
-                                                FontSize::Px(
-                                                    21.0,
-                                                ),
-                                            ..default()
-                                        },
-                                        TextColor(
-                                            theme::GOLD_BRIGHT,
-                                        ),
-                                    ));
-                                });
-
-                            spawn_inventory_reference_button(
-                                header,
-                                NativeInventoryAction::Close,
-                                "X",
-                                38.0,
-                            );
-                        });
-
-                    panel
-                        .spawn((
-                            Node {
-                                width:
-                                    Val::Percent(
-                                        100.0,
-                                    ),
-                                min_height:
-                                    px(58),
-                                padding:
-                                    UiRect::all(
-                                        px(10),
-                                    ),
-                                border:
-                                    UiRect::all(
-                                        px(1),
-                                    ),
-                                border_radius:
-                                    BorderRadius::all(
-                                        px(7),
-                                    ),
-                                flex_direction:
-                                    FlexDirection::Row,
-                                align_items:
-                                    AlignItems::Center,
-                                justify_content:
-                                    JustifyContent::SpaceBetween,
-                                column_gap: px(12),
-                                ..default()
-                            },
-                            BackgroundColor(
-                                PANEL_SOFT,
-                            ),
-                            BorderColor::all(
-                                theme::BUTTON_BORDER,
-                            ),
-                        ))
-                        .with_children(|summary| {
-                            summary
-                                .spawn(Node {
+            root.spawn((
+                Name::new("Greyhaven Inventory interface"),
+                native_modal::NativeModalSurface,
+                native_modal::NativeDraggableSurface(native_modal::NativeModalWindow::Inventory),
+                native_modal::panel_node(900.0, 680.0),
+                native_modal::surface(),
+                native_modal::surface_border(),
+            ))
+            .with_children(|panel| {
+                panel
+                    .spawn((native_modal::header_node(), native_modal::divider_border()))
+                    .with_children(|header| {
+                        header
+                            .spawn((
+                                Button,
+                                native_modal::NativeDragHandle(
+                                    native_modal::NativeModalWindow::Inventory,
+                                ),
+                                Node {
                                     flex_grow: 1.0,
-                                    flex_direction:
-                                        FlexDirection::Column,
-                                    row_gap: px(2),
+                                    flex_direction: FlexDirection::Column,
+                                    align_items: AlignItems::FlexStart,
+                                    justify_content: JustifyContent::Center,
+                                    row_gap: px(3),
                                     ..default()
-                                })
-                                .with_children(|copy| {
-                                    spawn_inventory_text(
-                                        copy,
-                                        NativeInventoryText::Location,
-                                        "ROOT INVENTORY",
-                                        10.0,
-                                        theme::GOLD,
-                                    );
-
-                                    spawn_inventory_text(
-                                        copy,
-                                        NativeInventoryText::Usage,
-                                        "0 / 12 SLOTS USED",
-                                        9.0,
-                                        TEXT,
-                                    );
-                                });
-
-                            summary
-                                .spawn(Node {
-                                    flex_direction:
-                                        FlexDirection::Row,
-                                    align_items:
-                                        AlignItems::Center,
-                                    column_gap: px(8),
-                                    ..default()
-                                })
-                                .with_children(|actions| {
-                                    spawn_inventory_reference_button(
-                                        actions,
-                                        NativeInventoryAction::Back,
-                                        "BACK",
-                                        72.0,
-                                    );
-
-                                    spawn_inventory_reference_button(
-                                        actions,
-                                        NativeInventoryAction::Search,
-                                        "SEARCH",
-                                        90.0,
-                                    );
-                                });
-                        });
-
-                    panel
-                        .spawn((
-                            Node {
-                                width:
-                                    Val::Percent(
-                                        100.0,
-                                    ),
-                                min_height:
-                                    px(58),
-                                padding:
-                                    UiRect::all(
-                                        px(10),
-                                    ),
-                                border:
-                                    UiRect::all(
-                                        px(1),
-                                    ),
-                                border_radius:
-                                    BorderRadius::all(
-                                        px(7),
-                                    ),
-                                flex_direction:
-                                    FlexDirection::Column,
-                                row_gap: px(6),
-                                ..default()
-                            },
-                            BackgroundColor(
-                                PANEL_SOFT,
-                            ),
-                            BorderColor::all(
-                                theme::BUTTON_BORDER,
-                            ),
-                        ))
-                        .with_children(|capacity| {
-                            capacity
-                                .spawn(Node {
-                                    width:
-                                        Val::Percent(
-                                            100.0,
-                                        ),
-                                    flex_direction:
-                                        FlexDirection::Row,
-                                    justify_content:
-                                        JustifyContent::SpaceBetween,
-                                    ..default()
-                                })
-                                .with_children(|row| {
-                                    spawn_inventory_text(
-                                        row,
-                                        NativeInventoryText::Capacity,
-                                        "0.0 / 0.0 capacity",
-                                        9.5,
-                                        TEXT,
-                                    );
-
-                                    spawn_inventory_text(
-                                        row,
-                                        NativeInventoryText::Search,
-                                        "/ Search",
-                                        9.0,
-                                        MUTED,
-                                    );
-                                });
-
-                            capacity
-                                .spawn((
-                                    Node {
-                                        width:
-                                            Val::Percent(
-                                                100.0,
-                                            ),
-                                        height: px(7),
-                                        border:
-                                            UiRect::all(
-                                                px(1),
-                                            ),
-                                        border_radius:
-                                            BorderRadius::all(
-                                                px(3),
-                                            ),
+                                },
+                            ))
+                            .with_children(|copy| {
+                                copy.spawn((
+                                    Text::new("GREYHAVEN INTERFACE"),
+                                    TextFont {
+                                        font_size: FontSize::Px(10.0),
                                         ..default()
                                     },
-                                    BackgroundColor(
-                                        PANEL_DEEP,
-                                    ),
-                                    BorderColor::all(
-                                        theme::GOLD_DARK,
-                                    ),
-                                ))
-                                .with_child((
-                                    NativeInventoryCapacityBar,
-                                    Node {
-                                        width:
-                                            Val::Percent(
-                                                0.0,
-                                            ),
-                                        height:
-                                            Val::Percent(
-                                                100.0,
-                                            ),
-                                        border_radius:
-                                            BorderRadius::all(
-                                                px(2),
-                                            ),
-                                        ..default()
-                                    },
-                                    BackgroundColor(CAP),
+                                    TextColor(theme::GOLD),
                                 ));
-                        });
 
-                    panel
-                        .spawn((
-                            Node {
-                                width:
-                                    Val::Percent(
-                                        100.0,
-                                    ),
+                                copy.spawn((
+                                    Text::new("INVENTORY"),
+                                    TextFont {
+                                        font_size: FontSize::Px(21.0),
+                                        ..default()
+                                    },
+                                    TextColor(theme::GOLD_BRIGHT),
+                                ));
+                            });
+
+                        spawn_inventory_reference_button(
+                            header,
+                            NativeInventoryAction::Close,
+                            "X",
+                            38.0,
+                        );
+                    });
+
+                panel
+                    .spawn((
+                        Node {
+                            width: Val::Percent(100.0),
+                            min_height: px(58),
+                            padding: UiRect::all(px(10)),
+                            border: UiRect::all(px(1)),
+                            border_radius: BorderRadius::all(px(7)),
+                            flex_direction: FlexDirection::Row,
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::SpaceBetween,
+                            column_gap: px(12),
+                            ..default()
+                        },
+                        BackgroundColor(PANEL_SOFT),
+                        BorderColor::all(theme::BUTTON_BORDER),
+                    ))
+                    .with_children(|summary| {
+                        summary
+                            .spawn(Node {
                                 flex_grow: 1.0,
-                                min_height:
-                                    px(390),
-                                padding:
-                                    UiRect::all(
-                                        px(10),
-                                    ),
-                                border:
-                                    UiRect::all(
-                                        px(1),
-                                    ),
-                                border_radius:
-                                    BorderRadius::all(
-                                        px(7),
-                                    ),
-                                flex_direction:
-                                    FlexDirection::Column,
-                                row_gap: px(8),
+                                flex_direction: FlexDirection::Column,
+                                row_gap: px(2),
                                 ..default()
-                            },
-                            BackgroundColor(
-                                Color::srgba(
-                                    0.015,
-                                    0.03,
-                                    0.022,
-                                    0.98,
-                                ),
-                            ),
-                            BorderColor::all(
-                                theme::BUTTON_BORDER,
-                            ),
-                        ))
-                        .with_children(|storage| {
-                            storage
-                                .spawn(Node {
-                                    width:
-                                        Val::Percent(
-                                            100.0,
-                                        ),
-                                    flex_direction:
-                                        FlexDirection::Row,
-                                    justify_content:
-                                        JustifyContent::SpaceBetween,
-                                    ..default()
-                                })
-                                .with_children(|heading| {
-                                    heading.spawn((
-                                        Text::new(
-                                            "STORAGE  ·  BACKPACK",
-                                        ),
-                                        TextFont {
-                                            font_size:
-                                                FontSize::Px(
-                                                    10.0,
-                                                ),
-                                            ..default()
-                                        },
-                                        TextColor(
-                                            theme::GOLD,
-                                        ),
-                                    ));
+                            })
+                            .with_children(|copy| {
+                                spawn_inventory_text(
+                                    copy,
+                                    NativeInventoryText::Location,
+                                    "ROOT INVENTORY",
+                                    10.0,
+                                    theme::GOLD,
+                                );
 
-                                    heading.spawn((
-                                        Text::new(
-                                            "Click an item to select",
-                                        ),
-                                        TextFont {
-                                            font_size:
-                                                FontSize::Px(
-                                                    8.0,
-                                                ),
-                                            ..default()
-                                        },
-                                        TextColor(MUTED),
-                                    ));
-                                });
+                                spawn_inventory_text(
+                                    copy,
+                                    NativeInventoryText::Usage,
+                                    "0 / 12 SLOTS USED",
+                                    9.0,
+                                    TEXT,
+                                );
+                            });
 
-                            storage
-                                .spawn(Node {
-                                    width:
-                                        Val::Percent(
-                                            100.0,
-                                        ),
-                                    flex_grow: 1.0,
-                                    flex_direction:
-                                        FlexDirection::Row,
-                                    flex_wrap:
-                                        FlexWrap::Wrap,
-                                    align_content:
-                                        AlignContent::FlexStart,
-                                    column_gap: px(7),
-                                    row_gap: px(7),
-                                    ..default()
-                                })
-                                .with_children(|grid| {
-                                    for index
-                                        in 0..12usize
-                                    {
-                                        spawn_inventory_slot(
-                                            grid,
-                                            index,
-                                        );
-                                    }
-                                });
-                        });
-
-                    panel
-                        .spawn((
-                            Node {
-                                width:
-                                    Val::Percent(
-                                        100.0,
-                                    ),
-                                min_height:
-                                    px(56),
-                                padding:
-                                    UiRect::all(
-                                        px(10),
-                                    ),
-                                border:
-                                    UiRect::all(
-                                        px(1),
-                                    ),
-                                border_radius:
-                                    BorderRadius::all(
-                                        px(7),
-                                    ),
-                                flex_direction:
-                                    FlexDirection::Row,
-                                align_items:
-                                    AlignItems::Center,
-                                justify_content:
-                                    JustifyContent::SpaceBetween,
-                                column_gap: px(12),
+                        summary
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Row,
+                                align_items: AlignItems::Center,
+                                column_gap: px(8),
                                 ..default()
-                            },
-                            BackgroundColor(
-                                Color::srgba(
-                                    0.12,
-                                    0.09,
-                                    0.025,
-                                    0.42,
-                                ),
-                            ),
-                            BorderColor::all(
-                                theme::GOLD_DARK,
-                            ),
-                        ))
-                        .with_children(|footer| {
-                            spawn_inventory_text(
-                                footer,
-                                NativeInventoryText::Gold,
-                                "0 GOLD COINS",
-                                10.5,
-                                theme::GOLD_BRIGHT,
-                            );
+                            })
+                            .with_children(|actions| {
+                                spawn_inventory_reference_button(
+                                    actions,
+                                    NativeInventoryAction::Back,
+                                    "BACK",
+                                    72.0,
+                                );
 
-                            spawn_inventory_text(
-                                footer,
-                                NativeInventoryText::Detail,
-                                "Select an item",
-                                8.5,
-                                MUTED,
-                            );
-                        });
-                });
+                                spawn_inventory_reference_button(
+                                    actions,
+                                    NativeInventoryAction::Search,
+                                    "SEARCH",
+                                    90.0,
+                                );
+                            });
+                    });
+
+                panel
+                    .spawn((
+                        Node {
+                            width: Val::Percent(100.0),
+                            min_height: px(58),
+                            padding: UiRect::all(px(10)),
+                            border: UiRect::all(px(1)),
+                            border_radius: BorderRadius::all(px(7)),
+                            flex_direction: FlexDirection::Column,
+                            row_gap: px(6),
+                            ..default()
+                        },
+                        BackgroundColor(PANEL_SOFT),
+                        BorderColor::all(theme::BUTTON_BORDER),
+                    ))
+                    .with_children(|capacity| {
+                        capacity
+                            .spawn(Node {
+                                width: Val::Percent(100.0),
+                                flex_direction: FlexDirection::Row,
+                                justify_content: JustifyContent::SpaceBetween,
+                                ..default()
+                            })
+                            .with_children(|row| {
+                                spawn_inventory_text(
+                                    row,
+                                    NativeInventoryText::Capacity,
+                                    "0.0 / 0.0 capacity",
+                                    9.5,
+                                    TEXT,
+                                );
+
+                                spawn_inventory_text(
+                                    row,
+                                    NativeInventoryText::Search,
+                                    "/ Search",
+                                    9.0,
+                                    MUTED,
+                                );
+                            });
+
+                        capacity
+                            .spawn((
+                                Node {
+                                    width: Val::Percent(100.0),
+                                    height: px(7),
+                                    border: UiRect::all(px(1)),
+                                    border_radius: BorderRadius::all(px(3)),
+                                    ..default()
+                                },
+                                BackgroundColor(PANEL_DEEP),
+                                BorderColor::all(theme::GOLD_DARK),
+                            ))
+                            .with_child((
+                                NativeInventoryCapacityBar,
+                                Node {
+                                    width: Val::Percent(0.0),
+                                    height: Val::Percent(100.0),
+                                    border_radius: BorderRadius::all(px(2)),
+                                    ..default()
+                                },
+                                BackgroundColor(CAP),
+                            ));
+                    });
+
+                panel
+                    .spawn((
+                        Node {
+                            width: Val::Percent(100.0),
+                            flex_grow: 1.0,
+                            min_height: px(390),
+                            padding: UiRect::all(px(10)),
+                            border: UiRect::all(px(1)),
+                            border_radius: BorderRadius::all(px(7)),
+                            flex_direction: FlexDirection::Column,
+                            row_gap: px(8),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.015, 0.03, 0.022, 0.98)),
+                        BorderColor::all(theme::BUTTON_BORDER),
+                    ))
+                    .with_children(|storage| {
+                        storage
+                            .spawn(Node {
+                                width: Val::Percent(100.0),
+                                flex_direction: FlexDirection::Row,
+                                justify_content: JustifyContent::SpaceBetween,
+                                ..default()
+                            })
+                            .with_children(|heading| {
+                                heading.spawn((
+                                    Text::new("STORAGE  ·  BACKPACK"),
+                                    TextFont {
+                                        font_size: FontSize::Px(10.0),
+                                        ..default()
+                                    },
+                                    TextColor(theme::GOLD),
+                                ));
+
+                                heading.spawn((
+                                    Text::new("Click an item to select"),
+                                    TextFont {
+                                        font_size: FontSize::Px(8.0),
+                                        ..default()
+                                    },
+                                    TextColor(MUTED),
+                                ));
+                            });
+
+                        storage
+                            .spawn(Node {
+                                width: Val::Percent(100.0),
+                                flex_grow: 1.0,
+                                flex_direction: FlexDirection::Row,
+                                flex_wrap: FlexWrap::Wrap,
+                                align_content: AlignContent::FlexStart,
+                                column_gap: px(7),
+                                row_gap: px(7),
+                                ..default()
+                            })
+                            .with_children(|grid| {
+                                for index in 0..12usize {
+                                    spawn_inventory_slot(grid, index);
+                                }
+                            });
+                    });
+
+                panel
+                    .spawn((
+                        Node {
+                            width: Val::Percent(100.0),
+                            min_height: px(56),
+                            padding: UiRect::all(px(10)),
+                            border: UiRect::all(px(1)),
+                            border_radius: BorderRadius::all(px(7)),
+                            flex_direction: FlexDirection::Row,
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::SpaceBetween,
+                            column_gap: px(12),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.12, 0.09, 0.025, 0.42)),
+                        BorderColor::all(theme::GOLD_DARK),
+                    ))
+                    .with_children(|footer| {
+                        spawn_inventory_text(
+                            footer,
+                            NativeInventoryText::Gold,
+                            "0 GOLD COINS",
+                            10.5,
+                            theme::GOLD_BRIGHT,
+                        );
+
+                        spawn_inventory_text(
+                            footer,
+                            NativeInventoryText::Detail,
+                            "Select an item",
+                            8.5,
+                            MUTED,
+                        );
+                    });
+            });
         });
 }
 
@@ -2137,7 +1897,10 @@ fn spawn_character_modal_text(
     parent.spawn((
         kind,
         Text::new(value),
-        TextFont { font_size: FontSize::Px(size), ..default() },
+        TextFont {
+            font_size: FontSize::Px(size),
+            ..default()
+        },
         TextColor(color),
     ));
 }
@@ -2156,28 +1919,32 @@ fn character_card_node() -> Node {
 }
 
 #[allow(dead_code)]
-fn spawn_character_section_title(
-    parent: &mut ChildSpawnerCommands,
-    title: &str,
-    subtitle: &str,
-) {
-    parent.spawn(Node {
-        width: Val::Percent(100.0),
-        flex_direction: FlexDirection::Column,
-        row_gap: px(2),
-        ..default()
-    }).with_children(|copy| {
-        copy.spawn((
-            Text::new(title),
-            TextFont { font_size: FontSize::Px(11.5), ..default() },
-            TextColor(theme::GOLD),
-        ));
-        copy.spawn((
-            Text::new(subtitle),
-            TextFont { font_size: FontSize::Px(9.0), ..default() },
-            TextColor(MUTED),
-        ));
-    });
+fn spawn_character_section_title(parent: &mut ChildSpawnerCommands, title: &str, subtitle: &str) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: px(2),
+            ..default()
+        })
+        .with_children(|copy| {
+            copy.spawn((
+                Text::new(title),
+                TextFont {
+                    font_size: FontSize::Px(11.5),
+                    ..default()
+                },
+                TextColor(theme::GOLD),
+            ));
+            copy.spawn((
+                Text::new(subtitle),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(MUTED),
+            ));
+        });
 }
 
 #[allow(dead_code)]
@@ -2188,48 +1955,55 @@ fn spawn_character_vital(
     bar_kind: NativeCharacterModalBar,
     bar_color: Color,
 ) {
-    parent.spawn(Node {
-        width: Val::Percent(100.0),
-        flex_direction: FlexDirection::Column,
-        row_gap: px(4),
-        ..default()
-    }).with_children(|root| {
-        root.spawn(Node {
+    parent
+        .spawn(Node {
             width: Val::Percent(100.0),
-            flex_direction: FlexDirection::Row,
-            align_items: AlignItems::Center,
-            justify_content: JustifyContent::SpaceBetween,
+            flex_direction: FlexDirection::Column,
+            row_gap: px(4),
             ..default()
-        }).with_children(|row| {
-            row.spawn((
-                Text::new(label),
-                TextFont { font_size: FontSize::Px(9.5), ..default() },
-                TextColor(MUTED),
-            ));
-            spawn_character_modal_text(row, text_kind, "—", 10.5, TEXT);
-        });
-
-        root.spawn((
-            Node {
+        })
+        .with_children(|root| {
+            root.spawn(Node {
                 width: Val::Percent(100.0),
-                height: px(7),
-                border: UiRect::all(px(1)),
-                border_radius: BorderRadius::all(px(3)),
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::SpaceBetween,
                 ..default()
-            },
-            BackgroundColor(PANEL_DEEP),
-            BorderColor::all(theme::GOLD_DARK),
-        )).with_child((
-            bar_kind,
-            Node {
-                width: Val::Percent(0.0),
-                height: Val::Percent(100.0),
-                border_radius: BorderRadius::all(px(2)),
-                ..default()
-            },
-            BackgroundColor(bar_color),
-        ));
-    });
+            })
+            .with_children(|row| {
+                row.spawn((
+                    Text::new(label),
+                    TextFont {
+                        font_size: FontSize::Px(9.5),
+                        ..default()
+                    },
+                    TextColor(MUTED),
+                ));
+                spawn_character_modal_text(row, text_kind, "—", 10.5, TEXT);
+            });
+
+            root.spawn((
+                Node {
+                    width: Val::Percent(100.0),
+                    height: px(7),
+                    border: UiRect::all(px(1)),
+                    border_radius: BorderRadius::all(px(3)),
+                    ..default()
+                },
+                BackgroundColor(PANEL_DEEP),
+                BorderColor::all(theme::GOLD_DARK),
+            ))
+            .with_child((
+                bar_kind,
+                Node {
+                    width: Val::Percent(0.0),
+                    height: Val::Percent(100.0),
+                    border_radius: BorderRadius::all(px(2)),
+                    ..default()
+                },
+                BackgroundColor(bar_color),
+            ));
+        });
 }
 
 #[allow(dead_code)]
@@ -2238,28 +2012,33 @@ fn spawn_character_skill_row(
     label: &str,
     kind: NativeCharacterModalText,
 ) {
-    parent.spawn((
-        Node {
-            width: Val::Percent(100.0),
-            min_height: px(32),
-            padding: UiRect::horizontal(px(9)),
-            border: UiRect::all(px(1)),
-            border_radius: BorderRadius::all(px(5)),
-            flex_direction: FlexDirection::Row,
-            align_items: AlignItems::Center,
-            justify_content: JustifyContent::SpaceBetween,
-            ..default()
-        },
-        BackgroundColor(PANEL_DEEP),
-        BorderColor::all(theme::BUTTON_BORDER),
-    )).with_children(|row| {
-        row.spawn((
-            Text::new(label),
-            TextFont { font_size: FontSize::Px(9.5), ..default() },
-            TextColor(MUTED),
-        ));
-        spawn_character_modal_text(row, kind, "—", 10.5, TEXT);
-    });
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                min_height: px(32),
+                padding: UiRect::horizontal(px(9)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(5)),
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::SpaceBetween,
+                ..default()
+            },
+            BackgroundColor(PANEL_DEEP),
+            BorderColor::all(theme::BUTTON_BORDER),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: FontSize::Px(9.5),
+                    ..default()
+                },
+                TextColor(MUTED),
+            ));
+            spawn_character_modal_text(row, kind, "—", 10.5, TEXT);
+        });
 }
 
 #[allow(dead_code)]
@@ -2269,17 +2048,30 @@ fn spawn_character_modal_button(
     label: &str,
     primary: bool,
 ) {
-    parent.spawn((
-        Button,
-        action,
-        native_modal::action_button_node(),
-        BackgroundColor(if primary { theme::BUTTON_HOVER } else { theme::BUTTON_BG }),
-        BorderColor::all(if primary { theme::GOLD } else { theme::BUTTON_BORDER }),
-    )).with_child((
-        Text::new(label),
-        TextFont { font_size: FontSize::Px(10.5), ..default() },
-        TextColor(if primary { theme::GOLD_BRIGHT } else { TEXT }),
-    ));
+    parent
+        .spawn((
+            Button,
+            action,
+            native_modal::action_button_node(),
+            BackgroundColor(if primary {
+                theme::BUTTON_HOVER
+            } else {
+                theme::BUTTON_BG
+            }),
+            BorderColor::all(if primary {
+                theme::GOLD
+            } else {
+                theme::BUTTON_BORDER
+            }),
+        ))
+        .with_child((
+            Text::new(label),
+            TextFont {
+                font_size: FontSize::Px(10.5),
+                ..default()
+            },
+            TextColor(if primary { theme::GOLD_BRIGHT } else { TEXT }),
+        ));
 }
 
 fn character_reference_root_node() -> Node {
@@ -2312,9 +2104,7 @@ fn character_reference_surface_node() -> Node {
     }
 }
 
-fn character_reference_section_node(
-    height: f32,
-) -> Node {
+fn character_reference_section_node(height: f32) -> Node {
     Node {
         width: Val::Percent(100.0),
         height: px(height),
@@ -2327,9 +2117,7 @@ fn character_reference_section_node(
     }
 }
 
-fn spawn_character_reference_close(
-    parent: &mut ChildSpawnerCommands,
-) {
+fn spawn_character_reference_close(parent: &mut ChildSpawnerCommands) {
     parent
         .spawn((
             Button,
@@ -2356,9 +2144,7 @@ fn spawn_character_reference_close(
         ));
 }
 
-fn spawn_character_avatar(
-    parent: &mut ChildSpawnerCommands,
-) {
+fn spawn_character_avatar(parent: &mut ChildSpawnerCommands) {
     parent
         .spawn((
             Node {
@@ -2370,9 +2156,7 @@ fn spawn_character_avatar(
                 justify_content: JustifyContent::Center,
                 ..default()
             },
-            BackgroundColor(
-                Color::srgb(0.74, 0.56, 0.25),
-            ),
+            BackgroundColor(Color::srgb(0.74, 0.56, 0.25)),
             BorderColor::all(theme::GOLD_BRIGHT),
         ))
         .with_child((
@@ -2382,15 +2166,11 @@ fn spawn_character_avatar(
                 font_size: FontSize::Px(22.0),
                 ..default()
             },
-            TextColor(
-                Color::srgb(0.10, 0.08, 0.04),
-            ),
+            TextColor(Color::srgb(0.10, 0.08, 0.04)),
         ));
 }
 
-fn spawn_character_paper_doll(
-    parent: &mut ChildSpawnerCommands,
-) {
+fn spawn_character_paper_doll(parent: &mut ChildSpawnerCommands) {
     parent
         .spawn(Node {
             position_type: PositionType::Absolute,
@@ -2413,12 +2193,8 @@ fn spawn_character_paper_doll(
                     border_radius: BorderRadius::all(px(19)),
                     ..default()
                 },
-                BackgroundColor(
-                    Color::srgba(0.17, 0.23, 0.20, 0.92),
-                ),
-                BorderColor::all(
-                    Color::srgb(0.39, 0.47, 0.42),
-                ),
+                BackgroundColor(Color::srgba(0.17, 0.23, 0.20, 0.92)),
+                BorderColor::all(Color::srgb(0.39, 0.47, 0.42)),
             ));
 
             figure.spawn((
@@ -2432,12 +2208,8 @@ fn spawn_character_paper_doll(
                     border_radius: BorderRadius::all(px(9)),
                     ..default()
                 },
-                BackgroundColor(
-                    Color::srgba(0.12, 0.19, 0.16, 0.86),
-                ),
-                BorderColor::all(
-                    Color::srgb(0.39, 0.47, 0.42),
-                ),
+                BackgroundColor(Color::srgba(0.12, 0.19, 0.16, 0.86)),
+                BorderColor::all(Color::srgb(0.39, 0.47, 0.42)),
             ));
 
             for (left, top, width, height) in [
@@ -2457,28 +2229,12 @@ fn spawn_character_paper_doll(
                         border_radius: BorderRadius::all(px(8)),
                         ..default()
                     },
-                    BackgroundColor(
-                        Color::srgba(
-                            0.12,
-                            0.19,
-                            0.16,
-                            0.86,
-                        ),
-                    ),
-                    BorderColor::all(
-                        Color::srgb(
-                            0.39,
-                            0.47,
-                            0.42,
-                        ),
-                    ),
+                    BackgroundColor(Color::srgba(0.12, 0.19, 0.16, 0.86)),
+                    BorderColor::all(Color::srgb(0.39, 0.47, 0.42)),
                 ));
             }
 
-            for (left, top) in [
-                (13.0, 148.0),
-                (99.0, 148.0),
-            ] {
+            for (left, top) in [(13.0, 148.0), (99.0, 148.0)] {
                 figure.spawn((
                     Node {
                         position_type: PositionType::Absolute,
@@ -2490,21 +2246,8 @@ fn spawn_character_paper_doll(
                         border_radius: BorderRadius::all(px(11)),
                         ..default()
                     },
-                    BackgroundColor(
-                        Color::srgba(
-                            0.12,
-                            0.19,
-                            0.16,
-                            0.86,
-                        ),
-                    ),
-                    BorderColor::all(
-                        Color::srgb(
-                            0.39,
-                            0.47,
-                            0.42,
-                        ),
-                    ),
+                    BackgroundColor(Color::srgba(0.12, 0.19, 0.16, 0.86)),
+                    BorderColor::all(Color::srgb(0.39, 0.47, 0.42)),
                 ));
             }
         });
@@ -2535,9 +2278,7 @@ fn spawn_character_equipment_slot(
                 justify_content: JustifyContent::SpaceBetween,
                 ..default()
             },
-            BackgroundColor(
-                Color::srgba(0.02, 0.045, 0.035, 0.95),
-            ),
+            BackgroundColor(Color::srgba(0.02, 0.045, 0.035, 0.95)),
             BorderColor::all(theme::BUTTON_BORDER),
         ))
         .with_children(|card| {
@@ -2562,10 +2303,7 @@ fn spawn_character_equipment_slot(
         });
 }
 
-fn spawn_character_profession_slot(
-    parent: &mut ChildSpawnerCommands,
-    index: usize,
-) {
+fn spawn_character_profession_slot(parent: &mut ChildSpawnerCommands, index: usize) {
     parent
         .spawn((
             Node {
@@ -2592,11 +2330,7 @@ fn spawn_character_profession_slot(
         ));
 }
 
-fn spawn_character_outfit_chip(
-    parent: &mut ChildSpawnerCommands,
-    label: &str,
-    selected: bool,
-) {
+fn spawn_character_outfit_chip(parent: &mut ChildSpawnerCommands, label: &str, selected: bool) {
     parent
         .spawn((
             Node {
@@ -2608,25 +2342,16 @@ fn spawn_character_outfit_chip(
                 justify_content: JustifyContent::Center,
                 ..default()
             },
-            BackgroundColor(
-                if selected {
-                    Color::srgba(
-                        0.28,
-                        0.19,
-                        0.06,
-                        0.92,
-                    )
-                } else {
-                    theme::BUTTON_BG
-                },
-            ),
-            BorderColor::all(
-                if selected {
-                    theme::GOLD
-                } else {
-                    theme::BUTTON_BORDER
-                },
-            ),
+            BackgroundColor(if selected {
+                Color::srgba(0.28, 0.19, 0.06, 0.92)
+            } else {
+                theme::BUTTON_BG
+            }),
+            BorderColor::all(if selected {
+                theme::GOLD
+            } else {
+                theme::BUTTON_BORDER
+            }),
         ))
         .with_child((
             Text::new(label),
@@ -2634,13 +2359,7 @@ fn spawn_character_outfit_chip(
                 font_size: FontSize::Px(8.5),
                 ..default()
             },
-            TextColor(
-                if selected {
-                    theme::GOLD_BRIGHT
-                } else {
-                    MUTED
-                },
-            ),
+            TextColor(if selected { theme::GOLD_BRIGHT } else { MUTED }),
         ));
 }
 
@@ -2656,47 +2375,44 @@ fn spawn_character_panel(commands: &mut Commands) {
             native_modal::backdrop(),
         ))
         .with_children(|root| {
-            root
-                .spawn((
-                    Name::new("Greyhaven Character interface"),
-                    native_modal::NativeModalSurface,
-                    native_modal::NativeDraggableSurface(
-                        native_modal::NativeModalWindow::Character,
-                    ),
-                    character_reference_surface_node(),
-                    native_modal::surface(),
-                    native_modal::surface_border(),
-                ))
-                .with_children(|panel| {
-                    panel
-                        .spawn(Node {
-                            width: Val::Percent(100.0),
-                            min_height: px(58),
-                            padding: UiRect {
-                                left: px(6),
-                                right: px(0),
-                                top: px(0),
-                                bottom: px(8),
-                            },
-                            border: UiRect {
-                                left: px(0),
-                                right: px(0),
-                                top: px(0),
-                                bottom: px(1),
-                            },
-                            flex_direction: FlexDirection::Row,
-                            align_items: AlignItems::Center,
-                            justify_content: JustifyContent::SpaceBetween,
-                            ..default()
-                        })
-                        .with_children(|header| {
-                            header
-                                .spawn((
-                                    Button,
-                                    native_modal::NativeDragHandle(
-                                        native_modal::NativeModalWindow::Character,
-                                    ),
-                                    Node {
+            root.spawn((
+                Name::new("Greyhaven Character interface"),
+                native_modal::NativeModalSurface,
+                native_modal::NativeDraggableSurface(native_modal::NativeModalWindow::Character),
+                character_reference_surface_node(),
+                native_modal::surface(),
+                native_modal::surface_border(),
+            ))
+            .with_children(|panel| {
+                panel
+                    .spawn(Node {
+                        width: Val::Percent(100.0),
+                        min_height: px(58),
+                        padding: UiRect {
+                            left: px(6),
+                            right: px(0),
+                            top: px(0),
+                            bottom: px(8),
+                        },
+                        border: UiRect {
+                            left: px(0),
+                            right: px(0),
+                            top: px(0),
+                            bottom: px(1),
+                        },
+                        flex_direction: FlexDirection::Row,
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::SpaceBetween,
+                        ..default()
+                    })
+                    .with_children(|header| {
+                        header
+                            .spawn((
+                                Button,
+                                native_modal::NativeDragHandle(
+                                    native_modal::NativeModalWindow::Character,
+                                ),
+                                Node {
                                     width: Val::Percent(100.0),
                                     height: Val::Percent(100.0),
                                     min_height: px(48),
@@ -2706,287 +2422,255 @@ fn spawn_character_panel(commands: &mut Commands) {
                                     justify_content: JustifyContent::Center,
                                     row_gap: px(3),
                                     ..default()
-                                }
-                                ))
-                                .with_children(|copy| {
-                                    copy.spawn((
-                                        Text::new("GREYHAVEN INTERFACE"),
-                                        TextFont {
-                                            font_size: FontSize::Px(10.0),
-                                            ..default()
-                                        },
-                                        TextColor(theme::GOLD),
-                                    ));
+                                },
+                            ))
+                            .with_children(|copy| {
+                                copy.spawn((
+                                    Text::new("GREYHAVEN INTERFACE"),
+                                    TextFont {
+                                        font_size: FontSize::Px(10.0),
+                                        ..default()
+                                    },
+                                    TextColor(theme::GOLD),
+                                ));
 
-                                    copy.spawn((
-                                        Text::new("CHARACTER"),
-                                        TextFont {
-                                            font_size: FontSize::Px(21.0),
-                                            ..default()
-                                        },
-                                        TextColor(theme::GOLD_BRIGHT),
-                                    ));
-                                });
+                                copy.spawn((
+                                    Text::new("CHARACTER"),
+                                    TextFont {
+                                        font_size: FontSize::Px(21.0),
+                                        ..default()
+                                    },
+                                    TextColor(theme::GOLD_BRIGHT),
+                                ));
+                            });
 
-                            spawn_character_reference_close(header);
-                        });
+                        spawn_character_reference_close(header);
+                    });
 
-                    panel
-                        .spawn((
-                            character_reference_section_node(82.0),
-                            BackgroundColor(PANEL_SOFT),
-                            BorderColor::all(theme::BUTTON_BORDER),
-                        ))
-                        .with_children(|identity| {
-                            identity
-                                .spawn(Node {
-                                    width: Val::Percent(100.0),
-                                    height: Val::Percent(100.0),
-                                    flex_direction: FlexDirection::Row,
-                                    align_items: AlignItems::Center,
-                                    column_gap: px(12),
+                panel
+                    .spawn((
+                        character_reference_section_node(82.0),
+                        BackgroundColor(PANEL_SOFT),
+                        BorderColor::all(theme::BUTTON_BORDER),
+                    ))
+                    .with_children(|identity| {
+                        identity
+                            .spawn(Node {
+                                width: Val::Percent(100.0),
+                                height: Val::Percent(100.0),
+                                flex_direction: FlexDirection::Row,
+                                align_items: AlignItems::Center,
+                                column_gap: px(12),
+                                ..default()
+                            })
+                            .with_children(|row| {
+                                spawn_character_avatar(row);
+
+                                row.spawn(Node {
+                                    flex_grow: 1.0,
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: px(2),
                                     ..default()
                                 })
-                                .with_children(|row| {
-                                    spawn_character_avatar(row);
-
-                                    row
-                                        .spawn(Node {
-                                            flex_grow: 1.0,
-                                            flex_direction: FlexDirection::Column,
-                                            row_gap: px(2),
-                                            ..default()
-                                        })
-                                        .with_children(|copy| {
-                                            spawn_character_modal_text(
-                                                copy,
-                                                NativeCharacterModalText::Identity,
-                                                "No local player",
-                                                13.0,
-                                                theme::GOLD_BRIGHT,
-                                            );
-
-                                            copy.spawn((
-                                                Text::new(
-                                                    "Manage equipment through Inventory",
-                                                ),
-                                                TextFont {
-                                                    font_size: FontSize::Px(9.0),
-                                                    ..default()
-                                                },
-                                                TextColor(MUTED),
-                                            ));
-                                        });
-
+                                .with_children(|copy| {
                                     spawn_character_modal_text(
-                                        row,
-                                        NativeCharacterModalText::HeaderContext,
-                                        "Greyhaven",
-                                        8.5,
-                                        theme::GOLD,
+                                        copy,
+                                        NativeCharacterModalText::Identity,
+                                        "No local player",
+                                        13.0,
+                                        theme::GOLD_BRIGHT,
                                     );
-                                });
-                        });
 
-                    panel
-                        .spawn((
-                            Node {
-                                width: Val::Percent(100.0),
-                                height: px(420),
-                                border: UiRect::all(px(1)),
-                                border_radius: BorderRadius::all(px(7)),
+                                    copy.spawn((
+                                        Text::new("Manage equipment through Inventory"),
+                                        TextFont {
+                                            font_size: FontSize::Px(9.0),
+                                            ..default()
+                                        },
+                                        TextColor(MUTED),
+                                    ));
+                                });
+
+                                spawn_character_modal_text(
+                                    row,
+                                    NativeCharacterModalText::HeaderContext,
+                                    "Greyhaven",
+                                    8.5,
+                                    theme::GOLD,
+                                );
+                            });
+                    });
+
+                panel
+                    .spawn((
+                        Node {
+                            width: Val::Percent(100.0),
+                            height: px(420),
+                            border: UiRect::all(px(1)),
+                            border_radius: BorderRadius::all(px(7)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.015, 0.035, 0.027, 0.95)),
+                        BorderColor::all(theme::BUTTON_BORDER),
+                    ))
+                    .with_children(|equipment| {
+                        spawn_character_paper_doll(equipment);
+
+                        spawn_character_equipment_slot(
+                            equipment,
+                            NativeCharacterEquipmentSlot::Helmet,
+                            "HELMET",
+                            Val::Percent(50.0),
+                            px(8),
+                        );
+
+                        spawn_character_equipment_slot(
+                            equipment,
+                            NativeCharacterEquipmentSlot::Amulet,
+                            "AMULET",
+                            px(304),
+                            px(18),
+                        );
+
+                        spawn_character_equipment_slot(
+                            equipment,
+                            NativeCharacterEquipmentSlot::Chest,
+                            "CHEST",
+                            px(10),
+                            px(92),
+                        );
+
+                        spawn_character_equipment_slot(
+                            equipment,
+                            NativeCharacterEquipmentSlot::Back,
+                            "BACK",
+                            px(304),
+                            px(92),
+                        );
+
+                        spawn_character_equipment_slot(
+                            equipment,
+                            NativeCharacterEquipmentSlot::LeftHand,
+                            "LEFT HAND",
+                            px(10),
+                            px(178),
+                        );
+
+                        spawn_character_equipment_slot(
+                            equipment,
+                            NativeCharacterEquipmentSlot::RightHand,
+                            "RIGHT HAND",
+                            px(304),
+                            px(178),
+                        );
+
+                        spawn_character_equipment_slot(
+                            equipment,
+                            NativeCharacterEquipmentSlot::Backpack,
+                            "BACKPACK",
+                            px(10),
+                            px(264),
+                        );
+
+                        spawn_character_equipment_slot(
+                            equipment,
+                            NativeCharacterEquipmentSlot::Ring,
+                            "RING",
+                            px(304),
+                            px(264),
+                        );
+
+                        spawn_character_equipment_slot(
+                            equipment,
+                            NativeCharacterEquipmentSlot::Feet,
+                            "FEET",
+                            Val::Percent(50.0),
+                            px(338),
+                        );
+
+                        spawn_character_equipment_slot(
+                            equipment,
+                            NativeCharacterEquipmentSlot::Legs,
+                            "LEGS",
+                            px(304),
+                            px(338),
+                        );
+                    });
+
+                panel
+                    .spawn((
+                        character_reference_section_node(90.0),
+                        BackgroundColor(PANEL_SOFT),
+                        BorderColor::all(theme::BUTTON_BORDER),
+                    ))
+                    .with_children(|professions| {
+                        professions.spawn((
+                            Text::new("PROFESSION SLOTS"),
+                            TextFont {
+                                font_size: FontSize::Px(10.0),
                                 ..default()
                             },
-                            BackgroundColor(
-                                Color::srgba(
-                                    0.015,
-                                    0.035,
-                                    0.027,
-                                    0.95,
-                                ),
-                            ),
-                            BorderColor::all(theme::BUTTON_BORDER),
-                        ))
-                        .with_children(|equipment| {
-                            spawn_character_paper_doll(equipment);
+                            TextColor(theme::GOLD),
+                        ));
 
-                            spawn_character_equipment_slot(
-                                equipment,
-                                NativeCharacterEquipmentSlot::Helmet,
-                                "HELMET",
-                                Val::Percent(50.0),
-                                px(8),
-                            );
+                        professions.spawn((
+                            Text::new("Up to 2 gathering + 2 crafting"),
+                            TextFont {
+                                font_size: FontSize::Px(8.0),
+                                ..default()
+                            },
+                            TextColor(MUTED),
+                        ));
 
-                            spawn_character_equipment_slot(
-                                equipment,
-                                NativeCharacterEquipmentSlot::Amulet,
-                                "AMULET",
-                                px(304),
-                                px(18),
-                            );
+                        professions
+                            .spawn(Node {
+                                width: Val::Percent(100.0),
+                                flex_direction: FlexDirection::Row,
+                                justify_content: JustifyContent::SpaceBetween,
+                                column_gap: px(5),
+                                ..default()
+                            })
+                            .with_children(|slots| {
+                                for index in 0..4usize {
+                                    spawn_character_profession_slot(slots, index);
+                                }
+                            });
+                    });
 
-                            spawn_character_equipment_slot(
-                                equipment,
-                                NativeCharacterEquipmentSlot::Chest,
-                                "CHEST",
-                                px(10),
-                                px(92),
-                            );
+                panel
+                    .spawn((
+                        character_reference_section_node(74.0),
+                        BackgroundColor(PANEL_SOFT),
+                        BorderColor::all(theme::BUTTON_BORDER),
+                    ))
+                    .with_children(|outfit| {
+                        outfit.spawn((
+                            Text::new("OUTFIT"),
+                            TextFont {
+                                font_size: FontSize::Px(10.0),
+                                ..default()
+                            },
+                            TextColor(theme::GOLD),
+                        ));
 
-                            spawn_character_equipment_slot(
-                                equipment,
-                                NativeCharacterEquipmentSlot::Back,
-                                "BACK",
-                                px(304),
-                                px(92),
-                            );
-
-                            spawn_character_equipment_slot(
-                                equipment,
-                                NativeCharacterEquipmentSlot::LeftHand,
-                                "LEFT HAND",
-                                px(10),
-                                px(178),
-                            );
-
-                            spawn_character_equipment_slot(
-                                equipment,
-                                NativeCharacterEquipmentSlot::RightHand,
-                                "RIGHT HAND",
-                                px(304),
-                                px(178),
-                            );
-
-                            spawn_character_equipment_slot(
-                                equipment,
-                                NativeCharacterEquipmentSlot::Backpack,
-                                "BACKPACK",
-                                px(10),
-                                px(264),
-                            );
-
-                            spawn_character_equipment_slot(
-                                equipment,
-                                NativeCharacterEquipmentSlot::Ring,
-                                "RING",
-                                px(304),
-                                px(264),
-                            );
-
-                            spawn_character_equipment_slot(
-                                equipment,
-                                NativeCharacterEquipmentSlot::Feet,
-                                "FEET",
-                                Val::Percent(50.0),
-                                px(338),
-                            );
-
-                            spawn_character_equipment_slot(
-                                equipment,
-                                NativeCharacterEquipmentSlot::Legs,
-                                "LEGS",
-                                px(304),
-                                px(338),
-                            );
-                        });
-
-                    panel
-                        .spawn((
-                            character_reference_section_node(90.0),
-                            BackgroundColor(PANEL_SOFT),
-                            BorderColor::all(theme::BUTTON_BORDER),
-                        ))
-                        .with_children(|professions| {
-                            professions.spawn((
-                                Text::new("PROFESSION SLOTS"),
-                                TextFont {
-                                    font_size: FontSize::Px(10.0),
-                                    ..default()
-                                },
-                                TextColor(theme::GOLD),
-                            ));
-
-                            professions.spawn((
-                                Text::new(
-                                    "Up to 2 gathering + 2 crafting",
-                                ),
-                                TextFont {
-                                    font_size: FontSize::Px(8.0),
-                                    ..default()
-                                },
-                                TextColor(MUTED),
-                            ));
-
-                            professions
-                                .spawn(Node {
-                                    width: Val::Percent(100.0),
-                                    flex_direction: FlexDirection::Row,
-                                    justify_content: JustifyContent::SpaceBetween,
-                                    column_gap: px(5),
-                                    ..default()
-                                })
-                                .with_children(|slots| {
-                                    for index in 0..4usize {
-                                        spawn_character_profession_slot(
-                                            slots,
-                                            index,
-                                        );
-                                    }
-                                });
-                        });
-
-                    panel
-                        .spawn((
-                            character_reference_section_node(74.0),
-                            BackgroundColor(PANEL_SOFT),
-                            BorderColor::all(theme::BUTTON_BORDER),
-                        ))
-                        .with_children(|outfit| {
-                            outfit.spawn((
-                                Text::new("OUTFIT"),
-                                TextFont {
-                                    font_size: FontSize::Px(10.0),
-                                    ..default()
-                                },
-                                TextColor(theme::GOLD),
-                            ));
-
-                            outfit
-                                .spawn(Node {
-                                    width: Val::Percent(100.0),
-                                    flex_direction: FlexDirection::Row,
-                                    justify_content: JustifyContent::SpaceBetween,
-                                    column_gap: px(5),
-                                    ..default()
-                                })
-                                .with_children(|chips| {
-                                    spawn_character_outfit_chip(
-                                        chips,
-                                        "ARMORED",
-                                        true,
-                                    );
-                                    spawn_character_outfit_chip(
-                                        chips,
-                                        "WAYFARER",
-                                        false,
-                                    );
-                                    spawn_character_outfit_chip(
-                                        chips,
-                                        "MYSTIC",
-                                        false,
-                                    );
-                                    spawn_character_outfit_chip(
-                                        chips,
-                                        "SHADOW",
-                                        false,
-                                    );
-                                });
-                        });
-                });
+                        outfit
+                            .spawn(Node {
+                                width: Val::Percent(100.0),
+                                flex_direction: FlexDirection::Row,
+                                justify_content: JustifyContent::SpaceBetween,
+                                column_gap: px(5),
+                                ..default()
+                            })
+                            .with_children(|chips| {
+                                spawn_character_outfit_chip(chips, "ARMORED", true);
+                                spawn_character_outfit_chip(chips, "WAYFARER", false);
+                                spawn_character_outfit_chip(chips, "MYSTIC", false);
+                                spawn_character_outfit_chip(chips, "SHADOW", false);
+                            });
+                    });
+            });
         });
 }
-
 
 fn skills_section_heading(
     parent: &mut ChildSpawnerCommands,
@@ -2997,52 +2681,42 @@ fn skills_section_heading(
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
-            flex_direction:
-                FlexDirection::Row,
-            align_items:
-                AlignItems::FlexEnd,
-            justify_content:
-                JustifyContent::SpaceBetween,
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::FlexEnd,
+            justify_content: JustifyContent::SpaceBetween,
             column_gap: px(12),
             ..default()
         })
         .with_children(|row| {
-            row
-                .spawn(Node {
-                    flex_direction:
-                        FlexDirection::Column,
-                    row_gap: px(2),
-                    ..default()
-                })
-                .with_children(|copy| {
-                    copy.spawn((
-                        Text::new(eyebrow),
-                        TextFont {
-                            font_size:
-                                FontSize::Px(9.0),
-                            ..default()
-                        },
-                        TextColor(theme::GOLD),
-                    ));
+            row.spawn(Node {
+                flex_direction: FlexDirection::Column,
+                row_gap: px(2),
+                ..default()
+            })
+            .with_children(|copy| {
+                copy.spawn((
+                    Text::new(eyebrow),
+                    TextFont {
+                        font_size: FontSize::Px(9.0),
+                        ..default()
+                    },
+                    TextColor(theme::GOLD),
+                ));
 
-                    copy.spawn((
-                        Text::new(title),
-                        TextFont {
-                            font_size:
-                                FontSize::Px(14.0),
-                            ..default()
-                        },
-                        TextColor(
-                            theme::GOLD_BRIGHT,
-                        ),
-                    ));
-                });
+                copy.spawn((
+                    Text::new(title),
+                    TextFont {
+                        font_size: FontSize::Px(14.0),
+                        ..default()
+                    },
+                    TextColor(theme::GOLD_BRIGHT),
+                ));
+            });
 
             row.spawn((
                 Text::new(detail),
                 TextFont {
-                    font_size:
-                        FontSize::Px(8.5),
+                    font_size: FontSize::Px(8.5),
                     ..default()
                 },
                 TextColor(MUTED),
@@ -3050,577 +2724,356 @@ fn skills_section_heading(
         });
 }
 
-fn skills_card_node(
-    width: Val,
-    min_height: f32,
-) -> Node {
+fn skills_card_node(width: Val, min_height: f32) -> Node {
     Node {
         width,
         min_height: px(min_height),
         padding: UiRect::all(px(10)),
         border: UiRect::all(px(1)),
-        border_radius:
-            BorderRadius::all(px(7)),
-        flex_direction:
-            FlexDirection::Column,
+        border_radius: BorderRadius::all(px(7)),
+        flex_direction: FlexDirection::Column,
         row_gap: px(6),
         ..default()
     }
 }
 
-fn skills_core_label(
-    skill: NativeSkillsCore,
-) -> (&'static str, &'static str, &'static str) {
+fn skills_core_label(skill: NativeSkillsCore) -> (&'static str, &'static str, &'static str) {
     match skill {
-        NativeSkillsCore::Melee => (
-            "MELEE",
-            "Any melee weapon",
-            "⚔",
-        ),
-        NativeSkillsCore::Distance => (
-            "DISTANCE",
-            "Bows and ammunition",
-            "➶",
-        ),
-        NativeSkillsCore::Shielding => (
-            "SHIELDING",
-            "Defensive off-hand mastery",
-            "◆",
-        ),
-        NativeSkillsCore::Fletching => (
-            "FLETCHING",
-            "Physical ammunition",
-            "➶",
-        ),
-        NativeSkillsCore::Magic => (
-            "MAGIC",
-            "Spells and sigils",
-            "✦",
-        ),
+        NativeSkillsCore::Melee => ("MELEE", "Any melee weapon", "⚔"),
+        NativeSkillsCore::Distance => ("DISTANCE", "Bows and ammunition", "➶"),
+        NativeSkillsCore::Shielding => ("SHIELDING", "Defensive off-hand mastery", "◆"),
+        NativeSkillsCore::Fletching => ("FLETCHING", "Physical ammunition", "➶"),
+        NativeSkillsCore::Magic => ("MAGIC", "Spells and sigils", "✦"),
     }
 }
 
-fn spawn_skills_core_card(
-    parent: &mut ChildSpawnerCommands,
-    skill: NativeSkillsCore,
-) {
-    let (label, detail, glyph) =
-        skills_core_label(skill);
+fn spawn_skills_core_card(parent: &mut ChildSpawnerCommands, skill: NativeSkillsCore) {
+    let (label, detail, glyph) = skills_core_label(skill);
 
     parent
         .spawn((
-            skills_card_node(
-                Val::Percent(32.2),
-                100.0,
-            ),
+            skills_card_node(Val::Percent(32.2), 100.0),
             BackgroundColor(PANEL_SOFT),
-            BorderColor::all(
-                theme::BUTTON_BORDER,
-            ),
+            BorderColor::all(theme::BUTTON_BORDER),
         ))
         .with_children(|card| {
-            card
-                .spawn(Node {
-                    width:
-                        Val::Percent(100.0),
-                    flex_direction:
-                        FlexDirection::Row,
-                    align_items:
-                        AlignItems::Center,
-                    justify_content:
-                        JustifyContent::SpaceBetween,
+            card.spawn(Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::SpaceBetween,
+                column_gap: px(8),
+                ..default()
+            })
+            .with_children(|top| {
+                top.spawn(Node {
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
                     column_gap: px(8),
                     ..default()
                 })
-                .with_children(|top| {
-                    top
-                        .spawn(Node {
-                            flex_direction:
-                                FlexDirection::Row,
-                            align_items:
-                                AlignItems::Center,
-                            column_gap: px(8),
+                .with_children(|left| {
+                    left.spawn((
+                        Node {
+                            width: px(38),
+                            height: px(38),
+                            border: UiRect::all(px(1)),
+                            border_radius: BorderRadius::all(px(6)),
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::Center,
                             ..default()
-                        })
-                        .with_children(|left| {
-                            left.spawn((
-                                Node {
-                                    width: px(38),
-                                    height: px(38),
-                                    border:
-                                        UiRect::all(
-                                            px(1),
-                                        ),
-                                    border_radius:
-                                        BorderRadius::all(
-                                            px(6),
-                                        ),
-                                    align_items:
-                                        AlignItems::Center,
-                                    justify_content:
-                                        JustifyContent::Center,
-                                    ..default()
-                                },
-                                BackgroundColor(
-                                    Color::srgba(
-                                        0.20,
-                                        0.13,
-                                        0.035,
-                                        0.82,
-                                    ),
-                                ),
-                                BorderColor::all(
-                                    theme::GOLD_DARK,
-                                ),
-                            ))
-                            .with_child((
-                                Text::new(glyph),
-                                TextFont {
-                                    font_size:
-                                        FontSize::Px(
-                                            17.0,
-                                        ),
-                                    ..default()
-                                },
-                                TextColor(
-                                    theme::GOLD_BRIGHT,
-                                ),
-                            ));
+                        },
+                        BackgroundColor(Color::srgba(0.20, 0.13, 0.035, 0.82)),
+                        BorderColor::all(theme::GOLD_DARK),
+                    ))
+                    .with_child((
+                        Text::new(glyph),
+                        TextFont {
+                            font_size: FontSize::Px(17.0),
+                            ..default()
+                        },
+                        TextColor(theme::GOLD_BRIGHT),
+                    ));
 
-                            left
-                                .spawn(Node {
-                                    flex_direction:
-                                        FlexDirection::Column,
-                                    row_gap: px(2),
-                                    ..default()
-                                })
-                                .with_children(|copy| {
-                                    copy.spawn((
-                                        Text::new(label),
-                                        TextFont {
-                                            font_size:
-                                                FontSize::Px(
-                                                    10.5,
-                                                ),
-                                            ..default()
-                                        },
-                                        TextColor(TEXT),
-                                    ));
-
-                                    copy.spawn((
-                                        Text::new(detail),
-                                        TextFont {
-                                            font_size:
-                                                FontSize::Px(
-                                                    7.5,
-                                                ),
-                                            ..default()
-                                        },
-                                        TextColor(MUTED),
-                                    ));
-                                });
-                        });
-
-                    top
-                        .spawn((
-                            Node {
-                                min_width: px(42),
-                                min_height: px(34),
-                                padding:
-                                    UiRect::all(px(5)),
-                                border:
-                                    UiRect::all(px(1)),
-                                border_radius:
-                                    BorderRadius::all(
-                                        px(5),
-                                    ),
-                                flex_direction:
-                                    FlexDirection::Column,
-                                align_items:
-                                    AlignItems::Center,
-                                justify_content:
-                                    JustifyContent::Center,
+                    left.spawn(Node {
+                        flex_direction: FlexDirection::Column,
+                        row_gap: px(2),
+                        ..default()
+                    })
+                    .with_children(|copy| {
+                        copy.spawn((
+                            Text::new(label),
+                            TextFont {
+                                font_size: FontSize::Px(10.5),
                                 ..default()
                             },
-                            BackgroundColor(
-                                Color::srgba(
-                                    0.11,
-                                    0.075,
-                                    0.02,
-                                    0.72,
-                                ),
-                            ),
-                            BorderColor::all(
-                                theme::GOLD_DARK,
-                            ),
-                        ))
-                        .with_children(|badge| {
-                            badge.spawn((
-                                NativeSkillsCoreText {
-                                    skill,
-                                    field:
-                                        NativeSkillsCoreField::Level,
-                                },
-                                Text::new("0"),
-                                TextFont {
-                                    font_size:
-                                        FontSize::Px(
-                                            11.0,
-                                        ),
-                                    ..default()
-                                },
-                                TextColor(
-                                    theme::GOLD_BRIGHT,
-                                ),
-                            ));
+                            TextColor(TEXT),
+                        ));
 
-                            badge.spawn((
-                                Text::new("LEVEL"),
-                                TextFont {
-                                    font_size:
-                                        FontSize::Px(
-                                            6.0,
-                                        ),
-                                    ..default()
-                                },
-                                TextColor(MUTED),
-                            ));
-                        });
+                        copy.spawn((
+                            Text::new(detail),
+                            TextFont {
+                                font_size: FontSize::Px(7.5),
+                                ..default()
+                            },
+                            TextColor(MUTED),
+                        ));
+                    });
                 });
 
-            card
-                .spawn((
+                top.spawn((
                     Node {
-                        width:
-                            Val::Percent(100.0),
-                        height: px(6),
-                        border:
-                            UiRect::all(px(1)),
-                        border_radius:
-                            BorderRadius::all(px(3)),
+                        min_width: px(42),
+                        min_height: px(34),
+                        padding: UiRect::all(px(5)),
+                        border: UiRect::all(px(1)),
+                        border_radius: BorderRadius::all(px(5)),
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
                         ..default()
                     },
-                    BackgroundColor(PANEL_DEEP),
-                    BorderColor::all(
-                        theme::GOLD_DARK,
-                    ),
+                    BackgroundColor(Color::srgba(0.11, 0.075, 0.02, 0.72)),
+                    BorderColor::all(theme::GOLD_DARK),
                 ))
-                .with_child((
-                    NativeSkillsCoreBar(skill),
-                    Node {
-                        width:
-                            Val::Percent(0.0),
-                        height:
-                            Val::Percent(100.0),
-                        border_radius:
-                            BorderRadius::all(
-                                px(2),
-                            ),
-                        ..default()
-                    },
-                    BackgroundColor(
-                        Color::srgb(
-                            0.39,
-                            0.58,
-                            0.50,
-                        ),
-                    ),
-                ));
-
-            card
-                .spawn(Node {
-                    width:
-                        Val::Percent(100.0),
-                    flex_direction:
-                        FlexDirection::Row,
-                    justify_content:
-                        JustifyContent::SpaceBetween,
-                    ..default()
-                })
-                .with_children(|bottom| {
-                    bottom.spawn((
+                .with_children(|badge| {
+                    badge.spawn((
                         NativeSkillsCoreText {
                             skill,
-                            field:
-                                NativeSkillsCoreField::Tries,
+                            field: NativeSkillsCoreField::Level,
                         },
-                        Text::new("0 tries"),
+                        Text::new("0"),
                         TextFont {
-                            font_size:
-                                FontSize::Px(
-                                    8.0,
-                                ),
+                            font_size: FontSize::Px(11.0),
                             ..default()
                         },
-                        TextColor(MUTED),
+                        TextColor(theme::GOLD_BRIGHT),
                     ));
 
-                    bottom.spawn((
-                        Text::new("mastery"),
+                    badge.spawn((
+                        Text::new("LEVEL"),
                         TextFont {
-                            font_size:
-                                FontSize::Px(
-                                    7.5,
-                                ),
+                            font_size: FontSize::Px(6.0),
                             ..default()
                         },
                         TextColor(MUTED),
                     ));
                 });
+            });
+
+            card.spawn((
+                Node {
+                    width: Val::Percent(100.0),
+                    height: px(6),
+                    border: UiRect::all(px(1)),
+                    border_radius: BorderRadius::all(px(3)),
+                    ..default()
+                },
+                BackgroundColor(PANEL_DEEP),
+                BorderColor::all(theme::GOLD_DARK),
+            ))
+            .with_child((
+                NativeSkillsCoreBar(skill),
+                Node {
+                    width: Val::Percent(0.0),
+                    height: Val::Percent(100.0),
+                    border_radius: BorderRadius::all(px(2)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgb(0.39, 0.58, 0.50)),
+            ));
+
+            card.spawn(Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Row,
+                justify_content: JustifyContent::SpaceBetween,
+                ..default()
+            })
+            .with_children(|bottom| {
+                bottom.spawn((
+                    NativeSkillsCoreText {
+                        skill,
+                        field: NativeSkillsCoreField::Tries,
+                    },
+                    Text::new("0 tries"),
+                    TextFont {
+                        font_size: FontSize::Px(8.0),
+                        ..default()
+                    },
+                    TextColor(MUTED),
+                ));
+
+                bottom.spawn((
+                    Text::new("mastery"),
+                    TextFont {
+                        font_size: FontSize::Px(7.5),
+                        ..default()
+                    },
+                    TextColor(MUTED),
+                ));
+            });
         });
 }
 
-fn spawn_skills_ability_card(
-    parent: &mut ChildSpawnerCommands,
-    index: usize,
-) {
+fn spawn_skills_ability_card(parent: &mut ChildSpawnerCommands, index: usize) {
     parent
         .spawn((
-            skills_card_node(
-                Val::Percent(49.4),
-                66.0,
-            ),
+            skills_card_node(Val::Percent(49.4), 66.0),
             BackgroundColor(PANEL_SOFT),
-            BorderColor::all(
-                theme::BUTTON_BORDER,
-            ),
+            BorderColor::all(theme::BUTTON_BORDER),
         ))
         .with_children(|card| {
-            card
-                .spawn(Node {
-                    width:
-                        Val::Percent(100.0),
-                    flex_direction:
-                        FlexDirection::Row,
-                    align_items:
-                        AlignItems::Center,
-                    column_gap: px(9),
+            card.spawn(Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                column_gap: px(9),
+                ..default()
+            })
+            .with_children(|row| {
+                row.spawn((
+                    Node {
+                        width: px(40),
+                        height: px(40),
+                        border: UiRect::all(px(1)),
+                        border_radius: BorderRadius::all(px(6)),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.20, 0.13, 0.035, 0.82)),
+                    BorderColor::all(theme::GOLD_DARK),
+                ))
+                .with_child((
+                    Text::new("✦"),
+                    TextFont {
+                        font_size: FontSize::Px(16.0),
+                        ..default()
+                    },
+                    TextColor(theme::GOLD_BRIGHT),
+                ));
+
+                row.spawn(Node {
+                    flex_grow: 1.0,
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(2),
                     ..default()
                 })
-                .with_children(|row| {
-                    row.spawn((
-                        Node {
-                            width: px(40),
-                            height: px(40),
-                            border:
-                                UiRect::all(px(1)),
-                            border_radius:
-                                BorderRadius::all(
-                                    px(6),
-                                ),
-                            align_items:
-                                AlignItems::Center,
-                            justify_content:
-                                JustifyContent::Center,
-                            ..default()
-                        },
-                        BackgroundColor(
-                            Color::srgba(
-                                0.20,
-                                0.13,
-                                0.035,
-                                0.82,
-                            ),
-                        ),
-                        BorderColor::all(
-                            theme::GOLD_DARK,
-                        ),
-                    ))
-                    .with_child((
-                        Text::new("✦"),
-                        TextFont {
-                            font_size:
-                                FontSize::Px(
-                                    16.0,
-                                ),
-                            ..default()
-                        },
-                        TextColor(
-                            theme::GOLD_BRIGHT,
-                        ),
-                    ));
-
-                    row
-                        .spawn(Node {
-                            flex_grow: 1.0,
-                            flex_direction:
-                                FlexDirection::Column,
-                            row_gap: px(2),
-                            ..default()
-                        })
-                        .with_children(|copy| {
-                            copy.spawn((
-                                NativeSkillsAbilityText {
-                                    index,
-                                    field:
-                                        NativeSkillsAbilityField::Name,
-                                },
-                                Text::new("Unassigned"),
-                                TextFont {
-                                    font_size:
-                                        FontSize::Px(
-                                            10.5,
-                                        ),
-                                    ..default()
-                                },
-                                TextColor(TEXT),
-                            ));
-
-                            copy.spawn((
-                                NativeSkillsAbilityText {
-                                    index,
-                                    field:
-                                        NativeSkillsAbilityField::Detail,
-                                },
-                                Text::new(""),
-                                TextFont {
-                                    font_size:
-                                        FontSize::Px(
-                                            8.0,
-                                        ),
-                                    ..default()
-                                },
-                                TextColor(MUTED),
-                            ));
-                        });
-
-                    row.spawn((
+                .with_children(|copy| {
+                    copy.spawn((
                         NativeSkillsAbilityText {
                             index,
-                            field:
-                                NativeSkillsAbilityField::Cost,
+                            field: NativeSkillsAbilityField::Name,
+                        },
+                        Text::new("Unassigned"),
+                        TextFont {
+                            font_size: FontSize::Px(10.5),
+                            ..default()
+                        },
+                        TextColor(TEXT),
+                    ));
+
+                    copy.spawn((
+                        NativeSkillsAbilityText {
+                            index,
+                            field: NativeSkillsAbilityField::Detail,
                         },
                         Text::new(""),
                         TextFont {
-                            font_size:
-                                FontSize::Px(
-                                    9.5,
-                                ),
+                            font_size: FontSize::Px(8.0),
                             ..default()
                         },
-                        TextColor(
-                            theme::GOLD_BRIGHT,
-                        ),
+                        TextColor(MUTED),
                     ));
                 });
+
+                row.spawn((
+                    NativeSkillsAbilityText {
+                        index,
+                        field: NativeSkillsAbilityField::Cost,
+                    },
+                    Text::new(""),
+                    TextFont {
+                        font_size: FontSize::Px(9.5),
+                        ..default()
+                    },
+                    TextColor(theme::GOLD_BRIGHT),
+                ));
+            });
         });
 }
 
-fn spawn_skills_profession_card(
-    parent: &mut ChildSpawnerCommands,
-    index: usize,
-) {
+fn spawn_skills_profession_card(parent: &mut ChildSpawnerCommands, index: usize) {
     parent
         .spawn((
-            skills_card_node(
-                Val::Percent(100.0),
-                64.0,
-            ),
+            skills_card_node(Val::Percent(100.0), 64.0),
             BackgroundColor(PANEL_SOFT),
-            BorderColor::all(
-                theme::BUTTON_BORDER,
-            ),
+            BorderColor::all(theme::BUTTON_BORDER),
         ))
         .with_children(|card| {
-            card
-                .spawn(Node {
-                    width:
-                        Val::Percent(100.0),
-                    flex_direction:
-                        FlexDirection::Row,
-                    align_items:
-                        AlignItems::Center,
-                    justify_content:
-                        JustifyContent::SpaceBetween,
+            card.spawn(Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::SpaceBetween,
+                ..default()
+            })
+            .with_children(|row| {
+                row.spawn(Node {
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(2),
                     ..default()
                 })
-                .with_children(|row| {
-                    row
-                        .spawn(Node {
-                            flex_direction:
-                                FlexDirection::Column,
-                            row_gap: px(2),
+                .with_children(|copy| {
+                    copy.spawn((
+                        NativeSkillsProfessionText {
+                            index,
+                            field: NativeSkillsProfessionField::Name,
+                        },
+                        Text::new("Empty slot"),
+                        TextFont {
+                            font_size: FontSize::Px(10.0),
                             ..default()
-                        })
-                        .with_children(|copy| {
-                            copy.spawn((
-                                NativeSkillsProfessionText {
-                                    index,
-                                    field:
-                                        NativeSkillsProfessionField::Name,
-                                },
-                                Text::new("Empty slot"),
-                                TextFont {
-                                    font_size:
-                                        FontSize::Px(
-                                            10.0,
-                                        ),
-                                    ..default()
-                                },
-                                TextColor(TEXT),
-                            ));
+                        },
+                        TextColor(TEXT),
+                    ));
 
-                            copy.spawn((
-                                NativeSkillsProfessionText {
-                                    index,
-                                    field:
-                                        NativeSkillsProfessionField::Detail,
-                                },
-                                Text::new(
-                                    "No profession selected",
-                                ),
-                                TextFont {
-                                    font_size:
-                                        FontSize::Px(
-                                            7.8,
-                                        ),
-                                    ..default()
-                                },
-                                TextColor(MUTED),
-                            ));
-                        });
+                    copy.spawn((
+                        NativeSkillsProfessionText {
+                            index,
+                            field: NativeSkillsProfessionField::Detail,
+                        },
+                        Text::new("No profession selected"),
+                        TextFont {
+                            font_size: FontSize::Px(7.8),
+                            ..default()
+                        },
+                        TextColor(MUTED),
+                    ));
                 });
+            });
 
-            card
-                .spawn((
-                    Node {
-                        width:
-                            Val::Percent(100.0),
-                        height: px(5),
-                        border:
-                            UiRect::all(px(1)),
-                        border_radius:
-                            BorderRadius::all(px(3)),
-                        ..default()
-                    },
-                    BackgroundColor(PANEL_DEEP),
-                    BorderColor::all(
-                        theme::GOLD_DARK,
-                    ),
-                ))
-                .with_child((
-                    NativeSkillsProfessionBar(
-                        index,
-                    ),
-                    Node {
-                        width:
-                            Val::Percent(0.0),
-                        height:
-                            Val::Percent(100.0),
-                        border_radius:
-                            BorderRadius::all(
-                                px(2),
-                            ),
-                        ..default()
-                    },
-                    BackgroundColor(
-                        Color::srgb(
-                            0.39,
-                            0.58,
-                            0.50,
-                        ),
-                    ),
-                ));
+            card.spawn((
+                Node {
+                    width: Val::Percent(100.0),
+                    height: px(5),
+                    border: UiRect::all(px(1)),
+                    border_radius: BorderRadius::all(px(3)),
+                    ..default()
+                },
+                BackgroundColor(PANEL_DEEP),
+                BorderColor::all(theme::GOLD_DARK),
+            ))
+            .with_child((
+                NativeSkillsProfessionBar(index),
+                Node {
+                    width: Val::Percent(0.0),
+                    height: Val::Percent(100.0),
+                    border_radius: BorderRadius::all(px(2)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgb(0.39, 0.58, 0.50)),
+            ));
         });
 }
 
@@ -3636,1289 +3089,215 @@ fn spawn_skills_panel(commands: &mut Commands) {
             native_modal::backdrop(),
         ))
         .with_children(|root| {
-            root
-                .spawn((
-                    Name::new("Greyhaven Skills interface"),
-                    native_modal::NativeModalSurface,
-                    native_modal::NativeDraggableSurface(
-                        native_modal::NativeModalWindow::Skills,
-                    ),
-                    native_modal::panel_node(
-                        940.0,
-                        700.0,
-                    ),
-                    native_modal::surface(),
-                    native_modal::surface_border(),
-                ))
-                .with_children(|panel| {
-                    panel
-                        .spawn((
-                            native_modal::header_node(),
-                            native_modal::divider_border(),
-                        ))
-                        .with_children(|header| {
-                            header
-                                .spawn((
-                                    Button,
-                                    native_modal::NativeDragHandle(
-                                        native_modal::NativeModalWindow::Skills,
-                                    ),
-                                    Node {
-                                        flex_grow: 1.0,
-                                        flex_direction:
-                                            FlexDirection::Column,
-                                        align_items:
-                                            AlignItems::FlexStart,
-                                        justify_content:
-                                            JustifyContent::Center,
-                                        row_gap: px(3),
-                                        ..default()
-                                    },
-                                ))
-                                .with_children(|copy| {
-                                    copy.spawn((
-                                        Text::new(
-                                            "GREYHAVEN INTERFACE",
-                                        ),
-                                        TextFont {
-                                            font_size:
-                                                FontSize::Px(
-                                                    10.0,
-                                                ),
-                                            ..default()
-                                        },
-                                        TextColor(
-                                            theme::GOLD,
-                                        ),
-                                    ));
-
-                                    copy.spawn((
-                                        Text::new(
-                                            "SKILLS",
-                                        ),
-                                        TextFont {
-                                            font_size:
-                                                FontSize::Px(
-                                                    21.0,
-                                                ),
-                                            ..default()
-                                        },
-                                        TextColor(
-                                            theme::GOLD_BRIGHT,
-                                        ),
-                                    ));
-                                });
-
-                            header
-                                .spawn((
-                                    Button,
-                                    NativePanelCloseButton::Skills,
-                                    Node {
-                                        width: px(38),
-                                        height: px(36),
-                                        border:
-                                            UiRect::all(
-                                                px(1),
-                                            ),
-                                        border_radius:
-                                            BorderRadius::all(
-                                                px(6),
-                                            ),
-                                        align_items:
-                                            AlignItems::Center,
-                                        justify_content:
-                                            JustifyContent::Center,
-                                        ..default()
-                                    },
-                                    BackgroundColor(
-                                        theme::BUTTON_BG,
-                                    ),
-                                    BorderColor::all(
-                                        theme::BUTTON_BORDER,
-                                    ),
-                                ))
-                                .with_child((
-                                    Text::new("X"),
-                                    TextFont {
-                                        font_size:
-                                            FontSize::Px(
-                                                12.0,
-                                            ),
-                                        ..default()
-                                    },
-                                    TextColor(TEXT),
-                                ));
-                        });
-
-                    panel
-                        .spawn(Node {
-                            width:
-                                Val::Percent(100.0),
-                            flex_grow: 1.0,
-                            flex_direction:
-                                FlexDirection::Column,
-                            row_gap: px(10),
-                            ..default()
-                        })
-                        .with_children(|body| {
-                            skills_section_heading(
-                                body,
-                                "COMBAT & CORE",
-                                "Character skills",
-                                "Classless progression · use what you want to improve",
-                            );
-
-                            body
-                                .spawn(Node {
-                                    width:
-                                        Val::Percent(
-                                            100.0,
-                                        ),
-                                    flex_direction:
-                                        FlexDirection::Row,
-                                    flex_wrap:
-                                        FlexWrap::Wrap,
-                                    align_content:
-                                        AlignContent::FlexStart,
-                                    column_gap: px(8),
-                                    row_gap: px(8),
-                                    ..default()
-                                })
-                                .with_children(|grid| {
-                                    for skill in [
-                                        NativeSkillsCore::Melee,
-                                        NativeSkillsCore::Distance,
-                                        NativeSkillsCore::Shielding,
-                                        NativeSkillsCore::Fletching,
-                                        NativeSkillsCore::Magic,
-                                    ] {
-                                        spawn_skills_core_card(
-                                            grid,
-                                            skill,
-                                        );
-                                    }
-                                });
-
-                            skills_section_heading(
-                                body,
-                                "ACTION BAR",
-                                "Abilities",
-                                "Learned combat actions",
-                            );
-
-                            body
-                                .spawn(Node {
-                                    width:
-                                        Val::Percent(
-                                            100.0,
-                                        ),
-                                    flex_direction:
-                                        FlexDirection::Row,
-                                    flex_wrap:
-                                        FlexWrap::Wrap,
-                                    align_content:
-                                        AlignContent::FlexStart,
-                                    column_gap: px(8),
-                                    row_gap: px(8),
-                                    ..default()
-                                })
-                                .with_children(|abilities| {
-                                    for index
-                                        in 0..4usize
-                                    {
-                                        spawn_skills_ability_card(
-                                            abilities,
-                                            index,
-                                        );
-                                    }
-                                });
-
-                            skills_section_heading(
-                                body,
-                                "PROFESSIONS",
-                                "Secondary skills",
-                                "Up to 2 gathering + 2 crafting",
-                            );
-
-                            body
-                                .spawn(Node {
-                                    width:
-                                        Val::Percent(
-                                            100.0,
-                                        ),
-                                    flex_direction:
-                                        FlexDirection::Row,
-                                    column_gap: px(8),
-                                    ..default()
-                                })
-                                .with_children(|columns| {
-                                    columns
-                                        .spawn((
-                                            skills_card_node(
-                                                Val::Percent(
-                                                    49.5,
-                                                ),
-                                                150.0,
-                                            ),
-                                            BackgroundColor(
-                                                Color::srgba(
-                                                    0.015,
-                                                    0.03,
-                                                    0.022,
-                                                    0.98,
-                                                ),
-                                            ),
-                                            BorderColor::all(
-                                                theme::BUTTON_BORDER,
-                                            ),
-                                        ))
-                                        .with_children(|gathering| {
-                                            gathering.spawn((
-                                                Text::new(
-                                                    "GATHERING   2 / 2",
-                                                ),
-                                                TextFont {
-                                                    font_size:
-                                                        FontSize::Px(
-                                                            9.0,
-                                                        ),
-                                                    ..default()
-                                                },
-                                                TextColor(
-                                                    theme::GOLD,
-                                                ),
-                                            ));
-
-                                            spawn_skills_profession_card(
-                                                gathering,
-                                                0,
-                                            );
-                                            spawn_skills_profession_card(
-                                                gathering,
-                                                1,
-                                            );
-                                        });
-
-                                    columns
-                                        .spawn((
-                                            skills_card_node(
-                                                Val::Percent(
-                                                    49.5,
-                                                ),
-                                                150.0,
-                                            ),
-                                            BackgroundColor(
-                                                Color::srgba(
-                                                    0.015,
-                                                    0.03,
-                                                    0.022,
-                                                    0.98,
-                                                ),
-                                            ),
-                                            BorderColor::all(
-                                                theme::BUTTON_BORDER,
-                                            ),
-                                        ))
-                                        .with_children(|crafting| {
-                                            crafting.spawn((
-                                                Text::new(
-                                                    "CRAFTING   2 / 2",
-                                                ),
-                                                TextFont {
-                                                    font_size:
-                                                        FontSize::Px(
-                                                            9.0,
-                                                        ),
-                                                    ..default()
-                                                },
-                                                TextColor(
-                                                    theme::GOLD,
-                                                ),
-                                            ));
-
-                                            spawn_skills_profession_card(
-                                                crafting,
-                                                2,
-                                            );
-                                            spawn_skills_profession_card(
-                                                crafting,
-                                                3,
-                                            );
-                                        });
-                                });
-                        });
-
-                    panel
-                        .spawn((
-                            native_modal::footer_node(),
-                            native_modal::divider_border(),
-                        ))
-                        .with_children(|footer| {
-                            footer.spawn((
-                                Text::new(
-                                    "K / Esc closes  ·  Character progression updates live",
+            root.spawn((
+                Name::new("Greyhaven Skills interface"),
+                native_modal::NativeModalSurface,
+                native_modal::NativeDraggableSurface(native_modal::NativeModalWindow::Skills),
+                native_modal::panel_node(940.0, 700.0),
+                native_modal::surface(),
+                native_modal::surface_border(),
+            ))
+            .with_children(|panel| {
+                panel
+                    .spawn((native_modal::header_node(), native_modal::divider_border()))
+                    .with_children(|header| {
+                        header
+                            .spawn((
+                                Button,
+                                native_modal::NativeDragHandle(
+                                    native_modal::NativeModalWindow::Skills,
                                 ),
-                                TextFont {
-                                    font_size:
-                                        FontSize::Px(
-                                            9.0,
-                                        ),
+                                Node {
+                                    flex_grow: 1.0,
+                                    flex_direction: FlexDirection::Column,
+                                    align_items: AlignItems::FlexStart,
+                                    justify_content: JustifyContent::Center,
+                                    row_gap: px(3),
                                     ..default()
                                 },
-                                TextColor(MUTED),
-                            ));
-                        });
-                });
-        });
-}
-
-fn spellbook_column_node(
-    width: Val,
-) -> Node {
-    Node {
-        width,
-        height: Val::Percent(100.0),
-        min_height: px(500),
-        padding: UiRect::all(px(10)),
-        border: UiRect::all(px(1)),
-        border_radius:
-            BorderRadius::all(px(7)),
-        flex_direction:
-            FlexDirection::Column,
-        row_gap: px(8),
-        ..default()
-    }
-}
-
-fn spawn_spellbook_heading(
-    parent: &mut ChildSpawnerCommands,
-    eyebrow: &str,
-    title: &str,
-) {
-    parent
-        .spawn(Node {
-            width: Val::Percent(100.0),
-            flex_direction:
-                FlexDirection::Column,
-            row_gap: px(2),
-            ..default()
-        })
-        .with_children(|copy| {
-            copy.spawn((
-                Text::new(eyebrow),
-                TextFont {
-                    font_size:
-                        FontSize::Px(8.0),
-                    ..default()
-                },
-                TextColor(theme::GOLD),
-            ));
-
-            copy.spawn((
-                Text::new(title),
-                TextFont {
-                    font_size:
-                        FontSize::Px(13.0),
-                    ..default()
-                },
-                TextColor(
-                    theme::GOLD_BRIGHT,
-                ),
-            ));
-        });
-}
-
-fn spawn_spellbook_summary_text(
-    parent: &mut ChildSpawnerCommands,
-    kind: NativeSpellbookSummaryText,
-    value: &str,
-) {
-    parent.spawn((
-        kind,
-        Text::new(value),
-        TextFont {
-            font_size: FontSize::Px(9.0),
-            ..default()
-        },
-        TextColor(TEXT),
-    ));
-}
-
-fn spawn_spellbook_learned_card(
-    parent: &mut ChildSpawnerCommands,
-    index: usize,
-) {
-    parent
-        .spawn((
-            Button,
-            NativeSpellbookButton::Learned(
-                index,
-            ),
-            Node {
-                width: Val::Percent(100.0),
-                min_height: px(58),
-                padding: UiRect::all(px(8)),
-                border: UiRect::all(px(1)),
-                border_radius:
-                    BorderRadius::all(px(6)),
-                flex_direction:
-                    FlexDirection::Row,
-                align_items:
-                    AlignItems::Center,
-                column_gap: px(8),
-                ..default()
-            },
-            BackgroundColor(
-                theme::BUTTON_BG,
-            ),
-            BorderColor::all(
-                theme::BUTTON_BORDER,
-            ),
-        ))
-        .with_children(|card| {
-            card
-                .spawn((
-                    Node {
-                        width: px(38),
-                        height: px(38),
-                        border:
-                            UiRect::all(px(1)),
-                        border_radius:
-                            BorderRadius::all(
-                                px(19),
-                            ),
-                        align_items:
-                            AlignItems::Center,
-                        justify_content:
-                            JustifyContent::Center,
-                        ..default()
-                    },
-                    BackgroundColor(
-                        Color::srgba(
-                            0.20,
-                            0.13,
-                            0.035,
-                            0.82,
-                        ),
-                    ),
-                    BorderColor::all(
-                        theme::GOLD_DARK,
-                    ),
-                ))
-                .with_child((
-                    Text::new("✦"),
-                    TextFont {
-                        font_size:
-                            FontSize::Px(15.0),
-                        ..default()
-                    },
-                    TextColor(
-                        theme::GOLD_BRIGHT,
-                    ),
-                ));
-
-            card
-                .spawn(Node {
-                    flex_grow: 1.0,
-                    flex_direction:
-                        FlexDirection::Column,
-                    row_gap: px(3),
-                    ..default()
-                })
-                .with_children(|copy| {
-                    copy.spawn((
-                        NativeSpellbookLearnedText {
-                            index,
-                            field:
-                                NativeSpellbookListField::Name,
-                        },
-                        Text::new(""),
-                        TextFont {
-                            font_size:
-                                FontSize::Px(
-                                    10.0,
-                                ),
-                            ..default()
-                        },
-                        TextColor(TEXT),
-                    ));
-
-                    copy.spawn((
-                        NativeSpellbookLearnedText {
-                            index,
-                            field:
-                                NativeSpellbookListField::Meta,
-                        },
-                        Text::new(""),
-                        TextFont {
-                            font_size:
-                                FontSize::Px(
-                                    7.5,
-                                ),
-                            ..default()
-                        },
-                        TextColor(MUTED),
-                    ));
-                });
-        });
-}
-
-fn spawn_spellbook_locked_card(
-    parent: &mut ChildSpawnerCommands,
-    index: usize,
-) {
-    parent
-        .spawn((
-            Node {
-                width: Val::Percent(100.0),
-                min_height: px(44),
-                padding:
-                    UiRect::all(px(7)),
-                border:
-                    UiRect::all(px(1)),
-                border_radius:
-                    BorderRadius::all(px(5)),
-                flex_direction:
-                    FlexDirection::Column,
-                row_gap: px(2),
-                ..default()
-            },
-            BackgroundColor(PANEL_DEEP),
-            BorderColor::all(
-                theme::BUTTON_BORDER,
-            ),
-        ))
-        .with_children(|card| {
-            card.spawn((
-                NativeSpellbookLockedText {
-                    index,
-                    field:
-                        NativeSpellbookListField::Name,
-                },
-                Text::new(""),
-                TextFont {
-                    font_size:
-                        FontSize::Px(8.8),
-                    ..default()
-                },
-                TextColor(MUTED),
-            ));
-
-            card.spawn((
-                NativeSpellbookLockedText {
-                    index,
-                    field:
-                        NativeSpellbookListField::Meta,
-                },
-                Text::new(""),
-                TextFont {
-                    font_size:
-                        FontSize::Px(7.2),
-                    ..default()
-                },
-                TextColor(MUTED),
-            ));
-        });
-}
-
-fn spawn_spellbook_detail_text(
-    parent: &mut ChildSpawnerCommands,
-    kind: NativeSpellbookDetailText,
-    value: &str,
-    size: f32,
-    color: Color,
-) {
-    parent.spawn((
-        kind,
-        Text::new(value),
-        TextFont {
-            font_size:
-                FontSize::Px(size),
-            ..default()
-        },
-        TextColor(color),
-    ));
-}
-
-fn spawn_spellbook_action_button(
-    parent: &mut ChildSpawnerCommands,
-    action: NativeSpellbookButton,
-    label: &str,
-    primary: bool,
-    width: f32,
-) {
-    parent
-        .spawn((
-            Button,
-            action,
-            Node {
-                width: px(width),
-                height: px(38),
-                padding:
-                    UiRect::horizontal(
-                        px(10),
-                    ),
-                border:
-                    UiRect::all(px(1)),
-                border_radius:
-                    BorderRadius::all(px(6)),
-                align_items:
-                    AlignItems::Center,
-                justify_content:
-                    JustifyContent::Center,
-                ..default()
-            },
-            BackgroundColor(
-                if primary {
-                    Color::srgba(
-                        0.24,
-                        0.16,
-                        0.035,
-                        0.90,
-                    )
-                } else {
-                    theme::BUTTON_BG
-                },
-            ),
-            BorderColor::all(
-                if primary {
-                    theme::GOLD
-                } else {
-                    theme::BUTTON_BORDER
-                },
-            ),
-        ))
-        .with_child((
-            Text::new(label),
-            TextFont {
-                font_size:
-                    FontSize::Px(9.0),
-                ..default()
-            },
-            TextColor(
-                if primary {
-                    theme::GOLD_BRIGHT
-                } else {
-                    TEXT
-                },
-            ),
-        ));
-}
-
-fn spawn_spellbook_panel(commands: &mut Commands) {
-    commands
-        .spawn((
-            Name::new("Native modal · spellbook · Greyhaven reference"),
-            NativeUiPanel::Spells,
-            native_modal::NativeModalRoot,
-            GlobalZIndex(194),
-            Visibility::Hidden,
-            native_modal::root_node(),
-            native_modal::backdrop(),
-        ))
-        .with_children(|root| {
-            root
-                .spawn((
-                    Name::new("Greyhaven Spellbook interface"),
-                    native_modal::NativeModalSurface,
-                    native_modal::NativeDraggableSurface(
-                        native_modal::NativeModalWindow::Spells,
-                    ),
-                    native_modal::panel_node(
-                        900.0,
-                        650.0,
-                    ),
-                    native_modal::surface(),
-                    native_modal::surface_border(),
-                ))
-                .with_children(|panel| {
-                    panel
-                        .spawn((
-                            native_modal::header_node(),
-                            native_modal::divider_border(),
-                        ))
-                        .with_children(|header| {
-                            header
-                                .spawn((
-                                    Button,
-                                    native_modal::NativeDragHandle(
-                                        native_modal::NativeModalWindow::Spells,
-                                    ),
-                                    Node {
-                                        flex_grow: 1.0,
-                                        height: Val::Percent(100.0),
-                                        min_height: px(48),
-                                        flex_direction:
-                                            FlexDirection::Column,
-                                        align_items:
-                                            AlignItems::FlexStart,
-                                        justify_content:
-                                            JustifyContent::Center,
-                                        row_gap: px(3),
+                            ))
+                            .with_children(|copy| {
+                                copy.spawn((
+                                    Text::new("GREYHAVEN INTERFACE"),
+                                    TextFont {
+                                        font_size: FontSize::Px(10.0),
                                         ..default()
                                     },
-                                ))
-                                .with_children(|copy| {
-                                    copy.spawn((
-                                        Text::new(
-                                            "GREYHAVEN INTERFACE",
-                                        ),
-                                        TextFont {
-                                            font_size:
-                                                FontSize::Px(
-                                                    10.0,
-                                                ),
-                                            ..default()
-                                        },
-                                        TextColor(
-                                            theme::GOLD,
-                                        ),
-                                    ));
+                                    TextColor(theme::GOLD),
+                                ));
 
-                                    copy.spawn((
-                                        Text::new(
-                                            "SPELLBOOK",
-                                        ),
-                                        TextFont {
-                                            font_size:
-                                                FontSize::Px(
-                                                    21.0,
-                                                ),
-                                            ..default()
-                                        },
-                                        TextColor(
-                                            theme::GOLD_BRIGHT,
-                                        ),
-                                    ));
-                                });
+                                copy.spawn((
+                                    Text::new("SKILLS"),
+                                    TextFont {
+                                        font_size: FontSize::Px(21.0),
+                                        ..default()
+                                    },
+                                    TextColor(theme::GOLD_BRIGHT),
+                                ));
+                            });
 
-                            spawn_spellbook_action_button(
-                                header,
-                                NativeSpellbookButton::Close,
-                                "X",
-                                false,
-                                38.0,
-                            );
+                        header
+                            .spawn((
+                                Button,
+                                NativePanelCloseButton::Skills,
+                                Node {
+                                    width: px(38),
+                                    height: px(36),
+                                    border: UiRect::all(px(1)),
+                                    border_radius: BorderRadius::all(px(6)),
+                                    align_items: AlignItems::Center,
+                                    justify_content: JustifyContent::Center,
+                                    ..default()
+                                },
+                                BackgroundColor(theme::BUTTON_BG),
+                                BorderColor::all(theme::BUTTON_BORDER),
+                            ))
+                            .with_child((
+                                Text::new("X"),
+                                TextFont {
+                                    font_size: FontSize::Px(12.0),
+                                    ..default()
+                                },
+                                TextColor(TEXT),
+                            ));
+                    });
+
+                panel
+                    .spawn(Node {
+                        width: Val::Percent(100.0),
+                        flex_grow: 1.0,
+                        flex_direction: FlexDirection::Column,
+                        row_gap: px(10),
+                        ..default()
+                    })
+                    .with_children(|body| {
+                        skills_section_heading(
+                            body,
+                            "COMBAT & CORE",
+                            "Character skills",
+                            "Classless progression · use what you want to improve",
+                        );
+
+                        body.spawn(Node {
+                            width: Val::Percent(100.0),
+                            flex_direction: FlexDirection::Row,
+                            flex_wrap: FlexWrap::Wrap,
+                            align_content: AlignContent::FlexStart,
+                            column_gap: px(8),
+                            row_gap: px(8),
+                            ..default()
+                        })
+                        .with_children(|grid| {
+                            for skill in [
+                                NativeSkillsCore::Melee,
+                                NativeSkillsCore::Distance,
+                                NativeSkillsCore::Shielding,
+                                NativeSkillsCore::Fletching,
+                                NativeSkillsCore::Magic,
+                            ] {
+                                spawn_skills_core_card(grid, skill);
+                            }
                         });
 
-                    panel
-                        .spawn((
-                            Node {
-                                width:
-                                    Val::Percent(
-                                        100.0,
-                                    ),
-                                min_height:
-                                    px(58),
-                                padding:
-                                    UiRect::all(
-                                        px(10),
-                                    ),
-                                border:
-                                    UiRect::all(
-                                        px(1),
-                                    ),
-                                border_radius:
-                                    BorderRadius::all(
-                                        px(7),
-                                    ),
-                                flex_direction:
-                                    FlexDirection::Row,
-                                align_items:
-                                    AlignItems::Center,
-                                justify_content:
-                                    JustifyContent::SpaceBetween,
-                                ..default()
-                            },
-                            BackgroundColor(
-                                PANEL_SOFT,
-                            ),
-                            BorderColor::all(
-                                theme::BUTTON_BORDER,
-                            ),
-                        ))
-                        .with_children(|summary| {
-                            summary
-                                .spawn(Node {
-                                    flex_direction:
-                                        FlexDirection::Column,
-                                    row_gap: px(3),
-                                    ..default()
-                                })
-                                .with_children(|left| {
-                                    left.spawn((
-                                        Text::new(
-                                            "ARCANE MASTERY",
-                                        ),
-                                        TextFont {
-                                            font_size:
-                                                FontSize::Px(
-                                                    8.0,
-                                                ),
-                                            ..default()
-                                        },
-                                        TextColor(
-                                            theme::GOLD,
-                                        ),
-                                    ));
+                        skills_section_heading(
+                            body,
+                            "ACTION BAR",
+                            "Abilities",
+                            "Learned combat actions",
+                        );
 
-                                    spawn_spellbook_summary_text(
-                                        left,
-                                        NativeSpellbookSummaryText::Magic,
-                                        "Magic Level 0",
-                                    );
-                                });
-
-                            summary
-                                .spawn(Node {
-                                    flex_direction:
-                                        FlexDirection::Column,
-                                    align_items:
-                                        AlignItems::FlexEnd,
-                                    row_gap: px(3),
-                                    ..default()
-                                })
-                                .with_children(|right| {
-                                    right.spawn((
-                                        Text::new(
-                                            "LIBRARY",
-                                        ),
-                                        TextFont {
-                                            font_size:
-                                                FontSize::Px(
-                                                    8.0,
-                                                ),
-                                            ..default()
-                                        },
-                                        TextColor(
-                                            theme::GOLD,
-                                        ),
-                                    ));
-
-                                    spawn_spellbook_summary_text(
-                                        right,
-                                        NativeSpellbookSummaryText::Learned,
-                                        "0 / 0 learned",
-                                    );
-                                });
+                        body.spawn(Node {
+                            width: Val::Percent(100.0),
+                            flex_direction: FlexDirection::Row,
+                            flex_wrap: FlexWrap::Wrap,
+                            align_content: AlignContent::FlexStart,
+                            column_gap: px(8),
+                            row_gap: px(8),
+                            ..default()
+                        })
+                        .with_children(|abilities| {
+                            for index in 0..4usize {
+                                spawn_skills_ability_card(abilities, index);
+                            }
                         });
 
-                    panel
-                        .spawn(Node {
-                            width:
-                                Val::Percent(100.0),
-                            flex_grow: 1.0,
-                            min_height: px(460),
-                            flex_direction:
-                                FlexDirection::Row,
-                            column_gap: px(10),
+                        skills_section_heading(
+                            body,
+                            "PROFESSIONS",
+                            "Secondary skills",
+                            "Up to 2 gathering + 2 crafting",
+                        );
+
+                        body.spawn(Node {
+                            width: Val::Percent(100.0),
+                            flex_direction: FlexDirection::Row,
+                            column_gap: px(8),
                             ..default()
                         })
                         .with_children(|columns| {
                             columns
                                 .spawn((
-                                    spellbook_column_node(
-                                        Val::Percent(
-                                            42.0,
-                                        ),
-                                    ),
-                                    BackgroundColor(
-                                        Color::srgba(
-                                            0.015,
-                                            0.03,
-                                            0.022,
-                                            0.98,
-                                        ),
-                                    ),
-                                    BorderColor::all(
-                                        theme::BUTTON_BORDER,
-                                    ),
+                                    skills_card_node(Val::Percent(49.5), 150.0),
+                                    BackgroundColor(Color::srgba(0.015, 0.03, 0.022, 0.98)),
+                                    BorderColor::all(theme::BUTTON_BORDER),
                                 ))
-                                .with_children(|library| {
-                                    spawn_spellbook_heading(
-                                        library,
-                                        "KNOWN MAGIC",
-                                        "LEARNED SPELLS",
-                                    );
-
-                                    for index
-                                        in 0..8usize
-                                    {
-                                        spawn_spellbook_learned_card(
-                                            library,
-                                            index,
-                                        );
-                                    }
-
-                                    library.spawn((
-                                        Node {
-                                            width:
-                                                Val::Percent(
-                                                    100.0,
-                                                ),
-                                            height: px(1),
-                                            margin:
-                                                UiRect::vertical(
-                                                    px(3),
-                                                ),
+                                .with_children(|gathering| {
+                                    gathering.spawn((
+                                        Text::new("GATHERING   2 / 2"),
+                                        TextFont {
+                                            font_size: FontSize::Px(9.0),
                                             ..default()
                                         },
-                                        BackgroundColor(
-                                            theme::GOLD_DARK,
-                                        ),
+                                        TextColor(theme::GOLD),
                                     ));
 
-                                    spawn_spellbook_heading(
-                                        library,
-                                        "DISCOVERY",
-                                        "NOT LEARNED",
-                                    );
-
-                                    for index
-                                        in 0..4usize
-                                    {
-                                        spawn_spellbook_locked_card(
-                                            library,
-                                            index,
-                                        );
-                                    }
+                                    spawn_skills_profession_card(gathering, 0);
+                                    spawn_skills_profession_card(gathering, 1);
                                 });
 
                             columns
                                 .spawn((
-                                    spellbook_column_node(
-                                        Val::Percent(
-                                            58.0,
-                                        ),
-                                    ),
-                                    BackgroundColor(
-                                        PANEL_SOFT,
-                                    ),
-                                    BorderColor::all(
-                                        theme::BUTTON_BORDER,
-                                    ),
+                                    skills_card_node(Val::Percent(49.5), 150.0),
+                                    BackgroundColor(Color::srgba(0.015, 0.03, 0.022, 0.98)),
+                                    BorderColor::all(theme::BUTTON_BORDER),
                                 ))
-                                .with_children(|detail| {
-                                    spawn_spellbook_heading(
-                                        detail,
-                                        "SELECTED MAGIC",
-                                        "SPELL DETAIL",
-                                    );
-
-                                    detail
-                                        .spawn((
-                                            Node {
-                                                width:
-                                                    Val::Percent(
-                                                        100.0,
-                                                    ),
-                                                min_height:
-                                                    px(104),
-                                                padding:
-                                                    UiRect::all(
-                                                        px(12),
-                                                    ),
-                                                border:
-                                                    UiRect::all(
-                                                        px(1),
-                                                    ),
-                                                border_radius:
-                                                    BorderRadius::all(
-                                                        px(7),
-                                                    ),
-                                                flex_direction:
-                                                    FlexDirection::Row,
-                                                align_items:
-                                                    AlignItems::Center,
-                                                column_gap:
-                                                    px(12),
-                                                ..default()
-                                            },
-                                            BackgroundColor(
-                                                Color::srgba(
-                                                    0.12,
-                                                    0.08,
-                                                    0.025,
-                                                    0.42,
-                                                ),
-                                            ),
-                                            BorderColor::all(
-                                                theme::GOLD_DARK,
-                                            ),
-                                        ))
-                                        .with_children(|hero| {
-                                            hero
-                                                .spawn((
-                                                    Node {
-                                                        width:
-                                                            px(64),
-                                                        height:
-                                                            px(64),
-                                                        border:
-                                                            UiRect::all(
-                                                                px(1),
-                                                            ),
-                                                        border_radius:
-                                                            BorderRadius::all(
-                                                                px(32),
-                                                            ),
-                                                        align_items:
-                                                            AlignItems::Center,
-                                                        justify_content:
-                                                            JustifyContent::Center,
-                                                        ..default()
-                                                    },
-                                                    BackgroundColor(
-                                                        Color::srgba(
-                                                            0.20,
-                                                            0.13,
-                                                            0.035,
-                                                            0.86,
-                                                        ),
-                                                    ),
-                                                    BorderColor::all(
-                                                        theme::GOLD,
-                                                    ),
-                                                ))
-                                                .with_child((
-                                                    Text::new(
-                                                        "✦",
-                                                    ),
-                                                    TextFont {
-                                                        font_size:
-                                                            FontSize::Px(
-                                                                28.0,
-                                                            ),
-                                                        ..default()
-                                                    },
-                                                    TextColor(
-                                                        theme::GOLD_BRIGHT,
-                                                    ),
-                                                ));
-
-                                            hero
-                                                .spawn(Node {
-                                                    flex_grow:
-                                                        1.0,
-                                                    flex_direction:
-                                                        FlexDirection::Column,
-                                                    row_gap:
-                                                        px(5),
-                                                    ..default()
-                                                })
-                                                .with_children(|copy| {
-                                                    spawn_spellbook_detail_text(
-                                                        copy,
-                                                        NativeSpellbookDetailText::Name,
-                                                        "Select a spell",
-                                                        16.0,
-                                                        theme::GOLD_BRIGHT,
-                                                    );
-
-                                                    spawn_spellbook_detail_text(
-                                                        copy,
-                                                        NativeSpellbookDetailText::Description,
-                                                        "Choose learned magic from the library.",
-                                                        9.0,
-                                                        MUTED,
-                                                    );
-                                                });
-                                        });
-
-                                    detail
-                                        .spawn((
-                                            Node {
-                                                width:
-                                                    Val::Percent(
-                                                        100.0,
-                                                    ),
-                                                padding:
-                                                    UiRect::all(
-                                                        px(10),
-                                                    ),
-                                                border:
-                                                    UiRect::all(
-                                                        px(1),
-                                                    ),
-                                                border_radius:
-                                                    BorderRadius::all(
-                                                        px(6),
-                                                    ),
-                                                flex_direction:
-                                                    FlexDirection::Column,
-                                                row_gap:
-                                                    px(7),
-                                                ..default()
-                                            },
-                                            BackgroundColor(
-                                                PANEL_DEEP,
-                                            ),
-                                            BorderColor::all(
-                                                theme::BUTTON_BORDER,
-                                            ),
-                                        ))
-                                        .with_children(|facts| {
-                                            facts.spawn((
-                                                Text::new(
-                                                    "CASTING",
-                                                ),
-                                                TextFont {
-                                                    font_size:
-                                                        FontSize::Px(
-                                                            8.0,
-                                                        ),
-                                                    ..default()
-                                                },
-                                                TextColor(
-                                                    theme::GOLD,
-                                                ),
-                                            ));
-
-                                            spawn_spellbook_detail_text(
-                                                facts,
-                                                NativeSpellbookDetailText::Stats,
-                                                "Mana —  ·  Damage —  ·  Range —  ·  Cooldown —",
-                                                9.0,
-                                                TEXT,
-                                            );
-
-                                            spawn_spellbook_detail_text(
-                                                facts,
-                                                NativeSpellbookDetailText::Requirement,
-                                                "Required magic level —",
-                                                8.5,
-                                                MUTED,
-                                            );
-                                        });
-
-                                    detail
-                                        .spawn((
-                                            Node {
-                                                width:
-                                                    Val::Percent(
-                                                        100.0,
-                                                    ),
-                                                padding:
-                                                    UiRect::all(
-                                                        px(10),
-                                                    ),
-                                                border:
-                                                    UiRect::all(
-                                                        px(1),
-                                                    ),
-                                                border_radius:
-                                                    BorderRadius::all(
-                                                        px(6),
-                                                    ),
-                                                flex_direction:
-                                                    FlexDirection::Column,
-                                                row_gap:
-                                                    px(5),
-                                                ..default()
-                                            },
-                                            BackgroundColor(
-                                                PANEL_DEEP,
-                                            ),
-                                            BorderColor::all(
-                                                theme::BUTTON_BORDER,
-                                            ),
-                                        ))
-                                        .with_children(|targeting| {
-                                            targeting.spawn((
-                                                Text::new(
-                                                    "TARGETING",
-                                                ),
-                                                TextFont {
-                                                    font_size:
-                                                        FontSize::Px(
-                                                            8.0,
-                                                        ),
-                                                    ..default()
-                                                },
-                                                TextColor(
-                                                    theme::GOLD,
-                                                ),
-                                            ));
-
-                                            spawn_spellbook_detail_text(
-                                                targeting,
-                                                NativeSpellbookDetailText::CastHint,
-                                                "Select a creature target before casting.",
-                                                8.5,
-                                                MUTED,
-                                            );
-                                        });
-
-                                    detail
-                                        .spawn(Node {
-                                            width:
-                                                Val::Percent(
-                                                    100.0,
-                                                ),
-                                            margin:
-                                                UiRect::top(
-                                                    px(4),
-                                                ),
-                                            flex_direction:
-                                                FlexDirection::Row,
-                                            justify_content:
-                                                JustifyContent::FlexEnd,
-                                            column_gap:
-                                                px(7),
+                                .with_children(|crafting| {
+                                    crafting.spawn((
+                                        Text::new("CRAFTING   2 / 2"),
+                                        TextFont {
+                                            font_size: FontSize::Px(9.0),
                                             ..default()
-                                        })
-                                        .with_children(|actions| {
-                                            spawn_spellbook_action_button(
-                                                actions,
-                                                NativeSpellbookButton::Skills,
-                                                "SKILLS",
-                                                false,
-                                                88.0,
-                                            );
+                                        },
+                                        TextColor(theme::GOLD),
+                                    ));
 
-                                            spawn_spellbook_action_button(
-                                                actions,
-                                                NativeSpellbookButton::Cast,
-                                                "CAST",
-                                                true,
-                                                112.0,
-                                            );
-                                        });
+                                    spawn_skills_profession_card(crafting, 2);
+                                    spawn_skills_profession_card(crafting, 3);
                                 });
                         });
+                    });
 
-                    panel
-                        .spawn((
-                            native_modal::footer_node(),
-                            native_modal::divider_border(),
-                        ))
-                        .with_children(|footer| {
-                            footer.spawn((
-                                Text::new(
-                                    "P / Esc close  ·  ↑/↓ select  ·  F cast selected spell",
-                                ),
-                                TextFont {
-                                    font_size:
-                                        FontSize::Px(
-                                            8.5,
-                                        ),
-                                    ..default()
-                                },
-                                TextColor(MUTED),
-                            ));
-                        });
-                });
+                panel
+                    .spawn((native_modal::footer_node(), native_modal::divider_border()))
+                    .with_children(|footer| {
+                        footer.spawn((
+                            Text::new("K / Esc closes  ·  Character progression updates live"),
+                            TextFont {
+                                font_size: FontSize::Px(9.0),
+                                ..default()
+                            },
+                            TextColor(MUTED),
+                        ));
+                    });
+            });
         });
 }
 
-
-fn crafting_column_node(
-    width: Val,
-) -> Node {
+fn spellbook_column_node(width: Val) -> Node {
     Node {
         width,
         height: Val::Percent(100.0),
-        min_height: px(520),
+        min_height: px(500),
         padding: UiRect::all(px(10)),
         border: UiRect::all(px(1)),
         border_radius: BorderRadius::all(px(7)),
@@ -4928,11 +3307,7 @@ fn crafting_column_node(
     }
 }
 
-fn spawn_crafting_column_heading(
-    parent: &mut ChildSpawnerCommands,
-    eyebrow: &str,
-    title: &str,
-) {
+fn spawn_spellbook_heading(parent: &mut ChildSpawnerCommands, eyebrow: &str, title: &str) {
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
@@ -4961,10 +3336,618 @@ fn spawn_crafting_column_heading(
         });
 }
 
-fn spawn_crafting_category_button(
+fn spawn_spellbook_summary_text(
     parent: &mut ChildSpawnerCommands,
-    index: usize,
+    kind: NativeSpellbookSummaryText,
+    value: &str,
 ) {
+    parent.spawn((
+        kind,
+        Text::new(value),
+        TextFont {
+            font_size: FontSize::Px(9.0),
+            ..default()
+        },
+        TextColor(TEXT),
+    ));
+}
+
+fn spawn_spellbook_learned_card(parent: &mut ChildSpawnerCommands, index: usize) {
+    parent
+        .spawn((
+            Button,
+            NativeSpellbookButton::Learned(index),
+            Node {
+                width: Val::Percent(100.0),
+                min_height: px(58),
+                padding: UiRect::all(px(8)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(6)),
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                column_gap: px(8),
+                ..default()
+            },
+            BackgroundColor(theme::BUTTON_BG),
+            BorderColor::all(theme::BUTTON_BORDER),
+        ))
+        .with_children(|card| {
+            card.spawn((
+                Node {
+                    width: px(38),
+                    height: px(38),
+                    border: UiRect::all(px(1)),
+                    border_radius: BorderRadius::all(px(19)),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.20, 0.13, 0.035, 0.82)),
+                BorderColor::all(theme::GOLD_DARK),
+            ))
+            .with_child((
+                Text::new("✦"),
+                TextFont {
+                    font_size: FontSize::Px(15.0),
+                    ..default()
+                },
+                TextColor(theme::GOLD_BRIGHT),
+            ));
+
+            card.spawn(Node {
+                flex_grow: 1.0,
+                flex_direction: FlexDirection::Column,
+                row_gap: px(3),
+                ..default()
+            })
+            .with_children(|copy| {
+                copy.spawn((
+                    NativeSpellbookLearnedText {
+                        index,
+                        field: NativeSpellbookListField::Name,
+                    },
+                    Text::new(""),
+                    TextFont {
+                        font_size: FontSize::Px(10.0),
+                        ..default()
+                    },
+                    TextColor(TEXT),
+                ));
+
+                copy.spawn((
+                    NativeSpellbookLearnedText {
+                        index,
+                        field: NativeSpellbookListField::Meta,
+                    },
+                    Text::new(""),
+                    TextFont {
+                        font_size: FontSize::Px(7.5),
+                        ..default()
+                    },
+                    TextColor(MUTED),
+                ));
+            });
+        });
+}
+
+fn spawn_spellbook_locked_card(parent: &mut ChildSpawnerCommands, index: usize) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                min_height: px(44),
+                padding: UiRect::all(px(7)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(5)),
+                flex_direction: FlexDirection::Column,
+                row_gap: px(2),
+                ..default()
+            },
+            BackgroundColor(PANEL_DEEP),
+            BorderColor::all(theme::BUTTON_BORDER),
+        ))
+        .with_children(|card| {
+            card.spawn((
+                NativeSpellbookLockedText {
+                    index,
+                    field: NativeSpellbookListField::Name,
+                },
+                Text::new(""),
+                TextFont {
+                    font_size: FontSize::Px(8.8),
+                    ..default()
+                },
+                TextColor(MUTED),
+            ));
+
+            card.spawn((
+                NativeSpellbookLockedText {
+                    index,
+                    field: NativeSpellbookListField::Meta,
+                },
+                Text::new(""),
+                TextFont {
+                    font_size: FontSize::Px(7.2),
+                    ..default()
+                },
+                TextColor(MUTED),
+            ));
+        });
+}
+
+fn spawn_spellbook_detail_text(
+    parent: &mut ChildSpawnerCommands,
+    kind: NativeSpellbookDetailText,
+    value: &str,
+    size: f32,
+    color: Color,
+) {
+    parent.spawn((
+        kind,
+        Text::new(value),
+        TextFont {
+            font_size: FontSize::Px(size),
+            ..default()
+        },
+        TextColor(color),
+    ));
+}
+
+fn spawn_spellbook_action_button(
+    parent: &mut ChildSpawnerCommands,
+    action: NativeSpellbookButton,
+    label: &str,
+    primary: bool,
+    width: f32,
+) {
+    parent
+        .spawn((
+            Button,
+            action,
+            Node {
+                width: px(width),
+                height: px(38),
+                padding: UiRect::horizontal(px(10)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(6)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(if primary {
+                Color::srgba(0.24, 0.16, 0.035, 0.90)
+            } else {
+                theme::BUTTON_BG
+            }),
+            BorderColor::all(if primary {
+                theme::GOLD
+            } else {
+                theme::BUTTON_BORDER
+            }),
+        ))
+        .with_child((
+            Text::new(label),
+            TextFont {
+                font_size: FontSize::Px(9.0),
+                ..default()
+            },
+            TextColor(if primary { theme::GOLD_BRIGHT } else { TEXT }),
+        ));
+}
+
+fn spawn_spellbook_panel(commands: &mut Commands) {
+    commands
+        .spawn((
+            Name::new("Native modal · spellbook · Greyhaven reference"),
+            NativeUiPanel::Spells,
+            native_modal::NativeModalRoot,
+            GlobalZIndex(194),
+            Visibility::Hidden,
+            native_modal::root_node(),
+            native_modal::backdrop(),
+        ))
+        .with_children(|root| {
+            root.spawn((
+                Name::new("Greyhaven Spellbook interface"),
+                native_modal::NativeModalSurface,
+                native_modal::NativeDraggableSurface(native_modal::NativeModalWindow::Spells),
+                native_modal::panel_node(900.0, 650.0),
+                native_modal::surface(),
+                native_modal::surface_border(),
+            ))
+            .with_children(|panel| {
+                panel
+                    .spawn((native_modal::header_node(), native_modal::divider_border()))
+                    .with_children(|header| {
+                        header
+                            .spawn((
+                                Button,
+                                native_modal::NativeDragHandle(
+                                    native_modal::NativeModalWindow::Spells,
+                                ),
+                                Node {
+                                    flex_grow: 1.0,
+                                    height: Val::Percent(100.0),
+                                    min_height: px(48),
+                                    flex_direction: FlexDirection::Column,
+                                    align_items: AlignItems::FlexStart,
+                                    justify_content: JustifyContent::Center,
+                                    row_gap: px(3),
+                                    ..default()
+                                },
+                            ))
+                            .with_children(|copy| {
+                                copy.spawn((
+                                    Text::new("GREYHAVEN INTERFACE"),
+                                    TextFont {
+                                        font_size: FontSize::Px(10.0),
+                                        ..default()
+                                    },
+                                    TextColor(theme::GOLD),
+                                ));
+
+                                copy.spawn((
+                                    Text::new("SPELLBOOK"),
+                                    TextFont {
+                                        font_size: FontSize::Px(21.0),
+                                        ..default()
+                                    },
+                                    TextColor(theme::GOLD_BRIGHT),
+                                ));
+                            });
+
+                        spawn_spellbook_action_button(
+                            header,
+                            NativeSpellbookButton::Close,
+                            "X",
+                            false,
+                            38.0,
+                        );
+                    });
+
+                panel
+                    .spawn((
+                        Node {
+                            width: Val::Percent(100.0),
+                            min_height: px(58),
+                            padding: UiRect::all(px(10)),
+                            border: UiRect::all(px(1)),
+                            border_radius: BorderRadius::all(px(7)),
+                            flex_direction: FlexDirection::Row,
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::SpaceBetween,
+                            ..default()
+                        },
+                        BackgroundColor(PANEL_SOFT),
+                        BorderColor::all(theme::BUTTON_BORDER),
+                    ))
+                    .with_children(|summary| {
+                        summary
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Column,
+                                row_gap: px(3),
+                                ..default()
+                            })
+                            .with_children(|left| {
+                                left.spawn((
+                                    Text::new("ARCANE MASTERY"),
+                                    TextFont {
+                                        font_size: FontSize::Px(8.0),
+                                        ..default()
+                                    },
+                                    TextColor(theme::GOLD),
+                                ));
+
+                                spawn_spellbook_summary_text(
+                                    left,
+                                    NativeSpellbookSummaryText::Magic,
+                                    "Magic Level 0",
+                                );
+                            });
+
+                        summary
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Column,
+                                align_items: AlignItems::FlexEnd,
+                                row_gap: px(3),
+                                ..default()
+                            })
+                            .with_children(|right| {
+                                right.spawn((
+                                    Text::new("LIBRARY"),
+                                    TextFont {
+                                        font_size: FontSize::Px(8.0),
+                                        ..default()
+                                    },
+                                    TextColor(theme::GOLD),
+                                ));
+
+                                spawn_spellbook_summary_text(
+                                    right,
+                                    NativeSpellbookSummaryText::Learned,
+                                    "0 / 0 learned",
+                                );
+                            });
+                    });
+
+                panel
+                    .spawn(Node {
+                        width: Val::Percent(100.0),
+                        flex_grow: 1.0,
+                        min_height: px(460),
+                        flex_direction: FlexDirection::Row,
+                        column_gap: px(10),
+                        ..default()
+                    })
+                    .with_children(|columns| {
+                        columns
+                            .spawn((
+                                spellbook_column_node(Val::Percent(42.0)),
+                                BackgroundColor(Color::srgba(0.015, 0.03, 0.022, 0.98)),
+                                BorderColor::all(theme::BUTTON_BORDER),
+                            ))
+                            .with_children(|library| {
+                                spawn_spellbook_heading(library, "KNOWN MAGIC", "LEARNED SPELLS");
+
+                                for index in 0..8usize {
+                                    spawn_spellbook_learned_card(library, index);
+                                }
+
+                                library.spawn((
+                                    Node {
+                                        width: Val::Percent(100.0),
+                                        height: px(1),
+                                        margin: UiRect::vertical(px(3)),
+                                        ..default()
+                                    },
+                                    BackgroundColor(theme::GOLD_DARK),
+                                ));
+
+                                spawn_spellbook_heading(library, "DISCOVERY", "NOT LEARNED");
+
+                                for index in 0..4usize {
+                                    spawn_spellbook_locked_card(library, index);
+                                }
+                            });
+
+                        columns
+                            .spawn((
+                                spellbook_column_node(Val::Percent(58.0)),
+                                BackgroundColor(PANEL_SOFT),
+                                BorderColor::all(theme::BUTTON_BORDER),
+                            ))
+                            .with_children(|detail| {
+                                spawn_spellbook_heading(detail, "SELECTED MAGIC", "SPELL DETAIL");
+
+                                detail
+                                    .spawn((
+                                        Node {
+                                            width: Val::Percent(100.0),
+                                            min_height: px(104),
+                                            padding: UiRect::all(px(12)),
+                                            border: UiRect::all(px(1)),
+                                            border_radius: BorderRadius::all(px(7)),
+                                            flex_direction: FlexDirection::Row,
+                                            align_items: AlignItems::Center,
+                                            column_gap: px(12),
+                                            ..default()
+                                        },
+                                        BackgroundColor(Color::srgba(0.12, 0.08, 0.025, 0.42)),
+                                        BorderColor::all(theme::GOLD_DARK),
+                                    ))
+                                    .with_children(|hero| {
+                                        hero.spawn((
+                                            Node {
+                                                width: px(64),
+                                                height: px(64),
+                                                border: UiRect::all(px(1)),
+                                                border_radius: BorderRadius::all(px(32)),
+                                                align_items: AlignItems::Center,
+                                                justify_content: JustifyContent::Center,
+                                                ..default()
+                                            },
+                                            BackgroundColor(Color::srgba(0.20, 0.13, 0.035, 0.86)),
+                                            BorderColor::all(theme::GOLD),
+                                        ))
+                                        .with_child((
+                                            Text::new("✦"),
+                                            TextFont {
+                                                font_size: FontSize::Px(28.0),
+                                                ..default()
+                                            },
+                                            TextColor(theme::GOLD_BRIGHT),
+                                        ));
+
+                                        hero.spawn(Node {
+                                            flex_grow: 1.0,
+                                            flex_direction: FlexDirection::Column,
+                                            row_gap: px(5),
+                                            ..default()
+                                        })
+                                        .with_children(
+                                            |copy| {
+                                                spawn_spellbook_detail_text(
+                                                    copy,
+                                                    NativeSpellbookDetailText::Name,
+                                                    "Select a spell",
+                                                    16.0,
+                                                    theme::GOLD_BRIGHT,
+                                                );
+
+                                                spawn_spellbook_detail_text(
+                                                    copy,
+                                                    NativeSpellbookDetailText::Description,
+                                                    "Choose learned magic from the library.",
+                                                    9.0,
+                                                    MUTED,
+                                                );
+                                            },
+                                        );
+                                    });
+
+                                detail
+                                    .spawn((
+                                        Node {
+                                            width: Val::Percent(100.0),
+                                            padding: UiRect::all(px(10)),
+                                            border: UiRect::all(px(1)),
+                                            border_radius: BorderRadius::all(px(6)),
+                                            flex_direction: FlexDirection::Column,
+                                            row_gap: px(7),
+                                            ..default()
+                                        },
+                                        BackgroundColor(PANEL_DEEP),
+                                        BorderColor::all(theme::BUTTON_BORDER),
+                                    ))
+                                    .with_children(|facts| {
+                                        facts.spawn((
+                                            Text::new("CASTING"),
+                                            TextFont {
+                                                font_size: FontSize::Px(8.0),
+                                                ..default()
+                                            },
+                                            TextColor(theme::GOLD),
+                                        ));
+
+                                        spawn_spellbook_detail_text(
+                                            facts,
+                                            NativeSpellbookDetailText::Stats,
+                                            "Mana —  ·  Damage —  ·  Range —  ·  Cooldown —",
+                                            9.0,
+                                            TEXT,
+                                        );
+
+                                        spawn_spellbook_detail_text(
+                                            facts,
+                                            NativeSpellbookDetailText::Requirement,
+                                            "Required magic level —",
+                                            8.5,
+                                            MUTED,
+                                        );
+                                    });
+
+                                detail
+                                    .spawn((
+                                        Node {
+                                            width: Val::Percent(100.0),
+                                            padding: UiRect::all(px(10)),
+                                            border: UiRect::all(px(1)),
+                                            border_radius: BorderRadius::all(px(6)),
+                                            flex_direction: FlexDirection::Column,
+                                            row_gap: px(5),
+                                            ..default()
+                                        },
+                                        BackgroundColor(PANEL_DEEP),
+                                        BorderColor::all(theme::BUTTON_BORDER),
+                                    ))
+                                    .with_children(|targeting| {
+                                        targeting.spawn((
+                                            Text::new("TARGETING"),
+                                            TextFont {
+                                                font_size: FontSize::Px(8.0),
+                                                ..default()
+                                            },
+                                            TextColor(theme::GOLD),
+                                        ));
+
+                                        spawn_spellbook_detail_text(
+                                            targeting,
+                                            NativeSpellbookDetailText::CastHint,
+                                            "Select a creature target before casting.",
+                                            8.5,
+                                            MUTED,
+                                        );
+                                    });
+
+                                detail
+                                    .spawn(Node {
+                                        width: Val::Percent(100.0),
+                                        margin: UiRect::top(px(4)),
+                                        flex_direction: FlexDirection::Row,
+                                        justify_content: JustifyContent::FlexEnd,
+                                        column_gap: px(7),
+                                        ..default()
+                                    })
+                                    .with_children(|actions| {
+                                        spawn_spellbook_action_button(
+                                            actions,
+                                            NativeSpellbookButton::Skills,
+                                            "SKILLS",
+                                            false,
+                                            88.0,
+                                        );
+
+                                        spawn_spellbook_action_button(
+                                            actions,
+                                            NativeSpellbookButton::Cast,
+                                            "CAST",
+                                            true,
+                                            112.0,
+                                        );
+                                    });
+                            });
+                    });
+
+                panel
+                    .spawn((native_modal::footer_node(), native_modal::divider_border()))
+                    .with_children(|footer| {
+                        footer.spawn((
+                            Text::new("P / Esc close  ·  ↑/↓ select  ·  F cast selected spell"),
+                            TextFont {
+                                font_size: FontSize::Px(8.5),
+                                ..default()
+                            },
+                            TextColor(MUTED),
+                        ));
+                    });
+            });
+        });
+}
+
+fn crafting_column_node(width: Val) -> Node {
+    Node {
+        width,
+        height: Val::Percent(100.0),
+        min_height: px(520),
+        padding: UiRect::all(px(10)),
+        border: UiRect::all(px(1)),
+        border_radius: BorderRadius::all(px(7)),
+        flex_direction: FlexDirection::Column,
+        row_gap: px(8),
+        ..default()
+    }
+}
+
+fn spawn_crafting_column_heading(parent: &mut ChildSpawnerCommands, eyebrow: &str, title: &str) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: px(2),
+            ..default()
+        })
+        .with_children(|copy| {
+            copy.spawn((
+                Text::new(eyebrow),
+                TextFont {
+                    font_size: FontSize::Px(8.0),
+                    ..default()
+                },
+                TextColor(theme::GOLD),
+            ));
+
+            copy.spawn((
+                Text::new(title),
+                TextFont {
+                    font_size: FontSize::Px(13.0),
+                    ..default()
+                },
+                TextColor(theme::GOLD_BRIGHT),
+            ));
+        });
+}
+
+fn spawn_crafting_category_button(parent: &mut ChildSpawnerCommands, index: usize) {
     parent
         .spawn((
             Button,
@@ -5004,10 +3987,7 @@ fn spawn_crafting_category_button(
         });
 }
 
-fn spawn_crafting_recipe_button(
-    parent: &mut ChildSpawnerCommands,
-    index: usize,
-) {
+fn spawn_crafting_recipe_button(parent: &mut ChildSpawnerCommands, index: usize) {
     parent
         .spawn((
             Button,
@@ -5072,35 +4052,30 @@ fn spawn_crafting_detail_text(
     ));
 }
 
-fn spawn_crafting_item_preview(
-    parent: &mut ChildSpawnerCommands,
-    input: bool,
-) {
-    let marker =
-        if input {
-            NativeCraftingItemImage::Input {
-                definition_id: None,
-            }
-        } else {
-            NativeCraftingItemImage::Output {
-                definition_id: None,
-            }
-        };
+fn spawn_crafting_item_preview(parent: &mut ChildSpawnerCommands, input: bool) {
+    let marker = if input {
+        NativeCraftingItemImage::Input {
+            definition_id: None,
+        }
+    } else {
+        NativeCraftingItemImage::Output {
+            definition_id: None,
+        }
+    };
 
-    parent
-        .spawn((
-            marker,
-            ImageNode::default(),
-            Visibility::Hidden,
-            Node {
-                width: px(66),
-                height: px(66),
-                border: UiRect::all(px(1)),
-                border_radius: BorderRadius::all(px(6)),
-                ..default()
-            },
-            BorderColor::all(theme::GOLD_DARK),
-        ));
+    parent.spawn((
+        marker,
+        ImageNode::default(),
+        Visibility::Hidden,
+        Node {
+            width: px(66),
+            height: px(66),
+            border: UiRect::all(px(1)),
+            border_radius: BorderRadius::all(px(6)),
+            ..default()
+        },
+        BorderColor::all(theme::GOLD_DARK),
+    ));
 }
 
 fn spawn_crafting_action_button(
@@ -5124,20 +4099,16 @@ fn spawn_crafting_action_button(
                 justify_content: JustifyContent::Center,
                 ..default()
             },
-            BackgroundColor(
-                if primary {
-                    Color::srgba(0.24, 0.16, 0.035, 0.90)
-                } else {
-                    theme::BUTTON_BG
-                },
-            ),
-            BorderColor::all(
-                if primary {
-                    theme::GOLD
-                } else {
-                    theme::BUTTON_BORDER
-                },
-            ),
+            BackgroundColor(if primary {
+                Color::srgba(0.24, 0.16, 0.035, 0.90)
+            } else {
+                theme::BUTTON_BG
+            }),
+            BorderColor::all(if primary {
+                theme::GOLD
+            } else {
+                theme::BUTTON_BORDER
+            }),
         ))
         .with_child((
             Text::new(label),
@@ -5145,13 +4116,7 @@ fn spawn_crafting_action_button(
                 font_size: FontSize::Px(9.0),
                 ..default()
             },
-            TextColor(
-                if primary {
-                    theme::GOLD_BRIGHT
-                } else {
-                    TEXT
-                },
-            ),
+            TextColor(if primary { theme::GOLD_BRIGHT } else { TEXT }),
         ));
 }
 
@@ -5584,31 +4549,23 @@ fn spawn_crafting_panel(commands: &mut Commands) {
         });
 }
 
-
 fn npc_modal_card_node() -> Node {
     Node {
         width: Val::Percent(100.0),
         padding: UiRect::all(px(10)),
         border: UiRect::all(px(1)),
-        border_radius:
-            BorderRadius::all(px(7)),
-        flex_direction:
-            FlexDirection::Column,
+        border_radius: BorderRadius::all(px(7)),
+        flex_direction: FlexDirection::Column,
         row_gap: px(6),
         ..default()
     }
 }
 
-fn spawn_npc_modal_heading(
-    parent: &mut ChildSpawnerCommands,
-    eyebrow: &str,
-    title: &str,
-) {
+fn spawn_npc_modal_heading(parent: &mut ChildSpawnerCommands, eyebrow: &str, title: &str) {
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
-            flex_direction:
-                FlexDirection::Column,
+            flex_direction: FlexDirection::Column,
             row_gap: px(2),
             ..default()
         })
@@ -5616,8 +4573,7 @@ fn spawn_npc_modal_heading(
             copy.spawn((
                 Text::new(eyebrow),
                 TextFont {
-                    font_size:
-                        FontSize::Px(8.0),
+                    font_size: FontSize::Px(8.0),
                     ..default()
                 },
                 TextColor(theme::GOLD),
@@ -5626,21 +4582,15 @@ fn spawn_npc_modal_heading(
             copy.spawn((
                 Text::new(title),
                 TextFont {
-                    font_size:
-                        FontSize::Px(13.0),
+                    font_size: FontSize::Px(13.0),
                     ..default()
                 },
-                TextColor(
-                    theme::GOLD_BRIGHT,
-                ),
+                TextColor(theme::GOLD_BRIGHT),
             ));
         });
 }
 
-fn spawn_npc_service_tab(
-    parent: &mut ChildSpawnerCommands,
-    index: usize,
-) {
+fn spawn_npc_service_tab(parent: &mut ChildSpawnerCommands, index: usize) {
     parent
         .spawn((
             Button,
@@ -5648,43 +4598,28 @@ fn spawn_npc_service_tab(
             Node {
                 min_width: px(94),
                 height: px(34),
-                padding:
-                    UiRect::horizontal(
-                        px(10),
-                    ),
-                border:
-                    UiRect::all(px(1)),
-                border_radius:
-                    BorderRadius::all(px(5)),
-                align_items:
-                    AlignItems::Center,
-                justify_content:
-                    JustifyContent::Center,
+                padding: UiRect::horizontal(px(10)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(5)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
                 ..default()
             },
-            BackgroundColor(
-                theme::BUTTON_BG,
-            ),
-            BorderColor::all(
-                theme::BUTTON_BORDER,
-            ),
+            BackgroundColor(theme::BUTTON_BG),
+            BorderColor::all(theme::BUTTON_BORDER),
         ))
         .with_child((
             NativeNpcTabText(index),
             Text::new(""),
             TextFont {
-                font_size:
-                    FontSize::Px(8.5),
+                font_size: FontSize::Px(8.5),
                 ..default()
             },
             TextColor(TEXT),
         ));
 }
 
-fn spawn_npc_service_row(
-    parent: &mut ChildSpawnerCommands,
-    index: usize,
-) {
+fn spawn_npc_service_row(parent: &mut ChildSpawnerCommands, index: usize) {
     parent
         .spawn((
             Button,
@@ -5692,35 +4627,25 @@ fn spawn_npc_service_row(
             Node {
                 width: Val::Percent(100.0),
                 min_height: px(56),
-                padding:
-                    UiRect::all(px(8)),
-                border:
-                    UiRect::all(px(1)),
-                border_radius:
-                    BorderRadius::all(px(6)),
-                flex_direction:
-                    FlexDirection::Column,
+                padding: UiRect::all(px(8)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(6)),
+                flex_direction: FlexDirection::Column,
                 row_gap: px(3),
                 ..default()
             },
-            BackgroundColor(
-                theme::BUTTON_BG,
-            ),
-            BorderColor::all(
-                theme::BUTTON_BORDER,
-            ),
+            BackgroundColor(theme::BUTTON_BG),
+            BorderColor::all(theme::BUTTON_BORDER),
         ))
         .with_children(|card| {
             card.spawn((
                 NativeNpcRowText {
                     index,
-                    field:
-                        NativeNpcRowField::Name,
+                    field: NativeNpcRowField::Name,
                 },
                 Text::new(""),
                 TextFont {
-                    font_size:
-                        FontSize::Px(10.0),
+                    font_size: FontSize::Px(10.0),
                     ..default()
                 },
                 TextColor(TEXT),
@@ -5729,13 +4654,11 @@ fn spawn_npc_service_row(
             card.spawn((
                 NativeNpcRowText {
                     index,
-                    field:
-                        NativeNpcRowField::Meta,
+                    field: NativeNpcRowField::Meta,
                 },
                 Text::new(""),
                 TextFont {
-                    font_size:
-                        FontSize::Px(7.7),
+                    font_size: FontSize::Px(7.7),
                     ..default()
                 },
                 TextColor(MUTED),
@@ -5754,8 +4677,7 @@ fn spawn_npc_detail_text(
         kind,
         Text::new(value),
         TextFont {
-            font_size:
-                FontSize::Px(size),
+            font_size: FontSize::Px(size),
             ..default()
         },
         TextColor(color),
@@ -5769,74 +4691,45 @@ fn spawn_npc_modal_action(
     primary: bool,
     width: f32,
 ) {
-    let text_color =
-        if primary {
-            theme::GOLD_BRIGHT
-        } else {
-            TEXT
-        };
+    let text_color = if primary { theme::GOLD_BRIGHT } else { TEXT };
 
-    let mut button =
-        parent.spawn((
-            Button,
-            action,
-            Node {
-                width: px(width),
-                height: px(38),
-                padding:
-                    UiRect::horizontal(
-                        px(10),
-                    ),
-                border:
-                    UiRect::all(px(1)),
-                border_radius:
-                    BorderRadius::all(px(6)),
-                align_items:
-                    AlignItems::Center,
-                justify_content:
-                    JustifyContent::Center,
-                ..default()
-            },
-            BackgroundColor(
-                if primary {
-                    Color::srgba(
-                        0.24,
-                        0.16,
-                        0.035,
-                        0.90,
-                    )
-                } else {
-                    theme::BUTTON_BG
-                },
-            ),
-            BorderColor::all(
-                if primary {
-                    theme::GOLD
-                } else {
-                    theme::BUTTON_BORDER
-                },
-            ),
-        ));
+    let mut button = parent.spawn((
+        Button,
+        action,
+        Node {
+            width: px(width),
+            height: px(38),
+            padding: UiRect::horizontal(px(10)),
+            border: UiRect::all(px(1)),
+            border_radius: BorderRadius::all(px(6)),
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            ..default()
+        },
+        BackgroundColor(if primary {
+            Color::srgba(0.24, 0.16, 0.035, 0.90)
+        } else {
+            theme::BUTTON_BG
+        }),
+        BorderColor::all(if primary {
+            theme::GOLD
+        } else {
+            theme::BUTTON_BORDER
+        }),
+    ));
 
     button.with_children(|button| {
-        let mut label_entity =
-            button.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size:
-                        FontSize::Px(8.5),
-                    ..default()
-                },
-                TextColor(text_color),
-            ));
+        let mut label_entity = button.spawn((
+            Text::new(label),
+            TextFont {
+                font_size: FontSize::Px(8.5),
+                ..default()
+            },
+            TextColor(text_color),
+        ));
 
-        if matches!(
-            action,
-            NativeNpcModalButton::Primary
-        ) {
-            label_entity.insert(
-                NativeNpcDetailText::PrimaryLabel,
-            );
+        if matches!(action, NativeNpcModalButton::Primary) {
+            label_entity.insert(NativeNpcDetailText::PrimaryLabel);
         }
     });
 }
@@ -6445,27 +5338,14 @@ pub fn update_ui(
     ping: Res<NativePingState>,
     chat: Res<NativeChatState>,
     panel_state: Res<NativePanelState>,
-    mut texts: Query<
-        (&NativeUiText, &mut Text, &mut TextColor),
-        Without<NativeActionSlotText>,
-    >,
-    mut action_slot_texts: Query<
-        (&NativeActionSlotText, &mut Text),
-        Without<NativeUiText>,
-    >,
+    mut texts: Query<(&NativeUiText, &mut Text, &mut TextColor), Without<NativeActionSlotText>>,
+    mut action_slot_texts: Query<(&NativeActionSlotText, &mut Text), Without<NativeUiText>>,
     mut action_slot_images: Query<
-        (
-            &NativeActionSlotImage,
-            &mut ImageNode,
-            &mut Visibility,
-        ),
+        (&NativeActionSlotImage, &mut ImageNode, &mut Visibility),
         (Without<NativeUiText>, Without<NativeUiPanel>),
     >,
     mut bars: Query<(&NativeUiBar, &mut Node)>,
-    mut panels: Query<
-        (&NativeUiPanel, &mut Visibility),
-        Without<NativeActionSlotImage>,
-    >,
+    mut panels: Query<(&NativeUiPanel, &mut Visibility), Without<NativeActionSlotImage>>,
     mut chat_panels: Query<&mut BackgroundColor, With<NativeChatPanel>>,
     mut chat_fade: Local<(usize, f64)>,
     mut ping_bars: Query<(&NativePingSignalBar, &mut BackgroundColor), Without<NativeChatPanel>>,
@@ -6478,7 +5358,11 @@ pub fn update_ui(
     action_bar.sync(&game_state);
     let (signal_level, signal_color) = ping_signal(ping.last_ms);
     for (bar, mut background) in &mut ping_bars {
-        background.0 = if bar.0 < signal_level { signal_color } else { Color::srgb(0.12, 0.17, 0.12) };
+        background.0 = if bar.0 < signal_level {
+            signal_color
+        } else {
+            Color::srgb(0.12, 0.17, 0.12)
+        };
     }
 
     let battle_list_text = match game_state.local_player() {
@@ -6486,15 +5370,10 @@ pub fn update_ui(
             let mut nearby: Vec<_> = game_state
                 .creatures
                 .values()
-                .filter(|creature| {
-                    creature.position.z == local.position.z
-                        && creature.health > 0
-                })
+                .filter(|creature| creature.position.z == local.position.z && creature.health > 0)
                 .map(|creature| {
-                    let dx =
-                        (creature.position.x - local.position.x).abs();
-                    let dy =
-                        (creature.position.y - local.position.y).abs();
+                    let dx = (creature.position.x - local.position.x).abs();
+                    let dy = (creature.position.y - local.position.y).abs();
                     (
                         dx.max(dy),
                         creature.id,
@@ -6513,21 +5392,16 @@ pub fn update_ui(
             if nearby.is_empty() {
                 lines.push("No creatures nearby.".into());
             } else {
-                for (_distance, id, name, health, max_health) in
-                    nearby.into_iter().take(8)
-                {
-                    let marker =
-                        if game_state.attack_target_id == Some(id) {
-                            "▶"
-                        } else {
-                            " "
-                        };
+                for (_distance, id, name, health, max_health) in nearby.into_iter().take(8) {
+                    let marker = if game_state.attack_target_id == Some(id) {
+                        "▶"
+                    } else {
+                        " "
+                    };
 
                     lines.push(format!(
                         "{marker} {:<18} {:>3}/{:<3}",
-                        name,
-                        health,
-                        max_health,
+                        name, health, max_health,
                     ));
                 }
             }
@@ -6538,20 +5412,15 @@ pub fn update_ui(
     };
 
     let action_line = action_bar_text(&game_state, &action_bar);
-    let inventory_text =
-        inventory_panel_text(&game_state, &panel_state);
-    let inventory_detail =
-        inventory_detail_text(&game_state, &panel_state);
+    let inventory_text = inventory_panel_text(&game_state, &panel_state);
+    let inventory_detail = inventory_detail_text(&game_state, &panel_state);
     let character_text = character_panel_text(&game_state);
     let skills_text = skills_panel_text(&game_state);
     let spellbook_text =
         spellbook_panel_text(&game_state, panel_state.selected_spell_id.as_deref());
-    let spell_detail =
-        spell_detail_text(&game_state, panel_state.selected_spell_id.as_deref());
-    let crafting_text =
-        crafting_panel_text(&game_state, &panel_state);
-    let crafting_detail =
-        crafting_detail_text(&game_state, &panel_state);
+    let spell_detail = spell_detail_text(&game_state, panel_state.selected_spell_id.as_deref());
+    let crafting_text = crafting_panel_text(&game_state, &panel_state);
+    let crafting_detail = crafting_detail_text(&game_state, &panel_state);
     let npc_text = npc_panel_text(&game_state, &panel_state);
     let npc_detail = npc_detail_text(&game_state, &panel_state);
 
@@ -6579,12 +5448,7 @@ pub fn update_ui(
         1.0 - ((idle - 5.0) / 8.0) as f32 * 0.15
     };
     for mut background in &mut chat_panels {
-        background.0 = Color::srgba(
-            0.01,
-            0.014,
-            0.011,
-            0.60 + 0.20 * chat_alpha,
-        );
+        background.0 = Color::srgba(0.01, 0.014, 0.011, 0.60 + 0.20 * chat_alpha);
     }
 
     for (kind, mut text, mut color) in &mut texts {
@@ -6634,8 +5498,7 @@ pub fn update_ui(
             NativeUiText::Capacity => {
                 text.0 = format!(
                     "Capacity   {:.1} / {:.1}",
-                    game_state.inventory_weight,
-                    game_state.max_capacity,
+                    game_state.inventory_weight, game_state.max_capacity,
                 );
                 color.0 = MUTED;
             }
@@ -6735,10 +5598,7 @@ pub fn update_ui(
         text.0 = (slot.0 + 1).to_string();
     }
 
-
-    for (slot, mut image, mut visibility) in
-        &mut action_slot_images
-    {
+    for (slot, mut image, mut visibility) in &mut action_slot_images {
         let icon = if slot.0 == 0 {
             Some((0, 0))
         } else {
@@ -6746,20 +5606,14 @@ pub fn update_ui(
                 .spell_id(slot.0)
                 .and_then(|spell_id| game_state.spells.get(spell_id))
                 .and_then(|spell| {
-                    ability_icon_tile(&spell.id)
-                        .or_else(|| ability_icon_tile(&spell.name))
+                    ability_icon_tile(&spell.id).or_else(|| ability_icon_tile(&spell.name))
                 })
         };
 
         if let Some((column, row)) = icon {
             let left = column as f32 * 306.0;
             let top = row as f32 * 306.0;
-            image.rect = Some(Rect::new(
-                left,
-                top,
-                left + 306.0,
-                top + 306.0,
-            ));
+            image.rect = Some(Rect::new(left, top, left + 306.0, top + 306.0));
             *visibility = Visibility::Inherited;
         } else {
             *visibility = Visibility::Hidden;
@@ -6775,10 +5629,7 @@ pub fn update_ui(
                 .map(|p| ratio(p.mana as f32, p.max_mana as f32))
                 .unwrap_or(0.0),
             NativeUiBar::Experience => player.map(experience_ratio).unwrap_or(0.0),
-            NativeUiBar::Capacity => ratio(
-                game_state.inventory_weight,
-                game_state.max_capacity,
-            ),
+            NativeUiBar::Capacity => ratio(game_state.inventory_weight, game_state.max_capacity),
             NativeUiBar::TargetHealth => target
                 .map(|c| ratio(c.health as f32, c.max_health as f32))
                 .unwrap_or(0.0),
@@ -6802,7 +5653,6 @@ pub fn update_ui(
             Visibility::Hidden
         };
     }
-
 }
 
 fn ability_icon_tile(value: &str) -> Option<(u8, u8)> {
@@ -6813,8 +5663,7 @@ fn ability_icon_tile(value: &str) -> Option<(u8, u8)> {
         .to_owned();
 
     match normalized.as_str() {
-        "basic_attack" | "attack" | "power_strike" | "strike"
-        | "heavy_strike" => Some((0, 0)),
+        "basic_attack" | "attack" | "power_strike" | "strike" | "heavy_strike" => Some((0, 0)),
         "shield_guard" | "shield_bash" | "guarding" => Some((1, 0)),
         "quick_shot" | "aimed_shot" | "shot" => Some((2, 0)),
         "second_wind" | "healing_pulse" | "heal" | "restore" => Some((3, 0)),
@@ -6878,9 +5727,7 @@ pub fn handle_chat_input(
                 };
 
                 for character in input.chars() {
-                    if !character.is_control()
-                        && chat.draft.chars().count() < 180
-                    {
+                    if !character.is_control() && chat.draft.chars().count() < 180 {
                         chat.draft.push(character);
                     }
                 }
@@ -6889,7 +5736,6 @@ pub fn handle_chat_input(
         }
     }
 }
-
 
 pub fn handle_panel_hotkeys(
     keys: Res<ButtonInput<KeyCode>>,
@@ -6929,9 +5775,7 @@ pub fn handle_panel_hotkeys(
                     };
 
                     for character in input.chars() {
-                        if !character.is_control()
-                            && panels.inventory_search.chars().count() < 48
-                        {
+                        if !character.is_control() && panels.inventory_search.chars().count() < 48 {
                             panels.inventory_search.push(character);
                             search_changed = true;
                         }
@@ -7008,22 +5852,17 @@ pub fn handle_panel_hotkeys(
                 return;
             }
 
-            panels.split_quantity =
-                panels.split_quantity.clamp(1, max_split);
+            panels.split_quantity = panels.split_quantity.clamp(1, max_split);
 
             if keys.just_pressed(KeyCode::ArrowLeft) {
-                panels.split_quantity =
-                    panels.split_quantity.saturating_sub(1).max(1);
+                panels.split_quantity = panels.split_quantity.saturating_sub(1).max(1);
             }
 
             if keys.just_pressed(KeyCode::ArrowRight) {
-                panels.split_quantity =
-                    panels.split_quantity.saturating_add(1).min(max_split);
+                panels.split_quantity = panels.split_quantity.saturating_add(1).min(max_split);
             }
 
-            if keys.just_pressed(KeyCode::Escape)
-                || keys.just_pressed(KeyCode::F6)
-            {
+            if keys.just_pressed(KeyCode::Escape) || keys.just_pressed(KeyCode::F6) {
                 panels.split_item_id = None;
                 panels.split_quantity = 0;
                 return;
@@ -7046,13 +5885,9 @@ pub fn handle_panel_hotkeys(
                     })
                     .is_err()
                 {
-                    game_state.push_system_message(
-                        "The game connection is offline.",
-                    );
+                    game_state.push_system_message("The game connection is offline.");
                 } else {
-                    game_state.push_system_message(format!(
-                        "Split {quantity} from {item_name}.",
-                    ));
+                    game_state.push_system_message(format!("Split {quantity} from {item_name}.",));
                 }
 
                 panels.split_item_id = None;
@@ -7106,13 +5941,11 @@ pub fn handle_panel_hotkeys(
     }
 
     if keys.just_pressed(KeyCode::Escape)
-        && (
-            panels.inventory_open
-                || panels.character_open
-                || panels.skills_open
-                || panels.spells_open
-                || panels.crafting_open
-        )
+        && (panels.inventory_open
+            || panels.character_open
+            || panels.skills_open
+            || panels.spells_open
+            || panels.crafting_open)
     {
         panels.inventory_open = false;
         panels.inventory_search_active = false;
@@ -7138,11 +5971,7 @@ pub fn handle_panel_hotkeys(
         }
 
         if keys.just_pressed(KeyCode::KeyF) {
-            cast_selected_spell(
-                &network,
-                &mut game_state,
-                &panels,
-            );
+            cast_selected_spell(&network, &mut game_state, &panels);
         }
     }
 
@@ -7164,20 +5993,14 @@ pub fn handle_panel_hotkeys(
         }
 
         if keys.just_pressed(KeyCode::ArrowLeft) {
-            panels.crafting_quantity =
-                panels.crafting_quantity.saturating_sub(1).max(1);
+            panels.crafting_quantity = panels.crafting_quantity.saturating_sub(1).max(1);
         }
         if keys.just_pressed(KeyCode::ArrowRight) {
-            panels.crafting_quantity =
-                panels.crafting_quantity.saturating_add(1).min(99);
+            panels.crafting_quantity = panels.crafting_quantity.saturating_add(1).min(99);
         }
 
         if keys.just_pressed(KeyCode::KeyF) {
-            craft_selected_recipe(
-                &network,
-                &mut game_state,
-                &panels,
-            );
+            craft_selected_recipe(&network, &mut game_state, &panels);
         }
 
         if keys.just_pressed(KeyCode::KeyX) {
@@ -7278,9 +6101,7 @@ pub fn handle_panel_hotkeys(
                 .map(|definition| definition.name.clone())
                 .unwrap_or_else(|| item.definition_id.clone());
 
-            game_state.push_system_message(format!(
-                "{item_name} cannot be split.",
-            ));
+            game_state.push_system_message(format!("{item_name} cannot be split.",));
             return;
         }
 
@@ -7311,8 +6132,7 @@ pub fn handle_panel_hotkeys(
             return;
         }
 
-        let Some(definition) = game_state.item_definitions.get(&item.definition_id)
-        else {
+        let Some(definition) = game_state.item_definitions.get(&item.definition_id) else {
             game_state.push_system_message("Unknown item definition.");
             return;
         };
@@ -7323,19 +6143,14 @@ pub fn handle_panel_hotkeys(
         let equipment_slot = definition.equipment_slot.clone();
 
         let Some(slot) = equipment_slot else {
-            game_state.push_system_message(format!(
-                "{} cannot be equipped.",
-                item_name,
-            ));
+            game_state.push_system_message(format!("{} cannot be equipped.", item_name,));
             return;
         };
         if network
             .outbound
             .send(ClientMessage::MoveItem {
                 instance_id,
-                destination: game_protocol::ItemDestination::Equipment {
-                    slot,
-                },
+                destination: game_protocol::ItemDestination::Equipment { slot },
             })
             .is_err()
         {
@@ -7356,8 +6171,8 @@ pub fn handle_panel_hotkeys(
     }
 
     if keys.just_pressed(KeyCode::Delete) {
-        let item_name = item_display_name(&game_state, instance_id)
-            .unwrap_or_else(|| "item".into());
+        let item_name =
+            item_display_name(&game_state, instance_id).unwrap_or_else(|| "item".into());
 
         if network
             .outbound
@@ -7378,8 +6193,7 @@ fn send_move_item(
     destination: game_protocol::ItemDestination,
     verb: &str,
 ) {
-    let item_name = item_display_name(game_state, instance_id)
-        .unwrap_or_else(|| "item".into());
+    let item_name = item_display_name(game_state, instance_id).unwrap_or_else(|| "item".into());
 
     if network
         .outbound
@@ -7395,10 +6209,7 @@ fn send_move_item(
     }
 }
 
-fn ensure_inventory_selection(
-    game_state: &NativeGameState,
-    panels: &mut NativePanelState,
-) {
+fn ensure_inventory_selection(game_state: &NativeGameState, panels: &mut NativePanelState) {
     let ids = selectable_inventory_ids(game_state, panels);
 
     if ids.is_empty() {
@@ -7430,15 +6241,11 @@ fn step_inventory_selection(
 
     let current = panels
         .selected_item
-        .and_then(|selected| {
-            ids.iter()
-                .position(|id| *id == selected)
-        })
+        .and_then(|selected| ids.iter().position(|id| *id == selected))
         .unwrap_or(0) as isize;
 
     let len = ids.len() as isize;
-    let next =
-        (current + delta).rem_euclid(len) as usize;
+    let next = (current + delta).rem_euclid(len) as usize;
 
     panels.selected_item = Some(ids[next]);
 }
@@ -7447,17 +6254,14 @@ fn selectable_inventory_ids(
     game_state: &NativeGameState,
     panels: &NativePanelState,
 ) -> Vec<game_types::EntityId> {
-    let query =
-        panels.inventory_search.trim().to_ascii_lowercase();
+    let query = panels.inventory_search.trim().to_ascii_lowercase();
 
     let mut items: Vec<_> = game_state
         .inventory
         .iter()
         .filter(|item| item.definition_id != "gold_coin")
         .filter(|item| {
-            if let Some(container_id) =
-                panels.inventory_container_id
-            {
+            if let Some(container_id) = panels.inventory_container_id {
                 item.container_id == Some(container_id)
             } else {
                 item.container_id.is_none()
@@ -7475,10 +6279,7 @@ fn selectable_inventory_ids(
                 .unwrap_or(item.definition_id.as_str());
 
             name.to_ascii_lowercase().contains(&query)
-                || item
-                    .definition_id
-                    .to_ascii_lowercase()
-                    .contains(&query)
+                || item.definition_id.to_ascii_lowercase().contains(&query)
         })
         .collect();
 
@@ -7495,19 +6296,14 @@ fn selectable_inventory_ids(
             .map(|definition| definition.name.as_str())
             .unwrap_or(right.definition_id.as_str());
 
-        left
-            .equipped_slot
+        left.equipped_slot
             .is_none()
             .cmp(&right.equipped_slot.is_none())
             .then_with(|| left_name.cmp(right_name))
     });
 
-    items
-        .into_iter()
-        .map(|item| item.instance_id)
-        .collect()
+    items.into_iter().map(|item| item.instance_id).collect()
 }
-
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum NativeNpcTab {
@@ -7517,10 +6313,7 @@ enum NativeNpcTab {
     Depot,
 }
 
-fn toggle_nearest_npc_panel(
-    game_state: &mut NativeGameState,
-    panels: &mut NativePanelState,
-) {
+fn toggle_nearest_npc_panel(game_state: &mut NativeGameState, panels: &mut NativePanelState) {
     if panels.npc_open {
         panels.npc_open = false;
         panels.selected_npc_id = None;
@@ -7564,10 +6357,7 @@ fn toggle_nearest_npc_panel(
     game_state.push_system_message(format!("Talking to {npc_name}."));
 }
 
-fn npc_tabs(
-    game_state: &NativeGameState,
-    panels: &NativePanelState,
-) -> Vec<NativeNpcTab> {
+fn npc_tabs(game_state: &NativeGameState, panels: &NativePanelState) -> Vec<NativeNpcTab> {
     let Some(npc) = selected_npc(game_state, panels) else {
         return Vec::new();
     };
@@ -7595,10 +6385,7 @@ fn npc_tabs(
     tabs
 }
 
-fn normalize_npc_tab(
-    game_state: &NativeGameState,
-    panels: &mut NativePanelState,
-) {
+fn normalize_npc_tab(game_state: &NativeGameState, panels: &mut NativePanelState) {
     let tabs = npc_tabs(game_state, panels);
     if tabs.is_empty() {
         panels.npc_tab = 0;
@@ -7615,10 +6402,7 @@ fn normalize_npc_tab(
     };
 }
 
-fn cycle_npc_tab(
-    game_state: &NativeGameState,
-    panels: &mut NativePanelState,
-) {
+fn cycle_npc_tab(game_state: &NativeGameState, panels: &mut NativePanelState) {
     let tabs = npc_tabs(game_state, panels);
     if tabs.is_empty() {
         panels.npc_tab = 0;
@@ -7630,11 +6414,7 @@ fn cycle_npc_tab(
     panels.npc_index = 0;
 }
 
-fn step_npc_selection(
-    game_state: &NativeGameState,
-    panels: &mut NativePanelState,
-    delta: isize,
-) {
+fn step_npc_selection(game_state: &NativeGameState, panels: &mut NativePanelState, delta: isize) {
     let tabs = npc_tabs(game_state, panels);
     if tabs.is_empty() {
         panels.npc_index = 0;
@@ -7648,8 +6428,7 @@ fn step_npc_selection(
         return;
     }
 
-    panels.npc_index =
-        (panels.npc_index as isize + delta).rem_euclid(count as isize) as usize;
+    panels.npc_index = (panels.npc_index as isize + delta).rem_euclid(count as isize) as usize;
 }
 
 fn npc_tab_len(
@@ -7820,9 +6599,8 @@ fn npc_sell_selected_item(
         return;
     };
     let Some(instance_id) = panels.selected_item else {
-        game_state.push_system_message(
-            "Open inventory first and select an item to choose what to sell.",
-        );
+        game_state
+            .push_system_message("Open inventory first and select an item to choose what to sell.");
         return;
     };
     let Some(item) = game_state
@@ -7910,9 +6688,7 @@ fn npc_deposit_selected_item(
     }
 }
 
-fn npc_tab_label(
-    tab: NativeNpcTab,
-) -> &'static str {
+fn npc_tab_label(tab: NativeNpcTab) -> &'static str {
     match tab {
         NativeNpcTab::Shop => "SHOP",
         NativeNpcTab::Spells => "SPELLS",
@@ -7926,55 +6702,27 @@ fn npc_modal_row_copy(
     panels: &NativePanelState,
     index: usize,
 ) -> Option<(String, String)> {
-    let npc =
-        selected_npc(
-            game_state,
-            panels,
-        )?;
+    let npc = selected_npc(game_state, panels)?;
 
-    match current_npc_tab(
-        game_state,
-        panels,
-    )? {
+    match current_npc_tab(game_state, panels)? {
         NativeNpcTab::Shop => {
-            let offer =
-                npc.offers.get(index)?;
+            let offer = npc.offers.get(index)?;
 
-            let name =
-                game_state
-                    .item_definitions
-                    .get(
-                        &offer
-                            .item_definition_id,
-                    )
-                    .map(|definition| {
-                        definition
-                            .name
-                            .clone()
-                    })
-                    .unwrap_or_else(|| {
-                        offer
-                            .item_definition_id
-                            .clone()
-                    });
+            let name = game_state
+                .item_definitions
+                .get(&offer.item_definition_id)
+                .map(|definition| definition.name.clone())
+                .unwrap_or_else(|| offer.item_definition_id.clone());
 
             Some((
                 name,
-                format!(
-                    "×{}  ·  {} gold",
-                    offer.quantity,
-                    offer.price,
-                ),
+                format!("×{}  ·  {} gold", offer.quantity, offer.price,),
             ))
         }
         NativeNpcTab::Spells => {
-            let spell_id =
-                npc.spell_ids.get(index)?;
+            let spell_id = npc.spell_ids.get(index)?;
 
-            let spell =
-                game_state
-                    .spells
-                    .get(spell_id);
+            let spell = game_state.spells.get(spell_id);
 
             Some(
                 spell
@@ -7985,12 +6733,7 @@ fn npc_modal_row_copy(
                                 "ML {}  ·  {} gold  ·  {}",
                                 spell.required_magic_level,
                                 spell.price,
-                                if game_state
-                                    .learned_spell_ids
-                                    .contains(
-                                        &spell.id,
-                                    )
-                                {
+                                if game_state.learned_spell_ids.contains(&spell.id,) {
                                     "LEARNED"
                                 } else {
                                     "AVAILABLE"
@@ -7998,23 +6741,13 @@ fn npc_modal_row_copy(
                             ),
                         )
                     })
-                    .unwrap_or_else(|| {
-                        (
-                            spell_id.clone(),
-                            "Unknown spell"
-                                .into(),
-                        )
-                    }),
+                    .unwrap_or_else(|| (spell_id.clone(), "Unknown spell".into())),
             )
         }
         NativeNpcTab::Recipes => {
-            let recipe_id =
-                npc.recipe_ids.get(index)?;
+            let recipe_id = npc.recipe_ids.get(index)?;
 
-            let recipe =
-                game_state
-                    .rune_recipes
-                    .get(recipe_id);
+            let recipe = game_state.rune_recipes.get(recipe_id);
 
             Some(
                 recipe
@@ -8025,15 +6758,8 @@ fn npc_modal_row_copy(
                                 "Skill {}  ·  {} mana  ·  {:.1}s  ·  {}",
                                 recipe.required_skill_level,
                                 recipe.mana_cost,
-                                recipe.craft_time_ms
-                                    as f32
-                                    / 1000.0,
-                                if game_state
-                                    .learned_recipe_ids
-                                    .contains(
-                                        &recipe.id,
-                                    )
-                                {
+                                recipe.craft_time_ms as f32 / 1000.0,
+                                if game_state.learned_recipe_ids.contains(&recipe.id,) {
                                     "LEARNED"
                                 } else {
                                     "AVAILABLE"
@@ -8041,45 +6767,21 @@ fn npc_modal_row_copy(
                             ),
                         )
                     })
-                    .unwrap_or_else(|| {
-                        (
-                            recipe_id.clone(),
-                            "Unknown recipe"
-                                .into(),
-                        )
-                    }),
+                    .unwrap_or_else(|| (recipe_id.clone(), "Unknown recipe".into())),
             )
         }
         NativeNpcTab::Depot => {
-            let item =
-                game_state
-                    .depot
-                    .get(index)?;
+            let item = game_state.depot.get(index)?;
 
-            let name =
-                game_state
-                    .item_definitions
-                    .get(
-                        &item
-                            .definition_id,
-                    )
-                    .map(|definition| {
-                        definition
-                            .name
-                            .clone()
-                    })
-                    .unwrap_or_else(|| {
-                        item
-                            .definition_id
-                            .clone()
-                    });
+            let name = game_state
+                .item_definitions
+                .get(&item.definition_id)
+                .map(|definition| definition.name.clone())
+                .unwrap_or_else(|| item.definition_id.clone());
 
             Some((
                 name,
-                format!(
-                    "×{} stored  ·  Enter withdraw one",
-                    item.quantity,
-                ),
+                format!("×{} stored  ·  Enter withdraw one", item.quantity,),
             ))
         }
     }
@@ -8089,38 +6791,18 @@ fn npc_modal_image_definition<'a>(
     game_state: &'a NativeGameState,
     panels: &NativePanelState,
 ) -> Option<&'a str> {
-    let npc =
-        selected_npc(
-            game_state,
-            panels,
-        )?;
+    let npc = selected_npc(game_state, panels)?;
 
-    match current_npc_tab(
-        game_state,
-        panels,
-    )? {
-        NativeNpcTab::Shop => {
-            npc
-                .offers
-                .get(panels.npc_index)
-                .map(|offer| {
-                    offer
-                        .item_definition_id
-                        .as_str()
-                })
-        }
-        NativeNpcTab::Depot => {
-            game_state
-                .depot
-                .get(panels.npc_index)
-                .map(|item| {
-                    item
-                        .definition_id
-                        .as_str()
-                })
-        }
-        NativeNpcTab::Spells
-        | NativeNpcTab::Recipes => None,
+    match current_npc_tab(game_state, panels)? {
+        NativeNpcTab::Shop => npc
+            .offers
+            .get(panels.npc_index)
+            .map(|offer| offer.item_definition_id.as_str()),
+        NativeNpcTab::Depot => game_state
+            .depot
+            .get(panels.npc_index)
+            .map(|item| item.definition_id.as_str()),
+        NativeNpcTab::Spells | NativeNpcTab::Recipes => None,
     }
 }
 
@@ -8135,126 +6817,63 @@ pub(crate) fn handle_npc_modal_buttons(
             &mut BackgroundColor,
             &mut BorderColor,
         ),
-        (
-            Changed<Interaction>,
-            With<Button>,
-        ),
+        (Changed<Interaction>, With<Button>),
     >,
 ) {
     if !panels.npc_open {
         return;
     }
 
-    for (
-        interaction,
-        action,
-        mut background,
-        mut border,
-    ) in &mut buttons
-    {
+    for (interaction, action, mut background, mut border) in &mut buttons {
         match *interaction {
             Interaction::Hovered => {
-                background.0 =
-                    theme::BUTTON_HOVER;
-                *border =
-                    BorderColor::all(
-                        theme::GOLD,
-                    );
+                background.0 = theme::BUTTON_HOVER;
+                *border = BorderColor::all(theme::GOLD);
             }
             Interaction::None => {}
             Interaction::Pressed => {
-                background.0 =
-                    theme::BUTTON_PRESSED;
-                *border =
-                    BorderColor::all(
-                        theme::GOLD_BRIGHT,
-                    );
+                background.0 = theme::BUTTON_PRESSED;
+                *border = BorderColor::all(theme::GOLD_BRIGHT);
 
                 match *action {
-                    NativeNpcModalButton::Tab(
-                        index,
-                    ) => {
-                        let tabs =
-                            npc_tabs(
-                                &game_state,
-                                &panels,
-                            );
+                    NativeNpcModalButton::Tab(index) => {
+                        let tabs = npc_tabs(&game_state, &panels);
 
                         if index < tabs.len() {
-                            panels.npc_tab =
-                                index;
-                            panels.npc_index =
-                                0;
+                            panels.npc_tab = index;
+                            panels.npc_index = 0;
 
-                            normalize_npc_tab(
-                                &game_state,
-                                &mut panels,
-                            );
+                            normalize_npc_tab(&game_state, &mut panels);
                         }
                     }
-                    NativeNpcModalButton::Row(
-                        index,
-                    ) => {
-                        let Some(tab) =
-                            current_npc_tab(
-                                &game_state,
-                                &panels,
-                            )
-                        else {
+                    NativeNpcModalButton::Row(index) => {
+                        let Some(tab) = current_npc_tab(&game_state, &panels) else {
                             continue;
                         };
 
-                        let count =
-                            npc_tab_len(
-                                &game_state,
-                                &panels,
-                                tab,
-                            );
+                        let count = npc_tab_len(&game_state, &panels, tab);
 
                         if index < count {
-                            panels.npc_index =
-                                index;
+                            panels.npc_index = index;
                         }
                     }
                     NativeNpcModalButton::Primary => {
-                        npc_primary_action(
-                            &network,
-                            &mut game_state,
-                            &panels,
-                        );
+                        npc_primary_action(&network, &mut game_state, &panels);
                     }
                     NativeNpcModalButton::Sell => {
                         if matches!(
-                            current_npc_tab(
-                                &game_state,
-                                &panels,
-                            ),
-                            Some(
-                                NativeNpcTab::Shop,
-                            )
+                            current_npc_tab(&game_state, &panels,),
+                            Some(NativeNpcTab::Shop,)
                         ) {
-                            npc_sell_selected_item(
-                                &network,
-                                &mut game_state,
-                                &panels,
-                            );
+                            npc_sell_selected_item(&network, &mut game_state, &panels);
                         }
                     }
                     NativeNpcModalButton::Deposit => {
                         if matches!(
-                            current_npc_tab(
-                                &game_state,
-                                &panels,
-                            ),
-                            Some(
-                                NativeNpcTab::Depot,
-                            )
+                            current_npc_tab(&game_state, &panels,),
+                            Some(NativeNpcTab::Depot,)
                         ) {
-                            npc_deposit_selected_item(
-                                &network,
-                                &mut game_state,
-                                &panels,
-                            );
+                            npc_deposit_selected_item(&network, &mut game_state, &panels);
                         }
                     }
                 }
@@ -8268,34 +6887,10 @@ pub(crate) fn update_npc_modal_ui(
     game_state: Res<NativeGameState>,
     panels: Res<NativePanelState>,
     mut text_queries: ParamSet<(
-        Query<
-            (
-                &NativeNpcHeaderText,
-                &mut Text,
-                &mut TextColor,
-            ),
-        >,
-        Query<
-            (
-                &NativeNpcTabText,
-                &mut Text,
-                &mut TextColor,
-            ),
-        >,
-        Query<
-            (
-                &NativeNpcRowText,
-                &mut Text,
-                &mut TextColor,
-            ),
-        >,
-        Query<
-            (
-                &NativeNpcDetailText,
-                &mut Text,
-                &mut TextColor,
-            ),
-        >,
+        Query<(&NativeNpcHeaderText, &mut Text, &mut TextColor)>,
+        Query<(&NativeNpcTabText, &mut Text, &mut TextColor)>,
+        Query<(&NativeNpcRowText, &mut Text, &mut TextColor)>,
+        Query<(&NativeNpcDetailText, &mut Text, &mut TextColor)>,
     )>,
     mut buttons: Query<
         (
@@ -8308,149 +6903,74 @@ pub(crate) fn update_npc_modal_ui(
         Without<NativeNpcDetailImage>,
     >,
     mut images: Query<
-        (
-            &mut NativeNpcDetailImage,
-            &mut ImageNode,
-            &mut Visibility,
-        ),
+        (&mut NativeNpcDetailImage, &mut ImageNode, &mut Visibility),
         Without<NativeNpcModalButton>,
     >,
 ) {
     if !panels.npc_open {
         // Like Inventory/Crafting, the detail item preview uses explicit
         // Visibility::Visible while open. Always reset it when NPC closes.
-        for (
-            _,
-            _,
-            mut visibility,
-        ) in &mut images
-        {
-            *visibility =
-                Visibility::Hidden;
+        for (_, _, mut visibility) in &mut images {
+            *visibility = Visibility::Hidden;
         }
 
         return;
     }
 
-    let npc =
-        selected_npc(
-            &game_state,
-            &panels,
-        );
+    let npc = selected_npc(&game_state, &panels);
 
-    let tabs =
-        npc_tabs(
-            &game_state,
-            &panels,
-        );
+    let tabs = npc_tabs(&game_state, &panels);
 
-    let current_tab =
-        current_npc_tab(
-            &game_state,
-            &panels,
-        );
+    let current_tab = current_npc_tab(&game_state, &panels);
 
-    let gold: u64 =
-        game_state
-            .inventory
-            .iter()
-            .filter(|item| {
-                item.definition_id
-                    == "gold_coin"
-            })
-            .map(|item| {
-                u64::from(item.quantity)
-            })
-            .sum();
+    let gold: u64 = game_state
+        .inventory
+        .iter()
+        .filter(|item| item.definition_id == "gold_coin")
+        .map(|item| u64::from(item.quantity))
+        .sum();
 
-    for (
-        kind,
-        mut text,
-        mut color,
-    ) in &mut text_queries.p0()
-    {
+    for (kind, mut text, mut color) in &mut text_queries.p0() {
         match kind {
             NativeNpcHeaderText::Name => {
-                text.0 =
-                    npc
-                        .map(|npc| {
-                            npc.name
-                                .clone()
-                        })
-                        .unwrap_or_else(|| {
-                            "NPC".into()
-                        });
+                text.0 = npc
+                    .map(|npc| npc.name.clone())
+                    .unwrap_or_else(|| "NPC".into());
 
-                color.0 =
-                    theme::GOLD_BRIGHT;
+                color.0 = theme::GOLD_BRIGHT;
             }
             NativeNpcHeaderText::Service => {
-                text.0 =
-                    npc
-                        .map(|npc| {
-                            npc.service
-                                .clone()
-                        })
-                        .unwrap_or_else(|| {
-                            "No active service"
-                                .into()
-                        });
+                text.0 = npc
+                    .map(|npc| npc.service.clone())
+                    .unwrap_or_else(|| "No active service".into());
 
                 color.0 = MUTED;
             }
             NativeNpcHeaderText::Currency => {
-                text.0 =
-                    format!(
-                        "{} GOLD",
-                        gold,
-                    );
+                text.0 = format!("{} GOLD", gold,);
 
-                color.0 =
-                    theme::GOLD_BRIGHT;
+                color.0 = theme::GOLD_BRIGHT;
             }
         }
     }
 
-    for (
-        tab_text,
-        mut text,
-        mut color,
-    ) in &mut text_queries.p1()
-    {
-        if let Some(tab) =
-            tabs.get(tab_text.0)
-        {
-            text.0 =
-                npc_tab_label(*tab)
-                    .into();
+    for (tab_text, mut text, mut color) in &mut text_queries.p1() {
+        if let Some(tab) = tabs.get(tab_text.0) {
+            text.0 = npc_tab_label(*tab).into();
 
-            color.0 =
-                if panels.npc_tab
-                    == tab_text.0
-                {
-                    theme::GOLD_BRIGHT
-                } else {
-                    TEXT
-                };
+            color.0 = if panels.npc_tab == tab_text.0 {
+                theme::GOLD_BRIGHT
+            } else {
+                TEXT
+            };
         } else {
             text.0.clear();
             color.0 = MUTED;
         }
     }
 
-    for (
-        row,
-        mut text,
-        mut color,
-    ) in &mut text_queries.p2()
-    {
-        let Some((name, meta)) =
-            npc_modal_row_copy(
-                &game_state,
-                &panels,
-                row.index,
-            )
-        else {
+    for (row, mut text, mut color) in &mut text_queries.p2() {
+        let Some((name, meta)) = npc_modal_row_copy(&game_state, &panels, row.index) else {
             text.0.clear();
             color.0 = MUTED;
             continue;
@@ -8460,14 +6980,11 @@ pub(crate) fn update_npc_modal_ui(
             NativeNpcRowField::Name => {
                 text.0 = name;
 
-                color.0 =
-                    if panels.npc_index
-                        == row.index
-                    {
-                        theme::GOLD_BRIGHT
-                    } else {
-                        TEXT
-                    };
+                color.0 = if panels.npc_index == row.index {
+                    theme::GOLD_BRIGHT
+                } else {
+                    TEXT
+                };
             }
             NativeNpcRowField::Meta => {
                 text.0 = meta;
@@ -8476,271 +6993,119 @@ pub(crate) fn update_npc_modal_ui(
         }
     }
 
-    let detail =
-        npc_detail_text(
-            &game_state,
-            &panels,
-        );
+    let detail = npc_detail_text(&game_state, &panels);
 
-    let selected_copy =
-        npc_modal_row_copy(
-            &game_state,
-            &panels,
-            panels.npc_index,
-        );
+    let selected_copy = npc_modal_row_copy(&game_state, &panels, panels.npc_index);
 
-    for (
-        kind,
-        mut text,
-        mut color,
-    ) in &mut text_queries.p3()
-    {
+    for (kind, mut text, mut color) in &mut text_queries.p3() {
         match kind {
             NativeNpcDetailText::Section => {
-                text.0 =
-                    current_tab
-                        .map(npc_tab_label)
-                        .unwrap_or(
-                            "SERVICE",
-                        )
-                        .into();
+                text.0 = current_tab.map(npc_tab_label).unwrap_or("SERVICE").into();
 
-                color.0 =
-                    theme::GOLD;
+                color.0 = theme::GOLD;
             }
             NativeNpcDetailText::Title => {
-                text.0 =
-                    selected_copy
-                        .as_ref()
-                        .map(|(name, _)| {
-                            name.clone()
-                        })
-                        .unwrap_or_else(|| {
-                            "Select an entry"
-                                .into()
-                        });
+                text.0 = selected_copy
+                    .as_ref()
+                    .map(|(name, _)| name.clone())
+                    .unwrap_or_else(|| "Select an entry".into());
 
-                color.0 =
-                    theme::GOLD_BRIGHT;
+                color.0 = theme::GOLD_BRIGHT;
             }
             NativeNpcDetailText::Body => {
-                text.0 =
-                    if detail.is_empty() {
-                        "Select an entry to inspect it."
-                            .into()
-                    } else {
-                        detail.clone()
-                    };
+                text.0 = if detail.is_empty() {
+                    "Select an entry to inspect it.".into()
+                } else {
+                    detail.clone()
+                };
 
                 color.0 = TEXT;
             }
             NativeNpcDetailText::PrimaryLabel => {
-                text.0 =
-                    match current_tab {
-                        Some(
-                            NativeNpcTab::Shop,
-                        ) => "BUY",
-                        Some(
-                            NativeNpcTab::Spells,
-                        ) => "LEARN SPELL",
-                        Some(
-                            NativeNpcTab::Recipes,
-                        ) => "LEARN RECIPE",
-                        Some(
-                            NativeNpcTab::Depot,
-                        ) => "WITHDRAW",
-                        None => "USE SERVICE",
-                    }
-                    .into();
+                text.0 = match current_tab {
+                    Some(NativeNpcTab::Shop) => "BUY",
+                    Some(NativeNpcTab::Spells) => "LEARN SPELL",
+                    Some(NativeNpcTab::Recipes) => "LEARN RECIPE",
+                    Some(NativeNpcTab::Depot) => "WITHDRAW",
+                    None => "USE SERVICE",
+                }
+                .into();
 
-                color.0 =
-                    theme::GOLD_BRIGHT;
+                color.0 = theme::GOLD_BRIGHT;
             }
             NativeNpcDetailText::InventoryHint => {
-                text.0 =
-                    panels
-                        .selected_item
-                        .and_then(|id| {
-                            item_display_name(
-                                &game_state,
-                                id,
-                            )
-                        })
-                        .map(|name| {
-                            format!(
-                                "Selected inventory item: {}",
-                                name,
-                            )
-                        })
-                        .unwrap_or_else(|| {
-                            "Select an inventory item before Sell or Deposit."
-                                .into()
-                        });
+                text.0 = panels
+                    .selected_item
+                    .and_then(|id| item_display_name(&game_state, id))
+                    .map(|name| format!("Selected inventory item: {}", name,))
+                    .unwrap_or_else(|| "Select an inventory item before Sell or Deposit.".into());
 
                 color.0 = MUTED;
             }
         }
     }
 
-    for (
-        action,
-        interaction,
-        mut background,
-        mut border,
-        mut visibility,
-    ) in &mut buttons
-    {
-        let (
-            visible,
-            selected,
-        ) =
-            match *action {
-                NativeNpcModalButton::Tab(
-                    index,
-                ) => (
-                    index < tabs.len(),
-                    index
-                        == panels.npc_tab,
-                ),
-                NativeNpcModalButton::Row(
-                    index,
-                ) => {
-                    let count =
-                        current_tab
-                            .map(|tab| {
-                                npc_tab_len(
-                                    &game_state,
-                                    &panels,
-                                    tab,
-                                )
-                            })
-                            .unwrap_or(0);
+    for (action, interaction, mut background, mut border, mut visibility) in &mut buttons {
+        let (visible, selected) = match *action {
+            NativeNpcModalButton::Tab(index) => (index < tabs.len(), index == panels.npc_tab),
+            NativeNpcModalButton::Row(index) => {
+                let count = current_tab
+                    .map(|tab| npc_tab_len(&game_state, &panels, tab))
+                    .unwrap_or(0);
 
-                    (
-                        index < count,
-                        index
-                            == panels.npc_index,
-                    )
-                }
-                NativeNpcModalButton::Primary => (
-                    current_tab.is_some(),
-                    false,
-                ),
-                NativeNpcModalButton::Sell => (
-                    matches!(
-                        current_tab,
-                        Some(
-                            NativeNpcTab::Shop,
-                        )
-                    ),
-                    false,
-                ),
-                NativeNpcModalButton::Deposit => (
-                    matches!(
-                        current_tab,
-                        Some(
-                            NativeNpcTab::Depot,
-                        )
-                    ),
-                    false,
-                ),
-            };
+                (index < count, index == panels.npc_index)
+            }
+            NativeNpcModalButton::Primary => (current_tab.is_some(), false),
+            NativeNpcModalButton::Sell => (matches!(current_tab, Some(NativeNpcTab::Shop,)), false),
+            NativeNpcModalButton::Deposit => {
+                (matches!(current_tab, Some(NativeNpcTab::Depot,)), false)
+            }
+        };
 
-        *visibility =
-            if visible {
-                Visibility::Visible
-            } else {
-                Visibility::Hidden
-            };
+        *visibility = if visible {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
 
         if !visible {
             continue;
         }
 
         if selected {
-            background.0 =
-                Color::srgba(
-                    0.22,
-                    0.145,
-                    0.035,
-                    0.72,
-                );
-            *border =
-                BorderColor::all(
-                    theme::GOLD_BRIGHT,
-                );
-        } else if *interaction
-            == Interaction::Hovered
-        {
-            background.0 =
-                theme::BUTTON_HOVER;
-            *border =
-                BorderColor::all(
-                    theme::GOLD,
-                );
+            background.0 = Color::srgba(0.22, 0.145, 0.035, 0.72);
+            *border = BorderColor::all(theme::GOLD_BRIGHT);
+        } else if *interaction == Interaction::Hovered {
+            background.0 = theme::BUTTON_HOVER;
+            *border = BorderColor::all(theme::GOLD);
         } else {
-            background.0 =
-                theme::BUTTON_BG;
-            *border =
-                BorderColor::all(
-                    theme::BUTTON_BORDER,
-                );
+            background.0 = theme::BUTTON_BG;
+            *border = BorderColor::all(theme::BUTTON_BORDER);
         }
     }
 
-    let image_definition =
-        npc_modal_image_definition(
-            &game_state,
-            &panels,
-        );
+    let image_definition = npc_modal_image_definition(&game_state, &panels);
 
-    for (
-        mut marker,
-        mut image,
-        mut visibility,
-    ) in &mut images
-    {
-        let Some(definition_id) =
-            image_definition
-        else {
-            marker.definition_id =
-                None;
+    for (mut marker, mut image, mut visibility) in &mut images {
+        let Some(definition_id) = image_definition else {
+            marker.definition_id = None;
 
-            *visibility =
-                Visibility::Hidden;
+            *visibility = Visibility::Hidden;
 
             continue;
         };
 
-        if marker
-            .definition_id
-            .as_deref()
-            != Some(definition_id)
-        {
-            image.image =
-                asset_server.load(
-                    format!(
-                        "sprites/items/{}.png",
-                        definition_id,
-                    ),
-                );
+        if marker.definition_id.as_deref() != Some(definition_id) {
+            image.image = asset_server.load(format!("sprites/items/{}.png", definition_id,));
 
-            marker.definition_id =
-                Some(
-                    definition_id
-                        .to_owned(),
-                );
+            marker.definition_id = Some(definition_id.to_owned());
         }
 
-        *visibility =
-            Visibility::Visible;
+        *visibility = Visibility::Visible;
     }
 }
 
-fn npc_panel_text(
-    game_state: &NativeGameState,
-    panels: &NativePanelState,
-) -> String {
+fn npc_panel_text(game_state: &NativeGameState, panels: &NativePanelState) -> String {
     let Some(npc) = selected_npc(game_state, panels) else {
         return "NPC\nNo NPC selected.".into();
     };
@@ -8780,27 +7145,34 @@ fn npc_panel_text(
                     .get(&offer.item_definition_id)
                     .map(|definition| definition.name.as_str())
                     .unwrap_or(offer.item_definition_id.as_str());
-                let marker = if index == panels.npc_index { "▶" } else { " " };
+                let marker = if index == panels.npc_index {
+                    "▶"
+                } else {
+                    " "
+                };
                 lines.push(format!(
                     "{marker} {:<22} ×{}   {} gold",
-                    name,
-                    offer.quantity,
-                    offer.price,
+                    name, offer.quantity, offer.price,
                 ));
             }
         }
         Some(NativeNpcTab::Spells) => {
             lines.push("SPELL TRAINER".into());
             for (index, spell_id) in npc.spell_ids.iter().enumerate() {
-                let marker = if index == panels.npc_index { "▶" } else { " " };
-                let learned =
-                    if game_state.learned_spell_ids.contains(spell_id) { "✓" } else { " " };
+                let marker = if index == panels.npc_index {
+                    "▶"
+                } else {
+                    " "
+                };
+                let learned = if game_state.learned_spell_ids.contains(spell_id) {
+                    "✓"
+                } else {
+                    " "
+                };
                 if let Some(spell) = game_state.spells.get(spell_id) {
                     lines.push(format!(
                         "{marker} {learned} {:<20} ML {:>2}   {} gold",
-                        spell.name,
-                        spell.required_magic_level,
-                        spell.price,
+                        spell.name, spell.required_magic_level, spell.price,
                     ));
                 } else {
                     lines.push(format!("{marker} {learned} {spell_id}"));
@@ -8810,15 +7182,20 @@ fn npc_panel_text(
         Some(NativeNpcTab::Recipes) => {
             lines.push("RECIPE TRAINER".into());
             for (index, recipe_id) in npc.recipe_ids.iter().enumerate() {
-                let marker = if index == panels.npc_index { "▶" } else { " " };
-                let learned =
-                    if game_state.learned_recipe_ids.contains(recipe_id) { "✓" } else { " " };
+                let marker = if index == panels.npc_index {
+                    "▶"
+                } else {
+                    " "
+                };
+                let learned = if game_state.learned_recipe_ids.contains(recipe_id) {
+                    "✓"
+                } else {
+                    " "
+                };
                 if let Some(recipe) = game_state.rune_recipes.get(recipe_id) {
                     lines.push(format!(
                         "{marker} {learned} {:<21} skill {:>2}   {} gold",
-                        recipe.name,
-                        recipe.required_skill_level,
-                        recipe.learn_price,
+                        recipe.name, recipe.required_skill_level, recipe.learn_price,
                     ));
                 } else {
                     lines.push(format!("{marker} {learned} {recipe_id}"));
@@ -8831,17 +7208,17 @@ fn npc_panel_text(
                 lines.push("Depot is empty.".into());
             } else {
                 for (index, item) in game_state.depot.iter().enumerate().take(18) {
-                    let marker = if index == panels.npc_index { "▶" } else { " " };
+                    let marker = if index == panels.npc_index {
+                        "▶"
+                    } else {
+                        " "
+                    };
                     let name = game_state
                         .item_definitions
                         .get(&item.definition_id)
                         .map(|definition| definition.name.as_str())
                         .unwrap_or(item.definition_id.as_str());
-                    lines.push(format!(
-                        "{marker} {:<24} ×{}",
-                        name,
-                        item.quantity,
-                    ));
+                    lines.push(format!("{marker} {:<24} ×{}", name, item.quantity,));
                 }
             }
         }
@@ -8857,10 +7234,7 @@ fn npc_panel_text(
     lines.join("\n")
 }
 
-fn npc_detail_text(
-    game_state: &NativeGameState,
-    panels: &NativePanelState,
-) -> String {
+fn npc_detail_text(game_state: &NativeGameState, panels: &NativePanelState) -> String {
     let Some(npc) = selected_npc(game_state, panels) else {
         return String::new();
     };
@@ -8874,12 +7248,12 @@ fn npc_detail_text(
                 let name = definition
                     .map(|definition| definition.name.clone())
                     .unwrap_or_else(|| offer.item_definition_id.clone());
-                let weight = definition.map(|definition| definition.weight).unwrap_or(0.0);
+                let weight = definition
+                    .map(|definition| definition.weight)
+                    .unwrap_or(0.0);
                 format!(
                     "{name}\nOffer quantity {}   ·   Price {} gold   ·   Unit weight {:.1}",
-                    offer.quantity,
-                    offer.price,
-                    weight,
+                    offer.quantity, offer.price, weight,
                 )
             })
             .unwrap_or_default(),
@@ -8923,19 +7297,14 @@ fn npc_detail_text(
                     .get(&item.definition_id)
                     .map(|definition| definition.name.clone())
                     .unwrap_or_else(|| item.definition_id.clone());
-                format!(
-                    "{name}\nQuantity {}   ·   F withdraw one",
-                    item.quantity,
-                )
+                format!("{name}\nQuantity {}   ·   F withdraw one", item.quantity,)
             })
             .unwrap_or_default(),
         None => String::new(),
     }
 }
 
-fn crafting_categories(
-    game_state: &NativeGameState,
-) -> Vec<String> {
+fn crafting_categories(game_state: &NativeGameState) -> Vec<String> {
     let mut categories = vec!["all".to_owned()];
 
     let mut kinds: Vec<_> = game_state
@@ -8952,10 +7321,7 @@ fn crafting_categories(
     categories
 }
 
-fn normalize_crafting_category(
-    game_state: &NativeGameState,
-    panels: &mut NativePanelState,
-) {
+fn normalize_crafting_category(game_state: &NativeGameState, panels: &mut NativePanelState) {
     let categories = crafting_categories(game_state);
 
     if categories.is_empty() {
@@ -8966,10 +7332,7 @@ fn normalize_crafting_category(
     panels.crafting_category %= categories.len();
 }
 
-fn cycle_crafting_category(
-    game_state: &NativeGameState,
-    panels: &mut NativePanelState,
-) {
+fn cycle_crafting_category(game_state: &NativeGameState, panels: &mut NativePanelState) {
     let categories = crafting_categories(game_state);
 
     if categories.is_empty() {
@@ -8978,8 +7341,7 @@ fn cycle_crafting_category(
         return;
     }
 
-    panels.crafting_category =
-        (panels.crafting_category + 1) % categories.len();
+    panels.crafting_category = (panels.crafting_category + 1) % categories.len();
     panels.selected_recipe_id = None;
 }
 
@@ -8990,7 +7352,11 @@ fn current_crafting_category<'a>(
     let categories = crafting_categories(game_state);
 
     categories
-        .get(panels.crafting_category.min(categories.len().saturating_sub(1)))
+        .get(
+            panels
+                .crafting_category
+                .min(categories.len().saturating_sub(1)),
+        )
         .cloned()
         .unwrap_or_else(|| "all".into())
 }
@@ -8999,32 +7365,22 @@ fn recipes_sorted(
     game_state: &NativeGameState,
     panels: &NativePanelState,
 ) -> Vec<(String, String)> {
-    let category =
-        current_crafting_category(game_state, panels);
+    let category = current_crafting_category(game_state, panels);
 
     let mut recipes: Vec<_> = game_state
         .rune_recipes
         .values()
         .filter(|recipe| {
-            category == "all"
-                || recipe
-                    .craft_kind
-                    .trim()
-                    .eq_ignore_ascii_case(&category)
+            category == "all" || recipe.craft_kind.trim().eq_ignore_ascii_case(&category)
         })
-        .map(|recipe| {
-            (recipe.id.clone(), recipe.name.clone())
-        })
+        .map(|recipe| (recipe.id.clone(), recipe.name.clone()))
         .collect();
 
     recipes.sort_by(|left, right| left.1.cmp(&right.1));
     recipes
 }
 
-fn ensure_recipe_selection(
-    game_state: &NativeGameState,
-    panels: &mut NativePanelState,
-) {
+fn ensure_recipe_selection(game_state: &NativeGameState, panels: &mut NativePanelState) {
     let recipes = recipes_sorted(game_state, panels);
 
     if recipes.is_empty() {
@@ -9035,22 +7391,17 @@ fn ensure_recipe_selection(
     if panels
         .selected_recipe_id
         .as_ref()
-        .is_some_and(|selected| {
-            recipes.iter().any(|(id, _)| id == selected)
-        })
+        .is_some_and(|selected| recipes.iter().any(|(id, _)| id == selected))
     {
         return;
     }
 
     let first_learned = recipes
         .iter()
-        .find(|(id, _)| {
-            game_state.learned_recipe_ids.contains(id)
-        })
+        .find(|(id, _)| game_state.learned_recipe_ids.contains(id))
         .or_else(|| recipes.first());
 
-    panels.selected_recipe_id =
-        first_learned.map(|(id, _)| id.clone());
+    panels.selected_recipe_id = first_learned.map(|(id, _)| id.clone());
 }
 
 fn step_recipe_selection(
@@ -9068,19 +7419,13 @@ fn step_recipe_selection(
     let current = panels
         .selected_recipe_id
         .as_ref()
-        .and_then(|selected| {
-            recipes
-                .iter()
-                .position(|(id, _)| id == selected)
-        })
+        .and_then(|selected| recipes.iter().position(|(id, _)| id == selected))
         .unwrap_or(0) as isize;
 
     let len = recipes.len() as isize;
-    let next =
-        (current + delta).rem_euclid(len) as usize;
+    let next = (current + delta).rem_euclid(len) as usize;
 
-    panels.selected_recipe_id =
-        Some(recipes[next].0.clone());
+    panels.selected_recipe_id = Some(recipes[next].0.clone());
 }
 
 fn craft_selected_recipe(
@@ -9088,52 +7433,31 @@ fn craft_selected_recipe(
     game_state: &mut NativeGameState,
     panels: &NativePanelState,
 ) {
-    let Some(recipe_id) =
-        panels.selected_recipe_id.clone()
-    else {
-        game_state.push_system_message(
-            "No recipe selected.",
-        );
+    let Some(recipe_id) = panels.selected_recipe_id.clone() else {
+        game_state.push_system_message("No recipe selected.");
         return;
     };
 
-    if !game_state
-        .learned_recipe_ids
-        .contains(&recipe_id)
-    {
-        game_state.push_system_message(
-            "That recipe has not been learned.",
-        );
+    if !game_state.learned_recipe_ids.contains(&recipe_id) {
+        game_state.push_system_message("That recipe has not been learned.");
         return;
     }
 
-    let Some(recipe) =
-        game_state.rune_recipes.get(&recipe_id)
-    else {
-        game_state.push_system_message(
-            "Unknown recipe.",
-        );
+    let Some(recipe) = game_state.rune_recipes.get(&recipe_id) else {
+        game_state.push_system_message("Unknown recipe.");
         return;
     };
 
-    let quantity =
-        panels.crafting_quantity.max(1);
+    let quantity = panels.crafting_quantity.max(1);
 
     let recipe_name = recipe.name.clone();
-    let input_definition_id =
-        recipe.input_definition_id.clone();
+    let input_definition_id = recipe.input_definition_id.clone();
     let input_quantity = recipe.input_quantity;
     let mana_cost = recipe.mana_cost;
 
-    let required_items =
-        u64::from(input_quantity)
-            .saturating_mul(u64::from(quantity));
+    let required_items = u64::from(input_quantity).saturating_mul(u64::from(quantity));
 
-    let carried =
-        inventory_definition_quantity(
-            game_state,
-            &input_definition_id,
-        );
+    let carried = inventory_definition_quantity(game_state, &input_definition_id);
 
     if carried < required_items {
         game_state.push_system_message(format!(
@@ -9142,9 +7466,7 @@ fn craft_selected_recipe(
         return;
     }
 
-    let required_mana =
-        u64::from(mana_cost)
-            .saturating_mul(u64::from(quantity));
+    let required_mana = u64::from(mana_cost).saturating_mul(u64::from(quantity));
 
     let mana = game_state
         .local_player()
@@ -9152,9 +7474,7 @@ fn craft_selected_recipe(
         .unwrap_or(0);
 
     if mana < required_mana {
-        game_state.push_system_message(format!(
-            "Not enough mana for {quantity} × {recipe_name}.",
-        ));
+        game_state.push_system_message(format!("Not enough mana for {quantity} × {recipe_name}.",));
         return;
     }
 
@@ -9166,13 +7486,9 @@ fn craft_selected_recipe(
         })
         .is_err()
     {
-        game_state.push_system_message(
-            "The game connection is offline.",
-        );
+        game_state.push_system_message("The game connection is offline.");
     } else {
-        game_state.push_system_message(format!(
-            "Crafting {quantity} × {recipe_name}.",
-        ));
+        game_state.push_system_message(format!("Crafting {quantity} × {recipe_name}.",));
     }
 }
 
@@ -9187,23 +7503,14 @@ pub(crate) fn handle_crafting_modal_buttons(
             &mut BackgroundColor,
             &mut BorderColor,
         ),
-        (
-            Changed<Interaction>,
-            With<Button>,
-        ),
+        (Changed<Interaction>, With<Button>),
     >,
 ) {
     if !panels.crafting_open {
         return;
     }
 
-    for (
-        interaction,
-        action,
-        mut background,
-        mut border,
-    ) in &mut buttons
-    {
+    for (interaction, action, mut background, mut border) in &mut buttons {
         match *interaction {
             Interaction::Hovered => {
                 background.0 = theme::BUTTON_HOVER;
@@ -9221,17 +7528,11 @@ pub(crate) fn handle_crafting_modal_buttons(
                         if index < categories.len() {
                             panels.crafting_category = index;
                             panels.selected_recipe_id = None;
-                            ensure_recipe_selection(
-                                &game_state,
-                                &mut panels,
-                            );
+                            ensure_recipe_selection(&game_state, &mut panels);
                         }
                     }
                     NativeCraftingButton::Recipe(index) => {
-                        let recipes = recipes_sorted(
-                            &game_state,
-                            &panels,
-                        );
+                        let recipes = recipes_sorted(&game_state, &panels);
 
                         if let Some((recipe_id, _)) = recipes.get(index) {
                             panels.selected_recipe_id = Some(recipe_id.clone());
@@ -9239,24 +7540,14 @@ pub(crate) fn handle_crafting_modal_buttons(
                     }
                     NativeCraftingButton::QuantityDown => {
                         panels.crafting_quantity =
-                            panels
-                                .crafting_quantity
-                                .saturating_sub(1)
-                                .max(1);
+                            panels.crafting_quantity.saturating_sub(1).max(1);
                     }
                     NativeCraftingButton::QuantityUp => {
                         panels.crafting_quantity =
-                            panels
-                                .crafting_quantity
-                                .saturating_add(1)
-                                .min(99);
+                            panels.crafting_quantity.saturating_add(1).min(99);
                     }
                     NativeCraftingButton::Craft => {
-                        craft_selected_recipe(
-                            &network,
-                            &mut game_state,
-                            &panels,
-                        );
+                        craft_selected_recipe(&network, &mut game_state, &panels);
                     }
                     NativeCraftingButton::Cancel => {
                         if network
@@ -9264,13 +7555,9 @@ pub(crate) fn handle_crafting_modal_buttons(
                             .send(ClientMessage::CancelRuneCrafting)
                             .is_err()
                         {
-                            game_state.push_system_message(
-                                "The game connection is offline.",
-                            );
+                            game_state.push_system_message("The game connection is offline.");
                         } else {
-                            game_state.push_system_message(
-                                "Cancel crafting requested.",
-                            );
+                            game_state.push_system_message("Cancel crafting requested.");
                         }
                     }
                 }
@@ -9284,56 +7571,28 @@ pub(crate) fn update_crafting_modal_ui(
     game_state: Res<NativeGameState>,
     panels: Res<NativePanelState>,
     mut text_queries: ParamSet<(
-        Query<
-            (
-                &NativeCraftingCategoryText,
-                &mut Text,
-                &mut TextColor,
-            ),
-        >,
-        Query<
-            (
-                &NativeCraftingRecipeText,
-                &mut Text,
-                &mut TextColor,
-            ),
-        >,
-        Query<
-            (
-                &NativeCraftingDetailText,
-                &mut Text,
-                &mut TextColor,
-            ),
-        >,
+        Query<(&NativeCraftingCategoryText, &mut Text, &mut TextColor)>,
+        Query<(&NativeCraftingRecipeText, &mut Text, &mut TextColor)>,
+        Query<(&NativeCraftingDetailText, &mut Text, &mut TextColor)>,
     )>,
-    mut buttons: Query<
-        (
-            &NativeCraftingButton,
-            &Interaction,
-            &mut BackgroundColor,
-            &mut BorderColor,
-        ),
-    >,
-    mut images: Query<
-        (
-            &mut NativeCraftingItemImage,
-            &mut ImageNode,
-            &mut Visibility,
-        ),
-    >,
+    mut buttons: Query<(
+        &NativeCraftingButton,
+        &Interaction,
+        &mut BackgroundColor,
+        &mut BorderColor,
+    )>,
+    mut images: Query<(
+        &mut NativeCraftingItemImage,
+        &mut ImageNode,
+        &mut Visibility,
+    )>,
 ) {
     if !panels.crafting_open {
         // Crafting item previews use explicit Visibility::Visible while the
         // window is open. Reset them explicitly before returning so they
         // cannot remain rendered over the world after the modal closes.
-        for (
-            _,
-            _,
-            mut visibility,
-        ) in &mut images
-        {
-            *visibility =
-                Visibility::Hidden;
+        for (_, _, mut visibility) in &mut images {
+            *visibility = Visibility::Hidden;
         }
 
         return;
@@ -9342,87 +7601,59 @@ pub(crate) fn update_crafting_modal_ui(
     let categories = crafting_categories(&game_state);
     let recipes = recipes_sorted(&game_state, &panels);
 
-    for (
-        slot,
-        mut text,
-        mut color,
-    ) in &mut text_queries.p0()
-    {
+    for (slot, mut text, mut color) in &mut text_queries.p0() {
         if let Some(category) = categories.get(slot.0) {
-            text.0 =
-                if category == "all" {
-                    "All recipes".into()
-                } else {
-                    title_case(category)
-                };
+            text.0 = if category == "all" {
+                "All recipes".into()
+            } else {
+                title_case(category)
+            };
 
-            color.0 =
-                if panels.crafting_category == slot.0 {
-                    theme::GOLD_BRIGHT
-                } else {
-                    TEXT
-                };
+            color.0 = if panels.crafting_category == slot.0 {
+                theme::GOLD_BRIGHT
+            } else {
+                TEXT
+            };
         } else {
             text.0.clear();
             color.0 = MUTED;
         }
     }
 
-    for (
-        view,
-        mut text,
-        mut color,
-    ) in &mut text_queries.p1()
-    {
+    for (view, mut text, mut color) in &mut text_queries.p1() {
         let Some((recipe_id, recipe_name)) = recipes.get(view.index) else {
             text.0.clear();
             color.0 = MUTED;
             continue;
         };
 
-        let learned =
-            game_state
-                .learned_recipe_ids
-                .contains(recipe_id);
+        let learned = game_state.learned_recipe_ids.contains(recipe_id);
 
-        let selected =
-            panels
-                .selected_recipe_id
-                .as_deref()
-                == Some(recipe_id.as_str());
+        let selected = panels.selected_recipe_id.as_deref() == Some(recipe_id.as_str());
 
         match view.field {
             NativeCraftingRecipeField::Name => {
-                text.0 = format!(
-                    "{}{}",
-                    if learned { "✓ " } else { "× " },
-                    recipe_name,
-                );
+                text.0 = format!("{}{}", if learned { "✓ " } else { "× " }, recipe_name,);
 
-                color.0 =
-                    if selected {
-                        theme::GOLD_BRIGHT
-                    } else if learned {
-                        TEXT
-                    } else {
-                        MUTED
-                    };
+                color.0 = if selected {
+                    theme::GOLD_BRIGHT
+                } else if learned {
+                    TEXT
+                } else {
+                    MUTED
+                };
             }
             NativeCraftingRecipeField::Meta => {
                 if let Some(recipe) = game_state.rune_recipes.get(recipe_id) {
-                    let input_name =
-                        game_state
-                            .item_definitions
-                            .get(&recipe.input_definition_id)
-                            .map(|definition| definition.name.as_str())
-                            .unwrap_or(recipe.input_definition_id.as_str());
+                    let input_name = game_state
+                        .item_definitions
+                        .get(&recipe.input_definition_id)
+                        .map(|definition| definition.name.as_str())
+                        .unwrap_or(recipe.input_definition_id.as_str());
 
                     text.0 = format!(
                         "{}× {}  →  {}× output  ·  {} mana",
-                        recipe.input_quantity,
-                        input_name,
-                        recipe.output_quantity,
-                        recipe.mana_cost,
+                        recipe.input_quantity, input_name, recipe.output_quantity, recipe.mana_cost,
                     );
                 } else {
                     text.0.clear();
@@ -9433,22 +7664,14 @@ pub(crate) fn update_crafting_modal_ui(
         }
     }
 
-    let selected_recipe =
-        panels
-            .selected_recipe_id
-            .as_deref()
-            .and_then(|recipe_id| {
-                game_state.rune_recipes.get(recipe_id)
-            });
+    let selected_recipe = panels
+        .selected_recipe_id
+        .as_deref()
+        .and_then(|recipe_id| game_state.rune_recipes.get(recipe_id));
 
     let quantity = panels.crafting_quantity.max(1);
 
-    for (
-        kind,
-        mut text,
-        mut color,
-    ) in &mut text_queries.p2()
-    {
+    for (kind, mut text, mut color) in &mut text_queries.p2() {
         let Some(recipe) = selected_recipe else {
             match kind {
                 NativeCraftingDetailText::Name => {
@@ -9460,16 +7683,15 @@ pub(crate) fn update_crafting_modal_ui(
                     color.0 = theme::GOLD_BRIGHT;
                 }
                 NativeCraftingDetailText::Active => {
-                    text.0 =
-                        if let Some(crafting) = game_state.crafting.as_ref() {
-                            format!(
-                                "ACTIVE  ·  {} remaining  ·  {}",
-                                crafting.remaining,
-                                title_case(&crafting.status),
-                            )
-                        } else {
-                            "No active production.".into()
-                        };
+                    text.0 = if let Some(crafting) = game_state.crafting.as_ref() {
+                        format!(
+                            "ACTIVE  ·  {} remaining  ·  {}",
+                            crafting.remaining,
+                            title_case(&crafting.status),
+                        )
+                    } else {
+                        "No active production.".into()
+                    };
                     color.0 = MUTED;
                 }
                 _ => {
@@ -9481,42 +7703,27 @@ pub(crate) fn update_crafting_modal_ui(
             continue;
         };
 
-        let input_name =
-            game_state
-                .item_definitions
-                .get(&recipe.input_definition_id)
-                .map(|definition| definition.name.as_str())
-                .unwrap_or(recipe.input_definition_id.as_str());
+        let input_name = game_state
+            .item_definitions
+            .get(&recipe.input_definition_id)
+            .map(|definition| definition.name.as_str())
+            .unwrap_or(recipe.input_definition_id.as_str());
 
-        let output_name =
-            game_state
-                .item_definitions
-                .get(&recipe.output_definition_id)
-                .map(|definition| definition.name.as_str())
-                .unwrap_or(recipe.output_definition_id.as_str());
+        let output_name = game_state
+            .item_definitions
+            .get(&recipe.output_definition_id)
+            .map(|definition| definition.name.as_str())
+            .unwrap_or(recipe.output_definition_id.as_str());
 
-        let carried =
-            inventory_definition_quantity(
-                &game_state,
-                &recipe.input_definition_id,
-            );
+        let carried = inventory_definition_quantity(&game_state, &recipe.input_definition_id);
 
-        let required_items =
-            u64::from(recipe.input_quantity)
-                .saturating_mul(u64::from(quantity));
+        let required_items = u64::from(recipe.input_quantity).saturating_mul(u64::from(quantity));
 
-        let required_mana =
-            u64::from(recipe.mana_cost)
-                .saturating_mul(u64::from(quantity));
+        let required_mana = u64::from(recipe.mana_cost).saturating_mul(u64::from(quantity));
 
-        let total_output =
-            u64::from(recipe.output_quantity)
-                .saturating_mul(u64::from(quantity));
+        let total_output = u64::from(recipe.output_quantity).saturating_mul(u64::from(quantity));
 
-        let learned =
-            game_state
-                .learned_recipe_ids
-                .contains(&recipe.id);
+        let learned = game_state.learned_recipe_ids.contains(&recipe.id);
 
         match kind {
             NativeCraftingDetailText::Name => {
@@ -9534,24 +7741,16 @@ pub(crate) fn update_crafting_modal_ui(
             NativeCraftingDetailText::Input => {
                 text.0 = format!(
                     "{} × {}\nCarried {} / required {}",
-                    recipe.input_quantity,
-                    input_name,
-                    carried,
-                    required_items,
+                    recipe.input_quantity, input_name, carried, required_items,
                 );
-                color.0 =
-                    if carried >= required_items {
-                        TEXT
-                    } else {
-                        theme::TARGET_HP
-                    };
+                color.0 = if carried >= required_items {
+                    TEXT
+                } else {
+                    theme::TARGET_HP
+                };
             }
             NativeCraftingDetailText::Output => {
-                text.0 = format!(
-                    "{} × {}",
-                    total_output,
-                    output_name,
-                );
+                text.0 = format!("{} × {}", total_output, output_name,);
                 color.0 = TEXT;
             }
             NativeCraftingDetailText::Requirements => {
@@ -9568,60 +7767,44 @@ pub(crate) fn update_crafting_modal_ui(
                 color.0 = theme::GOLD_BRIGHT;
             }
             NativeCraftingDetailText::Active => {
-                text.0 =
-                    if let Some(crafting) = game_state.crafting.as_ref() {
-                        let active_name =
-                            crafting
-                                .recipe_id
-                                .as_ref()
-                                .and_then(|id| game_state.rune_recipes.get(id))
-                                .map(|active_recipe| active_recipe.name.as_str())
-                                .unwrap_or("Crafting");
+                text.0 = if let Some(crafting) = game_state.crafting.as_ref() {
+                    let active_name = crafting
+                        .recipe_id
+                        .as_ref()
+                        .and_then(|id| game_state.rune_recipes.get(id))
+                        .map(|active_recipe| active_recipe.name.as_str())
+                        .unwrap_or("Crafting");
 
-                        format!(
-                            "ACTIVE  ·  {}  ·  {} remaining  ·  {}",
-                            active_name,
-                            crafting.remaining,
-                            title_case(&crafting.status),
-                        )
-                    } else {
-                        "No active production.".into()
-                    };
+                    format!(
+                        "ACTIVE  ·  {}  ·  {} remaining  ·  {}",
+                        active_name,
+                        crafting.remaining,
+                        title_case(&crafting.status),
+                    )
+                } else {
+                    "No active production.".into()
+                };
 
                 color.0 = MUTED;
             }
         }
     }
 
-    for (
-        action,
-        interaction,
-        mut background,
-        mut border,
-    ) in &mut buttons
-    {
-        let selected =
-            match *action {
-                NativeCraftingButton::Category(index) => {
-                    index < categories.len()
-                        && panels.crafting_category == index
-                }
-                NativeCraftingButton::Recipe(index) => {
-                    recipes
-                        .get(index)
-                        .is_some_and(|(recipe_id, _)| {
-                            panels
-                                .selected_recipe_id
-                                .as_deref()
-                                == Some(recipe_id.as_str())
-                        })
-                }
-                _ => false,
-            };
+    for (action, interaction, mut background, mut border) in &mut buttons {
+        let selected = match *action {
+            NativeCraftingButton::Category(index) => {
+                index < categories.len() && panels.crafting_category == index
+            }
+            NativeCraftingButton::Recipe(index) => {
+                recipes.get(index).is_some_and(|(recipe_id, _)| {
+                    panels.selected_recipe_id.as_deref() == Some(recipe_id.as_str())
+                })
+            }
+            _ => false,
+        };
 
         if selected {
-            background.0 =
-                Color::srgba(0.22, 0.145, 0.035, 0.72);
+            background.0 = Color::srgba(0.22, 0.145, 0.035, 0.72);
             *border = BorderColor::all(theme::GOLD_BRIGHT);
         } else if *interaction == Interaction::Hovered {
             background.0 = theme::BUTTON_HOVER;
@@ -9632,33 +7815,15 @@ pub(crate) fn update_crafting_modal_ui(
         }
     }
 
-    let input_definition =
-        selected_recipe.map(|recipe| recipe.input_definition_id.as_str());
+    let input_definition = selected_recipe.map(|recipe| recipe.input_definition_id.as_str());
 
-    let output_definition =
-        selected_recipe.map(|recipe| recipe.output_definition_id.as_str());
+    let output_definition = selected_recipe.map(|recipe| recipe.output_definition_id.as_str());
 
-    for (
-        mut marker,
-        mut image,
-        mut visibility,
-    ) in &mut images
-    {
-        let (definition_id, remembered) =
-            match &mut *marker {
-                NativeCraftingItemImage::Input {
-                    definition_id,
-                } => (
-                    input_definition,
-                    definition_id,
-                ),
-                NativeCraftingItemImage::Output {
-                    definition_id,
-                } => (
-                    output_definition,
-                    definition_id,
-                ),
-            };
+    for (mut marker, mut image, mut visibility) in &mut images {
+        let (definition_id, remembered) = match &mut *marker {
+            NativeCraftingItemImage::Input { definition_id } => (input_definition, definition_id),
+            NativeCraftingItemImage::Output { definition_id } => (output_definition, definition_id),
+        };
 
         let Some(definition_id) = definition_id else {
             *remembered = None;
@@ -9667,12 +7832,7 @@ pub(crate) fn update_crafting_modal_ui(
         };
 
         if remembered.as_deref() != Some(definition_id) {
-            image.image = asset_server.load(
-                format!(
-                    "sprites/items/{}.png",
-                    definition_id,
-                ),
-            );
+            image.image = asset_server.load(format!("sprites/items/{}.png", definition_id,));
 
             *remembered = Some(definition_id.to_owned());
         }
@@ -9681,36 +7841,27 @@ pub(crate) fn update_crafting_modal_ui(
     }
 }
 
-fn crafting_panel_text(
-    game_state: &NativeGameState,
-    panels: &NativePanelState,
-) -> String {
-    let categories =
-        crafting_categories(game_state);
-    let category =
-        current_crafting_category(game_state, panels);
+fn crafting_panel_text(game_state: &NativeGameState, panels: &NativePanelState) -> String {
+    let categories = crafting_categories(game_state);
+    let category = current_crafting_category(game_state, panels);
 
-    let recipes =
-        recipes_sorted(game_state, panels);
+    let recipes = recipes_sorted(game_state, panels);
 
     let learned = game_state
         .rune_recipes
         .keys()
-        .filter(|id| {
-            game_state.learned_recipe_ids.contains(*id)
-        })
+        .filter(|id| game_state.learned_recipe_ids.contains(*id))
         .count();
 
     let category_tabs = categories
         .iter()
         .enumerate()
         .map(|(index, value)| {
-            let label =
-                if value == "all" {
-                    "All".into()
-                } else {
-                    title_case(value)
-                };
+            let label = if value == "all" {
+                "All".into()
+            } else {
+                title_case(value)
+            };
 
             if index == panels.crafting_category {
                 format!("[{label}]")
@@ -9741,80 +7892,51 @@ fn crafting_panel_text(
     ];
 
     if recipes.is_empty() {
-        lines.push(
-            "No recipes in this category.".into(),
-        );
+        lines.push("No recipes in this category.".into());
     } else {
         for (id, name) in recipes {
-            let Some(recipe) =
-                game_state.rune_recipes.get(&id)
-            else {
+            let Some(recipe) = game_state.rune_recipes.get(&id) else {
                 continue;
             };
 
-            let marker =
-                if panels
-                    .selected_recipe_id
-                    .as_deref()
-                    == Some(id.as_str())
-                {
-                    "▶"
-                } else {
-                    " "
-                };
+            let marker = if panels.selected_recipe_id.as_deref() == Some(id.as_str()) {
+                "▶"
+            } else {
+                " "
+            };
 
-            let learned_marker =
-                if game_state
-                    .learned_recipe_ids
-                    .contains(&id)
-                {
-                    "✓"
-                } else {
-                    "×"
-                };
+            let learned_marker = if game_state.learned_recipe_ids.contains(&id) {
+                "✓"
+            } else {
+                "×"
+            };
 
             let input_name = game_state
                 .item_definitions
                 .get(&recipe.input_definition_id)
-                .map(|definition| {
-                    definition.name.as_str()
-                })
-                .unwrap_or(
-                    recipe.input_definition_id.as_str(),
-                );
+                .map(|definition| definition.name.as_str())
+                .unwrap_or(recipe.input_definition_id.as_str());
 
             let output_name = game_state
                 .item_definitions
                 .get(&recipe.output_definition_id)
-                .map(|definition| {
-                    definition.name.as_str()
-                })
-                .unwrap_or(
-                    recipe.output_definition_id.as_str(),
-                );
+                .map(|definition| definition.name.as_str())
+                .unwrap_or(recipe.output_definition_id.as_str());
 
             lines.push(format!(
                 "{marker} {learned_marker} {:<19}  {}× {} → {}× {}",
-                name,
-                recipe.input_quantity,
-                input_name,
-                recipe.output_quantity,
-                output_name,
+                name, recipe.input_quantity, input_name, recipe.output_quantity, output_name,
             ));
         }
     }
 
-    if let Some(crafting) =
-        game_state.crafting.as_ref()
-    {
+    if let Some(crafting) = game_state.crafting.as_ref() {
         lines.push(String::new());
 
         let recipe_name = crafting
             .recipe_id
             .as_ref()
-            .and_then(|id| {
-                game_state.rune_recipes.get(id)
-            })
+            .and_then(|id| game_state.rune_recipes.get(id))
             .map(|recipe| recipe.name.clone())
             .unwrap_or_else(|| {
                 crafting
@@ -9832,76 +7954,45 @@ fn crafting_panel_text(
     }
 
     lines.push(String::new());
-    lines.push(
-        "Tab Category   ·   ↑/↓ Recipe   ·   ←/→ Quantity"
-            .into(),
-    );
-    lines.push(
-        "F Craft selected quantity   ·   X Cancel"
-            .into(),
-    );
+    lines.push("Tab Category   ·   ↑/↓ Recipe   ·   ←/→ Quantity".into());
+    lines.push("F Craft selected quantity   ·   X Cancel".into());
     lines.push("B Crafting   ·   Esc Close".into());
 
     lines.join("\n")
 }
 
-fn crafting_detail_text(
-    game_state: &NativeGameState,
-    panels: &NativePanelState,
-) -> String {
-    let Some(recipe_id) =
-        panels.selected_recipe_id.as_deref()
-    else {
+fn crafting_detail_text(game_state: &NativeGameState, panels: &NativePanelState) -> String {
+    let Some(recipe_id) = panels.selected_recipe_id.as_deref() else {
         return String::new();
     };
 
-    let Some(recipe) =
-        game_state.rune_recipes.get(recipe_id)
-    else {
+    let Some(recipe) = game_state.rune_recipes.get(recipe_id) else {
         return String::new();
     };
 
-    let quantity =
-        panels.crafting_quantity.max(1);
+    let quantity = panels.crafting_quantity.max(1);
 
     let input_name = game_state
         .item_definitions
         .get(&recipe.input_definition_id)
         .map(|definition| definition.name.clone())
-        .unwrap_or_else(|| {
-            recipe.input_definition_id.clone()
-        });
+        .unwrap_or_else(|| recipe.input_definition_id.clone());
 
     let output_name = game_state
         .item_definitions
         .get(&recipe.output_definition_id)
         .map(|definition| definition.name.clone())
-        .unwrap_or_else(|| {
-            recipe.output_definition_id.clone()
-        });
+        .unwrap_or_else(|| recipe.output_definition_id.clone());
 
-    let carried =
-        inventory_definition_quantity(
-            game_state,
-            &recipe.input_definition_id,
-        );
+    let carried = inventory_definition_quantity(game_state, &recipe.input_definition_id);
 
-    let required_items =
-        u64::from(recipe.input_quantity)
-            .saturating_mul(u64::from(quantity));
+    let required_items = u64::from(recipe.input_quantity).saturating_mul(u64::from(quantity));
 
-    let required_mana =
-        u64::from(recipe.mana_cost)
-            .saturating_mul(u64::from(quantity));
+    let required_mana = u64::from(recipe.mana_cost).saturating_mul(u64::from(quantity));
 
-    let total_output =
-        u64::from(recipe.output_quantity)
-            .saturating_mul(u64::from(quantity));
+    let total_output = u64::from(recipe.output_quantity).saturating_mul(u64::from(quantity));
 
-    let learned =
-        game_state
-            .learned_recipe_ids
-            .contains(recipe_id);
+    let learned = game_state.learned_recipe_ids.contains(recipe_id);
 
     format!(
         "{}\n{}\nBatch ×{}\nInput: {} × {}   ·   carried {}   ·   required {}\nOutput total: {} × {}\nMana total {}   ·   time/craft {:.2}s   ·   required skill {}   ·   {}",
@@ -9917,18 +8008,11 @@ fn crafting_detail_text(
         required_mana,
         recipe.craft_time_ms as f32 / 1000.0,
         recipe.required_skill_level,
-        if learned {
-            "Learned"
-        } else {
-            "Not learned"
-        },
+        if learned { "Learned" } else { "Not learned" },
     )
 }
 
-fn inventory_definition_quantity(
-    game_state: &NativeGameState,
-    definition_id: &str,
-) -> u64 {
+fn inventory_definition_quantity(game_state: &NativeGameState, definition_id: &str) -> u64 {
     game_state
         .inventory
         .iter()
@@ -9941,227 +8025,116 @@ pub(crate) fn update_skills_modal_ui(
     game_state: Res<NativeGameState>,
     panels: Res<NativePanelState>,
     mut text_queries: ParamSet<(
-        Query<
-            (
-                &NativeSkillsCoreText,
-                &mut Text,
-                &mut TextColor,
-            ),
-        >,
-        Query<
-            (
-                &NativeSkillsAbilityText,
-                &mut Text,
-                &mut TextColor,
-            ),
-        >,
-        Query<
-            (
-                &NativeSkillsProfessionText,
-                &mut Text,
-                &mut TextColor,
-            ),
-        >,
+        Query<(&NativeSkillsCoreText, &mut Text, &mut TextColor)>,
+        Query<(&NativeSkillsAbilityText, &mut Text, &mut TextColor)>,
+        Query<(&NativeSkillsProfessionText, &mut Text, &mut TextColor)>,
     )>,
     mut bar_queries: ParamSet<(
-        Query<
-            (
-                &NativeSkillsCoreBar,
-                &mut Node,
-            ),
-        >,
-        Query<
-            (
-                &NativeSkillsProfessionBar,
-                &mut Node,
-            ),
-        >,
+        Query<(&NativeSkillsCoreBar, &mut Node)>,
+        Query<(&NativeSkillsProfessionBar, &mut Node)>,
     )>,
 ) {
     if !panels.skills_open {
         return;
     }
 
-    let Some(player) =
-        game_state.local_player()
-    else {
-        for (_, mut text, mut color)
-            in &mut text_queries.p0()
-        {
+    let Some(player) = game_state.local_player() else {
+        for (_, mut text, mut color) in &mut text_queries.p0() {
             text.0 = "—".into();
             color.0 = MUTED;
         }
 
-        for (_, mut text, mut color)
-            in &mut text_queries.p1()
-        {
+        for (_, mut text, mut color) in &mut text_queries.p1() {
             text.0.clear();
             color.0 = MUTED;
         }
 
-        for (_, mut text, mut color)
-            in &mut text_queries.p2()
-        {
+        for (_, mut text, mut color) in &mut text_queries.p2() {
             text.0 = "Empty".into();
             color.0 = MUTED;
         }
 
-        for (_, mut node)
-            in &mut bar_queries.p0()
-        {
-            node.width =
-                Val::Percent(0.0);
+        for (_, mut node) in &mut bar_queries.p0() {
+            node.width = Val::Percent(0.0);
         }
 
-        for (_, mut node)
-            in &mut bar_queries.p1()
-        {
-            node.width =
-                Val::Percent(0.0);
+        for (_, mut node) in &mut bar_queries.p1() {
+            node.width = Val::Percent(0.0);
         }
 
         return;
     };
 
-    for (
-        view,
-        mut text,
-        mut color,
-    ) in &mut text_queries.p0()
-    {
-        let (level, tries) =
-            match view.skill {
-                NativeSkillsCore::Melee => (
-                    player.sword_skill,
-                    player.sword_tries,
-                ),
-                NativeSkillsCore::Distance => (
-                    player.distance_skill,
-                    player.distance_tries,
-                ),
-                NativeSkillsCore::Shielding => (
-                    player.shielding_skill,
-                    player.shielding_tries,
-                ),
-                NativeSkillsCore::Fletching => (
-                    player.fletching_skill,
-                    player.fletching_tries,
-                ),
-                NativeSkillsCore::Magic => (
-                    player.magic_level,
-                    player.magic_tries,
-                ),
-            };
+    for (view, mut text, mut color) in &mut text_queries.p0() {
+        let (level, tries) = match view.skill {
+            NativeSkillsCore::Melee => (player.sword_skill, player.sword_tries),
+            NativeSkillsCore::Distance => (player.distance_skill, player.distance_tries),
+            NativeSkillsCore::Shielding => (player.shielding_skill, player.shielding_tries),
+            NativeSkillsCore::Fletching => (player.fletching_skill, player.fletching_tries),
+            NativeSkillsCore::Magic => (player.magic_level, player.magic_tries),
+        };
 
         match view.field {
             NativeSkillsCoreField::Level => {
-                text.0 =
-                    level.to_string();
+                text.0 = level.to_string();
 
-                color.0 =
-                    theme::GOLD_BRIGHT;
+                color.0 = theme::GOLD_BRIGHT;
             }
             NativeSkillsCoreField::Tries => {
-                text.0 =
-                    format!(
-                        "{} tries",
-                        tries,
-                    );
+                text.0 = format!("{} tries", tries,);
 
                 color.0 = MUTED;
             }
         }
     }
 
-    for (
-        bar,
-        mut node,
-    ) in &mut bar_queries.p0()
-    {
-        let level =
-            match bar.0 {
-                NativeSkillsCore::Melee => {
-                    player.sword_skill
-                }
-                NativeSkillsCore::Distance => {
-                    player.distance_skill
-                }
-                NativeSkillsCore::Shielding => {
-                    player.shielding_skill
-                }
-                NativeSkillsCore::Fletching => {
-                    player.fletching_skill
-                }
-                NativeSkillsCore::Magic => {
-                    player.magic_level
-                }
-            };
+    for (bar, mut node) in &mut bar_queries.p0() {
+        let level = match bar.0 {
+            NativeSkillsCore::Melee => player.sword_skill,
+            NativeSkillsCore::Distance => player.distance_skill,
+            NativeSkillsCore::Shielding => player.shielding_skill,
+            NativeSkillsCore::Fletching => player.fletching_skill,
+            NativeSkillsCore::Magic => player.magic_level,
+        };
 
-        node.width =
-            Val::Percent(
-                f32::from(level.min(100)),
-            );
+        node.width = Val::Percent(f32::from(level.min(100)));
     }
 
-    let mut learned: Vec<_> =
-        game_state
-            .learned_spell_ids
-            .iter()
-            .filter_map(|id| {
-                game_state
-                    .spells
-                    .get(id)
-            })
-            .collect();
+    let mut learned: Vec<_> = game_state
+        .learned_spell_ids
+        .iter()
+        .filter_map(|id| game_state.spells.get(id))
+        .collect();
 
-    learned.sort_by(|left, right| {
-        left.name.cmp(&right.name)
-    });
+    learned.sort_by(|left, right| left.name.cmp(&right.name));
 
-    for (
-        view,
-        mut text,
-        mut color,
-    ) in &mut text_queries.p1()
-    {
+    for (view, mut text, mut color) in &mut text_queries.p1() {
         if view.index == 0 {
             match view.field {
                 NativeSkillsAbilityField::Name => {
                     text.0 = "Attack".into();
-                    color.0 =
-                        theme::GOLD_BRIGHT;
+                    color.0 = theme::GOLD_BRIGHT;
                 }
                 NativeSkillsAbilityField::Detail => {
-                    text.0 =
-                        "Basic equipped-weapon attack"
-                            .into();
+                    text.0 = "Basic equipped-weapon attack".into();
                     color.0 = MUTED;
                 }
                 NativeSkillsAbilityField::Cost => {
-                    text.0 =
-                        "WEAPON".into();
-                    color.0 =
-                        theme::GOLD;
+                    text.0 = "WEAPON".into();
+                    color.0 = theme::GOLD;
                 }
             }
 
             continue;
         }
 
-        let Some(spell) =
-            learned.get(
-                view.index - 1,
-            )
-        else {
+        let Some(spell) = learned.get(view.index - 1) else {
             match view.field {
                 NativeSkillsAbilityField::Name => {
-                    text.0 =
-                        "Empty ability".into();
+                    text.0 = "Empty ability".into();
                 }
                 NativeSkillsAbilityField::Detail => {
-                    text.0 =
-                        "Learn more spells to fill this card"
-                            .into();
+                    text.0 = "Learn more spells to fill this card".into();
                 }
                 NativeSkillsAbilityField::Cost => {
                     text.0.clear();
@@ -10174,81 +8147,51 @@ pub(crate) fn update_skills_modal_ui(
 
         match view.field {
             NativeSkillsAbilityField::Name => {
-                text.0 =
-                    spell.name.clone();
-                color.0 =
-                    theme::GOLD_BRIGHT;
+                text.0 = spell.name.clone();
+                color.0 = theme::GOLD_BRIGHT;
             }
             NativeSkillsAbilityField::Detail => {
-                text.0 =
-                    spell.description.clone();
+                text.0 = spell.description.clone();
                 color.0 = MUTED;
             }
             NativeSkillsAbilityField::Cost => {
-                text.0 =
-                    format!(
-                        "{} mana\n{:.1}s CD",
-                        spell.mana_cost,
-                        spell.cooldown_ms
-                            as f32
-                            / 1000.0,
-                    );
+                text.0 = format!(
+                    "{} mana\n{:.1}s CD",
+                    spell.mana_cost,
+                    spell.cooldown_ms as f32 / 1000.0,
+                );
 
-                color.0 =
-                    theme::GOLD;
+                color.0 = theme::GOLD;
             }
         }
     }
 
-    let gathering: Vec<_> =
-        player
-            .secondary_skills
-            .iter()
-            .filter(|skill_id| {
-                game_types::GATHERING_SKILLS
-                    .contains(
-                        &skill_id.as_str(),
-                    )
-            })
-            .collect();
+    let gathering: Vec<_> = player
+        .secondary_skills
+        .iter()
+        .filter(|skill_id| game_types::GATHERING_SKILLS.contains(&skill_id.as_str()))
+        .collect();
 
-    let crafting: Vec<_> =
-        player
-            .secondary_skills
-            .iter()
-            .filter(|skill_id| {
-                game_types::CRAFTING_SKILLS
-                    .contains(
-                        &skill_id.as_str(),
-                    )
-            })
-            .collect();
+    let crafting: Vec<_> = player
+        .secondary_skills
+        .iter()
+        .filter(|skill_id| game_types::CRAFTING_SKILLS.contains(&skill_id.as_str()))
+        .collect();
 
-    for (
-        view,
-        mut text,
-        mut color,
-    ) in &mut text_queries.p2()
-    {
-        let skill_id =
-            if view.index < 2 {
-                gathering.get(view.index)
-            } else {
-                crafting.get(
-                    view.index - 2,
-                )
-            };
+    for (view, mut text, mut color) in &mut text_queries.p2() {
+        let skill_id = if view.index < 2 {
+            gathering.get(view.index)
+        } else {
+            crafting.get(view.index - 2)
+        };
 
         let Some(skill_id) = skill_id else {
             match view.field {
                 NativeSkillsProfessionField::Name => {
-                    text.0 =
-                        "Empty slot".into();
+                    text.0 = "Empty slot".into();
                 }
                 NativeSkillsProfessionField::Detail => {
-                    text.0 =
-                        "No profession selected"
-                            .into();
+                    text.0 = "No profession selected".into();
                 }
             }
 
@@ -10256,78 +8199,43 @@ pub(crate) fn update_skills_modal_ui(
             continue;
         };
 
-        let state =
-            game_state
-                .profession_skills
-                .get(*skill_id);
+        let state = game_state.profession_skills.get(*skill_id);
 
-        let level =
-            state
-                .map(|skill| {
-                    skill.level
-                })
-                .unwrap_or(0);
+        let level = state.map(|skill| skill.level).unwrap_or(0);
 
-        let tries =
-            state
-                .map(|skill| {
-                    skill.tries
-                })
-                .unwrap_or(0);
+        let tries = state.map(|skill| skill.tries).unwrap_or(0);
 
         match view.field {
             NativeSkillsProfessionField::Name => {
-                text.0 =
-                    title_case(skill_id);
-                color.0 =
-                    theme::GOLD_BRIGHT;
+                text.0 = title_case(skill_id);
+                color.0 = theme::GOLD_BRIGHT;
             }
             NativeSkillsProfessionField::Detail => {
-                text.0 =
-                    format!(
-                        "Level {}  ·  {} tries  ·  mastery {}",
-                        level,
-                        tries,
-                        game_types::skill_mastery_cost(
-                            level,
-                        ),
-                    );
+                text.0 = format!(
+                    "Level {}  ·  {} tries  ·  mastery {}",
+                    level,
+                    tries,
+                    game_types::skill_mastery_cost(level,),
+                );
 
                 color.0 = MUTED;
             }
         }
     }
 
-    for (
-        slot,
-        mut node,
-    ) in &mut bar_queries.p1()
-    {
-        let skill_id =
-            if slot.0 < 2 {
-                gathering.get(slot.0)
-            } else {
-                crafting.get(
-                    slot.0 - 2,
-                )
-            };
+    for (slot, mut node) in &mut bar_queries.p1() {
+        let skill_id = if slot.0 < 2 {
+            gathering.get(slot.0)
+        } else {
+            crafting.get(slot.0 - 2)
+        };
 
-        let level =
-            skill_id
-                .and_then(|id| {
-                    game_state
-                        .profession_skills
-                        .get(*id)
-                })
-                .map(|skill| {
-                    skill.level
-                })
-                .unwrap_or(0);
+        let level = skill_id
+            .and_then(|id| game_state.profession_skills.get(*id))
+            .map(|skill| skill.level)
+            .unwrap_or(0);
 
-        node.width =
-            Val::Percent(
-                f32::from(level.min(100)),
-            );
+        node.width = Val::Percent(f32::from(level.min(100)));
     }
 }
 
@@ -10340,11 +8248,26 @@ fn skills_panel_text(game_state: &NativeGameState) -> String {
         format!("SKILLS   ·   {}", player.name),
         String::new(),
         "COMBAT".into(),
-        format!("Melee       {:>3}   ·   {:>8} tries", player.sword_skill, player.sword_tries),
-        format!("Distance    {:>3}   ·   {:>8} tries", player.distance_skill, player.distance_tries),
-        format!("Shielding   {:>3}   ·   {:>8} tries", player.shielding_skill, player.shielding_tries),
-        format!("Fletching   {:>3}   ·   {:>8} tries", player.fletching_skill, player.fletching_tries),
-        format!("Magic       {:>3}   ·   {:>8} tries", player.magic_level, player.magic_tries),
+        format!(
+            "Melee       {:>3}   ·   {:>8} tries",
+            player.sword_skill, player.sword_tries
+        ),
+        format!(
+            "Distance    {:>3}   ·   {:>8} tries",
+            player.distance_skill, player.distance_tries
+        ),
+        format!(
+            "Shielding   {:>3}   ·   {:>8} tries",
+            player.shielding_skill, player.shielding_tries
+        ),
+        format!(
+            "Fletching   {:>3}   ·   {:>8} tries",
+            player.fletching_skill, player.fletching_tries
+        ),
+        format!(
+            "Magic       {:>3}   ·   {:>8} tries",
+            player.magic_level, player.magic_tries
+        ),
         String::new(),
         "PROFESSIONS".into(),
     ];
@@ -10374,9 +8297,7 @@ fn skills_panel_text(game_state: &NativeGameState) -> String {
     lines.join("\n")
 }
 
-fn learned_spells_sorted(
-    game_state: &NativeGameState,
-) -> Vec<(String, String)> {
+fn learned_spells_sorted(game_state: &NativeGameState) -> Vec<(String, String)> {
     let mut spells: Vec<_> = game_state
         .learned_spell_ids
         .iter()
@@ -10392,10 +8313,7 @@ fn learned_spells_sorted(
     spells
 }
 
-fn ensure_spell_selection(
-    game_state: &NativeGameState,
-    panels: &mut NativePanelState,
-) {
+fn ensure_spell_selection(game_state: &NativeGameState, panels: &mut NativePanelState) {
     let spells = learned_spells_sorted(game_state);
 
     if spells.is_empty() {
@@ -10414,11 +8332,7 @@ fn ensure_spell_selection(
     panels.selected_spell_id = Some(spells[0].0.clone());
 }
 
-fn step_spell_selection(
-    game_state: &NativeGameState,
-    panels: &mut NativePanelState,
-    delta: isize,
-) {
+fn step_spell_selection(game_state: &NativeGameState, panels: &mut NativePanelState, delta: isize) {
     let spells = learned_spells_sorted(game_state);
     if spells.is_empty() {
         panels.selected_spell_id = None;
@@ -10482,85 +8396,44 @@ pub(crate) fn handle_spellbook_modal_buttons(
             &mut BackgroundColor,
             &mut BorderColor,
         ),
-        (
-            Changed<Interaction>,
-            With<Button>,
-        ),
+        (Changed<Interaction>, With<Button>),
     >,
 ) {
     if !panels.spells_open {
         return;
     }
 
-    for (
-        interaction,
-        action,
-        mut background,
-        mut border,
-    ) in &mut buttons
-    {
+    for (interaction, action, mut background, mut border) in &mut buttons {
         match *interaction {
             Interaction::Hovered => {
-                background.0 =
-                    theme::BUTTON_HOVER;
-                *border =
-                    BorderColor::all(
-                        theme::GOLD,
-                    );
+                background.0 = theme::BUTTON_HOVER;
+                *border = BorderColor::all(theme::GOLD);
             }
             Interaction::None => {
-                background.0 =
-                    theme::BUTTON_BG;
-                *border =
-                    BorderColor::all(
-                        theme::BUTTON_BORDER,
-                    );
+                background.0 = theme::BUTTON_BG;
+                *border = BorderColor::all(theme::BUTTON_BORDER);
             }
             Interaction::Pressed => {
-                background.0 =
-                    theme::BUTTON_PRESSED;
-                *border =
-                    BorderColor::all(
-                        theme::GOLD_BRIGHT,
-                    );
+                background.0 = theme::BUTTON_PRESSED;
+                *border = BorderColor::all(theme::GOLD_BRIGHT);
 
                 match *action {
-                    NativeSpellbookButton::Learned(
-                        index,
-                    ) => {
-                        let learned =
-                            learned_spells_sorted(
-                                &game_state,
-                            );
+                    NativeSpellbookButton::Learned(index) => {
+                        let learned = learned_spells_sorted(&game_state);
 
-                        if let Some(
-                            (spell_id, _),
-                        ) = learned.get(index)
-                        {
-                            panels
-                                .selected_spell_id =
-                                Some(
-                                    spell_id
-                                        .clone(),
-                                );
+                        if let Some((spell_id, _)) = learned.get(index) {
+                            panels.selected_spell_id = Some(spell_id.clone());
                         }
                     }
                     NativeSpellbookButton::Cast => {
-                        cast_selected_spell(
-                            &network,
-                            &mut game_state,
-                            &panels,
-                        );
+                        cast_selected_spell(&network, &mut game_state, &panels);
                     }
                     NativeSpellbookButton::Skills => {
                         panels.spells_open = false;
                         panels.skills_open = true;
-                        panels.inventory_open =
-                            false;
-                        panels.character_open =
-                            false;
-                        panels.crafting_open =
-                            false;
+                        panels.inventory_open = false;
+                        panels.character_open = false;
+                        panels.crafting_open = false;
                         panels.npc_open = false;
                     }
                     NativeSpellbookButton::Close => {
@@ -10571,192 +8444,98 @@ pub(crate) fn handle_spellbook_modal_buttons(
         }
     }
 
-    ensure_spell_selection(
-        &game_state,
-        &mut panels,
-    );
+    ensure_spell_selection(&game_state, &mut panels);
 }
 
 pub(crate) fn update_spellbook_modal_ui(
     game_state: Res<NativeGameState>,
     panels: Res<NativePanelState>,
     mut text_queries: ParamSet<(
-        Query<
-            (
-                &NativeSpellbookSummaryText,
-                &mut Text,
-                &mut TextColor,
-            ),
-        >,
-        Query<
-            (
-                &NativeSpellbookLearnedText,
-                &mut Text,
-                &mut TextColor,
-            ),
-        >,
-        Query<
-            (
-                &NativeSpellbookLockedText,
-                &mut Text,
-                &mut TextColor,
-            ),
-        >,
-        Query<
-            (
-                &NativeSpellbookDetailText,
-                &mut Text,
-                &mut TextColor,
-            ),
-        >,
+        Query<(&NativeSpellbookSummaryText, &mut Text, &mut TextColor)>,
+        Query<(&NativeSpellbookLearnedText, &mut Text, &mut TextColor)>,
+        Query<(&NativeSpellbookLockedText, &mut Text, &mut TextColor)>,
+        Query<(&NativeSpellbookDetailText, &mut Text, &mut TextColor)>,
     )>,
-    mut buttons: Query<
-        (
-            &NativeSpellbookButton,
-            &Interaction,
-            &mut BackgroundColor,
-            &mut BorderColor,
-        ),
-    >,
+    mut buttons: Query<(
+        &NativeSpellbookButton,
+        &Interaction,
+        &mut BackgroundColor,
+        &mut BorderColor,
+    )>,
 ) {
     if !panels.spells_open {
         return;
     }
 
-    let learned =
-        learned_spells_sorted(
-            &game_state,
-        );
+    let learned = learned_spells_sorted(&game_state);
 
-    let mut all: Vec<_> =
-        game_state
-            .spells
-            .values()
-            .collect();
+    let mut all: Vec<_> = game_state.spells.values().collect();
 
-    all.sort_by(|left, right| {
-        left.name.cmp(&right.name)
-    });
+    all.sort_by(|left, right| left.name.cmp(&right.name));
 
-    let locked: Vec<_> =
-        all
-            .iter()
-            .copied()
-            .filter(|spell| {
-                !game_state
-                    .learned_spell_ids
-                    .contains(
-                        &spell.id,
-                    )
-            })
-            .collect();
+    let locked: Vec<_> = all
+        .iter()
+        .copied()
+        .filter(|spell| !game_state.learned_spell_ids.contains(&spell.id))
+        .collect();
 
-    for (
-        kind,
-        mut text,
-        mut color,
-    ) in &mut text_queries.p0()
-    {
+    for (kind, mut text, mut color) in &mut text_queries.p0() {
         match kind {
             NativeSpellbookSummaryText::Magic => {
-                if let Some(player) =
-                    game_state.local_player()
-                {
+                if let Some(player) = game_state.local_player() {
                     text.0 = format!(
                         "Magic Level {}  ·  Mana {}/{}",
-                        player.magic_level,
-                        player.mana,
-                        player.max_mana,
+                        player.magic_level, player.mana, player.max_mana,
                     );
                     color.0 = TEXT;
                 } else {
-                    text.0 =
-                        "No local player"
-                            .into();
+                    text.0 = "No local player".into();
                     color.0 = MUTED;
                 }
             }
             NativeSpellbookSummaryText::Learned => {
-                text.0 = format!(
-                    "{} / {} LEARNED",
-                    learned.len(),
-                    all.len(),
-                );
-                color.0 =
-                    theme::GOLD_BRIGHT;
+                text.0 = format!("{} / {} LEARNED", learned.len(), all.len(),);
+                color.0 = theme::GOLD_BRIGHT;
             }
         }
     }
 
-    for (
-        view,
-        mut text,
-        mut color,
-    ) in &mut text_queries.p1()
-    {
-        let Some(
-            (spell_id, spell_name),
-        ) = learned.get(view.index)
-        else {
+    for (view, mut text, mut color) in &mut text_queries.p1() {
+        let Some((spell_id, spell_name)) = learned.get(view.index) else {
             text.0.clear();
             color.0 = MUTED;
             continue;
         };
 
-        let selected =
-            panels
-                .selected_spell_id
-                .as_deref()
-                == Some(
-                    spell_id.as_str(),
-                );
+        let selected = panels.selected_spell_id.as_deref() == Some(spell_id.as_str());
 
-        let spell =
-            game_state
-                .spells
-                .get(spell_id);
+        let spell = game_state.spells.get(spell_id);
 
         match view.field {
             NativeSpellbookListField::Name => {
-                text.0 =
-                    spell_name.clone();
+                text.0 = spell_name.clone();
 
-                color.0 =
-                    if selected {
-                        theme::GOLD_BRIGHT
-                    } else {
-                        TEXT
-                    };
+                color.0 = if selected { theme::GOLD_BRIGHT } else { TEXT };
             }
             NativeSpellbookListField::Meta => {
-                text.0 =
-                    spell
-                        .map(|spell| {
-                            format!(
-                                "{} mana  ·  range {}  ·  {:.1}s",
-                                spell.mana_cost,
-                                spell.range,
-                                spell.cooldown_ms
-                                    as f32
-                                    / 1000.0,
-                            )
-                        })
-                        .unwrap_or_default();
+                text.0 = spell
+                    .map(|spell| {
+                        format!(
+                            "{} mana  ·  range {}  ·  {:.1}s",
+                            spell.mana_cost,
+                            spell.range,
+                            spell.cooldown_ms as f32 / 1000.0,
+                        )
+                    })
+                    .unwrap_or_default();
 
                 color.0 = MUTED;
             }
         }
     }
 
-    for (
-        view,
-        mut text,
-        mut color,
-    ) in &mut text_queries.p2()
-    {
-        let Some(spell) =
-            locked.get(view.index)
-        else {
+    for (view, mut text, mut color) in &mut text_queries.p2() {
+        let Some(spell) = locked.get(view.index) else {
             text.0.clear();
             color.0 = MUTED;
             continue;
@@ -10764,56 +8543,37 @@ pub(crate) fn update_spellbook_modal_ui(
 
         match view.field {
             NativeSpellbookListField::Name => {
-                text.0 =
-                    spell.name.clone();
+                text.0 = spell.name.clone();
                 color.0 = MUTED;
             }
             NativeSpellbookListField::Meta => {
                 text.0 = format!(
                     "Required ML {}  ·  price {}",
-                    spell.required_magic_level,
-                    spell.price,
+                    spell.required_magic_level, spell.price,
                 );
                 color.0 = MUTED;
             }
         }
     }
 
-    let selected =
-        panels
-            .selected_spell_id
-            .as_deref()
-            .and_then(|spell_id| {
-                game_state
-                    .spells
-                    .get(spell_id)
-            });
+    let selected = panels
+        .selected_spell_id
+        .as_deref()
+        .and_then(|spell_id| game_state.spells.get(spell_id));
 
-    for (
-        kind,
-        mut text,
-        mut color,
-    ) in &mut text_queries.p3()
-    {
+    for (kind, mut text, mut color) in &mut text_queries.p3() {
         let Some(spell) = selected else {
             match kind {
                 NativeSpellbookDetailText::Name => {
-                    text.0 =
-                        "Select a spell"
-                            .into();
-                    color.0 =
-                        theme::GOLD_BRIGHT;
+                    text.0 = "Select a spell".into();
+                    color.0 = theme::GOLD_BRIGHT;
                 }
                 NativeSpellbookDetailText::Description => {
-                    text.0 =
-                        "Choose learned magic from the library."
-                            .into();
+                    text.0 = "Choose learned magic from the library.".into();
                     color.0 = MUTED;
                 }
                 NativeSpellbookDetailText::CastHint => {
-                    text.0 =
-                        "Select a creature target before casting."
-                            .into();
+                    text.0 = "Select a creature target before casting.".into();
                     color.0 = MUTED;
                 }
                 _ => {
@@ -10827,14 +8587,11 @@ pub(crate) fn update_spellbook_modal_ui(
 
         match kind {
             NativeSpellbookDetailText::Name => {
-                text.0 =
-                    spell.name.clone();
-                color.0 =
-                    theme::GOLD_BRIGHT;
+                text.0 = spell.name.clone();
+                color.0 = theme::GOLD_BRIGHT;
             }
             NativeSpellbookDetailText::Description => {
-                text.0 =
-                    spell.description.clone();
+                text.0 = spell.description.clone();
                 color.0 = MUTED;
             }
             NativeSpellbookDetailText::Stats => {
@@ -10843,111 +8600,57 @@ pub(crate) fn update_spellbook_modal_ui(
                     spell.mana_cost,
                     spell.damage,
                     spell.range,
-                    spell.cooldown_ms
-                        as f32
-                        / 1000.0,
+                    spell.cooldown_ms as f32 / 1000.0,
                 );
                 color.0 = TEXT;
             }
             NativeSpellbookDetailText::Requirement => {
                 text.0 = format!(
                     "Required magic level {}  ·  training price {}",
-                    spell.required_magic_level,
-                    spell.price,
+                    spell.required_magic_level, spell.price,
                 );
                 color.0 = MUTED;
             }
             NativeSpellbookDetailText::CastHint => {
-                text.0 =
-                    if game_state
-                        .attack_target_id
-                        .is_some()
-                    {
-                        "Target selected  ·  CAST or F"
-                            .into()
-                    } else {
-                        "Select a creature target before casting."
-                            .into()
-                    };
+                text.0 = if game_state.attack_target_id.is_some() {
+                    "Target selected  ·  CAST or F".into()
+                } else {
+                    "Select a creature target before casting.".into()
+                };
 
-                color.0 =
-                    if game_state
-                        .attack_target_id
-                        .is_some()
-                    {
-                        theme::GOLD_BRIGHT
-                    } else {
-                        MUTED
-                    };
+                color.0 = if game_state.attack_target_id.is_some() {
+                    theme::GOLD_BRIGHT
+                } else {
+                    MUTED
+                };
             }
         }
     }
 
-    for (
-        action,
-        interaction,
-        mut background,
-        mut border,
-    ) in &mut buttons
-    {
-        let selected_button =
-            match *action {
-                NativeSpellbookButton::Learned(
-                    index,
-                ) => {
-                    learned
-                        .get(index)
-                        .is_some_and(
-                            |(spell_id, _)| {
-                                panels
-                                    .selected_spell_id
-                                    .as_deref()
-                                    == Some(
-                                        spell_id
-                                            .as_str(),
-                                    )
-                            },
-                        )
-                }
-                _ => false,
-            };
+    for (action, interaction, mut background, mut border) in &mut buttons {
+        let selected_button = match *action {
+            NativeSpellbookButton::Learned(index) => {
+                learned.get(index).is_some_and(|(spell_id, _)| {
+                    panels.selected_spell_id.as_deref() == Some(spell_id.as_str())
+                })
+            }
+            _ => false,
+        };
 
         if selected_button {
-            background.0 =
-                Color::srgba(
-                    0.22,
-                    0.145,
-                    0.035,
-                    0.72,
-                );
-            *border =
-                BorderColor::all(
-                    theme::GOLD_BRIGHT,
-                );
-        } else if *interaction
-            == Interaction::Hovered
-        {
-            background.0 =
-                theme::BUTTON_HOVER;
-            *border =
-                BorderColor::all(
-                    theme::GOLD,
-                );
+            background.0 = Color::srgba(0.22, 0.145, 0.035, 0.72);
+            *border = BorderColor::all(theme::GOLD_BRIGHT);
+        } else if *interaction == Interaction::Hovered {
+            background.0 = theme::BUTTON_HOVER;
+            *border = BorderColor::all(theme::GOLD);
         } else {
-            background.0 =
-                theme::BUTTON_BG;
-            *border =
-                BorderColor::all(
-                    theme::BUTTON_BORDER,
-                );
+            background.0 = theme::BUTTON_BG;
+            *border = BorderColor::all(theme::BUTTON_BORDER);
         }
     }
 }
 
-fn spellbook_panel_text(
-    game_state: &NativeGameState,
-    selected_spell_id: Option<&str>,
-) -> String {
+fn spellbook_panel_text(game_state: &NativeGameState, selected_spell_id: Option<&str>) -> String {
     let Some(player) = game_state.local_player() else {
         return "SPELLBOOK\nNo local player.".into();
     };
@@ -10959,9 +8662,7 @@ fn spellbook_panel_text(
     let mut lines = vec![
         format!(
             "SPELLBOOK   ·   ML {}   ·   Mana {}/{}",
-            player.magic_level,
-            player.mana,
-            player.max_mana,
+            player.magic_level, player.mana, player.max_mana,
         ),
         format!("Learned {} / {}", learned.len(), all.len()),
         String::new(),
@@ -10981,9 +8682,7 @@ fn spellbook_panel_text(
             if let Some(spell) = game_state.spells.get(id) {
                 lines.push(format!(
                     "{marker} {:<20} mana {:>3}   range {:>2}",
-                    name,
-                    spell.mana_cost,
-                    spell.range,
+                    name, spell.mana_cost, spell.range,
                 ));
             } else {
                 lines.push(format!("{marker} {name}"));
@@ -11002,9 +8701,7 @@ fn spellbook_panel_text(
         for spell in locked.into_iter().take(8) {
             lines.push(format!(
                 "  {:<20} ML {:>2}   price {}",
-                spell.name,
-                spell.required_magic_level,
-                spell.price,
+                spell.name, spell.required_magic_level, spell.price,
             ));
         }
     }
@@ -11015,10 +8712,7 @@ fn spellbook_panel_text(
     lines.join("\n")
 }
 
-fn spell_detail_text(
-    game_state: &NativeGameState,
-    selected_spell_id: Option<&str>,
-) -> String {
+fn spell_detail_text(game_state: &NativeGameState, selected_spell_id: Option<&str>) -> String {
     let Some(spell_id) = selected_spell_id else {
         return String::new();
     };
@@ -11039,89 +8733,47 @@ fn spell_detail_text(
 }
 
 pub(crate) fn handle_inventory_modal_buttons(
-    game_state:
-        Res<NativeGameState>,
-    mut panels:
-        ResMut<NativePanelState>,
+    game_state: Res<NativeGameState>,
+    mut panels: ResMut<NativePanelState>,
     mut interactions: Query<
-        (
-            &Interaction,
-            &NativeInventoryButton,
-        ),
-        (
-            Changed<Interaction>,
-            With<Button>,
-        ),
+        (&Interaction, &NativeInventoryButton),
+        (Changed<Interaction>, With<Button>),
     >,
 ) {
     if !panels.inventory_open {
         return;
     }
 
-    for (
-        interaction,
-        button,
-    ) in &mut interactions
-    {
-        if *interaction
-            != Interaction::Pressed
-        {
+    for (interaction, button) in &mut interactions {
+        if *interaction != Interaction::Pressed {
             continue;
         }
 
         match *button {
-            NativeInventoryButton::Slot(
-                index,
-            ) => {
-                let items =
-                    inventory_reference_ids(
-                        &game_state,
-                        &panels,
-                    );
+            NativeInventoryButton::Slot(index) => {
+                let items = inventory_reference_ids(&game_state, &panels);
 
-                panels.selected_item =
-                    items
-                        .get(index)
-                        .copied();
+                panels.selected_item = items.get(index).copied();
             }
-            NativeInventoryButton::Action(
-                NativeInventoryAction::Search,
-            ) => {
-                panels.inventory_search_active =
-                    true;
+            NativeInventoryButton::Action(NativeInventoryAction::Search) => {
+                panels.inventory_search_active = true;
             }
-            NativeInventoryButton::Action(
-                NativeInventoryAction::Back,
-            ) => {
-                if let Some(container_id) =
-                    panels.inventory_container_id
-                {
-                    panels.inventory_container_id =
-                        game_state
-                            .inventory
-                            .iter()
-                            .find(|item| {
-                                item.instance_id
-                                    == container_id
-                            })
-                            .and_then(|container| {
-                                container.container_id
-                            });
+            NativeInventoryButton::Action(NativeInventoryAction::Back) => {
+                if let Some(container_id) = panels.inventory_container_id {
+                    panels.inventory_container_id = game_state
+                        .inventory
+                        .iter()
+                        .find(|item| item.instance_id == container_id)
+                        .and_then(|container| container.container_id);
 
                     panels.selected_item = None;
 
-                    ensure_inventory_selection(
-                        &game_state,
-                        &mut panels,
-                    );
+                    ensure_inventory_selection(&game_state, &mut panels);
                 }
             }
-            NativeInventoryButton::Action(
-                NativeInventoryAction::Close,
-            ) => {
+            NativeInventoryButton::Action(NativeInventoryAction::Close) => {
                 panels.inventory_open = false;
-                panels.inventory_search_active =
-                    false;
+                panels.inventory_search_active = false;
                 panels.split_item_id = None;
                 panels.split_quantity = 0;
             }
@@ -11130,10 +8782,7 @@ pub(crate) fn handle_inventory_modal_buttons(
 
     // Keep selection valid after authoritative inventory changes while the
     // graphical window is open.
-    ensure_inventory_selection(
-        &game_state,
-        &mut panels,
-    );
+    ensure_inventory_selection(&game_state, &mut panels);
 }
 
 pub(crate) fn update_inventory_modal_ui(
@@ -11141,528 +8790,39 @@ pub(crate) fn update_inventory_modal_ui(
     game_state: Res<NativeGameState>,
     panels: Res<NativePanelState>,
     mut text_queries: ParamSet<(
-        Query<
-            (
-                &NativeInventoryText,
-                &mut Text,
-                &mut TextColor,
-            ),
-        >,
-        Query<
-            (
-                &NativeInventorySlotText,
-                &mut Text,
-                &mut TextColor,
-            ),
-        >,
+        Query<(&NativeInventoryText, &mut Text, &mut TextColor)>,
+        Query<(&NativeInventorySlotText, &mut Text, &mut TextColor)>,
     )>,
-    mut buttons: Query<
-        (
-            &NativeInventoryButton,
-            &Interaction,
-            &mut BackgroundColor,
-            &mut BorderColor,
-        ),
-    >,
-    mut capacity_bar: Query<
-        &mut Node,
-        With<NativeInventoryCapacityBar>,
-    >,
-    mut images: Query<
-        (
-            &mut NativeInventorySlotImage,
-            &mut ImageNode,
-            &mut Visibility,
-        ),
-    >,
+    mut buttons: Query<(
+        &NativeInventoryButton,
+        &Interaction,
+        &mut BackgroundColor,
+        &mut BorderColor,
+    )>,
+    mut capacity_bar: Query<&mut Node, With<NativeInventoryCapacityBar>>,
+    mut images: Query<(
+        &mut NativeInventorySlotImage,
+        &mut ImageNode,
+        &mut Visibility,
+    )>,
 ) {
     if !panels.inventory_open {
         // ImageNode visibility is set explicitly while Inventory is open.
         // Do not rely only on the modal parent's visibility when closing:
         // force every inventory item image hidden before returning.
-        for (
-            _,
-            _,
-            mut visibility,
-        ) in &mut images
-        {
-            *visibility =
-                Visibility::Hidden;
+        for (_, _, mut visibility) in &mut images {
+            *visibility = Visibility::Hidden;
         }
 
         return;
     }
 
-    let items =
-        inventory_reference_ids(
-            &game_state,
-            &panels,
-        );
+    let items = inventory_reference_ids(&game_state, &panels);
 
-    let capacity =
-        inventory_reference_capacity(
-            &game_state,
-            &panels,
-        );
+    let capacity = inventory_reference_capacity(&game_state, &panels);
 
-    let location =
-        inventory_reference_location(
-            &game_state,
-            &panels,
-        );
+    let location = inventory_reference_location(&game_state, &panels);
 
-    let gold: u64 =
-        game_state
-            .inventory
-            .iter()
-            .filter(|item| {
-                item.definition_id
-                    == "gold_coin"
-            })
-            .map(|item| {
-                u64::from(item.quantity)
-            })
-            .sum();
-
-    let selected_detail =
-        panels
-            .selected_item
-            .and_then(|instance_id| {
-                game_state
-                    .inventory
-                    .iter()
-                    .find(|item| {
-                        item.instance_id
-                            == instance_id
-                    })
-            })
-            .map(|item| {
-                let definition =
-                    game_state
-                        .item_definitions
-                        .get(
-                            &item.definition_id,
-                        );
-
-                let name =
-                    definition
-                        .map(|value| {
-                            value.name.as_str()
-                        })
-                        .unwrap_or(
-                            item.definition_id
-                                .as_str(),
-                        );
-
-                let weight =
-                    definition
-                        .map(|value| {
-                            value.weight
-                        })
-                        .unwrap_or(0.0);
-
-                format!(
-                    "{}  ·  ×{}  ·  {:.1} weight  ·  Enter open  E equip  F6 split",
-                    name,
-                    item.quantity,
-                    weight,
-                )
-            })
-            .unwrap_or_else(|| {
-                "Select an item  ·  / search  ·  Backspace parent"
-                    .into()
-            });
-
-    for (
-        kind,
-        mut text,
-        mut color,
-    ) in &mut text_queries.p0()
-    {
-        match kind {
-            NativeInventoryText::Location => {
-                text.0 =
-                    location.clone()
-                        .to_uppercase();
-
-                color.0 = theme::GOLD;
-            }
-            NativeInventoryText::Usage => {
-                text.0 = format!(
-                    "{} / {} SLOTS USED",
-                    items.len(),
-                    capacity,
-                );
-
-                color.0 = TEXT;
-            }
-            NativeInventoryText::Capacity => {
-                text.0 = format!(
-                    "{:.1} / {:.1} CAPACITY",
-                    game_state
-                        .inventory_weight,
-                    game_state
-                        .max_capacity,
-                );
-
-                color.0 = TEXT;
-            }
-            NativeInventoryText::Search => {
-                text.0 =
-                    if panels
-                        .inventory_search_active
-                    {
-                        format!(
-                            "Search: {}_",
-                            panels
-                                .inventory_search,
-                        )
-                    } else if panels
-                        .inventory_search
-                        .is_empty()
-                    {
-                        "SEARCH INVENTORY"
-                            .into()
-                    } else {
-                        format!(
-                            "Filter: {}",
-                            panels
-                                .inventory_search,
-                        )
-                    };
-
-                color.0 =
-                    if panels
-                        .inventory_search_active
-                    {
-                        theme::GOLD_BRIGHT
-                    } else {
-                        MUTED
-                    };
-            }
-            NativeInventoryText::Detail => {
-                text.0 =
-                    selected_detail.clone();
-
-                color.0 = MUTED;
-            }
-            NativeInventoryText::Gold => {
-                text.0 = format!(
-                    "{} GOLD COINS",
-                    gold,
-                );
-
-                color.0 =
-                    theme::GOLD_BRIGHT;
-            }
-        }
-    }
-
-    for (
-        slot,
-        mut text,
-        mut color,
-    ) in &mut text_queries.p1()
-    {
-        let Some(instance_id) =
-            items.get(slot.index)
-        else {
-            text.0.clear();
-            color.0 = MUTED;
-            continue;
-        };
-
-        let Some(item) =
-            game_state
-                .inventory
-                .iter()
-                .find(|item| {
-                    item.instance_id
-                        == *instance_id
-                })
-        else {
-            text.0.clear();
-            color.0 = MUTED;
-            continue;
-        };
-
-        let definition =
-            game_state
-                .item_definitions
-                .get(
-                    &item.definition_id,
-                );
-
-        let name =
-            definition
-                .map(|value| {
-                    value.name.as_str()
-                })
-                .unwrap_or(
-                    item.definition_id
-                        .as_str(),
-                );
-
-        match slot.field {
-            NativeInventorySlotField::Quantity => {
-                text.0 =
-                    if item.quantity > 1 {
-                        item.quantity
-                            .to_string()
-                    } else {
-                        String::new()
-                    };
-
-                color.0 =
-                    theme::GOLD_BRIGHT;
-            }
-            NativeInventorySlotField::Name => {
-                text.0 =
-                    name.to_owned();
-
-                color.0 =
-                    if Some(*instance_id)
-                        == panels
-                            .selected_item
-                    {
-                        theme::GOLD_BRIGHT
-                    } else {
-                        TEXT
-                    };
-            }
-        }
-    }
-
-    for (
-        mut slot,
-        mut image,
-        mut visibility,
-    ) in &mut images
-    {
-        let item =
-            items
-                .get(slot.index)
-                .and_then(|instance_id| {
-                    game_state
-                        .inventory
-                        .iter()
-                        .find(|item| {
-                            item.instance_id
-                                == *instance_id
-                        })
-                });
-
-        let Some(item) = item else {
-            slot.definition_id = None;
-            *visibility =
-                Visibility::Hidden;
-            continue;
-        };
-
-        if slot
-            .definition_id
-            .as_deref()
-            != Some(
-                item.definition_id
-                    .as_str(),
-            )
-        {
-            image.image =
-                asset_server.load(
-                    format!(
-                        "sprites/items/{}.png",
-                        item.definition_id,
-                    ),
-                );
-
-            slot.definition_id =
-                Some(
-                    item.definition_id
-                        .clone(),
-                );
-        }
-
-        *visibility =
-            Visibility::Visible;
-    }
-
-    for (
-        button,
-        interaction,
-        mut background,
-        mut border,
-    ) in &mut buttons
-    {
-        match *button {
-            NativeInventoryButton::Slot(
-                index,
-            ) => {
-                let selected =
-                    items
-                        .get(index)
-                        .copied()
-                        == panels
-                            .selected_item;
-
-                let hovered =
-                    *interaction
-                        == Interaction::Hovered;
-
-                background.0 =
-                    if selected {
-                        Color::srgba(
-                            0.22,
-                            0.145,
-                            0.035,
-                            0.72,
-                        )
-                    } else if hovered {
-                        theme::BUTTON_HOVER
-                    } else {
-                        Color::srgba(
-                            0.015,
-                            0.035,
-                            0.026,
-                            0.98,
-                        )
-                    };
-
-                *border =
-                    BorderColor::all(
-                        if selected {
-                            theme::GOLD_BRIGHT
-                        } else if hovered {
-                            theme::GOLD
-                        } else {
-                            theme::BUTTON_BORDER
-                        },
-                    );
-            }
-            NativeInventoryButton::Action(
-                _,
-            ) => {
-                let hovered =
-                    *interaction
-                        == Interaction::Hovered;
-
-                background.0 =
-                    if hovered {
-                        theme::BUTTON_HOVER
-                    } else {
-                        theme::BUTTON_BG
-                    };
-
-                *border =
-                    BorderColor::all(
-                        if hovered {
-                            theme::GOLD
-                        } else {
-                            theme::BUTTON_BORDER
-                        },
-                    );
-            }
-        }
-    }
-
-    let used =
-        if game_state.max_capacity > 0.0 {
-            (
-                game_state
-                    .inventory_weight
-                / game_state
-                    .max_capacity
-            )
-            .clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-
-    for mut node in &mut capacity_bar {
-        node.width =
-            Val::Percent(
-                used * 100.0,
-            );
-    }
-}
-
-fn inventory_reference_ids(
-    game_state: &NativeGameState,
-    panels: &NativePanelState,
-) -> Vec<game_types::EntityId> {
-    selectable_inventory_ids(
-        game_state,
-        panels,
-    )
-    .into_iter()
-    .take(12)
-    .collect()
-}
-
-fn inventory_reference_capacity(
-    game_state: &NativeGameState,
-    panels: &NativePanelState,
-) -> usize {
-    panels
-        .inventory_container_id
-        .and_then(|container_id| {
-            game_state
-                .inventory
-                .iter()
-                .find(|item| {
-                    item.instance_id
-                        == container_id
-                })
-        })
-        .and_then(|item| {
-            game_state
-                .item_definitions
-                .get(&item.definition_id)
-        })
-        .and_then(|definition| {
-            definition.container_slots
-        })
-        .map(usize::from)
-        .unwrap_or(12)
-        .max(1)
-}
-
-fn inventory_reference_location(
-    game_state: &NativeGameState,
-    panels: &NativePanelState,
-) -> String {
-    panels
-        .inventory_container_id
-        .and_then(|container_id| {
-            game_state
-                .inventory
-                .iter()
-                .find(|item| {
-                    item.instance_id
-                        == container_id
-                })
-        })
-        .map(|item| {
-            game_state
-                .item_definitions
-                .get(&item.definition_id)
-                .map(|definition| {
-                    definition.name.clone()
-                })
-                .unwrap_or_else(|| {
-                    item.definition_id.clone()
-                })
-        })
-        .unwrap_or_else(|| {
-            "Root inventory".into()
-        })
-}
-
-
-
-fn inventory_panel_text(
-    game_state: &NativeGameState,
-    panels: &NativePanelState,
-) -> String {
     let gold: u64 = game_state
         .inventory
         .iter()
@@ -11670,16 +8830,256 @@ fn inventory_panel_text(
         .map(|item| u64::from(item.quantity))
         .sum();
 
-    let items =
-        selectable_inventory_ids(game_state, panels);
+    let selected_detail = panels
+        .selected_item
+        .and_then(|instance_id| {
+            game_state
+                .inventory
+                .iter()
+                .find(|item| item.instance_id == instance_id)
+        })
+        .map(|item| {
+            let definition = game_state.item_definitions.get(&item.definition_id);
+
+            let name = definition
+                .map(|value| value.name.as_str())
+                .unwrap_or(item.definition_id.as_str());
+
+            let weight = definition.map(|value| value.weight).unwrap_or(0.0);
+
+            format!(
+                "{}  ·  ×{}  ·  {:.1} weight  ·  Enter open  E equip  F6 split",
+                name, item.quantity, weight,
+            )
+        })
+        .unwrap_or_else(|| "Select an item  ·  / search  ·  Backspace parent".into());
+
+    for (kind, mut text, mut color) in &mut text_queries.p0() {
+        match kind {
+            NativeInventoryText::Location => {
+                text.0 = location.clone().to_uppercase();
+
+                color.0 = theme::GOLD;
+            }
+            NativeInventoryText::Usage => {
+                text.0 = format!("{} / {} SLOTS USED", items.len(), capacity,);
+
+                color.0 = TEXT;
+            }
+            NativeInventoryText::Capacity => {
+                text.0 = format!(
+                    "{:.1} / {:.1} CAPACITY",
+                    game_state.inventory_weight, game_state.max_capacity,
+                );
+
+                color.0 = TEXT;
+            }
+            NativeInventoryText::Search => {
+                text.0 = if panels.inventory_search_active {
+                    format!("Search: {}_", panels.inventory_search,)
+                } else if panels.inventory_search.is_empty() {
+                    "SEARCH INVENTORY".into()
+                } else {
+                    format!("Filter: {}", panels.inventory_search,)
+                };
+
+                color.0 = if panels.inventory_search_active {
+                    theme::GOLD_BRIGHT
+                } else {
+                    MUTED
+                };
+            }
+            NativeInventoryText::Detail => {
+                text.0 = selected_detail.clone();
+
+                color.0 = MUTED;
+            }
+            NativeInventoryText::Gold => {
+                text.0 = format!("{} GOLD COINS", gold,);
+
+                color.0 = theme::GOLD_BRIGHT;
+            }
+        }
+    }
+
+    for (slot, mut text, mut color) in &mut text_queries.p1() {
+        let Some(instance_id) = items.get(slot.index) else {
+            text.0.clear();
+            color.0 = MUTED;
+            continue;
+        };
+
+        let Some(item) = game_state
+            .inventory
+            .iter()
+            .find(|item| item.instance_id == *instance_id)
+        else {
+            text.0.clear();
+            color.0 = MUTED;
+            continue;
+        };
+
+        let definition = game_state.item_definitions.get(&item.definition_id);
+
+        let name = definition
+            .map(|value| value.name.as_str())
+            .unwrap_or(item.definition_id.as_str());
+
+        match slot.field {
+            NativeInventorySlotField::Quantity => {
+                text.0 = if item.quantity > 1 {
+                    item.quantity.to_string()
+                } else {
+                    String::new()
+                };
+
+                color.0 = theme::GOLD_BRIGHT;
+            }
+            NativeInventorySlotField::Name => {
+                text.0 = name.to_owned();
+
+                color.0 = if Some(*instance_id) == panels.selected_item {
+                    theme::GOLD_BRIGHT
+                } else {
+                    TEXT
+                };
+            }
+        }
+    }
+
+    for (mut slot, mut image, mut visibility) in &mut images {
+        let item = items.get(slot.index).and_then(|instance_id| {
+            game_state
+                .inventory
+                .iter()
+                .find(|item| item.instance_id == *instance_id)
+        });
+
+        let Some(item) = item else {
+            slot.definition_id = None;
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+
+        if slot.definition_id.as_deref() != Some(item.definition_id.as_str()) {
+            image.image = asset_server.load(format!("sprites/items/{}.png", item.definition_id,));
+
+            slot.definition_id = Some(item.definition_id.clone());
+        }
+
+        *visibility = Visibility::Visible;
+    }
+
+    for (button, interaction, mut background, mut border) in &mut buttons {
+        match *button {
+            NativeInventoryButton::Slot(index) => {
+                let selected = items.get(index).copied() == panels.selected_item;
+
+                let hovered = *interaction == Interaction::Hovered;
+
+                background.0 = if selected {
+                    Color::srgba(0.22, 0.145, 0.035, 0.72)
+                } else if hovered {
+                    theme::BUTTON_HOVER
+                } else {
+                    Color::srgba(0.015, 0.035, 0.026, 0.98)
+                };
+
+                *border = BorderColor::all(if selected {
+                    theme::GOLD_BRIGHT
+                } else if hovered {
+                    theme::GOLD
+                } else {
+                    theme::BUTTON_BORDER
+                });
+            }
+            NativeInventoryButton::Action(_) => {
+                let hovered = *interaction == Interaction::Hovered;
+
+                background.0 = if hovered {
+                    theme::BUTTON_HOVER
+                } else {
+                    theme::BUTTON_BG
+                };
+
+                *border = BorderColor::all(if hovered {
+                    theme::GOLD
+                } else {
+                    theme::BUTTON_BORDER
+                });
+            }
+        }
+    }
+
+    let used = if game_state.max_capacity > 0.0 {
+        (game_state.inventory_weight / game_state.max_capacity).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+
+    for mut node in &mut capacity_bar {
+        node.width = Val::Percent(used * 100.0);
+    }
+}
+
+fn inventory_reference_ids(
+    game_state: &NativeGameState,
+    panels: &NativePanelState,
+) -> Vec<game_types::EntityId> {
+    selectable_inventory_ids(game_state, panels)
+        .into_iter()
+        .take(12)
+        .collect()
+}
+
+fn inventory_reference_capacity(game_state: &NativeGameState, panels: &NativePanelState) -> usize {
+    panels
+        .inventory_container_id
+        .and_then(|container_id| {
+            game_state
+                .inventory
+                .iter()
+                .find(|item| item.instance_id == container_id)
+        })
+        .and_then(|item| game_state.item_definitions.get(&item.definition_id))
+        .and_then(|definition| definition.container_slots)
+        .map(usize::from)
+        .unwrap_or(12)
+        .max(1)
+}
+
+fn inventory_reference_location(game_state: &NativeGameState, panels: &NativePanelState) -> String {
+    panels
+        .inventory_container_id
+        .and_then(|container_id| {
+            game_state
+                .inventory
+                .iter()
+                .find(|item| item.instance_id == container_id)
+        })
+        .map(|item| {
+            game_state
+                .item_definitions
+                .get(&item.definition_id)
+                .map(|definition| definition.name.clone())
+                .unwrap_or_else(|| item.definition_id.clone())
+        })
+        .unwrap_or_else(|| "Root inventory".into())
+}
+
+fn inventory_panel_text(game_state: &NativeGameState, panels: &NativePanelState) -> String {
+    let gold: u64 = game_state
+        .inventory
+        .iter()
+        .filter(|item| item.definition_id == "gold_coin")
+        .map(|item| u64::from(item.quantity))
+        .sum();
+
+    let items = selectable_inventory_ids(game_state, panels);
 
     let selected_index = panels
         .selected_item
-        .and_then(|id| {
-            items
-                .iter()
-                .position(|candidate| *candidate == id)
-        })
+        .and_then(|id| items.iter().position(|candidate| *candidate == id))
         .unwrap_or(0);
 
     let location = panels
@@ -11688,18 +9088,14 @@ fn inventory_panel_text(
             game_state
                 .inventory
                 .iter()
-                .find(|item| {
-                    item.instance_id == container_id
-                })
+                .find(|item| item.instance_id == container_id)
         })
         .map(|container| {
             game_state
                 .item_definitions
                 .get(&container.definition_id)
                 .map(|definition| definition.name.clone())
-                .unwrap_or_else(|| {
-                    container.definition_id.clone()
-                })
+                .unwrap_or_else(|| container.definition_id.clone())
         })
         .unwrap_or_else(|| "Root".into());
 
@@ -11707,17 +9103,12 @@ fn inventory_panel_text(
         format!("INVENTORY   ·   {location}"),
         format!(
             "Gold {}   ·   {:.1}/{:.1} cap",
-            gold,
-            game_state.inventory_weight,
-            game_state.max_capacity,
+            gold, game_state.inventory_weight, game_state.max_capacity,
         ),
     ];
 
     if panels.inventory_search_active {
-        lines.push(format!(
-            "Search: {}_",
-            panels.inventory_search,
-        ));
+        lines.push(format!("Search: {}_", panels.inventory_search,));
     } else if panels.inventory_search.is_empty() {
         lines.push("/ Search".into());
     } else {
@@ -11730,127 +9121,83 @@ fn inventory_panel_text(
     lines.push(String::new());
 
     if items.is_empty() {
-        lines.push(
-            if panels.inventory_search.is_empty() {
-                "This container is empty.".into()
-            } else {
-                "No items match the filter.".into()
-            },
-        );
+        lines.push(if panels.inventory_search.is_empty() {
+            "This container is empty.".into()
+        } else {
+            "No items match the filter.".into()
+        });
     } else {
-        let start =
-            selected_index.saturating_sub(7);
-        let end =
-            (start + 16).min(items.len());
+        let start = selected_index.saturating_sub(7);
+        let end = (start + 16).min(items.len());
 
         for instance_id in &items[start..end] {
             let Some(item) = game_state
                 .inventory
                 .iter()
-                .find(|item| {
-                    item.instance_id == *instance_id
-                })
+                .find(|item| item.instance_id == *instance_id)
             else {
                 continue;
             };
 
-            let definition =
-                game_state
-                    .item_definitions
-                    .get(&item.definition_id);
+            let definition = game_state.item_definitions.get(&item.definition_id);
 
             let name = definition
-                .map(|definition| {
-                    definition.name.as_str()
-                })
-                .unwrap_or(
-                    item.definition_id.as_str(),
-                );
+                .map(|definition| definition.name.as_str())
+                .unwrap_or(item.definition_id.as_str());
 
-            let marker =
-                if Some(*instance_id)
-                    == panels.selected_item
-                {
-                    "▶"
-                } else {
-                    " "
-                };
+            let marker = if Some(*instance_id) == panels.selected_item {
+                "▶"
+            } else {
+                " "
+            };
 
-            let quantity =
-                if item.quantity > 1 {
-                    format!(" ×{}", item.quantity)
-                } else {
-                    String::new()
-                };
+            let quantity = if item.quantity > 1 {
+                format!(" ×{}", item.quantity)
+            } else {
+                String::new()
+            };
 
-            let location_marker =
-                if let Some(slot) =
-                    item.equipped_slot.as_deref()
-                {
-                    format!("  [{slot}]")
-                } else if definition
-                    .and_then(|definition| {
-                        definition.container_slots
-                    })
-                    .is_some()
-                {
-                    "  [container]".into()
-                } else {
-                    String::new()
-                };
+            let location_marker = if let Some(slot) = item.equipped_slot.as_deref() {
+                format!("  [{slot}]")
+            } else if definition
+                .and_then(|definition| definition.container_slots)
+                .is_some()
+            {
+                "  [container]".into()
+            } else {
+                String::new()
+            };
 
-            lines.push(format!(
-                "{marker} {name}{quantity}{location_marker}"
-            ));
+            lines.push(format!("{marker} {name}{quantity}{location_marker}"));
         }
     }
 
     lines.push(String::new());
 
     if panels.split_item_id.is_some() {
-        lines.push(
-            "←/→ Split amount   ·   Enter Confirm   ·   F6/Esc Cancel"
-                .into(),
-        );
+        lines.push("←/→ Split amount   ·   Enter Confirm   ·   F6/Esc Cancel".into());
     } else {
-        lines.push(
-            "↑/↓ Select   ·   Enter Open container   ·   Backspace Parent"
-                .into(),
-        );
-        lines.push(
-            "E Equip/unequip   ·   R Root   ·   F6 Split   ·   Del Drop"
-                .into(),
-        );
+        lines.push("↑/↓ Select   ·   Enter Open container   ·   Backspace Parent".into());
+        lines.push("E Equip/unequip   ·   R Root   ·   F6 Split   ·   Del Drop".into());
     }
 
     lines.join("\n")
 }
 
-fn inventory_detail_text(
-    game_state: &NativeGameState,
-    panels: &NativePanelState,
-) -> String {
-    let Some(instance_id) =
-        panels.selected_item
-    else {
+fn inventory_detail_text(game_state: &NativeGameState, panels: &NativePanelState) -> String {
+    let Some(instance_id) = panels.selected_item else {
         return String::new();
     };
 
     let Some(item) = game_state
         .inventory
         .iter()
-        .find(|item| {
-            item.instance_id == instance_id
-        })
+        .find(|item| item.instance_id == instance_id)
     else {
         return String::new();
     };
 
-    let Some(definition) =
-        game_state
-            .item_definitions
-            .get(&item.definition_id)
-    else {
+    let Some(definition) = game_state.item_definitions.get(&item.definition_id) else {
         return item.definition_id.clone();
     };
 
@@ -11875,24 +9222,17 @@ fn inventory_detail_text(
     }
 
     if let Some(slots) = definition.container_slots {
-        facts.push(format!(
-            "Container {slots} slots   ·   Enter open"
-        ));
+        facts.push(format!("Container {slots} slots   ·   Enter open"));
     }
 
-    if let Some(slot) =
-        definition.equipment_slot.as_deref()
-    {
-        facts.push(format!(
-            "Equipment slot: {slot}"
-        ));
+    if let Some(slot) = definition.equipment_slot.as_deref() {
+        facts.push(format!("Equipment slot: {slot}"));
     }
 
     if panels.split_item_id == Some(instance_id) {
         facts.push(format!(
             "SPLIT {} of {}",
-            panels.split_quantity,
-            item.quantity,
+            panels.split_quantity, item.quantity,
         ));
     }
 
@@ -11925,7 +9265,9 @@ pub(crate) fn handle_character_modal_buttons(
             Interaction::Pressed => {
                 background.0 = theme::BUTTON_PRESSED;
                 *border = BorderColor::all(theme::GOLD_BRIGHT);
-                if !panels.character_open { continue; }
+                if !panels.character_open {
+                    continue;
+                }
 
                 match *action {
                     NativeCharacterModalAction::Inventory => {
@@ -11958,53 +9300,27 @@ pub(crate) fn update_character_modal_ui(
     game_state: Res<NativeGameState>,
     panels: Res<NativePanelState>,
     mut text_queries: ParamSet<(
-        Query<
-            (
-                &NativeCharacterModalText,
-                &mut Text,
-                &mut TextColor,
-            ),
-        >,
-        Query<
-            (
-                &NativeCharacterEquipmentSlot,
-                &mut Text,
-                &mut TextColor,
-            ),
-        >,
-        Query<
-            (
-                &NativeCharacterProfessionSlot,
-                &mut Text,
-                &mut TextColor,
-            ),
-        >,
+        Query<(&NativeCharacterModalText, &mut Text, &mut TextColor)>,
+        Query<(&NativeCharacterEquipmentSlot, &mut Text, &mut TextColor)>,
+        Query<(&NativeCharacterProfessionSlot, &mut Text, &mut TextColor)>,
     )>,
 ) {
     if !panels.character_open {
         return;
     }
 
-    let Some(player) =
-        game_state.local_player()
-    else {
-        for (_, mut text, mut color)
-            in &mut text_queries.p0()
-        {
+    let Some(player) = game_state.local_player() else {
+        for (_, mut text, mut color) in &mut text_queries.p0() {
             text.0 = "—".into();
             color.0 = MUTED;
         }
 
-        for (_, mut text, mut color)
-            in &mut text_queries.p1()
-        {
+        for (_, mut text, mut color) in &mut text_queries.p1() {
             text.0 = "Empty".into();
             color.0 = MUTED;
         }
 
-        for (_, mut text, mut color)
-            in &mut text_queries.p2()
-        {
+        for (_, mut text, mut color) in &mut text_queries.p2() {
             text.0 = "Empty".into();
             color.0 = MUTED;
         }
@@ -12012,19 +9328,12 @@ pub(crate) fn update_character_modal_ui(
         return;
     };
 
-    for (
-        kind,
-        mut text,
-        mut color,
-    ) in &mut text_queries.p0()
-    {
+    for (kind, mut text, mut color) in &mut text_queries.p0() {
         match kind {
             NativeCharacterModalText::HeaderContext => {
                 text.0 = format!(
                     "{}:{}:{}",
-                    player.position.x,
-                    player.position.y,
-                    player.position.z,
+                    player.position.x, player.position.y, player.position.z,
                 );
                 color.0 = theme::GOLD;
             }
@@ -12033,27 +9342,12 @@ pub(crate) fn update_character_modal_ui(
                     .name
                     .chars()
                     .next()
-                    .map(|value| {
-                        value
-                            .to_uppercase()
-                            .collect::<String>()
-                    })
-                    .unwrap_or_else(|| {
-                        "A".into()
-                    });
-                color.0 =
-                    Color::srgb(
-                        0.10,
-                        0.08,
-                        0.04,
-                    );
+                    .map(|value| value.to_uppercase().collect::<String>())
+                    .unwrap_or_else(|| "A".into());
+                color.0 = Color::srgb(0.10, 0.08, 0.04);
             }
             NativeCharacterModalText::Identity => {
-                text.0 = format!(
-                    "LEVEL {}\n{}",
-                    player.level,
-                    player.name.to_uppercase(),
-                );
+                text.0 = format!("LEVEL {}\n{}", player.level, player.name.to_uppercase(),);
                 color.0 = theme::GOLD_BRIGHT;
             }
 
@@ -12061,19 +9355,11 @@ pub(crate) fn update_character_modal_ui(
             // modal. Keep them valid during the migration even though the new
             // reference-faithful layout does not spawn them.
             NativeCharacterModalText::Health => {
-                text.0 = format!(
-                    "{} / {}",
-                    player.health,
-                    player.max_health,
-                );
+                text.0 = format!("{} / {}", player.health, player.max_health,);
                 color.0 = TEXT;
             }
             NativeCharacterModalText::Mana => {
-                text.0 = format!(
-                    "{} / {}",
-                    player.mana,
-                    player.max_mana,
-                );
+                text.0 = format!("{} / {}", player.mana, player.max_mana,);
                 color.0 = TEXT;
             }
             NativeCharacterModalText::Experience => {
@@ -12083,49 +9369,37 @@ pub(crate) fn update_character_modal_ui(
             NativeCharacterModalText::Capacity => {
                 text.0 = format!(
                     "{:.1} / {:.1}",
-                    game_state.inventory_weight,
-                    game_state.max_capacity,
+                    game_state.inventory_weight, game_state.max_capacity,
                 );
                 color.0 = TEXT;
             }
             NativeCharacterModalText::Melee => {
-                text.0 = format!(
-                    "{} | {} tries",
-                    player.sword_skill,
-                    player.sword_tries,
-                );
+                text.0 = format!("{} | {} tries", player.sword_skill, player.sword_tries,);
                 color.0 = TEXT;
             }
             NativeCharacterModalText::Distance => {
                 text.0 = format!(
                     "{} | {} tries",
-                    player.distance_skill,
-                    player.distance_tries,
+                    player.distance_skill, player.distance_tries,
                 );
                 color.0 = TEXT;
             }
             NativeCharacterModalText::Shielding => {
                 text.0 = format!(
                     "{} | {} tries",
-                    player.shielding_skill,
-                    player.shielding_tries,
+                    player.shielding_skill, player.shielding_tries,
                 );
                 color.0 = TEXT;
             }
             NativeCharacterModalText::Fletching => {
                 text.0 = format!(
                     "{} | {} tries",
-                    player.fletching_skill,
-                    player.fletching_tries,
+                    player.fletching_skill, player.fletching_tries,
                 );
                 color.0 = TEXT;
             }
             NativeCharacterModalText::Magic => {
-                text.0 = format!(
-                    "{} | {} tries",
-                    player.magic_level,
-                    player.magic_tries,
-                );
+                text.0 = format!("{} | {} tries", player.magic_level, player.magic_tries,);
                 color.0 = TEXT;
             }
             NativeCharacterModalText::Equipment => {
@@ -12139,18 +9413,8 @@ pub(crate) fn update_character_modal_ui(
         }
     }
 
-    for (
-        slot,
-        mut text,
-        mut color,
-    ) in &mut text_queries.p1()
-    {
-        if let Some(name) =
-            character_equipment_slot_name(
-                &game_state,
-                *slot,
-            )
-        {
+    for (slot, mut text, mut color) in &mut text_queries.p1() {
+        if let Some(name) = character_equipment_slot_name(&game_state, *slot) {
             text.0 = name;
             color.0 = theme::GOLD_BRIGHT;
         } else {
@@ -12159,26 +9423,15 @@ pub(crate) fn update_character_modal_ui(
         }
     }
 
-    for (
-        slot,
-        mut text,
-        mut color,
-    ) in &mut text_queries.p2()
-    {
-        if let Some(skill_id) =
-            player.secondary_skills.get(slot.0)
-        {
+    for (slot, mut text, mut color) in &mut text_queries.p2() {
+        if let Some(skill_id) = player.secondary_skills.get(slot.0) {
             let level = game_state
                 .profession_skills
                 .get(skill_id)
                 .map(|skill| skill.level)
                 .unwrap_or(0);
 
-            text.0 = format!(
-                "{}\nLv {}",
-                title_case(skill_id),
-                level,
-            );
+            text.0 = format!("{}\nLv {}", title_case(skill_id), level,);
             color.0 = theme::GOLD_BRIGHT;
         } else {
             text.0 = "Empty".into();
@@ -12191,101 +9444,58 @@ fn character_equipment_slot_name(
     game_state: &NativeGameState,
     slot: NativeCharacterEquipmentSlot,
 ) -> Option<String> {
-    let aliases: &[&str] =
-        match slot {
-            NativeCharacterEquipmentSlot::Helmet => {
-                &["helmet", "head"]
-            }
-            NativeCharacterEquipmentSlot::Amulet => {
-                &["amulet", "neck"]
-            }
-            NativeCharacterEquipmentSlot::Chest => {
-                &["chest", "armor", "body"]
-            }
-            NativeCharacterEquipmentSlot::Back => {
-                &["back", "cape"]
-            }
-            NativeCharacterEquipmentSlot::LeftHand => {
-                &[
-                    "left_hand",
-                    "lefthand",
-                    "off_hand",
-                    "offhand",
-                ]
-            }
-            NativeCharacterEquipmentSlot::RightHand => {
-                &[
-                    "right_hand",
-                    "righthand",
-                    "main_hand",
-                    "mainhand",
-                    "weapon",
-                ]
-            }
-            NativeCharacterEquipmentSlot::Backpack => {
-                &[
-                    "backpack",
-                    "bag",
-                ]
-            }
-            NativeCharacterEquipmentSlot::Ring => {
-                &["ring"]
-            }
-            NativeCharacterEquipmentSlot::Feet => {
-                &[
-                    "feet",
-                    "boots",
-                    "shoes",
-                ]
-            }
-            NativeCharacterEquipmentSlot::Legs => {
-                &[
-                    "legs",
-                    "pants",
-                ]
-            }
-        };
+    let aliases: &[&str] = match slot {
+        NativeCharacterEquipmentSlot::Helmet => &["helmet", "head"],
+        NativeCharacterEquipmentSlot::Amulet => &["amulet", "neck"],
+        NativeCharacterEquipmentSlot::Chest => &["chest", "armor", "body"],
+        NativeCharacterEquipmentSlot::Back => &["back", "cape"],
+        NativeCharacterEquipmentSlot::LeftHand => &["left_hand", "lefthand", "off_hand", "offhand"],
+        NativeCharacterEquipmentSlot::RightHand => {
+            &["right_hand", "righthand", "main_hand", "mainhand", "weapon"]
+        }
+        NativeCharacterEquipmentSlot::Backpack => &["backpack", "bag"],
+        NativeCharacterEquipmentSlot::Ring => &["ring"],
+        NativeCharacterEquipmentSlot::Feet => &["feet", "boots", "shoes"],
+        NativeCharacterEquipmentSlot::Legs => &["legs", "pants"],
+    };
 
     game_state
         .inventory
         .iter()
         .find(|item| {
-            let Some(value) =
-                item.equipped_slot.as_deref()
-            else {
+            let Some(value) = item.equipped_slot.as_deref() else {
                 return false;
             };
 
             aliases
                 .iter()
-                .any(|alias| {
-                    value.eq_ignore_ascii_case(alias)
-                })
+                .any(|alias| value.eq_ignore_ascii_case(alias))
         })
         .map(|item| {
             game_state
                 .item_definitions
                 .get(&item.definition_id)
-                .map(|definition| {
-                    definition.name.clone()
-                })
-                .unwrap_or_else(|| {
-                    item.definition_id.clone()
-                })
+                .map(|definition| definition.name.clone())
+                .unwrap_or_else(|| item.definition_id.clone())
         })
 }
 
 #[allow(dead_code)]
 fn character_equipment_summary(game_state: &NativeGameState) -> String {
-    let mut equipped: Vec<_> = game_state.inventory.iter().filter_map(|item| {
-        item.equipped_slot.as_deref().map(|slot| {
-            let name = game_state.item_definitions
-                .get(&item.definition_id)
-                .map(|definition| definition.name.clone())
-                .unwrap_or_else(|| item.definition_id.clone());
-            (slot.to_owned(), name)
+    let mut equipped: Vec<_> = game_state
+        .inventory
+        .iter()
+        .filter_map(|item| {
+            item.equipped_slot.as_deref().map(|slot| {
+                let name = game_state
+                    .item_definitions
+                    .get(&item.definition_id)
+                    .map(|definition| definition.name.clone())
+                    .unwrap_or_else(|| item.definition_id.clone());
+                (slot.to_owned(), name)
+            })
         })
-    }).collect();
+        .collect();
 
     equipped.sort_by(|a, b| a.0.cmp(&b.0));
 
@@ -12293,9 +9503,11 @@ fn character_equipment_summary(game_state: &NativeGameState) -> String {
         return "No equipment currently equipped.".into();
     }
 
-    equipped.into_iter().map(|(slot, name)| {
-        format!("{:<13} {}", title_case(&slot.replace('_', " ")), name)
-    }).collect::<Vec<_>>().join("\n")
+    equipped
+        .into_iter()
+        .map(|(slot, name)| format!("{:<13} {}", title_case(&slot.replace('_', " ")), name))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[allow(dead_code)]
@@ -12308,12 +9520,22 @@ fn character_professions_summary(game_state: &NativeGameState) -> String {
         return "No secondary professions selected.".into();
     }
 
-    player.secondary_skills.iter().map(|skill_id| {
-        let skill = game_state.profession_skills.get(skill_id);
-        let level = skill.map(|value| value.level).unwrap_or(0);
-        let tries = skill.map(|value| value.tries).unwrap_or(0);
-        format!("{}   Lv {}   |   {} tries", title_case(skill_id), level, tries)
-    }).collect::<Vec<_>>().join("\n")
+    player
+        .secondary_skills
+        .iter()
+        .map(|skill_id| {
+            let skill = game_state.profession_skills.get(skill_id);
+            let level = skill.map(|value| value.level).unwrap_or(0);
+            let tries = skill.map(|value| value.tries).unwrap_or(0);
+            format!(
+                "{}   Lv {}   |   {} tries",
+                title_case(skill_id),
+                level,
+                tries
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn character_panel_text(game_state: &NativeGameState) -> String {
@@ -12329,31 +9551,37 @@ fn character_panel_text(game_state: &NativeGameState) -> String {
 
     let mut lines = vec![
         format!("CHARACTER   ·   {}", player.name),
-        format!(
-            "Level {}   ·   {} XP",
-            player.level,
-            player.experience,
-        ),
+        format!("Level {}   ·   {} XP", player.level, player.experience,),
         format!(
             "HP {}/{}   ·   Mana {}/{}",
-            player.health,
-            player.max_health,
-            player.mana,
-            player.max_mana,
+            player.health, player.max_health, player.mana, player.max_mana,
         ),
         format!(
             "Capacity {:.1}/{:.1}   ·   Equipped {}",
-            game_state.inventory_weight,
-            game_state.max_capacity,
-            equipped_count,
+            game_state.inventory_weight, game_state.max_capacity, equipped_count,
         ),
         String::new(),
         "COMBAT SKILLS".into(),
-        format!("Melee       {:>3}   ·   {} tries", player.sword_skill, player.sword_tries),
-        format!("Distance    {:>3}   ·   {} tries", player.distance_skill, player.distance_tries),
-        format!("Shielding   {:>3}   ·   {} tries", player.shielding_skill, player.shielding_tries),
-        format!("Fletching   {:>3}   ·   {} tries", player.fletching_skill, player.fletching_tries),
-        format!("Magic       {:>3}   ·   {} tries", player.magic_level, player.magic_tries),
+        format!(
+            "Melee       {:>3}   ·   {} tries",
+            player.sword_skill, player.sword_tries
+        ),
+        format!(
+            "Distance    {:>3}   ·   {} tries",
+            player.distance_skill, player.distance_tries
+        ),
+        format!(
+            "Shielding   {:>3}   ·   {} tries",
+            player.shielding_skill, player.shielding_tries
+        ),
+        format!(
+            "Fletching   {:>3}   ·   {} tries",
+            player.fletching_skill, player.fletching_tries
+        ),
+        format!(
+            "Magic       {:>3}   ·   {} tries",
+            player.magic_level, player.magic_tries
+        ),
         String::new(),
         "EQUIPMENT".into(),
     ];
@@ -12517,21 +9745,11 @@ pub fn handle_panel_dock_buttons(
                 *border = BorderColor::all(theme::GOLD_BRIGHT);
 
                 let was_open = match action {
-                    NativePanelDockButton::Character => {
-                        panels.character_open
-                    }
-                    NativePanelDockButton::Inventory => {
-                        panels.inventory_open
-                    }
-                    NativePanelDockButton::Skills => {
-                        panels.skills_open
-                    }
-                    NativePanelDockButton::Spells => {
-                        panels.spells_open
-                    }
-                    NativePanelDockButton::Crafting => {
-                        panels.crafting_open
-                    }
+                    NativePanelDockButton::Character => panels.character_open,
+                    NativePanelDockButton::Inventory => panels.inventory_open,
+                    NativePanelDockButton::Skills => panels.skills_open,
+                    NativePanelDockButton::Spells => panels.spells_open,
+                    NativePanelDockButton::Crafting => panels.crafting_open,
                 };
 
                 panels.inventory_open = false;
@@ -12558,8 +9776,7 @@ pub fn handle_panel_dock_buttons(
                         }
                         NativePanelDockButton::Crafting => {
                             panels.crafting_open = true;
-                            panels.crafting_quantity =
-                                panels.crafting_quantity.max(1);
+                            panels.crafting_quantity = panels.crafting_quantity.max(1);
                         }
                     }
                 }
@@ -12606,17 +9823,10 @@ pub fn handle_action_hotkeys(
     };
 
     action_bar.sync(&game_state);
-    activate_action_slot(
-        slot,
-        &network,
-        &mut game_state,
-        &action_bar,
-    );
+    activate_action_slot(slot, &network, &mut game_state, &action_bar);
 }
 
-fn nearby_loot_items(
-    game_state: &NativeGameState,
-) -> Vec<(game_types::EntityId, String, u16)> {
+fn nearby_loot_items(game_state: &NativeGameState) -> Vec<(game_types::EntityId, String, u16)> {
     let Some(local) = game_state.local_player() else {
         return Vec::new();
     };
@@ -12661,22 +9871,13 @@ fn nearby_loot_items(
 
 pub fn update_nearby_loot_ui(
     game_state: Res<NativeGameState>,
-    mut panel: Query<
-        &mut Visibility,
-        (With<NativeNearbyLootPanel>, Without<NativeLootAction>),
-    >,
+    mut panel: Query<&mut Visibility, (With<NativeNearbyLootPanel>, Without<NativeLootAction>)>,
     mut slots: Query<
         (&NativeLootAction, &mut Visibility),
         (With<Button>, Without<NativeNearbyLootPanel>),
     >,
-    mut slot_texts: Query<
-        (&NativeLootSlotText, &mut Text),
-        Without<NativeLootAllText>,
-    >,
-    mut all_text: Query<
-        &mut Text,
-        (With<NativeLootAllText>, Without<NativeLootSlotText>),
-    >,
+    mut slot_texts: Query<(&NativeLootSlotText, &mut Text), Without<NativeLootAllText>>,
+    mut all_text: Query<&mut Text, (With<NativeLootAllText>, Without<NativeLootSlotText>)>,
 ) {
     let loot = nearby_loot_items(&game_state);
 
@@ -12832,9 +10033,7 @@ pub(crate) fn activate_action_slot(
     action_bar: &NativeActionBarState,
 ) {
     let Some(target_id) = game_state.attack_target_id else {
-        game_state.push_system_message(
-            "Select a target first.",
-        );
+        game_state.push_system_message("Select a target first.");
         return;
     };
 
@@ -12844,9 +10043,7 @@ pub(crate) fn activate_action_slot(
             .send(ClientMessage::AttackRequest { target_id })
             .is_err()
         {
-            game_state.push_system_message(
-                "The game connection is offline.",
-            );
+            game_state.push_system_message("The game connection is offline.");
         }
         return;
     }
@@ -12870,13 +10067,9 @@ pub(crate) fn activate_action_slot(
         })
         .is_err()
     {
-        game_state.push_system_message(
-            "The game connection is offline.",
-        );
+        game_state.push_system_message("The game connection is offline.");
     } else {
-        game_state.push_system_message(format!(
-            "Casting {spell_name}.",
-        ));
+        game_state.push_system_message(format!("Casting {spell_name}.",));
     }
 }
 
@@ -12902,10 +10095,7 @@ pub fn ping_server(
     }
 }
 
-fn action_bar_text(
-    game_state: &NativeGameState,
-    action_bar: &NativeActionBarState,
-) -> String {
+fn action_bar_text(game_state: &NativeGameState, action_bar: &NativeActionBarState) -> String {
     let mut slots = vec!["[1] Attack".to_owned()];
 
     for action_slot in 1..=8usize {

@@ -183,11 +183,7 @@ impl AppState {
         let newly_visible_to_mover: Vec<PlayerView> = new_recipients
             .difference(&old_recipients)
             .filter(|recipient| **recipient != player_id)
-            .filter_map(|recipient| {
-                world
-                    .player(*recipient)
-                    .map(|player| player.view.clone())
-            })
+            .filter_map(|recipient| world.player(*recipient).map(|player| player.view.clone()))
             .collect();
         let no_longer_visible_to_mover: Vec<Uuid> = old_recipients
             .difference(&new_recipients)
@@ -646,7 +642,13 @@ async fn session(mut socket: WebSocket, state: AppState) {
         magic_level,
     ];
     game_types::normalize_mastery(&mut skill_levels);
-    [sword_skill, distance_skill, shielding_skill, fletching_skill, magic_level] = skill_levels;
+    [
+        sword_skill,
+        distance_skill,
+        shielding_skill,
+        fletching_skill,
+        magic_level,
+    ] = skill_levels;
 
     if state.world.read().await.contains_player(id) {
         send(
@@ -812,11 +814,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
         crafting_queue: None,
         last_mana_regen: Instant::now(),
         active_food: persisted_food.and_then(|(remaining_ms, health_per_tick, mana_per_tick)| {
-            world::ActiveFood::from_persisted(
-                remaining_ms,
-                health_per_tick,
-                mana_per_tick,
-            )
+            world::ActiveFood::from_persisted(remaining_ms, health_per_tick, mana_per_tick)
         }),
         last_food_regen: Instant::now(),
     };
@@ -1224,7 +1222,9 @@ async fn session(mut socket: WebSocket, state: AppState) {
                             code: reason.into(),
                             message: match reason {
                                 "ability_cooldown" => "That ability is still cooling down.",
-                                "shield_required" => "Equip a defensive off-hand to use Shield Guard.",
+                                "shield_required" => {
+                                    "Equip a defensive off-hand to use Shield Guard."
+                                }
                                 "already_full_health" => "You are already at full health.",
                                 _ => "That ability cannot be used right now.",
                             }
@@ -1701,12 +1701,7 @@ async fn eat_item(state: &AppState, player_id: Uuid, instance_id: Uuid) {
         .and_then(|active_player| active_player.food_state());
     if let Some(database) = &state.database
         && let Err(error) = database
-            .persist_food_consumption(
-                &player,
-                &inventory,
-                world.ground_items(),
-                food_state,
-            )
+            .persist_food_consumption(&player, &inventory, world.ground_items(), food_state)
             .await
     {
         *world = backup;

@@ -81,10 +81,7 @@ mod v34_secondary_skill_tests {
     #[test]
     fn allows_two_gathering_and_two_crafting() {
         assert!(valid_secondary_skills(&skills(&[
-            "mining",
-            "fishing",
-            "smithing",
-            "alchemy",
+            "mining", "fishing", "smithing", "alchemy",
         ])));
     }
 
@@ -96,9 +93,7 @@ mod v34_secondary_skill_tests {
             "woodcutting",
         ])));
         assert!(!valid_secondary_skills(&skills(&[
-            "smithing",
-            "alchemy",
-            "cooking",
+            "smithing", "alchemy", "cooking",
         ])));
     }
 

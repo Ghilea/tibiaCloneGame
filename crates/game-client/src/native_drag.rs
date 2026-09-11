@@ -6,12 +6,12 @@ use game_protocol::{ClientMessage, ItemDestination};
 use game_types::EntityId;
 
 use crate::{
+    NativeNetwork,
     native_ui::{
-        NativeActionSlot, NativeCharacterEquipmentSlot, NativeInventoryButton,
-        NativePanelState, NativeSpellbookButton,
+        NativeActionSlot, NativeCharacterEquipmentSlot, NativeInventoryButton, NativePanelState,
+        NativeSpellbookButton,
     },
     state::NativeGameState,
-    NativeNetwork,
 };
 
 const DRAG_THRESHOLD_PX: f32 = 6.0;
@@ -26,8 +26,7 @@ pub(crate) struct NativeActionBarState {
 impl NativeActionBarState {
     pub(crate) fn sync(&mut self, game_state: &NativeGameState) {
         let learned = learned_spells_sorted(game_state);
-        let learned_ids: HashSet<String> =
-            learned.iter().map(|(id, _)| id.clone()).collect();
+        let learned_ids: HashSet<String> = learned.iter().map(|(id, _)| id.clone()).collect();
 
         if !self.initialized {
             for (index, (spell_id, _)) in learned.iter().take(8).enumerate() {
@@ -120,10 +119,7 @@ pub(crate) fn handle_drag_drop(
     action_slots: Query<(&Interaction, &NativeActionSlot), With<Button>>,
     inventory_buttons: Query<(&Interaction, &NativeInventoryButton), With<Button>>,
     spellbook_buttons: Query<(&Interaction, &NativeSpellbookButton), With<Button>>,
-    equipment_buttons: Query<
-        (&Interaction, &NativeCharacterEquipmentSlot),
-        With<Button>,
-    >,
+    equipment_buttons: Query<(&Interaction, &NativeCharacterEquipmentSlot), With<Button>>,
     mut drag: Local<NativeDragDropState>,
 ) {
     let Ok(window) = windows.single() else {
@@ -141,36 +137,31 @@ pub(crate) fn handle_drag_drop(
     let cursor = window.cursor_position();
 
     if mouse.just_pressed(MouseButton::Left) {
-        let payload = pressed_inventory_item(
-            &inventory_buttons,
-            &game_state,
-            &panels,
-        )
-        .map(NativeDragPayload::Item)
-        .or_else(|| {
-            pressed_equipment_item(&equipment_buttons, &game_state)
-                .map(NativeDragPayload::Item)
-        })
-        .or_else(|| {
-            pressed_spellbook_spell(&spellbook_buttons, &game_state, &panels)
-                .map(NativeDragPayload::SpellbookSpell)
-        })
-        .or_else(|| {
-            action_slots.iter().find_map(|(interaction, slot)| {
-                if *interaction != Interaction::Pressed {
-                    return None;
-                }
-                if slot.0 == 0 {
-                    return Some(NativeDragPayload::AttackClick);
-                }
-                action_bar
-                    .spell_id(slot.0)
-                    .map(|spell_id| NativeDragPayload::ActionSpell {
-                        slot: slot.0,
-                        spell_id: spell_id.to_owned(),
-                    })
+        let payload = pressed_inventory_item(&inventory_buttons, &game_state, &panels)
+            .map(NativeDragPayload::Item)
+            .or_else(|| {
+                pressed_equipment_item(&equipment_buttons, &game_state).map(NativeDragPayload::Item)
             })
-        });
+            .or_else(|| {
+                pressed_spellbook_spell(&spellbook_buttons, &game_state, &panels)
+                    .map(NativeDragPayload::SpellbookSpell)
+            })
+            .or_else(|| {
+                action_slots.iter().find_map(|(interaction, slot)| {
+                    if *interaction != Interaction::Pressed {
+                        return None;
+                    }
+                    if slot.0 == 0 {
+                        return Some(NativeDragPayload::AttackClick);
+                    }
+                    action_bar
+                        .spell_id(slot.0)
+                        .map(|spell_id| NativeDragPayload::ActionSpell {
+                            slot: slot.0,
+                            spell_id: spell_id.to_owned(),
+                        })
+                })
+            });
 
         if payload.is_some() {
             drag.payload = payload;
@@ -181,9 +172,7 @@ pub(crate) fn handle_drag_drop(
 
     if mouse.pressed(MouseButton::Left) {
         if let (Some(start), Some(current)) = (drag.start_cursor, cursor) {
-            if current.distance_squared(start)
-                >= DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX
-            {
+            if current.distance_squared(start) >= DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX {
                 drag.moved = true;
             }
         }
@@ -205,12 +194,7 @@ pub(crate) fn handle_drag_drop(
     if !moved {
         match payload {
             NativeDragPayload::AttackClick => {
-                crate::native_ui::activate_action_slot(
-                    0,
-                    &network,
-                    &mut game_state,
-                    &action_bar,
-                );
+                crate::native_ui::activate_action_slot(0, &network, &mut game_state, &action_bar);
             }
             NativeDragPayload::ActionSpell { slot, .. } => {
                 crate::native_ui::activate_action_slot(
@@ -229,9 +213,7 @@ pub(crate) fn handle_drag_drop(
         NativeDragPayload::AttackClick => {}
         NativeDragPayload::SpellbookSpell(spell_id) => {
             if let Some(target_slot) = hovered_action_slot(&action_slots) {
-                if target_slot > 0
-                    && game_state.learned_spell_ids.contains(&spell_id)
-                {
+                if target_slot > 0 && game_state.learned_spell_ids.contains(&spell_id) {
                     action_bar.assign(target_slot, spell_id);
                 }
             }
@@ -252,12 +234,7 @@ pub(crate) fn handle_drag_drop(
         }
         NativeDragPayload::Item(instance_id) => {
             if let Some(target_slot) = hovered_equipment_slot(&equipment_buttons) {
-                move_item_to_equipment(
-                    &network,
-                    &mut game_state,
-                    instance_id,
-                    target_slot,
-                );
+                move_item_to_equipment(&network, &mut game_state, instance_id, target_slot);
                 return;
             }
 
@@ -278,8 +255,7 @@ fn hovered_action_slot(
     buttons: &Query<(&Interaction, &NativeActionSlot), With<Button>>,
 ) -> Option<usize> {
     buttons.iter().find_map(|(interaction, slot)| {
-        matches!(*interaction, Interaction::Hovered | Interaction::Pressed)
-            .then_some(slot.0)
+        matches!(*interaction, Interaction::Hovered | Interaction::Pressed).then_some(slot.0)
     })
 }
 
@@ -298,14 +274,10 @@ fn hovered_inventory_slot(
 }
 
 fn hovered_equipment_slot(
-    buttons: &Query<
-        (&Interaction, &NativeCharacterEquipmentSlot),
-        With<Button>,
-    >,
+    buttons: &Query<(&Interaction, &NativeCharacterEquipmentSlot), With<Button>>,
 ) -> Option<NativeCharacterEquipmentSlot> {
     buttons.iter().find_map(|(interaction, slot)| {
-        matches!(*interaction, Interaction::Hovered | Interaction::Pressed)
-            .then_some(*slot)
+        matches!(*interaction, Interaction::Hovered | Interaction::Pressed).then_some(*slot)
     })
 }
 
@@ -327,10 +299,7 @@ fn pressed_inventory_item(
 }
 
 fn pressed_equipment_item(
-    buttons: &Query<
-        (&Interaction, &NativeCharacterEquipmentSlot),
-        With<Button>,
-    >,
+    buttons: &Query<(&Interaction, &NativeCharacterEquipmentSlot), With<Button>>,
     game_state: &NativeGameState,
 ) -> Option<EntityId> {
     buttons.iter().find_map(|(interaction, slot)| {
@@ -356,9 +325,7 @@ fn pressed_spellbook_spell(
             return None;
         }
         match *button {
-            NativeSpellbookButton::Learned(index) => {
-                learned.get(index).map(|(id, _)| id.clone())
-            }
+            NativeSpellbookButton::Learned(index) => learned.get(index).map(|(id, _)| id.clone()),
             _ => None,
         }
     })
@@ -379,10 +346,7 @@ fn learned_spells_sorted(game_state: &NativeGameState) -> Vec<(String, String)> 
     spells
 }
 
-fn visible_inventory_ids(
-    game_state: &NativeGameState,
-    panels: &NativePanelState,
-) -> Vec<EntityId> {
+fn visible_inventory_ids(game_state: &NativeGameState, panels: &NativePanelState) -> Vec<EntityId> {
     let query = panels.inventory_search.trim().to_ascii_lowercase();
 
     let mut items: Vec<_> = game_state
@@ -408,10 +372,7 @@ fn visible_inventory_ids(
                 .unwrap_or(item.definition_id.as_str());
 
             name.to_ascii_lowercase().contains(&query)
-                || item
-                    .definition_id
-                    .to_ascii_lowercase()
-                    .contains(&query)
+                || item.definition_id.to_ascii_lowercase().contains(&query)
         })
         .collect();
 
@@ -427,8 +388,7 @@ fn visible_inventory_ids(
             .map(|definition| definition.name.as_str())
             .unwrap_or(right.definition_id.as_str());
 
-        left
-            .equipped_slot
+        left.equipped_slot
             .is_none()
             .cmp(&right.equipped_slot.is_none())
             .then_with(|| left_name.cmp(right_name))
@@ -509,9 +469,7 @@ fn move_item_to_equipment(
         .iter()
         .any(|alias| slot.eq_ignore_ascii_case(alias))
     {
-        game_state.push_system_message(format!(
-            "{item_name} does not fit that equipment slot."
-        ));
+        game_state.push_system_message(format!("{item_name} does not fit that equipment slot."));
         return;
     }
 
@@ -574,17 +532,13 @@ fn equipped_item_id(
         .map(|item| item.instance_id)
 }
 
-fn equipment_slot_aliases(
-    slot: NativeCharacterEquipmentSlot,
-) -> &'static [&'static str] {
+fn equipment_slot_aliases(slot: NativeCharacterEquipmentSlot) -> &'static [&'static str] {
     match slot {
         NativeCharacterEquipmentSlot::Helmet => &["helmet", "head"],
         NativeCharacterEquipmentSlot::Amulet => &["amulet", "neck"],
         NativeCharacterEquipmentSlot::Chest => &["chest", "armor", "body"],
         NativeCharacterEquipmentSlot::Back => &["back", "cape"],
-        NativeCharacterEquipmentSlot::LeftHand => {
-            &["left_hand", "lefthand", "off_hand", "offhand"]
-        }
+        NativeCharacterEquipmentSlot::LeftHand => &["left_hand", "lefthand", "off_hand", "offhand"],
         NativeCharacterEquipmentSlot::RightHand => {
             &["right_hand", "righthand", "main_hand", "mainhand", "weapon"]
         }
