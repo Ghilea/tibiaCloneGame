@@ -1,4 +1,5 @@
 // TIBIAGAME_V36_21_NATIVE_GAMEPLAY_UI
+// TIBIAGAME_V36_64_0_COMPACT_UI_ROOF_DEPTH
 use bevy::{
     input::{ButtonState, keyboard::KeyboardInput},
     prelude::*,
@@ -1587,10 +1588,10 @@ fn spawn_inventory_reference_button(
             NativeInventoryButton::Action(action),
             Node {
                 width: px(width),
-                height: px(36),
-                padding: UiRect::horizontal(px(10)),
+                height: px(32),
+                padding: UiRect::horizontal(px(9)),
                 border: UiRect::all(px(1)),
-                border_radius: BorderRadius::all(px(6)),
+                border_radius: BorderRadius::all(px(5)),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
                 ..default()
@@ -1601,7 +1602,7 @@ fn spawn_inventory_reference_button(
         .with_child((
             Text::new(label),
             TextFont {
-                font_size: FontSize::Px(9.0),
+                font_size: FontSize::Px(8.5),
                 ..default()
             },
             TextColor(TEXT),
@@ -1614,26 +1615,40 @@ fn spawn_inventory_slot(parent: &mut ChildSpawnerCommands, index: usize) {
             Button,
             NativeInventoryButton::Slot(index),
             Node {
-                width: Val::Percent(19.0),
-                height: px(116),
-                padding: UiRect::all(px(6)),
+                width: Val::Percent(15.55),
+                height: px(72),
+                flex_shrink: 0.0,
+                position_type: PositionType::Relative,
+                padding: UiRect::all(px(4)),
                 border: UiRect::all(px(1)),
                 border_radius: BorderRadius::all(px(5)),
-                flex_direction: FlexDirection::Column,
-                justify_content: JustifyContent::SpaceBetween,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                overflow: Overflow::clip(),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.015, 0.035, 0.026, 0.98)),
+            BackgroundColor(Color::srgba(0.012, 0.027, 0.020, 0.98)),
             BorderColor::all(theme::BUTTON_BORDER),
+            Outline::new(px(1), px(0), Color::srgba(0.0, 0.0, 0.0, 0.72)),
         ))
         .with_children(|slot| {
-            slot.spawn(Node {
-                width: Val::Percent(100.0),
-                min_height: px(16),
-                justify_content: JustifyContent::FlexEnd,
-                ..default()
-            })
-            .with_child((
+            slot.spawn((
+                NativeInventorySlotImage {
+                    index,
+                    definition_id: None,
+                },
+                ImageNode::default(),
+                Visibility::Hidden,
+                Node {
+                    width: px(48),
+                    height: px(48),
+                    ..default()
+                },
+            ));
+
+            // WoW-style bag slots use the icon as the primary identity. Quantity
+            // stays in the corner; full names/details live in the hover tooltip.
+            slot.spawn((
                 NativeInventorySlotText {
                     index,
                     field: NativeInventorySlotField::Quantity,
@@ -1644,46 +1659,12 @@ fn spawn_inventory_slot(parent: &mut ChildSpawnerCommands, index: usize) {
                     ..default()
                 },
                 TextColor(theme::GOLD_BRIGHT),
-            ));
-
-            slot.spawn(Node {
-                width: Val::Percent(100.0),
-                flex_grow: 1.0,
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                ..default()
-            })
-            .with_child((
-                NativeInventorySlotImage {
-                    index,
-                    definition_id: None,
-                },
-                ImageNode::default(),
-                Visibility::Hidden,
                 Node {
-                    width: px(54),
-                    height: px(54),
+                    position_type: PositionType::Absolute,
+                    top: px(3),
+                    right: px(5),
                     ..default()
                 },
-            ));
-
-            slot.spawn(Node {
-                width: Val::Percent(100.0),
-                min_height: px(28),
-                align_items: AlignItems::FlexEnd,
-                ..default()
-            })
-            .with_child((
-                NativeInventorySlotText {
-                    index,
-                    field: NativeInventorySlotField::Name,
-                },
-                Text::new(""),
-                TextFont {
-                    font_size: FontSize::Px(8.3),
-                    ..default()
-                },
-                TextColor(TEXT),
             ));
         });
 }
@@ -1691,7 +1672,7 @@ fn spawn_inventory_slot(parent: &mut ChildSpawnerCommands, index: usize) {
 fn spawn_inventory_panel(commands: &mut Commands) {
     commands
         .spawn((
-            Name::new("Native modal · inventory · Greyhaven reference"),
+            Name::new("Native modal · inventory · compact bag"),
             NativeUiPanel::Inventory,
             native_modal::NativeModalRoot,
             GlobalZIndex(191),
@@ -1701,10 +1682,10 @@ fn spawn_inventory_panel(commands: &mut Commands) {
         ))
         .with_children(|root| {
             root.spawn((
-                Name::new("Greyhaven Inventory interface"),
+                Name::new("Greyhaven compact Inventory interface"),
                 native_modal::NativeModalSurface,
                 native_modal::NativeDraggableSurface(native_modal::NativeModalWindow::Inventory),
-                native_modal::panel_node(900.0, 680.0),
+                native_modal::panel_node(640.0, 480.0),
                 native_modal::surface(),
                 native_modal::surface_border(),
             ))
@@ -1723,7 +1704,7 @@ fn spawn_inventory_panel(commands: &mut Commands) {
                                     flex_direction: FlexDirection::Column,
                                     align_items: AlignItems::FlexStart,
                                     justify_content: JustifyContent::Center,
-                                    row_gap: px(3),
+                                    row_gap: px(2),
                                     ..default()
                                 },
                             ))
@@ -1731,16 +1712,15 @@ fn spawn_inventory_panel(commands: &mut Commands) {
                                 copy.spawn((
                                     Text::new("GREYHAVEN INTERFACE"),
                                     TextFont {
-                                        font_size: FontSize::Px(10.0),
+                                        font_size: FontSize::Px(9.0),
                                         ..default()
                                     },
                                     TextColor(theme::GOLD),
                                 ));
-
                                 copy.spawn((
                                     Text::new("INVENTORY"),
                                     TextFont {
-                                        font_size: FontSize::Px(21.0),
+                                        font_size: FontSize::Px(19.0),
                                         ..default()
                                     },
                                     TextColor(theme::GOLD_BRIGHT),
@@ -1751,7 +1731,7 @@ fn spawn_inventory_panel(commands: &mut Commands) {
                             header,
                             NativeInventoryAction::Close,
                             "X",
-                            38.0,
+                            34.0,
                         );
                     });
 
@@ -1759,14 +1739,14 @@ fn spawn_inventory_panel(commands: &mut Commands) {
                     .spawn((
                         Node {
                             width: Val::Percent(100.0),
-                            min_height: px(58),
-                            padding: UiRect::all(px(10)),
+                            min_height: px(50),
+                            padding: UiRect::horizontal(px(10)),
                             border: UiRect::all(px(1)),
-                            border_radius: BorderRadius::all(px(7)),
+                            border_radius: BorderRadius::all(px(6)),
                             flex_direction: FlexDirection::Row,
                             align_items: AlignItems::Center,
                             justify_content: JustifyContent::SpaceBetween,
-                            column_gap: px(12),
+                            column_gap: px(10),
                             ..default()
                         },
                         BackgroundColor(PANEL_SOFT),
@@ -1777,7 +1757,7 @@ fn spawn_inventory_panel(commands: &mut Commands) {
                             .spawn(Node {
                                 flex_grow: 1.0,
                                 flex_direction: FlexDirection::Column,
-                                row_gap: px(2),
+                                row_gap: px(1),
                                 ..default()
                             })
                             .with_children(|copy| {
@@ -1785,89 +1765,55 @@ fn spawn_inventory_panel(commands: &mut Commands) {
                                     copy,
                                     NativeInventoryText::Location,
                                     "ROOT INVENTORY",
-                                    10.0,
+                                    9.5,
                                     theme::GOLD,
                                 );
-
                                 spawn_inventory_text(
                                     copy,
                                     NativeInventoryText::Usage,
                                     "0 / 12 SLOTS USED",
-                                    9.0,
+                                    8.5,
                                     TEXT,
                                 );
                             });
 
-                        summary
-                            .spawn(Node {
-                                flex_direction: FlexDirection::Row,
-                                align_items: AlignItems::Center,
-                                column_gap: px(8),
-                                ..default()
-                            })
-                            .with_children(|actions| {
-                                spawn_inventory_reference_button(
-                                    actions,
-                                    NativeInventoryAction::Back,
-                                    "BACK",
-                                    72.0,
-                                );
-
-                                spawn_inventory_reference_button(
-                                    actions,
-                                    NativeInventoryAction::Search,
-                                    "SEARCH",
-                                    90.0,
-                                );
-                            });
+                        spawn_inventory_reference_button(
+                            summary,
+                            NativeInventoryAction::Back,
+                            "BACK",
+                            68.0,
+                        );
                     });
 
                 panel
                     .spawn((
                         Node {
                             width: Val::Percent(100.0),
-                            min_height: px(58),
-                            padding: UiRect::all(px(10)),
+                            min_height: px(44),
+                            padding: UiRect::all(px(9)),
                             border: UiRect::all(px(1)),
-                            border_radius: BorderRadius::all(px(7)),
+                            border_radius: BorderRadius::all(px(6)),
                             flex_direction: FlexDirection::Column,
-                            row_gap: px(6),
+                            row_gap: px(5),
                             ..default()
                         },
                         BackgroundColor(PANEL_SOFT),
                         BorderColor::all(theme::BUTTON_BORDER),
                     ))
                     .with_children(|capacity| {
-                        capacity
-                            .spawn(Node {
-                                width: Val::Percent(100.0),
-                                flex_direction: FlexDirection::Row,
-                                justify_content: JustifyContent::SpaceBetween,
-                                ..default()
-                            })
-                            .with_children(|row| {
-                                spawn_inventory_text(
-                                    row,
-                                    NativeInventoryText::Capacity,
-                                    "0.0 / 0.0 capacity",
-                                    9.5,
-                                    TEXT,
-                                );
-
-                                spawn_inventory_text(
-                                    row,
-                                    NativeInventoryText::Search,
-                                    "/ Search",
-                                    9.0,
-                                    MUTED,
-                                );
-                            });
+                        spawn_inventory_text(
+                            capacity,
+                            NativeInventoryText::Capacity,
+                            "0.0 / 0.0 capacity",
+                            9.0,
+                            TEXT,
+                        );
 
                         capacity
                             .spawn((
                                 Node {
                                     width: Val::Percent(100.0),
-                                    height: px(7),
+                                    height: px(6),
                                     border: UiRect::all(px(1)),
                                     border_radius: BorderRadius::all(px(3)),
                                     ..default()
@@ -1891,16 +1837,15 @@ fn spawn_inventory_panel(commands: &mut Commands) {
                     .spawn((
                         Node {
                             width: Val::Percent(100.0),
-                            flex_grow: 1.0,
-                            min_height: px(390),
-                            padding: UiRect::all(px(10)),
+                            min_height: px(176),
+                            padding: UiRect::all(px(9)),
                             border: UiRect::all(px(1)),
-                            border_radius: BorderRadius::all(px(7)),
+                            border_radius: BorderRadius::all(px(6)),
                             flex_direction: FlexDirection::Column,
-                            row_gap: px(8),
+                            row_gap: px(7),
                             ..default()
                         },
-                        BackgroundColor(Color::srgba(0.015, 0.03, 0.022, 0.98)),
+                        BackgroundColor(Color::srgba(0.012, 0.027, 0.020, 0.98)),
                         BorderColor::all(theme::BUTTON_BORDER),
                     ))
                     .with_children(|storage| {
@@ -1913,18 +1858,17 @@ fn spawn_inventory_panel(commands: &mut Commands) {
                             })
                             .with_children(|heading| {
                                 heading.spawn((
-                                    Text::new("STORAGE  ·  BACKPACK"),
+                                    Text::new("BAG"),
                                     TextFont {
-                                        font_size: FontSize::Px(10.0),
+                                        font_size: FontSize::Px(9.0),
                                         ..default()
                                     },
                                     TextColor(theme::GOLD),
                                 ));
-
                                 heading.spawn((
-                                    Text::new("Click an item to select"),
+                                    Text::new("Hover for details · drag to move/equip"),
                                     TextFont {
-                                        font_size: FontSize::Px(8.0),
+                                        font_size: FontSize::Px(7.5),
                                         ..default()
                                     },
                                     TextColor(MUTED),
@@ -1934,12 +1878,11 @@ fn spawn_inventory_panel(commands: &mut Commands) {
                         storage
                             .spawn(Node {
                                 width: Val::Percent(100.0),
-                                flex_grow: 1.0,
                                 flex_direction: FlexDirection::Row,
                                 flex_wrap: FlexWrap::Wrap,
                                 align_content: AlignContent::FlexStart,
-                                column_gap: px(7),
-                                row_gap: px(7),
+                                column_gap: px(6),
+                                row_gap: px(6),
                                 ..default()
                             })
                             .with_children(|grid| {
@@ -1953,17 +1896,17 @@ fn spawn_inventory_panel(commands: &mut Commands) {
                     .spawn((
                         Node {
                             width: Val::Percent(100.0),
-                            min_height: px(56),
-                            padding: UiRect::all(px(10)),
+                            min_height: px(44),
+                            padding: UiRect::horizontal(px(10)),
                             border: UiRect::all(px(1)),
-                            border_radius: BorderRadius::all(px(7)),
+                            border_radius: BorderRadius::all(px(6)),
                             flex_direction: FlexDirection::Row,
                             align_items: AlignItems::Center,
                             justify_content: JustifyContent::SpaceBetween,
-                            column_gap: px(12),
+                            column_gap: px(10),
                             ..default()
                         },
-                        BackgroundColor(Color::srgba(0.12, 0.09, 0.025, 0.42)),
+                        BackgroundColor(Color::srgba(0.12, 0.09, 0.025, 0.36)),
                         BorderColor::all(theme::GOLD_DARK),
                     ))
                     .with_children(|footer| {
@@ -1971,15 +1914,14 @@ fn spawn_inventory_panel(commands: &mut Commands) {
                             footer,
                             NativeInventoryText::Gold,
                             "0 GOLD COINS",
-                            10.5,
+                            9.5,
                             theme::GOLD_BRIGHT,
                         );
-
                         spawn_inventory_text(
                             footer,
                             NativeInventoryText::Detail,
-                            "Select an item",
-                            8.5,
+                            "Select or hover an item",
+                            8.0,
                             MUTED,
                         );
                     });
@@ -2192,14 +2134,13 @@ fn character_reference_root_node() -> Node {
 
 fn character_reference_surface_node() -> Node {
     Node {
-        width: px(430),
-        height: Val::Percent(100.0),
-        max_height: px(820),
-        padding: UiRect::all(px(14)),
+        width: px(392),
+        max_height: px(710),
+        padding: UiRect::all(px(12)),
         border: UiRect::all(px(1)),
         border_radius: BorderRadius::all(px(10)),
         flex_direction: FlexDirection::Column,
-        row_gap: px(10),
+        row_gap: px(8),
         ..default()
     }
 }
@@ -2208,11 +2149,11 @@ fn character_reference_section_node(height: f32) -> Node {
     Node {
         width: Val::Percent(100.0),
         height: px(height),
-        padding: UiRect::all(px(10)),
+        padding: UiRect::all(px(8)),
         border: UiRect::all(px(1)),
         border_radius: BorderRadius::all(px(7)),
         flex_direction: FlexDirection::Column,
-        row_gap: px(7),
+        row_gap: px(5),
         ..default()
     }
 }
@@ -2223,10 +2164,10 @@ fn spawn_character_reference_close(parent: &mut ChildSpawnerCommands) {
             Button,
             NativeCharacterModalAction::Close,
             Node {
-                width: px(34),
-                height: px(34),
+                width: px(30),
+                height: px(30),
                 border: UiRect::all(px(1)),
-                border_radius: BorderRadius::all(px(6)),
+                border_radius: BorderRadius::all(px(5)),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
                 ..default()
@@ -2237,7 +2178,7 @@ fn spawn_character_reference_close(parent: &mut ChildSpawnerCommands) {
         .with_child((
             Text::new("X"),
             TextFont {
-                font_size: FontSize::Px(14.0),
+                font_size: FontSize::Px(12.0),
                 ..default()
             },
             TextColor(TEXT),
@@ -2248,22 +2189,23 @@ fn spawn_character_avatar(parent: &mut ChildSpawnerCommands) {
     parent
         .spawn((
             Node {
-                width: px(56),
-                height: px(56),
-                border: UiRect::all(px(3)),
-                border_radius: BorderRadius::all(px(28)),
+                width: px(46),
+                height: px(46),
+                border: UiRect::all(px(2)),
+                border_radius: BorderRadius::all(px(23)),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
                 ..default()
             },
-            BackgroundColor(Color::srgb(0.74, 0.56, 0.25)),
+            BackgroundColor(Color::srgb(0.62, 0.45, 0.19)),
             BorderColor::all(theme::GOLD_BRIGHT),
+            Outline::new(px(1), px(0), Color::srgba(0.0, 0.0, 0.0, 0.76)),
         ))
         .with_child((
             NativeCharacterModalText::Avatar,
             Text::new("A"),
             TextFont {
-                font_size: FontSize::Px(22.0),
+                font_size: FontSize::Px(18.0),
                 ..default()
             },
             TextColor(Color::srgb(0.10, 0.08, 0.04)),
@@ -2272,53 +2214,78 @@ fn spawn_character_avatar(parent: &mut ChildSpawnerCommands) {
 
 fn spawn_character_paper_doll(parent: &mut ChildSpawnerCommands) {
     parent
-        .spawn(Node {
-            position_type: PositionType::Absolute,
-            left: Val::Percent(50.0),
-            top: px(58),
-            width: px(132),
-            height: px(260),
-            margin: UiRect::left(px(-66)),
-            ..default()
-        })
-        .with_children(|figure| {
-            figure.spawn((
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Percent(50.0),
+                top: px(28),
+                width: px(154),
+                height: px(244),
+                margin: UiRect::left(px(-77)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(16)),
+                overflow: Overflow::clip(),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.018, 0.048, 0.037, 0.82)),
+            BorderColor::all(Color::srgba(0.39, 0.47, 0.42, 0.64)),
+            Outline::new(px(1), px(0), Color::srgba(0.0, 0.0, 0.0, 0.56)),
+        ))
+        .with_children(|stage| {
+            stage.spawn((
+                Text::new("EQUIPMENT"),
+                TextFont {
+                    font_size: FontSize::Px(7.5),
+                    ..default()
+                },
+                TextColor(theme::GOLD_DARK),
                 Node {
                     position_type: PositionType::Absolute,
-                    left: px(47),
-                    top: px(0),
+                    left: px(0),
+                    top: px(7),
+                    width: Val::Percent(100.0),
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                },
+            ));
+
+            stage.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: px(58),
+                    top: px(30),
                     width: px(38),
                     height: px(38),
                     border: UiRect::all(px(1)),
                     border_radius: BorderRadius::all(px(19)),
                     ..default()
                 },
-                BackgroundColor(Color::srgba(0.17, 0.23, 0.20, 0.92)),
-                BorderColor::all(Color::srgb(0.39, 0.47, 0.42)),
+                BackgroundColor(Color::srgba(0.20, 0.28, 0.24, 0.86)),
+                BorderColor::all(Color::srgba(0.48, 0.57, 0.51, 0.72)),
             ));
 
-            figure.spawn((
+            stage.spawn((
                 Node {
                     position_type: PositionType::Absolute,
-                    left: px(35),
-                    top: px(42),
-                    width: px(62),
-                    height: px(112),
+                    left: px(45),
+                    top: px(72),
+                    width: px(64),
+                    height: px(88),
                     border: UiRect::all(px(1)),
-                    border_radius: BorderRadius::all(px(9)),
+                    border_radius: BorderRadius::all(px(11)),
                     ..default()
                 },
-                BackgroundColor(Color::srgba(0.12, 0.19, 0.16, 0.86)),
-                BorderColor::all(Color::srgb(0.39, 0.47, 0.42)),
+                BackgroundColor(Color::srgba(0.13, 0.22, 0.18, 0.84)),
+                BorderColor::all(Color::srgba(0.43, 0.52, 0.47, 0.66)),
             ));
 
             for (left, top, width, height) in [
-                (20.0, 50.0, 16.0, 104.0),
-                (96.0, 50.0, 16.0, 104.0),
-                (42.0, 150.0, 21.0, 104.0),
-                (69.0, 150.0, 21.0, 104.0),
+                (27.0, 78.0, 16.0, 86.0),
+                (111.0, 78.0, 16.0, 86.0),
+                (50.0, 158.0, 23.0, 76.0),
+                (81.0, 158.0, 23.0, 76.0),
             ] {
-                figure.spawn((
+                stage.spawn((
                     Node {
                         position_type: PositionType::Absolute,
                         left: px(left),
@@ -2329,25 +2296,8 @@ fn spawn_character_paper_doll(parent: &mut ChildSpawnerCommands) {
                         border_radius: BorderRadius::all(px(8)),
                         ..default()
                     },
-                    BackgroundColor(Color::srgba(0.12, 0.19, 0.16, 0.86)),
-                    BorderColor::all(Color::srgb(0.39, 0.47, 0.42)),
-                ));
-            }
-
-            for (left, top) in [(13.0, 148.0), (99.0, 148.0)] {
-                figure.spawn((
-                    Node {
-                        position_type: PositionType::Absolute,
-                        left: px(left),
-                        top: px(top),
-                        width: px(22),
-                        height: px(22),
-                        border: UiRect::all(px(1)),
-                        border_radius: BorderRadius::all(px(11)),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(0.12, 0.19, 0.16, 0.86)),
-                    BorderColor::all(Color::srgb(0.39, 0.47, 0.42)),
+                    BackgroundColor(Color::srgba(0.13, 0.22, 0.18, 0.84)),
+                    BorderColor::all(Color::srgba(0.43, 0.52, 0.47, 0.66)),
                 ));
             }
         });
@@ -2368,24 +2318,26 @@ fn spawn_character_equipment_slot(
                 position_type: PositionType::Absolute,
                 left,
                 top,
-                width: px(84),
-                height: px(70),
-                padding: UiRect::all(px(5)),
+                width: px(66),
+                height: px(56),
+                padding: UiRect::all(px(4)),
                 border: UiRect::all(px(1)),
                 border_radius: BorderRadius::all(px(6)),
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::SpaceBetween,
+                overflow: Overflow::clip(),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.02, 0.045, 0.035, 0.95)),
+            BackgroundColor(Color::srgba(0.012, 0.031, 0.024, 0.97)),
             BorderColor::all(theme::BUTTON_BORDER),
+            Outline::new(px(1), px(0), Color::srgba(0.0, 0.0, 0.0, 0.62)),
         ))
         .with_children(|card| {
             card.spawn((
                 Text::new(label),
                 TextFont {
-                    font_size: FontSize::Px(8.0),
+                    font_size: FontSize::Px(7.1),
                     ..default()
                 },
                 TextColor(MUTED),
@@ -2399,20 +2351,10 @@ fn spawn_character_equipment_slot(
                 ImageNode::default(),
                 Visibility::Hidden,
                 Node {
-                    width: px(30),
-                    height: px(30),
+                    width: px(32),
+                    height: px(32),
                     ..default()
                 },
-            ));
-
-            card.spawn((
-                slot,
-                Text::new("Empty"),
-                TextFont {
-                    font_size: FontSize::Px(8.5),
-                    ..default()
-                },
-                TextColor(TEXT),
             ));
         });
 }
@@ -2422,12 +2364,14 @@ fn spawn_character_profession_slot(parent: &mut ChildSpawnerCommands, index: usi
         .spawn((
             Node {
                 width: Val::Percent(24.0),
-                height: px(44),
-                padding: UiRect::horizontal(px(7)),
+                height: px(38),
+                padding: UiRect::horizontal(px(5)),
                 border: UiRect::all(px(1)),
-                border_radius: BorderRadius::all(px(6)),
+                border_radius: BorderRadius::all(px(5)),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
+                column_gap: px(3),
+                overflow: Overflow::clip(),
                 ..default()
             },
             BackgroundColor(theme::BUTTON_BG),
@@ -2442,8 +2386,8 @@ fn spawn_character_profession_slot(parent: &mut ChildSpawnerCommands, index: usi
                 ImageNode::default(),
                 Visibility::Hidden,
                 Node {
-                    width: px(22),
-                    height: px(22),
+                    width: px(20),
+                    height: px(20),
                     ..default()
                 },
             ));
@@ -2451,7 +2395,7 @@ fn spawn_character_profession_slot(parent: &mut ChildSpawnerCommands, index: usi
                 NativeCharacterProfessionSlot(index),
                 Text::new("Empty"),
                 TextFont {
-                    font_size: FontSize::Px(8.5),
+                    font_size: FontSize::Px(7.8),
                     ..default()
                 },
                 TextColor(MUTED),
@@ -2471,9 +2415,9 @@ fn spawn_character_outfit_chip(
             NativeCharacterOutfitButton(outfit),
             Node {
                 width: Val::Percent(24.0),
-                height: px(38),
+                height: px(32),
                 border: UiRect::all(px(1)),
-                border_radius: BorderRadius::all(px(6)),
+                border_radius: BorderRadius::all(px(5)),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
                 ..default()
@@ -2492,7 +2436,7 @@ fn spawn_character_outfit_chip(
         .with_child((
             Text::new(label),
             TextFont {
-                font_size: FontSize::Px(8.5),
+                font_size: FontSize::Px(7.8),
                 ..default()
             },
             TextColor(if selected { theme::GOLD_BRIGHT } else { MUTED }),
@@ -2502,7 +2446,7 @@ fn spawn_character_outfit_chip(
 fn spawn_character_panel(commands: &mut Commands) {
     commands
         .spawn((
-            Name::new("Native modal · character · Greyhaven reference"),
+            Name::new("Native modal · character · compact equipment"),
             NativeUiPanel::Character,
             native_modal::NativeModalRoot,
             GlobalZIndex(190),
@@ -2523,12 +2467,12 @@ fn spawn_character_panel(commands: &mut Commands) {
                 panel
                     .spawn(Node {
                         width: Val::Percent(100.0),
-                        min_height: px(58),
+                        min_height: px(50),
                         padding: UiRect {
-                            left: px(6),
+                            left: px(5),
                             right: px(0),
                             top: px(0),
-                            bottom: px(8),
+                            bottom: px(6),
                         },
                         border: UiRect {
                             left: px(0),
@@ -2550,13 +2494,12 @@ fn spawn_character_panel(commands: &mut Commands) {
                                 ),
                                 Node {
                                     width: Val::Percent(100.0),
-                                    height: Val::Percent(100.0),
-                                    min_height: px(48),
+                                    min_height: px(42),
                                     flex_grow: 1.0,
                                     flex_direction: FlexDirection::Column,
                                     align_items: AlignItems::FlexStart,
                                     justify_content: JustifyContent::Center,
-                                    row_gap: px(3),
+                                    row_gap: px(2),
                                     ..default()
                                 },
                             ))
@@ -2564,16 +2507,15 @@ fn spawn_character_panel(commands: &mut Commands) {
                                 copy.spawn((
                                     Text::new("GREYHAVEN INTERFACE"),
                                     TextFont {
-                                        font_size: FontSize::Px(10.0),
+                                        font_size: FontSize::Px(8.5),
                                         ..default()
                                     },
                                     TextColor(theme::GOLD),
                                 ));
-
                                 copy.spawn((
                                     Text::new("CHARACTER"),
                                     TextFont {
-                                        font_size: FontSize::Px(21.0),
+                                        font_size: FontSize::Px(19.0),
                                         ..default()
                                     },
                                     TextColor(theme::GOLD_BRIGHT),
@@ -2585,7 +2527,7 @@ fn spawn_character_panel(commands: &mut Commands) {
 
                 panel
                     .spawn((
-                        character_reference_section_node(82.0),
+                        character_reference_section_node(68.0),
                         BackgroundColor(PANEL_SOFT),
                         BorderColor::all(theme::BUTTON_BORDER),
                     ))
@@ -2596,7 +2538,7 @@ fn spawn_character_panel(commands: &mut Commands) {
                                 height: Val::Percent(100.0),
                                 flex_direction: FlexDirection::Row,
                                 align_items: AlignItems::Center,
-                                column_gap: px(12),
+                                column_gap: px(10),
                                 ..default()
                             })
                             .with_children(|row| {
@@ -2605,7 +2547,7 @@ fn spawn_character_panel(commands: &mut Commands) {
                                 row.spawn(Node {
                                     flex_grow: 1.0,
                                     flex_direction: FlexDirection::Column,
-                                    row_gap: px(2),
+                                    row_gap: px(1),
                                     ..default()
                                 })
                                 .with_children(|copy| {
@@ -2613,14 +2555,13 @@ fn spawn_character_panel(commands: &mut Commands) {
                                         copy,
                                         NativeCharacterModalText::Identity,
                                         "No local player",
-                                        13.0,
+                                        12.0,
                                         theme::GOLD_BRIGHT,
                                     );
-
                                     copy.spawn((
-                                        Text::new("Manage equipment through Inventory"),
+                                        Text::new("Drag items from Inventory onto equipment slots"),
                                         TextFont {
-                                            font_size: FontSize::Px(9.0),
+                                            font_size: FontSize::Px(7.8),
                                             ..default()
                                         },
                                         TextColor(MUTED),
@@ -2631,7 +2572,7 @@ fn spawn_character_panel(commands: &mut Commands) {
                                     row,
                                     NativeCharacterModalText::HeaderContext,
                                     "Greyhaven",
-                                    8.5,
+                                    7.8,
                                     theme::GOLD,
                                 );
                             });
@@ -2641,129 +2582,57 @@ fn spawn_character_panel(commands: &mut Commands) {
                     .spawn((
                         Node {
                             width: Val::Percent(100.0),
-                            height: px(420),
+                            height: px(300),
                             border: UiRect::all(px(1)),
-                            border_radius: BorderRadius::all(px(7)),
+                            border_radius: BorderRadius::all(px(8)),
+                            position_type: PositionType::Relative,
+                            overflow: Overflow::clip(),
                             ..default()
                         },
-                        BackgroundColor(Color::srgba(0.015, 0.035, 0.027, 0.95)),
+                        BackgroundColor(Color::srgba(0.010, 0.027, 0.021, 0.96)),
                         BorderColor::all(theme::BUTTON_BORDER),
+                        Outline::new(px(1), px(0), Color::srgba(0.0, 0.0, 0.0, 0.58)),
                     ))
                     .with_children(|equipment| {
                         spawn_character_paper_doll(equipment);
 
-                        spawn_character_equipment_slot(
-                            equipment,
-                            NativeCharacterEquipmentSlot::Helmet,
-                            "HELMET",
-                            Val::Percent(50.0),
-                            px(8),
-                        );
-
-                        spawn_character_equipment_slot(
-                            equipment,
-                            NativeCharacterEquipmentSlot::Amulet,
-                            "AMULET",
-                            px(304),
-                            px(18),
-                        );
-
-                        spawn_character_equipment_slot(
-                            equipment,
-                            NativeCharacterEquipmentSlot::Chest,
-                            "CHEST",
-                            px(10),
-                            px(92),
-                        );
-
-                        spawn_character_equipment_slot(
-                            equipment,
-                            NativeCharacterEquipmentSlot::Back,
-                            "BACK",
-                            px(304),
-                            px(92),
-                        );
-
-                        spawn_character_equipment_slot(
-                            equipment,
-                            NativeCharacterEquipmentSlot::LeftHand,
-                            "LEFT HAND",
-                            px(10),
-                            px(178),
-                        );
-
-                        spawn_character_equipment_slot(
-                            equipment,
-                            NativeCharacterEquipmentSlot::RightHand,
-                            "RIGHT HAND",
-                            px(304),
-                            px(178),
-                        );
-
-                        spawn_character_equipment_slot(
-                            equipment,
-                            NativeCharacterEquipmentSlot::Backpack,
-                            "BACKPACK",
-                            px(10),
-                            px(264),
-                        );
-
-                        spawn_character_equipment_slot(
-                            equipment,
-                            NativeCharacterEquipmentSlot::Ring,
-                            "RING",
-                            px(304),
-                            px(264),
-                        );
-
-                        spawn_character_equipment_slot(
-                            equipment,
-                            NativeCharacterEquipmentSlot::Feet,
-                            "FEET",
-                            Val::Percent(50.0),
-                            px(338),
-                        );
-
-                        spawn_character_equipment_slot(
-                            equipment,
-                            NativeCharacterEquipmentSlot::Legs,
-                            "LEGS",
-                            px(304),
-                            px(338),
-                        );
+                        for (slot, label, left, top) in [
+                            (NativeCharacterEquipmentSlot::Helmet, "HELMET", px(8), px(8)),
+                            (NativeCharacterEquipmentSlot::Amulet, "AMULET", px(292), px(8)),
+                            (NativeCharacterEquipmentSlot::Chest, "CHEST", px(8), px(64)),
+                            (NativeCharacterEquipmentSlot::Back, "BACK", px(292), px(64)),
+                            (NativeCharacterEquipmentSlot::LeftHand, "LEFT HAND", px(8), px(120)),
+                            (NativeCharacterEquipmentSlot::RightHand, "RIGHT HAND", px(292), px(120)),
+                            (NativeCharacterEquipmentSlot::Backpack, "BACKPACK", px(8), px(176)),
+                            (NativeCharacterEquipmentSlot::Ring, "RING", px(292), px(176)),
+                            (NativeCharacterEquipmentSlot::Feet, "FEET", px(8), px(232)),
+                            (NativeCharacterEquipmentSlot::Legs, "LEGS", px(292), px(232)),
+                        ] {
+                            spawn_character_equipment_slot(equipment, slot, label, left, top);
+                        }
                     });
 
                 panel
                     .spawn((
-                        character_reference_section_node(90.0),
+                        character_reference_section_node(76.0),
                         BackgroundColor(PANEL_SOFT),
                         BorderColor::all(theme::BUTTON_BORDER),
                     ))
                     .with_children(|professions| {
                         professions.spawn((
-                            Text::new("PROFESSION SLOTS"),
+                            Text::new("PROFESSIONS"),
                             TextFont {
-                                font_size: FontSize::Px(10.0),
+                                font_size: FontSize::Px(9.0),
                                 ..default()
                             },
                             TextColor(theme::GOLD),
                         ));
-
-                        professions.spawn((
-                            Text::new("Up to 2 gathering + 2 crafting"),
-                            TextFont {
-                                font_size: FontSize::Px(8.0),
-                                ..default()
-                            },
-                            TextColor(MUTED),
-                        ));
-
                         professions
                             .spawn(Node {
                                 width: Val::Percent(100.0),
                                 flex_direction: FlexDirection::Row,
                                 justify_content: JustifyContent::SpaceBetween,
-                                column_gap: px(5),
+                                column_gap: px(4),
                                 ..default()
                             })
                             .with_children(|slots| {
@@ -2775,7 +2644,7 @@ fn spawn_character_panel(commands: &mut Commands) {
 
                 panel
                     .spawn((
-                        character_reference_section_node(74.0),
+                        character_reference_section_node(58.0),
                         BackgroundColor(PANEL_SOFT),
                         BorderColor::all(theme::BUTTON_BORDER),
                     ))
@@ -2783,18 +2652,17 @@ fn spawn_character_panel(commands: &mut Commands) {
                         outfit.spawn((
                             Text::new("OUTFIT"),
                             TextFont {
-                                font_size: FontSize::Px(10.0),
+                                font_size: FontSize::Px(8.5),
                                 ..default()
                             },
                             TextColor(theme::GOLD),
                         ));
-
                         outfit
                             .spawn(Node {
                                 width: Val::Percent(100.0),
                                 flex_direction: FlexDirection::Row,
                                 justify_content: JustifyContent::SpaceBetween,
-                                column_gap: px(5),
+                                column_gap: px(4),
                                 ..default()
                             })
                             .with_children(|chips| {
@@ -6158,10 +6026,9 @@ pub fn handle_panel_hotkeys(
         return;
     }
 
-    if keys.just_pressed(KeyCode::Slash) {
-        panels.inventory_search_active = true;
-        return;
-    }
+    // V36.64: the inventory is intentionally a compact bag grid. Search was
+    // removed from the player-facing inventory, so '/' no longer enters a bag
+    // filter mode. Item names/details remain available through hover tooltips.
 
     if keys.just_pressed(KeyCode::Backspace) {
         if let Some(container_id) = panels.inventory_container_id {

@@ -7,6 +7,7 @@ use crate::{BuildingRoof, HouseWallOccluder, WorldStatic};
 // TIBIAGAME_V36_9_4_HOUSE_ALIGNMENT_OPENING_STREAM_PRIORITY
 // TIBIAGAME_V36_13_WORLD_BOUNDARY_FLOOR_PRELOAD
 // TIBIAGAME_V36_14_MEDIEVAL_FACADE_CREATURE_WARMUP
+// TIBIAGAME_V36_64_0_COMPACT_UI_ROOF_DEPTH
 
 pub const HOUSE_WALL_HEIGHT: f32 = 2.64;
 pub const CASTLE_WALL_HEIGHT: f32 = 3.00;
@@ -21,6 +22,10 @@ const BUILDING_FLOOR_INSET: f32 = 0.10;
 const ROOF_EAVE_Y: f32 = HOUSE_WALL_HEIGHT + 0.02;
 const ROOF_ANGLE: f32 = 0.52;
 const ROOF_OVERHANG: f32 = 0.34;
+const ROOF_SLAB_THICKNESS: f32 = 0.11;
+const ROOF_RELIEF_HEIGHT: f32 = 0.045;
+const ROOF_RELIEF_SPACING: f32 = 0.48;
+const ROOF_RIDGE_WIDTH: f32 = 0.20;
 const GABLE_STEP_HEIGHT: f32 = 0.22;
 const GROUND_CHUNK_TILES: i32 = 16;
 
@@ -702,9 +707,6 @@ pub fn spawn_building(
     gable_material_value.alpha_mode = AlphaMode::Blend;
     let gable_material = materials.add(gable_material_value);
 
-    // Collision boundaries are at +/-0.5 outside the perimeter tile centers.
-    // Keep the floor just inside the inner wall faces instead of the old 0.34
-    // inset, which made the visible floor edge disagree with collision.
     let floor_scale_x = (width - BUILDING_FLOOR_INSET * 2.0).max(0.58);
     let floor_scale_z = (depth - BUILDING_FLOOR_INSET * 2.0).max(0.58);
 
@@ -750,23 +752,31 @@ pub fn spawn_building(
             let slope_length = run / ROOF_ANGLE.cos();
             let rise = run * ROOF_ANGLE.tan();
             let half_offset = run * 0.5;
+            let long_span = depth + ROOF_OVERHANG;
 
             for sign in [-1.0f32, 1.0] {
-                parent.spawn((
-                    Name::new("Roof slope"),
-                    Mesh3d(catalog.cube.clone()),
-                    MeshMaterial3d(roof_material.clone()),
-                    Transform {
-                        translation: Vec3::new(sign * half_offset, ROOF_EAVE_Y + rise * 0.5, 0.0),
-                        rotation: Quat::from_rotation_z(-sign * ROOF_ANGLE),
-                        scale: Vec3::new(slope_length, 0.14, depth + ROOF_OVERHANG),
-                        ..default()
-                    },
-                ));
+                let rotation = Quat::from_rotation_z(-sign * ROOF_ANGLE);
+                spawn_roof_slope_with_relief(
+                    parent,
+                    catalog,
+                    roof_material.clone(),
+                    Vec3::new(sign * half_offset, ROOF_EAVE_Y + rise * 0.5, 0.0),
+                    rotation,
+                    slope_length,
+                    long_span,
+                    true,
+                );
             }
 
-            // Ridge runs Z, therefore the gables are the north/south short
-            // ends (constant Z) and span X. Fill all the way to the ridge.
+            spawn_roof_ridge(
+                parent,
+                catalog,
+                roof_material.clone(),
+                true,
+                long_span,
+                ROOF_EAVE_Y + rise + 0.055,
+            );
+
             for sign in [-1.0f32, 1.0] {
                 spawn_gable_fill(
                     parent,
@@ -784,23 +794,31 @@ pub fn spawn_building(
             let slope_length = run / ROOF_ANGLE.cos();
             let rise = run * ROOF_ANGLE.tan();
             let half_offset = run * 0.5;
+            let long_span = width + ROOF_OVERHANG;
 
             for sign in [-1.0f32, 1.0] {
-                parent.spawn((
-                    Name::new("Roof slope"),
-                    Mesh3d(catalog.cube.clone()),
-                    MeshMaterial3d(roof_material.clone()),
-                    Transform {
-                        translation: Vec3::new(0.0, ROOF_EAVE_Y + rise * 0.5, sign * half_offset),
-                        rotation: Quat::from_rotation_x(sign * ROOF_ANGLE),
-                        scale: Vec3::new(width + ROOF_OVERHANG, 0.14, slope_length),
-                        ..default()
-                    },
-                ));
+                let rotation = Quat::from_rotation_x(sign * ROOF_ANGLE);
+                spawn_roof_slope_with_relief(
+                    parent,
+                    catalog,
+                    roof_material.clone(),
+                    Vec3::new(0.0, ROOF_EAVE_Y + rise * 0.5, sign * half_offset),
+                    rotation,
+                    slope_length,
+                    long_span,
+                    false,
+                );
             }
 
-            // Ridge runs X, therefore the gables are west/east ends
-            // (constant X) and span Z.
+            spawn_roof_ridge(
+                parent,
+                catalog,
+                roof_material.clone(),
+                false,
+                long_span,
+                ROOF_EAVE_Y + rise + 0.055,
+            );
+
             for sign in [-1.0f32, 1.0] {
                 spawn_gable_fill(
                     parent,
@@ -816,6 +834,86 @@ pub fn spawn_building(
     });
 
     (floor_entity, roof)
+}
+
+fn spawn_roof_slope_with_relief(
+    parent: &mut ChildSpawnerCommands,
+    catalog: &ArchitectureCatalog,
+    material: Handle<StandardMaterial>,
+    center: Vec3,
+    rotation: Quat,
+    slope_length: f32,
+    long_span: f32,
+    relief_along_x: bool,
+) {
+    parent.spawn((
+        Name::new("Roof textured slope"),
+        Mesh3d(catalog.cube.clone()),
+        MeshMaterial3d(material.clone()),
+        Transform {
+            translation: center,
+            rotation,
+            scale: if relief_along_x {
+                Vec3::new(slope_length, ROOF_SLAB_THICKNESS, long_span)
+            } else {
+                Vec3::new(long_span, ROOF_SLAB_THICKNESS, slope_length)
+            },
+        },
+    ));
+
+    // Keep the authored roof-tile texture, but add very shallow geometry rows
+    // above it. They catch the existing world lighting and give the roof a
+    // layered tile profile without introducing a second texture or material.
+    let row_count = (slope_length / ROOF_RELIEF_SPACING).floor().max(2.0) as usize;
+    for row in 1..row_count {
+        let t = row as f32 / row_count as f32;
+        let along = -slope_length * 0.5 + slope_length * t;
+        let normal_offset = ROOF_SLAB_THICKNESS * 0.52 + ROOF_RELIEF_HEIGHT * 0.52;
+        let local = if relief_along_x {
+            Vec3::new(along, normal_offset, 0.0)
+        } else {
+            Vec3::new(0.0, normal_offset, along)
+        };
+
+        parent.spawn((
+            Name::new("Roof tile relief row"),
+            Mesh3d(catalog.cube.clone()),
+            MeshMaterial3d(material.clone()),
+            Transform {
+                translation: center + rotation * local,
+                rotation,
+                scale: if relief_along_x {
+                    Vec3::new(0.085, ROOF_RELIEF_HEIGHT, long_span + 0.02)
+                } else {
+                    Vec3::new(long_span + 0.02, ROOF_RELIEF_HEIGHT, 0.085)
+                },
+            },
+        ));
+    }
+}
+
+fn spawn_roof_ridge(
+    parent: &mut ChildSpawnerCommands,
+    catalog: &ArchitectureCatalog,
+    material: Handle<StandardMaterial>,
+    along_z: bool,
+    long_span: f32,
+    y: f32,
+) {
+    parent.spawn((
+        Name::new("Roof raised ridge cap"),
+        Mesh3d(catalog.cube.clone()),
+        MeshMaterial3d(material),
+        Transform {
+            translation: Vec3::new(0.0, y, 0.0),
+            scale: if along_z {
+                Vec3::new(ROOF_RIDGE_WIDTH, 0.14, long_span + 0.08)
+            } else {
+                Vec3::new(long_span + 0.08, 0.14, ROOF_RIDGE_WIDTH)
+            },
+            ..default()
+        },
+    ));
 }
 
 fn spawn_gable_fill(
@@ -886,7 +984,7 @@ fn spawn_gable_fill(
 
 pub fn describe() {
     info!(
-        "ALDORIA ARCHITECTURE · edge-anchored walls · inset indoor floors · roof/wall alignment · collision-aligned house edges · full-height end gables · bridge rails/posts"
+        "ALDORIA ARCHITECTURE · edge-anchored walls · inset indoor floors · textured 3D roof relief/ridges · collision-aligned house edges · full-height end gables · bridge rails/posts"
     );
 }
 
