@@ -280,6 +280,13 @@ pub enum ServerMessage {
         player_id: game_types::EntityId,
         skills: Vec<ProfessionSkillView>,
     },
+    MiningResult {
+        player_id: game_types::EntityId,
+        node_id: String,
+        item_definition_id: String,
+        quantity: u16,
+        experience_gained: u32,
+    },
     DiscoveryChanged {
         player_id: game_types::EntityId,
         discovery_id: String,

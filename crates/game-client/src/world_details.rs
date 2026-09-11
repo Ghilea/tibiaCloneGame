@@ -31,13 +31,13 @@ const PROP_MODELS: [(&str, &str); 15] = [
     ("fence_post", "models/world-props/fence_post.glb"),
 ];
 
-// TIBIAGAME_V36_11_NATIVE_INTERACTION_FOUNDATION
 const COPPER_VEIN: &str = "models/world-props/copper_vein.glb";
 const COPPER_VEIN_DEPLETED: &str = "models/world-props/copper_vein_depleted.glb";
 
 #[derive(Component)]
 pub struct WorldDoor {
     pub id: String,
+    pub open: bool,
     #[allow(dead_code)]
     pub position: Position,
     #[allow(dead_code)]
@@ -86,15 +86,21 @@ pub struct WorldDetailCatalog {
     copper_vein_depleted: Handle<WorldAsset>,
     trunk_mesh: Handle<Mesh>,
     foliage_mesh: Handle<Mesh>,
+    rock_mesh: Handle<Mesh>,
     detail_cube: Handle<Mesh>,
     flame_mesh: Handle<Mesh>,
     wood: Handle<StandardMaterial>,
     foliage: Handle<StandardMaterial>,
+    pine_foliage: Handle<StandardMaterial>,
+    snow: Handle<StandardMaterial>,
     dark_wood: Handle<StandardMaterial>,
     stone: Handle<StandardMaterial>,
+    dark_stone: Handle<StandardMaterial>,
+    dirt: Handle<StandardMaterial>,
+    reeds: Handle<StandardMaterial>,
+    bog: Handle<StandardMaterial>,
     glass: Handle<StandardMaterial>,
     flame: Handle<StandardMaterial>,
-    generic: Handle<StandardMaterial>,
     facade_plaster: Handle<StandardMaterial>,
     facade_timber: Handle<StandardMaterial>,
 }
@@ -121,6 +127,12 @@ impl WorldDetailCatalog {
                 .load(GltfAssetLabel::Scene(0).from_asset(COPPER_VEIN_DEPLETED)),
             trunk_mesh: meshes.add(Cylinder::default()),
             foliage_mesh: meshes.add(Cone::default()),
+            rock_mesh: meshes.add(
+                Sphere::new(0.5)
+                    .mesh()
+                    .ico(2)
+                    .expect("native world-detail rock sphere"),
+            ),
             detail_cube: meshes.add(Cuboid::default()),
             flame_mesh: meshes.add(
                 Sphere::new(0.5)
@@ -138,6 +150,16 @@ impl WorldDetailCatalog {
                 perceptual_roughness: 0.96,
                 ..default()
             }),
+            pine_foliage: materials.add(StandardMaterial {
+                base_color: Color::srgb(0.055, 0.22, 0.14),
+                perceptual_roughness: 0.98,
+                ..default()
+            }),
+            snow: materials.add(StandardMaterial {
+                base_color: Color::srgb(0.82, 0.88, 0.90),
+                perceptual_roughness: 0.86,
+                ..default()
+            }),
             dark_wood: materials.add(StandardMaterial {
                 base_color: Color::srgb(0.17, 0.09, 0.045),
                 perceptual_roughness: 0.9,
@@ -146,6 +168,27 @@ impl WorldDetailCatalog {
             stone: materials.add(StandardMaterial {
                 base_color: Color::srgb(0.36, 0.36, 0.34),
                 perceptual_roughness: 0.94,
+                ..default()
+            }),
+            dark_stone: materials.add(StandardMaterial {
+                base_color: Color::srgb(0.22, 0.235, 0.23),
+                perceptual_roughness: 0.98,
+                ..default()
+            }),
+            dirt: materials.add(StandardMaterial {
+                base_color: Color::srgb(0.31, 0.22, 0.13),
+                perceptual_roughness: 1.0,
+                ..default()
+            }),
+            reeds: materials.add(StandardMaterial {
+                base_color: Color::srgb(0.39, 0.34, 0.12),
+                perceptual_roughness: 0.98,
+                ..default()
+            }),
+            bog: materials.add(StandardMaterial {
+                base_color: Color::srgba(0.075, 0.15, 0.10, 0.82),
+                perceptual_roughness: 0.72,
+                alpha_mode: AlphaMode::Blend,
                 ..default()
             }),
             glass: materials.add(StandardMaterial {
@@ -157,11 +200,6 @@ impl WorldDetailCatalog {
             flame: materials.add(StandardMaterial {
                 base_color: Color::srgb(1.0, 0.46, 0.08),
                 perceptual_roughness: 0.42,
-                ..default()
-            }),
-            generic: materials.add(StandardMaterial {
-                base_color: Color::srgb(0.79, 0.73, 0.59),
-                perceptual_roughness: 0.92,
                 ..default()
             }),
             facade_plaster: materials.add(StandardMaterial {
@@ -193,43 +231,14 @@ pub fn spawn_tree(
         .spawn((
             Name::new("Tree"),
             WorldStatic,
-            Transform::from_xyz(position.x as f32, 0.0, position.y as f32),
+            Transform {
+                translation: Vec3::new(position.x as f32, 0.0, position.y as f32),
+                scale: Vec3::splat(1.8),
+                ..default()
+            },
             Visibility::default(),
         ))
-        .with_children(|parent| {
-            parent.spawn((
-                Name::new("Tree trunk"),
-                Mesh3d(catalog.trunk_mesh.clone()),
-                MeshMaterial3d(catalog.wood.clone()),
-                Transform {
-                    translation: Vec3::new(0.0, 0.78, 0.0),
-                    scale: Vec3::new(0.32, 0.78, 0.32),
-                    ..default()
-                },
-            ));
-
-            parent.spawn((
-                Name::new("Tree lower crown"),
-                Mesh3d(catalog.foliage_mesh.clone()),
-                MeshMaterial3d(catalog.foliage.clone()),
-                Transform {
-                    translation: Vec3::new(0.0, 1.75, 0.0),
-                    scale: Vec3::new(1.28, 1.30, 1.28),
-                    ..default()
-                },
-            ));
-
-            parent.spawn((
-                Name::new("Tree upper crown"),
-                Mesh3d(catalog.foliage_mesh.clone()),
-                MeshMaterial3d(catalog.foliage.clone()),
-                Transform {
-                    translation: Vec3::new(0.0, 2.42, 0.0),
-                    scale: Vec3::new(0.92, 1.05, 0.92),
-                    ..default()
-                },
-            ));
-        })
+        .with_children(|parent| spawn_tree_geometry(parent, catalog, TreeStyle::Forest))
         .id()
 }
 
@@ -239,6 +248,79 @@ pub fn spawn_world_object(
     object: &WorldObjectView,
 ) -> Entity {
     let rotation = natural_rotation(object);
+
+    if matches!(
+        object.kind.as_str(),
+        "forest_tree" | "pine_tree" | "snowy_pine"
+    ) {
+        let style = match object.kind.as_str() {
+            "pine_tree" => TreeStyle::Pine,
+            "snowy_pine" => TreeStyle::SnowyPine,
+            _ => TreeStyle::Forest,
+        };
+        return commands
+            .spawn((
+                Name::new(format!("World tree: {}: {}", object.kind, object.id)),
+                WorldStatic,
+                WorldObjectActor {
+                    id: object.id.clone(),
+                    position: object.position,
+                },
+                Transform {
+                    translation: Vec3::new(object.position.x as f32, 0.0, object.position.y as f32),
+                    rotation: Quat::from_rotation_y(rotation),
+                    scale: Vec3::splat(1.8),
+                    ..default()
+                },
+                Visibility::default(),
+            ))
+            .with_children(|parent| spawn_tree_geometry(parent, catalog, style))
+            .id();
+    }
+
+    if object.kind == "mountain_wall" {
+        return spawn_rock_formation(commands, catalog, object, true);
+    }
+
+    if object.kind == "snow_bank" {
+        return spawn_rock_formation(commands, catalog, object, false);
+    }
+
+    if matches!(
+        object.kind.as_str(),
+        "dirt_path" | "snow_ground" | "bog_slick"
+    ) {
+        let material = match object.kind.as_str() {
+            "snow_ground" => catalog.snow.clone(),
+            "bog_slick" => catalog.bog.clone(),
+            _ => catalog.dirt.clone(),
+        };
+        return commands
+            .spawn((
+                Name::new(format!("Ground detail: {}: {}", object.kind, object.id)),
+                WorldStatic,
+                WorldObjectActor {
+                    id: object.id.clone(),
+                    position: object.position,
+                },
+                Mesh3d(catalog.detail_cube.clone()),
+                MeshMaterial3d(material),
+                Transform {
+                    translation: Vec3::new(
+                        object.position.x as f32,
+                        0.018,
+                        object.position.y as f32,
+                    ),
+                    rotation: Quat::from_rotation_y(rotation),
+                    scale: Vec3::new(0.96, 0.025, 0.96),
+                },
+            ))
+            .id();
+    }
+
+    if object.kind == "bent_reeds" {
+        return spawn_reeds(commands, catalog, object);
+    }
 
     if let Some(scene) = catalog.prop_scene(&object.kind) {
         return commands
@@ -267,7 +349,7 @@ pub fn spawn_world_object(
     commands
         .spawn((
             Name::new(format!(
-                "World Prop Placeholder · {} · {}",
+                "World detail fallback · {} · {}",
                 object.kind, object.id
             )),
             WorldStatic,
@@ -275,12 +357,12 @@ pub fn spawn_world_object(
                 id: object.id.clone(),
                 position: object.position,
             },
-            Mesh3d(catalog.detail_cube.clone()),
-            MeshMaterial3d(catalog.generic.clone()),
+            Mesh3d(catalog.rock_mesh.clone()),
+            MeshMaterial3d(catalog.stone.clone()),
             Transform {
                 translation: Vec3::new(object.position.x as f32, 0.26, object.position.y as f32),
                 rotation: Quat::from_rotation_y(rotation),
-                scale: Vec3::new(0.48, 0.52, 0.48),
+                scale: Vec3::new(0.72, 0.48, 0.66),
             },
         ))
         .id()
@@ -309,17 +391,238 @@ pub fn spawn_resource(
                 position: resource.position,
             },
             WorldAssetRoot(scene),
-            Transform {
-                translation: Vec3::new(
-                    resource.position.x as f32,
-                    0.02,
-                    resource.position.y as f32,
-                ),
-                scale: Vec3::splat(0.86),
-                ..default()
-            },
+            Transform::from_xyz(resource.position.x as f32, 0.02, resource.position.y as f32)
+                .with_scale(Vec3::splat(0.86)),
             Visibility::default(),
         ))
+        .id()
+}
+
+#[derive(Clone, Copy)]
+enum TreeStyle {
+    Forest,
+    Pine,
+    SnowyPine,
+}
+
+fn spawn_tree_geometry(
+    parent: &mut ChildSpawnerCommands,
+    catalog: &WorldDetailCatalog,
+    style: TreeStyle,
+) {
+    parent.spawn((
+        Name::new("Tree trunk"),
+        Mesh3d(catalog.trunk_mesh.clone()),
+        MeshMaterial3d(catalog.wood.clone()),
+        Transform {
+            translation: Vec3::new(0.0, 0.78, 0.0),
+            scale: Vec3::new(0.28, 0.82, 0.28),
+            ..default()
+        },
+    ));
+
+    for (index, (translation, rotation)) in [
+        (Vec3::new(-0.20, 1.18, 0.0), Quat::from_rotation_z(0.82)),
+        (Vec3::new(0.17, 1.38, 0.10), Quat::from_rotation_z(-0.72)),
+        (Vec3::new(0.0, 1.52, -0.16), Quat::from_rotation_x(0.76)),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        parent.spawn((
+            Name::new(format!("Tree branch {index}")),
+            Mesh3d(catalog.trunk_mesh.clone()),
+            MeshMaterial3d(catalog.wood.clone()),
+            Transform {
+                translation,
+                rotation,
+                scale: Vec3::new(0.09, 0.42, 0.09),
+            },
+        ));
+    }
+
+    let foliage = match style {
+        TreeStyle::Forest => catalog.foliage.clone(),
+        TreeStyle::Pine | TreeStyle::SnowyPine => catalog.pine_foliage.clone(),
+    };
+    let crowns = match style {
+        TreeStyle::Forest => [
+            (Vec3::new(0.0, 1.72, 0.0), Vec3::new(1.20, 1.10, 1.20)),
+            (Vec3::new(-0.26, 2.18, 0.10), Vec3::new(0.92, 0.94, 0.92)),
+            (Vec3::new(0.30, 2.12, -0.08), Vec3::new(0.86, 0.88, 0.86)),
+        ],
+        TreeStyle::Pine | TreeStyle::SnowyPine => [
+            (Vec3::new(0.0, 1.48, 0.0), Vec3::new(1.28, 1.08, 1.28)),
+            (Vec3::new(0.0, 2.02, 0.0), Vec3::new(0.98, 1.10, 0.98)),
+            (Vec3::new(0.0, 2.57, 0.0), Vec3::new(0.65, 0.92, 0.65)),
+        ],
+    };
+    for (index, (translation, scale)) in crowns.into_iter().enumerate() {
+        let crown_mesh = if matches!(style, TreeStyle::Forest) {
+            catalog.rock_mesh.clone()
+        } else {
+            catalog.foliage_mesh.clone()
+        };
+        parent.spawn((
+            Name::new(format!("Tree crown {index}")),
+            Mesh3d(crown_mesh),
+            MeshMaterial3d(foliage.clone()),
+            Transform {
+                translation,
+                scale,
+                ..default()
+            },
+        ));
+        if matches!(style, TreeStyle::SnowyPine) {
+            parent.spawn((
+                Name::new(format!("Snowy tree crown {index}")),
+                Mesh3d(catalog.foliage_mesh.clone()),
+                MeshMaterial3d(catalog.snow.clone()),
+                Transform {
+                    translation: translation + Vec3::Y * 0.08,
+                    scale: scale * Vec3::new(1.035, 0.25, 1.035),
+                    ..default()
+                },
+            ));
+        }
+    }
+}
+
+fn spawn_rock_formation(
+    commands: &mut Commands,
+    catalog: &WorldDetailCatalog,
+    object: &WorldObjectView,
+    wall: bool,
+) -> Entity {
+    let material = if object.kind == "snow_bank" {
+        catalog.snow.clone()
+    } else {
+        catalog.stone.clone()
+    };
+    commands
+        .spawn((
+            Name::new(format!("Rock formation: {}: {}", object.kind, object.id)),
+            WorldStatic,
+            WorldObjectActor {
+                id: object.id.clone(),
+                position: object.position,
+            },
+            Transform::from_xyz(object.position.x as f32, 0.0, object.position.y as f32),
+            Visibility::default(),
+        ))
+        .with_children(|parent| {
+            if wall {
+                parent.spawn((
+                    Name::new("Cliff wall mass"),
+                    Mesh3d(catalog.detail_cube.clone()),
+                    MeshMaterial3d(material.clone()),
+                    Transform {
+                        translation: Vec3::new(0.0, 0.45, 0.0),
+                        scale: Vec3::new(1.02, 0.90, 0.88),
+                        ..default()
+                    },
+                ));
+                parent.spawn((
+                    Name::new("Cliff dark foundation"),
+                    Mesh3d(catalog.detail_cube.clone()),
+                    MeshMaterial3d(catalog.dark_stone.clone()),
+                    Transform {
+                        translation: Vec3::new(0.0, 0.13, 0.0),
+                        scale: Vec3::new(1.04, 0.22, 0.91),
+                        ..default()
+                    },
+                ));
+
+                for (index, x) in [-0.34f32, 0.0, 0.34].into_iter().enumerate() {
+                    parent.spawn((
+                        Name::new(format!("Cliff crown {index}")),
+                        Mesh3d(catalog.rock_mesh.clone()),
+                        MeshMaterial3d(material.clone()),
+                        Transform {
+                            translation: Vec3::new(x, 0.91 + (index % 2) as f32 * 0.07, -0.03),
+                            rotation: Quat::from_euler(
+                                EulerRot::YXZ,
+                                index as f32 * 0.77,
+                                0.12,
+                                0.0,
+                            ),
+                            scale: Vec3::new(0.72, 0.46 + (index % 2) as f32 * 0.10, 0.78),
+                        },
+                    ));
+                }
+
+                for (index, (x, y)) in [(-0.31f32, 0.34f32), (0.16, 0.52)].into_iter().enumerate() {
+                    parent.spawn((
+                        Name::new(format!("Cliff face stone {index}")),
+                        Mesh3d(catalog.rock_mesh.clone()),
+                        MeshMaterial3d(catalog.dark_stone.clone()),
+                        Transform {
+                            translation: Vec3::new(x, y, -0.43),
+                            rotation: Quat::from_rotation_z(index as f32 * 0.48),
+                            scale: Vec3::new(0.42, 0.26, 0.16),
+                        },
+                    ));
+                }
+            } else {
+                for index in 0..3 {
+                    let offset = index as f32 - 1.0;
+                    parent.spawn((
+                        Name::new(format!("Rock {index}")),
+                        Mesh3d(catalog.rock_mesh.clone()),
+                        MeshMaterial3d(material.clone()),
+                        Transform {
+                            translation: Vec3::new(
+                                offset * 0.18,
+                                0.14,
+                                ((index * 7) % 3) as f32 * 0.11 - 0.11,
+                            ),
+                            rotation: Quat::from_euler(
+                                EulerRot::YXZ,
+                                index as f32 * 0.71,
+                                0.10 * (index % 3) as f32,
+                                0.0,
+                            ),
+                            scale: Vec3::new(0.50, 0.32, 0.45),
+                        },
+                    ));
+                }
+            }
+        })
+        .id()
+}
+
+fn spawn_reeds(
+    commands: &mut Commands,
+    catalog: &WorldDetailCatalog,
+    object: &WorldObjectView,
+) -> Entity {
+    commands
+        .spawn((
+            Name::new(format!("Bent reeds: {}", object.id)),
+            WorldStatic,
+            WorldObjectActor {
+                id: object.id.clone(),
+                position: object.position,
+            },
+            Transform::from_xyz(object.position.x as f32, 0.0, object.position.y as f32),
+            Visibility::default(),
+        ))
+        .with_children(|parent| {
+            for index in 0..7 {
+                let x = (index % 3) as f32 * 0.20 - 0.20;
+                let z = (index / 3) as f32 * 0.18 - 0.16;
+                parent.spawn((
+                    Name::new(format!("Reed {index}")),
+                    Mesh3d(catalog.trunk_mesh.clone()),
+                    MeshMaterial3d(catalog.reeds.clone()),
+                    Transform {
+                        translation: Vec3::new(x, 0.25 + index as f32 * 0.012, z),
+                        rotation: Quat::from_rotation_z((index as f32 - 3.0) * 0.045),
+                        scale: Vec3::new(0.025, 0.27, 0.025),
+                    },
+                ));
+            }
+        })
         .id()
 }
 
@@ -340,6 +643,7 @@ pub fn spawn_door(
             WorldStatic,
             WorldDoor {
                 id: door.id.clone(),
+                open: door.open,
                 position: door.position,
                 edge,
             },
@@ -745,6 +1049,14 @@ pub fn apply_door_change(door: &DoorView, doors: &mut Query<(&WorldDoorSwing, &m
             continue;
         }
         transform.rotation = door_rotation(visual.edge, door.open);
+    }
+}
+
+pub fn apply_door_state(door: &DoorView, doors: &mut Query<&mut WorldDoor>) {
+    for mut world_door in doors.iter_mut() {
+        if world_door.id == door.id {
+            world_door.open = door.open;
+        }
     }
 }
 

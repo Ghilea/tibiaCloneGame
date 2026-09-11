@@ -308,6 +308,13 @@ impl Plugin for SingleWindowGameplayPlugin {
                         .run_if(native_loading::gameplay_ready)
                         .after(interaction::handle_pointer_interactions)
                         .after(pump_network),
+                    interaction::update_mining_progress
+                        .run_if(native_loading::gameplay_ready)
+                        .after(interaction::handle_pointer_interactions)
+                        .after(pump_network),
+                    interaction::update_world_hover_tooltip
+                        .run_if(native_loading::gameplay_ready)
+                        .after(creature_sprites::interpolate_creature_motion),
                     interaction::sync_target_visual
                         .after(creature_sprites::interpolate_creature_motion),
                     interaction::update_hud
@@ -524,7 +531,7 @@ fn run_game(session: network::NativeSession) -> Result<()> {
 
     App::new()
         .insert_resource(WinitSettings::continuous())
-        .insert_resource(ClearColor(Color::srgb(0.035, 0.055, 0.045)))
+        .insert_resource(ClearColor(Color::BLACK))
         .insert_resource(native_game_state)
         .insert_resource(BootstrapWelcome(Some(session.welcome)))
         .insert_resource(native_map_state)
@@ -627,6 +634,13 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                     .run_if(native_loading::gameplay_ready)
                     .after(interaction::handle_pointer_interactions)
                     .after(pump_network),
+                interaction::update_mining_progress
+                    .run_if(native_loading::gameplay_ready)
+                    .after(interaction::handle_pointer_interactions)
+                    .after(pump_network),
+                interaction::update_world_hover_tooltip
+                    .run_if(native_loading::gameplay_ready)
+                    .after(creature_sprites::interpolate_creature_motion),
                 interaction::sync_target_visual
                     .after(creature_sprites::interpolate_creature_motion),
                 interaction::update_hud
@@ -999,14 +1013,17 @@ fn spawn_live_world(
     let house_wall_material = world_materials.house_wall.clone();
     let castle_wall_material = world_materials.castle_wall.clone();
 
-    for center in
-        world_architecture::ground_chunk_centers(welcome.region_center, welcome.region_radius)
-    {
+    for patch in world_architecture::ground_patches(
+        welcome.region_center,
+        welcome.region_radius,
+        map.width,
+        map.height,
+    ) {
         world_architecture::spawn_ground_chunk(
             commands,
             architecture_catalog,
             world_materials.ground_underlay.clone(),
-            center,
+            patch,
         );
     }
 
@@ -1300,6 +1317,7 @@ fn pump_network(
             &mut creature_sprites::CreatureSprite,
             &mut creature_sprites::CreatureMotion,
         )>,
+        Query<&mut world_details::WorldDoor>,
     )>,
 ) {
     let messages: Vec<ServerMessage> = {
@@ -1400,6 +1418,10 @@ fn pump_network(
                 {
                     let mut doors = actor_queries.p0();
                     world_details::apply_door_change(&door, &mut doors);
+                }
+                {
+                    let mut door_roots = actor_queries.p3();
+                    world_details::apply_door_state(&door, &mut door_roots);
                 }
                 collision.update_door(door);
             }

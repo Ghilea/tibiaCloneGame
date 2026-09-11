@@ -23,7 +23,6 @@ const ROOF_ANGLE: f32 = 0.52;
 const ROOF_OVERHANG: f32 = 0.34;
 const GABLE_STEP_HEIGHT: f32 = 0.22;
 const GROUND_CHUNK_TILES: i32 = 16;
-const GROUND_CHUNK_SIZE: f32 = GROUND_CHUNK_TILES as f32;
 
 #[derive(Debug, Clone, Copy)]
 pub struct BridgeEdges {
@@ -31,6 +30,12 @@ pub struct BridgeEdges {
     pub south: bool,
     pub west: bool,
     pub east: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct GroundPatch {
+    pub center: Vec2,
+    pub size: Vec2,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -456,35 +461,43 @@ fn spawn_wall_edge(
     }
 }
 
-pub fn ground_chunk_centers(center: Position, radius: i32) -> Vec<Vec2> {
+pub fn ground_patches(center: Position, radius: i32, width: i32, height: i32) -> Vec<GroundPatch> {
     let radius = radius.max(1);
-    let diameter = radius * 2 + 1;
-    let chunks_per_axis = (diameter + GROUND_CHUNK_TILES - 1) / GROUND_CHUNK_TILES;
-
-    let min_x = center.x - radius;
-    let min_y = center.y - radius;
-    let left = min_x as f32 - 0.5;
-    let top = min_y as f32 - 0.5;
-
-    let mut centers = Vec::with_capacity((chunks_per_axis * chunks_per_axis) as usize);
-
-    for chunk_y in 0..chunks_per_axis {
-        for chunk_x in 0..chunks_per_axis {
-            centers.push(Vec2::new(
-                left + GROUND_CHUNK_SIZE * (chunk_x as f32 + 0.5),
-                top + GROUND_CHUNK_SIZE * (chunk_y as f32 + 0.5),
-            ));
-        }
+    let min_x = (center.x - radius).max(0);
+    let min_y = (center.y - radius).max(0);
+    let max_x = (center.x + radius).min(width.saturating_sub(1));
+    let max_y = (center.y + radius).min(height.saturating_sub(1));
+    if min_x > max_x || min_y > max_y {
+        return Vec::new();
     }
 
-    centers
+    let mut patches = Vec::new();
+    let mut start_y = min_y;
+    while start_y <= max_y {
+        let patch_height = (max_y - start_y + 1).min(GROUND_CHUNK_TILES);
+        let mut start_x = min_x;
+        while start_x <= max_x {
+            let patch_width = (max_x - start_x + 1).min(GROUND_CHUNK_TILES);
+            patches.push(GroundPatch {
+                center: Vec2::new(
+                    start_x as f32 + (patch_width - 1) as f32 * 0.5,
+                    start_y as f32 + (patch_height - 1) as f32 * 0.5,
+                ),
+                size: Vec2::new(patch_width as f32, patch_height as f32),
+            });
+            start_x += patch_width;
+        }
+        start_y += patch_height;
+    }
+
+    patches
 }
 
 pub fn spawn_ground_chunk(
     commands: &mut Commands,
     catalog: &ArchitectureCatalog,
     material: Handle<StandardMaterial>,
-    center: Vec2,
+    patch: GroundPatch,
 ) -> Entity {
     commands
         .spawn((
@@ -493,8 +506,8 @@ pub fn spawn_ground_chunk(
             Mesh3d(catalog.cube.clone()),
             MeshMaterial3d(material),
             Transform {
-                translation: Vec3::new(center.x, -0.016, center.y),
-                scale: Vec3::new(GROUND_CHUNK_SIZE, 0.020, GROUND_CHUNK_SIZE),
+                translation: Vec3::new(patch.center.x, -0.016, patch.center.y),
+                scale: Vec3::new(patch.size.x, 0.020, patch.size.y),
                 ..default()
             },
         ))
@@ -508,11 +521,62 @@ pub fn infer_bridge_edges(position: Position, bridges: &[Position]) -> BridgeEdg
             .any(|bridge| bridge.z == position.z && bridge.x == x && bridge.y == y)
     };
 
-    BridgeEdges {
-        north: !has(position.x, position.y - 1),
-        south: !has(position.x, position.y + 1),
-        west: !has(position.x - 1, position.y),
-        east: !has(position.x + 1, position.y),
+    // Determine the full connected bridge footprint. Looking only at direct
+    // neighbours fails for bridges wider than one tile: an interior tile then
+    // appears to run in both directions and receives rails on every edge.
+    let mut component = vec![position];
+    let mut cursor = 0;
+    while cursor < component.len() {
+        let tile = component[cursor];
+        cursor += 1;
+        for candidate in bridges.iter().copied().filter(|candidate| {
+            candidate.z == position.z
+                && (candidate.x - tile.x).abs() + (candidate.y - tile.y).abs() == 1
+        }) {
+            if !component.contains(&candidate) {
+                component.push(candidate);
+            }
+        }
+    }
+
+    let min_x = component
+        .iter()
+        .map(|tile| tile.x)
+        .min()
+        .unwrap_or(position.x);
+    let max_x = component
+        .iter()
+        .map(|tile| tile.x)
+        .max()
+        .unwrap_or(position.x);
+    let min_y = component
+        .iter()
+        .map(|tile| tile.y)
+        .min()
+        .unwrap_or(position.y);
+    let max_y = component
+        .iter()
+        .map(|tile| tile.y)
+        .max()
+        .unwrap_or(position.y);
+    let runs_east_west = max_x - min_x >= max_y - min_y;
+
+    // Only exposed edges parallel to the bridge length receive rails. This
+    // leaves both entrances open and avoids rails between adjacent deck tiles.
+    if runs_east_west {
+        BridgeEdges {
+            north: !has(position.x, position.y - 1),
+            south: !has(position.x, position.y + 1),
+            west: false,
+            east: false,
+        }
+    } else {
+        BridgeEdges {
+            north: false,
+            south: false,
+            west: !has(position.x - 1, position.y),
+            east: !has(position.x + 1, position.y),
+        }
     }
 }
 
@@ -824,4 +888,51 @@ pub fn describe() {
     info!(
         "ALDORIA ARCHITECTURE · edge-anchored walls · inset indoor floors · roof/wall alignment · collision-aligned house edges · full-height end gables · bridge rails/posts"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tile(x: i32, y: i32) -> Position {
+        Position { x, y, z: 7 }
+    }
+
+    #[test]
+    fn wide_east_west_bridge_only_has_rails_on_long_outer_sides() {
+        let bridges = (0..4)
+            .flat_map(|x| [tile(x, 0), tile(x, 1)])
+            .collect::<Vec<_>>();
+
+        let corner = infer_bridge_edges(tile(0, 0), &bridges);
+        assert!(corner.north);
+        assert!(!corner.south);
+        assert!(!corner.west);
+        assert!(!corner.east);
+
+        let opposite = infer_bridge_edges(tile(3, 1), &bridges);
+        assert!(!opposite.north);
+        assert!(opposite.south);
+        assert!(!opposite.west);
+        assert!(!opposite.east);
+    }
+
+    #[test]
+    fn wide_north_south_bridge_only_has_rails_on_long_outer_sides() {
+        let bridges = (0..4)
+            .flat_map(|y| [tile(0, y), tile(1, y)])
+            .collect::<Vec<_>>();
+
+        let corner = infer_bridge_edges(tile(0, 0), &bridges);
+        assert!(!corner.north);
+        assert!(!corner.south);
+        assert!(corner.west);
+        assert!(!corner.east);
+
+        let opposite = infer_bridge_edges(tile(1, 3), &bridges);
+        assert!(!opposite.north);
+        assert!(!opposite.south);
+        assert!(!opposite.west);
+        assert!(opposite.east);
+    }
 }

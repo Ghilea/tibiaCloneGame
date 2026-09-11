@@ -176,6 +176,8 @@ pub fn capacity_for_level(level: u32) -> f32 {
 pub struct MiningUpdate {
     pub node: ResourceNodeView,
     pub skill: ProfessionSkillView,
+    pub quantity: u16,
+    pub experience_gained: u32,
 }
 
 fn copper_mining_quantity(level: u16) -> u16 {
@@ -2087,6 +2089,8 @@ impl World {
                 level: skill.0,
                 tries: skill.1,
             },
+            quantity,
+            experience_gained: 1,
         })
     }
     #[cfg(test)]
@@ -7952,6 +7956,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(update.skill.tries, 1);
+        assert_eq!(update.experience_gained, 1);
         assert!(!update.node.available);
         let ore_quantity = world
             .player(player_id)
@@ -7962,6 +7967,7 @@ mod tests {
             .expect("mining adds copper ore")
             .quantity;
         assert!((1..=2).contains(&ore_quantity));
+        assert_eq!(update.quantity, ore_quantity);
         assert!(matches!(
             world.mine_resource(player_id, "copper_vein_greyhaven_1"),
             Err("resource_depleted")

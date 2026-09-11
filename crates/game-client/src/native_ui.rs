@@ -107,6 +107,7 @@ pub(crate) enum NativeUiText {
 }
 
 #[derive(Component, Clone, Copy)]
+#[allow(dead_code)]
 pub(crate) enum NativeUiBar {
     Health,
     Mana,
@@ -483,6 +484,7 @@ const MUTED: Color = theme::MUTED;
 const ACCENT: Color = theme::GOLD;
 const HP: Color = theme::HP;
 const MANA: Color = theme::MANA;
+#[allow(dead_code)]
 const XP: Color = theme::XP;
 const CAP: Color = theme::CAP;
 const TARGET_HP: Color = theme::TARGET_HP;
@@ -678,6 +680,7 @@ fn text_bundle(
     )
 }
 
+#[allow(dead_code)]
 fn spawn_bar(parent: &mut ChildSpawnerCommands, kind: NativeUiBar, color: Color) {
     parent
         .spawn((
@@ -1481,6 +1484,7 @@ fn spawn_action_slot(parent: &mut ChildSpawnerCommands, slot: usize, ability_ico
         });
 }
 
+#[allow(dead_code)]
 fn spawn_panel_header(
     parent: &mut ChildSpawnerCommands,
     title: &str,
@@ -7106,8 +7110,13 @@ pub(crate) fn update_npc_modal_ui(
     >,
 ) {
     if !panels.npc_open {
-        // Like Inventory/Crafting, the detail item preview uses explicit
-        // Visibility::Visible while open. Always reset it when NPC closes.
+        // These children are selectively hidden while the modal is open, so
+        // reset every explicitly managed child when the modal closes. An
+        // explicit Visible on a child would otherwise outlive its hidden root.
+        for (_, _, _, _, mut visibility) in &mut buttons {
+            *visibility = Visibility::Hidden;
+        }
+
         for (_, _, mut visibility) in &mut images {
             *visibility = Visibility::Hidden;
         }
@@ -7261,7 +7270,7 @@ pub(crate) fn update_npc_modal_ui(
         };
 
         *visibility = if visible {
-            Visibility::Visible
+            Visibility::Inherited
         } else {
             Visibility::Hidden
         };
@@ -7299,7 +7308,7 @@ pub(crate) fn update_npc_modal_ui(
             marker.definition_id = Some(definition_id.to_owned());
         }
 
-        *visibility = Visibility::Visible;
+        *visibility = Visibility::Inherited;
     }
 }
 
@@ -10398,7 +10407,11 @@ pub fn update_nearby_loot_ui(
     mut panel: Query<&mut Visibility, (With<NativeNearbyLootPanel>, Without<NativeLootAction>)>,
     mut slots: Query<
         (&NativeLootAction, &mut Visibility),
-        (With<Button>, Without<NativeNearbyLootPanel>),
+        (
+            With<Button>,
+            Without<NativeNearbyLootPanel>,
+            Without<NativeGroundLootIndicator>,
+        ),
     >,
     mut slot_texts: Query<(&NativeLootSlotText, &mut Text), Without<NativeLootAllText>>,
     mut all_text: Query<&mut Text, (With<NativeLootAllText>, Without<NativeLootSlotText>)>,
@@ -10407,6 +10420,7 @@ pub fn update_nearby_loot_ui(
         (
             With<NativeGroundLootIndicator>,
             Without<NativeNearbyLootPanel>,
+            Without<Button>,
         ),
     >,
 ) {

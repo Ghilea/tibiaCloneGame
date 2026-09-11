@@ -37,6 +37,7 @@ pub(crate) const BUTTON_BORDER: Color = Color::srgb(0.337, 0.396, 0.361);
 
 pub(crate) const HP: Color = Color::srgb(0.75, 0.025, 0.035);
 pub(crate) const MANA: Color = Color::srgb(0.04, 0.12, 0.88);
+#[allow(dead_code)]
 pub(crate) const XP: Color = Color::srgb(0.824, 0.647, 0.267);
 pub(crate) const CAP: Color = Color::srgb(0.329, 0.584, 0.384);
 pub(crate) const TARGET_HP: Color = Color::srgb(0.788, 0.204, 0.165);

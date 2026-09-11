@@ -87,7 +87,7 @@ struct StreamAssets {
 
 enum SpawnSpec {
     GroundChunk {
-        center: Vec2,
+        patch: world_architecture::GroundPatch,
         floor: i16,
     },
     Floor(Position),
@@ -389,9 +389,13 @@ fn build_specs(payload: RegionPayload) -> Vec<SpawnSpec> {
     let max_floor = center.z.saturating_add(floor_radius);
     let floors: Vec<i16> = (min_floor..=max_floor).collect();
 
-    let ground_chunks =
-        world_architecture::ground_chunk_centers(payload.region_center, payload.region_radius);
     let map = *payload.map;
+    let ground_patches = world_architecture::ground_patches(
+        payload.region_center,
+        payload.region_radius,
+        map.width,
+        map.height,
+    );
 
     let opening_positions: HashSet<Position> = map
         .doors
@@ -400,7 +404,7 @@ fn build_specs(payload: RegionPayload) -> Vec<SpawnSpec> {
         .chain(map.windows.iter().map(|window| window.position))
         .collect();
 
-    let estimated = ground_chunks.len() * floors.len()
+    let estimated = ground_patches.len() * floors.len()
         + map.floors.len()
         + map.terrain_materials.len()
         + map.roads.len()
@@ -450,10 +454,10 @@ fn build_specs(payload: RegionPayload) -> Vec<SpawnSpec> {
         );
 
         specs.extend(
-            ground_chunks
+            ground_patches
                 .iter()
                 .copied()
-                .map(|center| SpawnSpec::GroundChunk { center, floor }),
+                .map(|patch| SpawnSpec::GroundChunk { patch, floor }),
         );
 
         specs.extend(
@@ -697,12 +701,12 @@ fn spawn_spec(
 ) {
     let floor = spec.floor();
     match spec {
-        SpawnSpec::GroundChunk { center, .. } => {
+        SpawnSpec::GroundChunk { patch, .. } => {
             let entity = world_architecture::spawn_ground_chunk(
                 commands,
                 architecture,
                 assets.ground_underlay.clone(),
-                *center,
+                *patch,
             );
             commands
                 .entity(entity)

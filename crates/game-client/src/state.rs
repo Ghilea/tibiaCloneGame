@@ -92,6 +92,7 @@ pub struct NativeGameState {
     pub trade: Option<NativeTradeState>,
     pub attack_target_id: Option<EntityId>,
     pub focused_npc_id: Option<String>,
+    pub pending_mining_result: Option<String>,
     pub messages: VecDeque<NativeMessageLine>,
     pub last_error: Option<(String, String)>,
 }
@@ -169,6 +170,7 @@ impl NativeGameState {
             trade: None,
             attack_target_id: None,
             focused_npc_id: None,
+            pending_mining_result: None,
             messages: VecDeque::new(),
             last_error: None,
         };
@@ -346,6 +348,24 @@ impl NativeGameState {
                     .cloned()
                     .map(|skill| (skill.id.clone(), skill))
                     .collect();
+            }
+            ServerMessage::MiningResult {
+                player_id,
+                item_definition_id,
+                quantity,
+                experience_gained,
+                ..
+            } if *player_id == self.local_player_id => {
+                let item_name = self
+                    .item_definitions
+                    .get(item_definition_id)
+                    .map(|definition| definition.name.as_str())
+                    .unwrap_or(item_definition_id.as_str());
+                let result = format!(
+                    "Mining complete: +{quantity} {item_name} · +{experience_gained} Mining XP",
+                );
+                self.pending_mining_result = Some(result.clone());
+                self.push_message(NativeMessageKind::Loot, result);
             }
             ServerMessage::DiscoveryChanged {
                 player_id,
@@ -608,6 +628,7 @@ impl NativeGameState {
             | ServerMessage::SpellsChanged { .. }
             | ServerMessage::RecipesChanged { .. }
             | ServerMessage::ProfessionSkillsChanged { .. }
+            | ServerMessage::MiningResult { .. }
             | ServerMessage::DiscoveryChanged { .. }
             | ServerMessage::FoodStatus { .. }
             | ServerMessage::AbilityUsed { .. }

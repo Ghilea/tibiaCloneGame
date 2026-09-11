@@ -2044,6 +2044,16 @@ async fn mine_resource(state: &AppState, player_id: Uuid, node_id: &str) {
         player_id,
         ServerMessage::ProfessionSkillsChanged { player_id, skills },
     );
+    state.private(
+        player_id,
+        ServerMessage::MiningResult {
+            player_id,
+            node_id: update.node.id.clone(),
+            item_definition_id: "copper_ore".into(),
+            quantity: update.quantity,
+            experience_gained: update.experience_gained,
+        },
+    );
     state.broadcast(ServerMessage::ResourceNodesChanged {
         resource_nodes: nodes,
     });
