@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+// TIBIAGAME_V36_64_1_TRUE_3D_ROOF_VOLUME
 // TIBIAGAME_V36_9_1_UNUSED_BUILDINGROOF_IMPORT_FIX
 use std::time::Instant;
 
@@ -277,6 +278,7 @@ pub fn apply_streamed_region(
                 &catalog,
                 &details,
                 &architecture,
+                &mut meshes,
                 &mut materials,
                 build.generation,
                 spec,
@@ -695,6 +697,7 @@ fn spawn_spec(
     _catalog: &creature_sprites::CreatureSpriteCatalog,
     details: &world_details::WorldDetailCatalog,
     architecture: &world_architecture::ArchitectureCatalog,
+    meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     generation: u64,
     spec: &SpawnSpec,
@@ -899,6 +902,7 @@ fn spawn_spec(
             let (floor_entity, roof_entity) = world_architecture::spawn_building(
                 commands,
                 architecture,
+                meshes,
                 materials,
                 assets.house_wall.clone(),
                 assets.building_floor.clone(),

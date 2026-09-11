@@ -1,4 +1,9 @@
-use bevy::prelude::*;
+use bevy::{
+    asset::RenderAssetUsages,
+    mesh::Indices,
+    prelude::*,
+    render::render_resource::PrimitiveTopology,
+};
 use game_protocol::{BuildingView, DoorView, WindowView};
 use game_types::Position;
 
@@ -8,6 +13,7 @@ use crate::{BuildingRoof, HouseWallOccluder, WorldStatic};
 // TIBIAGAME_V36_13_WORLD_BOUNDARY_FLOOR_PRELOAD
 // TIBIAGAME_V36_14_MEDIEVAL_FACADE_CREATURE_WARMUP
 // TIBIAGAME_V36_64_0_COMPACT_UI_ROOF_DEPTH
+// TIBIAGAME_V36_64_1_TRUE_3D_ROOF_VOLUME
 
 pub const HOUSE_WALL_HEIGHT: f32 = 2.64;
 pub const CASTLE_WALL_HEIGHT: f32 = 3.00;
@@ -22,10 +28,13 @@ const BUILDING_FLOOR_INSET: f32 = 0.10;
 const ROOF_EAVE_Y: f32 = HOUSE_WALL_HEIGHT + 0.02;
 const ROOF_ANGLE: f32 = 0.52;
 const ROOF_OVERHANG: f32 = 0.34;
-const ROOF_SLAB_THICKNESS: f32 = 0.11;
-const ROOF_RELIEF_HEIGHT: f32 = 0.045;
-const ROOF_RELIEF_SPACING: f32 = 0.48;
-const ROOF_RIDGE_WIDTH: f32 = 0.20;
+const ROOF_SLAB_THICKNESS: f32 = 0.075;
+const ROOF_COURSE_TARGET: f32 = 0.42;
+const ROOF_COURSE_OVERLAP: f32 = 0.115;
+const ROOF_TILE_THICKNESS: f32 = 0.070;
+const ROOF_COURSE_RISE: f32 = 0.018;
+const ROOF_RIDGE_WIDTH: f32 = 0.34;
+const ROOF_RIDGE_THICKNESS: f32 = 0.075;
 const GABLE_STEP_HEIGHT: f32 = 0.22;
 const GROUND_CHUNK_TILES: i32 = 16;
 
@@ -675,6 +684,7 @@ fn spawn_bridge_rail(
 pub fn spawn_building(
     commands: &mut Commands,
     catalog: &ArchitectureCatalog,
+    meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     wall_material: Handle<StandardMaterial>,
     floor_material: Handle<StandardMaterial>,
@@ -698,6 +708,10 @@ pub fn spawn_building(
         .cloned()
         .expect("world roof material exists before building spawn");
     roof_material_value.alpha_mode = AlphaMode::Blend;
+    // The procedural course mesh contains deliberately exposed lips/end faces.
+    // Disable back-face culling for this per-building roof material so every
+    // real edge remains visible from the fixed isometric camera.
+    roof_material_value.cull_mode = None;
     let roof_material = materials.add(roof_material_value);
 
     let mut gable_material_value = materials
@@ -756,25 +770,27 @@ pub fn spawn_building(
 
             for sign in [-1.0f32, 1.0] {
                 let rotation = Quat::from_rotation_z(-sign * ROOF_ANGLE);
-                spawn_roof_slope_with_relief(
+                spawn_lapped_roof_slope(
                     parent,
                     catalog,
+                    meshes,
                     roof_material.clone(),
                     Vec3::new(sign * half_offset, ROOF_EAVE_Y + rise * 0.5, 0.0),
                     rotation,
                     slope_length,
                     long_span,
                     true,
+                    sign > 0.0,
                 );
             }
 
-            spawn_roof_ridge(
+            spawn_pitched_ridge_cap(
                 parent,
                 catalog,
                 roof_material.clone(),
                 true,
                 long_span,
-                ROOF_EAVE_Y + rise + 0.055,
+                ROOF_EAVE_Y + rise + 0.075,
             );
 
             for sign in [-1.0f32, 1.0] {
@@ -798,25 +814,27 @@ pub fn spawn_building(
 
             for sign in [-1.0f32, 1.0] {
                 let rotation = Quat::from_rotation_x(sign * ROOF_ANGLE);
-                spawn_roof_slope_with_relief(
+                spawn_lapped_roof_slope(
                     parent,
                     catalog,
+                    meshes,
                     roof_material.clone(),
                     Vec3::new(0.0, ROOF_EAVE_Y + rise * 0.5, sign * half_offset),
                     rotation,
                     slope_length,
                     long_span,
                     false,
+                    sign > 0.0,
                 );
             }
 
-            spawn_roof_ridge(
+            spawn_pitched_ridge_cap(
                 parent,
                 catalog,
                 roof_material.clone(),
                 false,
                 long_span,
-                ROOF_EAVE_Y + rise + 0.055,
+                ROOF_EAVE_Y + rise + 0.075,
             );
 
             for sign in [-1.0f32, 1.0] {
@@ -836,24 +854,28 @@ pub fn spawn_building(
     (floor_entity, roof)
 }
 
-fn spawn_roof_slope_with_relief(
+fn spawn_lapped_roof_slope(
     parent: &mut ChildSpawnerCommands,
     catalog: &ArchitectureCatalog,
+    meshes: &mut Assets<Mesh>,
     material: Handle<StandardMaterial>,
     center: Vec3,
     rotation: Quat,
     slope_length: f32,
     long_span: f32,
-    relief_along_x: bool,
+    slope_along_x: bool,
+    eave_positive: bool,
 ) {
+    // A thin continuous under-roof gives the courses a solid silhouette from
+    // below/eaves. The authored tile texture remains the exact same material.
     parent.spawn((
-        Name::new("Roof textured slope"),
+        Name::new("Roof textured under-slab"),
         Mesh3d(catalog.cube.clone()),
         MeshMaterial3d(material.clone()),
         Transform {
             translation: center,
             rotation,
-            scale: if relief_along_x {
+            scale: if slope_along_x {
                 Vec3::new(slope_length, ROOF_SLAB_THICKNESS, long_span)
             } else {
                 Vec3::new(long_span, ROOF_SLAB_THICKNESS, slope_length)
@@ -861,38 +883,311 @@ fn spawn_roof_slope_with_relief(
         },
     ));
 
-    // Keep the authored roof-tile texture, but add very shallow geometry rows
-    // above it. They catch the existing world lighting and give the roof a
-    // layered tile profile without introducing a second texture or material.
-    let row_count = (slope_length / ROOF_RELIEF_SPACING).floor().max(2.0) as usize;
-    for row in 1..row_count {
-        let t = row as f32 / row_count as f32;
-        let along = -slope_length * 0.5 + slope_length * t;
-        let normal_offset = ROOF_SLAB_THICKNESS * 0.52 + ROOF_RELIEF_HEIGHT * 0.52;
-        let local = if relief_along_x {
-            Vec3::new(along, normal_offset, 0.0)
-        } else {
-            Vec3::new(0.0, normal_offset, along)
-        };
+    // V36.64.1: this is actual stepped/lapped roof geometry, not decorative
+    // bars laid on top of a flat plane. UVs remain continuous over all courses,
+    // so the existing Aldoria roof-tile texture is preserved instead of being
+    // restarted/stretched once per row. Vertical lips and gable-side edges
+    // receive different lighting normals and make the volume readable.
+    let mesh = create_lapped_roof_mesh(
+        slope_length,
+        long_span,
+        slope_along_x,
+        eave_positive,
+    );
+    parent.spawn((
+        Name::new("Roof lapped tile courses"),
+        Mesh3d(meshes.add(mesh)),
+        MeshMaterial3d(material),
+        Transform {
+            translation: center,
+            rotation,
+            ..default()
+        },
+    ));
+}
 
-        parent.spawn((
-            Name::new("Roof tile relief row"),
-            Mesh3d(catalog.cube.clone()),
-            MeshMaterial3d(material.clone()),
-            Transform {
-                translation: center + rotation * local,
-                rotation,
-                scale: if relief_along_x {
-                    Vec3::new(0.085, ROOF_RELIEF_HEIGHT, long_span + 0.02)
-                } else {
-                    Vec3::new(long_span + 0.02, ROOF_RELIEF_HEIGHT, 0.085)
-                },
-            },
-        ));
+fn create_lapped_roof_mesh(
+    slope_length: f32,
+    long_span: f32,
+    slope_along_x: bool,
+    eave_positive: bool,
+) -> Mesh {
+    let half_slope = slope_length * 0.5;
+    let half_long = long_span * 0.5;
+    let course_count = (slope_length / ROOF_COURSE_TARGET).ceil().max(3.0) as usize;
+    let course_span = slope_length / course_count as f32;
+    let slab_top = ROOF_SLAB_THICKNESS * 0.5;
+
+    let mut positions: Vec<[f32; 3]> = Vec::with_capacity(course_count * 16);
+    let mut normals: Vec<[f32; 3]> = Vec::with_capacity(course_count * 16);
+    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity(course_count * 16);
+    let mut indices: Vec<u32> = Vec::with_capacity(course_count * 24);
+
+    let slope_coord = |distance_from_eave: f32| {
+        if eave_positive {
+            half_slope - distance_from_eave
+        } else {
+            -half_slope + distance_from_eave
+        }
+    };
+
+    for row in 0..course_count {
+        let nominal_start = row as f32 * course_span;
+        let start = if row == 0 {
+            0.0
+        } else {
+            (nominal_start - ROOF_COURSE_OVERLAP).max(0.0)
+        };
+        let end = ((row + 1) as f32 * course_span).min(slope_length);
+        let top_y = slab_top
+            + ROOF_TILE_THICKNESS
+            + row as f32 * ROOF_COURSE_RISE;
+        let bottom_y = top_y - ROOF_TILE_THICKNESS;
+
+        let a = slope_coord(start);
+        let b = slope_coord(end);
+        let slope_min = a.min(b);
+        let slope_max = a.max(b);
+
+        push_roof_top_quad(
+            &mut positions,
+            &mut normals,
+            &mut uvs,
+            &mut indices,
+            slope_min,
+            slope_max,
+            -half_long,
+            half_long,
+            top_y,
+            half_slope,
+            half_long,
+            slope_along_x,
+        );
+
+        // Expose the eave-facing lower edge of every overlapping course. These
+        // small vertical faces are what create visible dark/light breaks with
+        // ordinary PBR lighting even when global shadow maps are disabled.
+        push_roof_course_lip(
+            &mut positions,
+            &mut normals,
+            &mut uvs,
+            &mut indices,
+            slope_coord(start),
+            -half_long,
+            half_long,
+            bottom_y,
+            top_y,
+            eave_positive,
+            slope_along_x,
+        );
+
+        // Give the two gable ends real thickness instead of ending in a single
+        // infinitely thin textured surface.
+        push_roof_course_end(
+            &mut positions,
+            &mut normals,
+            &mut uvs,
+            &mut indices,
+            slope_min,
+            slope_max,
+            -half_long,
+            bottom_y,
+            top_y,
+            false,
+            slope_along_x,
+        );
+        push_roof_course_end(
+            &mut positions,
+            &mut normals,
+            &mut uvs,
+            &mut indices,
+            slope_min,
+            slope_max,
+            half_long,
+            bottom_y,
+            top_y,
+            true,
+            slope_along_x,
+        );
+    }
+
+    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+        .with_inserted_indices(Indices::U32(indices))
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+}
+
+fn push_mesh_quad(
+    positions: &mut Vec<[f32; 3]>,
+    normals: &mut Vec<[f32; 3]>,
+    uvs: &mut Vec<[f32; 2]>,
+    indices: &mut Vec<u32>,
+    points: [Vec3; 4],
+    normal: Vec3,
+    texcoords: [[f32; 2]; 4],
+) {
+    let base = positions.len() as u32;
+    positions.extend(points.map(|point| point.to_array()));
+    normals.extend([normal.to_array(); 4]);
+    uvs.extend(texcoords);
+    indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+}
+
+fn roof_point(slope: f32, y: f32, long: f32, slope_along_x: bool) -> Vec3 {
+    if slope_along_x {
+        Vec3::new(slope, y, long)
+    } else {
+        Vec3::new(long, y, slope)
     }
 }
 
-fn spawn_roof_ridge(
+fn push_roof_top_quad(
+    positions: &mut Vec<[f32; 3]>,
+    normals: &mut Vec<[f32; 3]>,
+    uvs: &mut Vec<[f32; 2]>,
+    indices: &mut Vec<u32>,
+    slope_min: f32,
+    slope_max: f32,
+    long_min: f32,
+    long_max: f32,
+    y: f32,
+    half_slope: f32,
+    half_long: f32,
+    slope_along_x: bool,
+) {
+    let uv = |slope: f32, long: f32| {
+        [
+            (long + half_long) / (half_long * 2.0).max(0.001),
+            (slope + half_slope) / (half_slope * 2.0).max(0.001),
+        ]
+    };
+
+    if slope_along_x {
+        push_mesh_quad(
+            positions,
+            normals,
+            uvs,
+            indices,
+            [
+                roof_point(slope_min, y, long_min, true),
+                roof_point(slope_min, y, long_max, true),
+                roof_point(slope_max, y, long_max, true),
+                roof_point(slope_max, y, long_min, true),
+            ],
+            Vec3::Y,
+            [
+                uv(slope_min, long_min),
+                uv(slope_min, long_max),
+                uv(slope_max, long_max),
+                uv(slope_max, long_min),
+            ],
+        );
+    } else {
+        push_mesh_quad(
+            positions,
+            normals,
+            uvs,
+            indices,
+            [
+                roof_point(slope_min, y, long_min, false),
+                roof_point(slope_max, y, long_min, false),
+                roof_point(slope_max, y, long_max, false),
+                roof_point(slope_min, y, long_max, false),
+            ],
+            Vec3::Y,
+            [
+                uv(slope_min, long_min),
+                uv(slope_max, long_min),
+                uv(slope_max, long_max),
+                uv(slope_min, long_max),
+            ],
+        );
+    }
+}
+
+fn push_roof_course_lip(
+    positions: &mut Vec<[f32; 3]>,
+    normals: &mut Vec<[f32; 3]>,
+    uvs: &mut Vec<[f32; 2]>,
+    indices: &mut Vec<u32>,
+    slope: f32,
+    long_min: f32,
+    long_max: f32,
+    bottom_y: f32,
+    top_y: f32,
+    eave_positive: bool,
+    slope_along_x: bool,
+) {
+    let normal = if slope_along_x {
+        if eave_positive { Vec3::X } else { Vec3::NEG_X }
+    } else if eave_positive {
+        Vec3::Z
+    } else {
+        Vec3::NEG_Z
+    };
+
+    let low_a = roof_point(slope, bottom_y, long_min, slope_along_x);
+    let high_a = roof_point(slope, top_y, long_min, slope_along_x);
+    let high_b = roof_point(slope, top_y, long_max, slope_along_x);
+    let low_b = roof_point(slope, bottom_y, long_max, slope_along_x);
+
+    let points = if eave_positive {
+        [low_a, high_a, high_b, low_b]
+    } else {
+        [low_b, high_b, high_a, low_a]
+    };
+
+    push_mesh_quad(
+        positions,
+        normals,
+        uvs,
+        indices,
+        points,
+        normal,
+        [[0.0, 1.0], [0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
+    );
+}
+
+fn push_roof_course_end(
+    positions: &mut Vec<[f32; 3]>,
+    normals: &mut Vec<[f32; 3]>,
+    uvs: &mut Vec<[f32; 2]>,
+    indices: &mut Vec<u32>,
+    slope_min: f32,
+    slope_max: f32,
+    long: f32,
+    bottom_y: f32,
+    top_y: f32,
+    positive_long: bool,
+    slope_along_x: bool,
+) {
+    let normal = if slope_along_x {
+        if positive_long { Vec3::Z } else { Vec3::NEG_Z }
+    } else if positive_long {
+        Vec3::X
+    } else {
+        Vec3::NEG_X
+    };
+
+    let a = roof_point(slope_min, bottom_y, long, slope_along_x);
+    let b = roof_point(slope_min, top_y, long, slope_along_x);
+    let c = roof_point(slope_max, top_y, long, slope_along_x);
+    let d = roof_point(slope_max, bottom_y, long, slope_along_x);
+    let points = if positive_long { [a, b, c, d] } else { [d, c, b, a] };
+
+    push_mesh_quad(
+        positions,
+        normals,
+        uvs,
+        indices,
+        points,
+        normal,
+        [[0.0, 1.0], [0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
+    );
+}
+
+fn spawn_pitched_ridge_cap(
     parent: &mut ChildSpawnerCommands,
     catalog: &ArchitectureCatalog,
     material: Handle<StandardMaterial>,
@@ -900,20 +1195,37 @@ fn spawn_roof_ridge(
     long_span: f32,
     y: f32,
 ) {
-    parent.spawn((
-        Name::new("Roof raised ridge cap"),
-        Mesh3d(catalog.cube.clone()),
-        MeshMaterial3d(material),
-        Transform {
-            translation: Vec3::new(0.0, y, 0.0),
-            scale: if along_z {
-                Vec3::new(ROOF_RIDGE_WIDTH, 0.14, long_span + 0.08)
-            } else {
-                Vec3::new(long_span + 0.08, 0.14, ROOF_RIDGE_WIDTH)
+    // Two pitched cap faces replace the previous rectangular bar. Their
+    // different normals make the crown read as a real ridge from the fixed
+    // isometric camera while still using the same roof-tile material.
+    let cap_angle = 0.48f32;
+    let half_offset = ROOF_RIDGE_WIDTH * 0.19;
+    for sign in [-1.0f32, 1.0] {
+        let (translation, rotation, scale) = if along_z {
+            (
+                Vec3::new(sign * half_offset, y, 0.0),
+                Quat::from_rotation_z(-sign * cap_angle),
+                Vec3::new(ROOF_RIDGE_WIDTH * 0.62, ROOF_RIDGE_THICKNESS, long_span + 0.10),
+            )
+        } else {
+            (
+                Vec3::new(0.0, y, sign * half_offset),
+                Quat::from_rotation_x(sign * cap_angle),
+                Vec3::new(long_span + 0.10, ROOF_RIDGE_THICKNESS, ROOF_RIDGE_WIDTH * 0.62),
+            )
+        };
+
+        parent.spawn((
+            Name::new("Roof pitched ridge cap"),
+            Mesh3d(catalog.cube.clone()),
+            MeshMaterial3d(material.clone()),
+            Transform {
+                translation,
+                rotation,
+                scale,
             },
-            ..default()
-        },
-    ));
+        ));
+    }
 }
 
 fn spawn_gable_fill(
@@ -984,7 +1296,7 @@ fn spawn_gable_fill(
 
 pub fn describe() {
     info!(
-        "ALDORIA ARCHITECTURE · edge-anchored walls · inset indoor floors · textured 3D roof relief/ridges · collision-aligned house edges · full-height end gables · bridge rails/posts"
+        "ALDORIA ARCHITECTURE · edge-anchored walls · inset indoor floors · true lapped 3D roof courses + pitched ridge · collision-aligned house edges · full-height end gables · bridge rails/posts"
     );
 }
 

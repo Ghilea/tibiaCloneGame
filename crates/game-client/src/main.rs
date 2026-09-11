@@ -21,6 +21,7 @@ mod streaming;
 mod world_architecture;
 mod world_details;
 mod world_visuals;
+// TIBIAGAME_V36_64_1_TRUE_3D_ROOF_VOLUME
 // TIBIAGAME_V36_13_WORLD_BOUNDARY_FLOOR_PRELOAD
 // TIBIAGAME_V36_14_MEDIEVAL_FACADE_CREATURE_WARMUP
 // TIBIAGAME_V36_15_1_OPENING_FACADE_RAT_GPU_PREWARM
@@ -1182,6 +1183,7 @@ fn spawn_live_world(
         world_architecture::spawn_building(
             commands,
             architecture_catalog,
+            meshes,
             materials,
             world_materials.house_wall.clone(),
             world_materials.building_floor.clone(),
