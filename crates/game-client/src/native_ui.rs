@@ -7,7 +7,7 @@ use game_protocol::ClientMessage;
 
 use crate::{
     NativeNetwork,
-    native_drag::NativeActionBarState,
+    native_drag::{NativeActionBarState, NativeDragDropState},
     native_modal, native_ui_theme as theme,
     state::{NativeGameState, NativeMessageKind},
 };
@@ -30,6 +30,7 @@ pub struct NativePanelState {
     pub inventory_container_id: Option<game_types::EntityId>,
     pub inventory_search_active: bool,
     pub inventory_search: String,
+    pub inventory_order: Vec<game_types::EntityId>,
     pub split_item_id: Option<game_types::EntityId>,
     pub split_quantity: u16,
     pub selected_spell_id: Option<String>,
@@ -144,6 +145,9 @@ pub(crate) struct NativeActionSlotImage(pub(crate) usize);
 
 #[derive(Component)]
 pub(crate) struct NativeNearbyLootPanel;
+
+#[derive(Component)]
+pub(crate) struct NativeGroundLootIndicator;
 
 #[derive(Component, Clone, Copy)]
 pub(crate) enum NativeLootAction {
@@ -393,6 +397,21 @@ pub(crate) enum NativeCharacterEquipmentSlot {
 #[derive(Component, Clone, Copy)]
 pub(crate) struct NativeCharacterProfessionSlot(pub(crate) usize);
 
+#[derive(Component)]
+pub(crate) struct NativeCharacterProfessionEquipmentImage {
+    index: usize,
+    definition_id: Option<String>,
+}
+
+#[derive(Component)]
+pub(crate) struct NativeCharacterEquipmentImage {
+    slot: NativeCharacterEquipmentSlot,
+    definition_id: Option<String>,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeCharacterOutfitButton(pub(crate) &'static str);
+
 #[derive(Component, Clone, Copy)]
 #[allow(dead_code)]
 pub(crate) enum NativeCharacterModalAction {
@@ -432,6 +451,17 @@ pub(crate) struct NativeInventorySlotImage {
 #[derive(Component, Clone, Copy)]
 pub(crate) struct NativeInventoryCapacityBar;
 
+#[derive(Component)]
+pub(crate) struct NativeItemTooltip;
+
+#[derive(Component)]
+pub(crate) struct NativeItemTooltipText;
+
+#[derive(Component)]
+pub(crate) struct NativeDragItemGhost {
+    definition_id: Option<String>,
+}
+
 #[derive(Component, Clone, Copy)]
 pub(crate) enum NativeInventoryAction {
     Search,
@@ -464,14 +494,80 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     spawn_chat(&mut commands, &asset_server);
     spawn_ping_widget(&mut commands);
     spawn_nearby_loot(&mut commands);
+    commands.spawn((
+        NativeGroundLootIndicator,
+        Text::new("◆ LOOT"),
+        TextFont {
+            font_size: FontSize::Px(11.0),
+            ..default()
+        },
+        TextColor(theme::GOLD_BRIGHT),
+        Node {
+            position_type: PositionType::Absolute,
+            right: px(118),
+            bottom: px(62),
+            ..default()
+        },
+        GlobalZIndex(160),
+        Visibility::Hidden,
+    ));
     spawn_action_bar(&mut commands, &asset_server);
     spawn_panel_dock(&mut commands, &asset_server);
     spawn_inventory_panel(&mut commands);
+    spawn_item_interaction_overlays(&mut commands);
     spawn_character_panel(&mut commands);
     spawn_skills_panel(&mut commands);
     spawn_spellbook_panel(&mut commands);
     spawn_crafting_panel(&mut commands);
     spawn_npc_panel(&mut commands);
+}
+
+fn spawn_item_interaction_overlays(commands: &mut Commands) {
+    commands
+        .spawn((
+            Name::new("Item tooltip"),
+            NativeItemTooltip,
+            GlobalZIndex(900),
+            Node {
+                position_type: PositionType::Absolute,
+                width: px(260),
+                padding: UiRect::all(px(9)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(6)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.015, 0.025, 0.018, 0.96)),
+            BorderColor::all(theme::GOLD),
+            Visibility::Hidden,
+        ))
+        .with_child((
+            NativeItemTooltipText,
+            Text::new(""),
+            TextFont {
+                font_size: FontSize::Px(10.0),
+                ..default()
+            },
+            TextColor(TEXT),
+        ));
+
+    commands.spawn((
+        Name::new("Dragged inventory item"),
+        NativeDragItemGhost {
+            definition_id: None,
+        },
+        GlobalZIndex(950),
+        ImageNode {
+            color: Color::srgba(1.0, 1.0, 1.0, 0.55),
+            ..default()
+        },
+        Node {
+            position_type: PositionType::Absolute,
+            width: px(54),
+            height: px(54),
+            ..default()
+        },
+        Visibility::Hidden,
+    ));
 }
 
 fn spawn_nearby_loot(commands: &mut Commands) {
@@ -2292,6 +2388,20 @@ fn spawn_character_equipment_slot(
             ));
 
             card.spawn((
+                NativeCharacterEquipmentImage {
+                    slot,
+                    definition_id: None,
+                },
+                ImageNode::default(),
+                Visibility::Hidden,
+                Node {
+                    width: px(30),
+                    height: px(30),
+                    ..default()
+                },
+            ));
+
+            card.spawn((
                 slot,
                 Text::new("Empty"),
                 TextFont {
@@ -2319,20 +2429,42 @@ fn spawn_character_profession_slot(parent: &mut ChildSpawnerCommands, index: usi
             BackgroundColor(theme::BUTTON_BG),
             BorderColor::all(theme::BUTTON_BORDER),
         ))
-        .with_child((
-            NativeCharacterProfessionSlot(index),
-            Text::new("Empty"),
-            TextFont {
-                font_size: FontSize::Px(8.5),
-                ..default()
-            },
-            TextColor(MUTED),
-        ));
+        .with_children(|slot| {
+            slot.spawn((
+                NativeCharacterProfessionEquipmentImage {
+                    index,
+                    definition_id: None,
+                },
+                ImageNode::default(),
+                Visibility::Hidden,
+                Node {
+                    width: px(22),
+                    height: px(22),
+                    ..default()
+                },
+            ));
+            slot.spawn((
+                NativeCharacterProfessionSlot(index),
+                Text::new("Empty"),
+                TextFont {
+                    font_size: FontSize::Px(8.5),
+                    ..default()
+                },
+                TextColor(MUTED),
+            ));
+        });
 }
 
-fn spawn_character_outfit_chip(parent: &mut ChildSpawnerCommands, label: &str, selected: bool) {
+fn spawn_character_outfit_chip(
+    parent: &mut ChildSpawnerCommands,
+    outfit: &'static str,
+    label: &str,
+    selected: bool,
+) {
     parent
         .spawn((
+            Button,
+            NativeCharacterOutfitButton(outfit),
             Node {
                 width: Val::Percent(24.0),
                 height: px(38),
@@ -2662,10 +2794,10 @@ fn spawn_character_panel(commands: &mut Commands) {
                                 ..default()
                             })
                             .with_children(|chips| {
-                                spawn_character_outfit_chip(chips, "ARMORED", true);
-                                spawn_character_outfit_chip(chips, "WAYFARER", false);
-                                spawn_character_outfit_chip(chips, "MYSTIC", false);
-                                spawn_character_outfit_chip(chips, "SHADOW", false);
+                                spawn_character_outfit_chip(chips, "knight", "ARMORED", true);
+                                spawn_character_outfit_chip(chips, "ranger", "WAYFARER", false);
+                                spawn_character_outfit_chip(chips, "mage", "MYSTIC", false);
+                                spawn_character_outfit_chip(chips, "rogue", "SHADOW", false);
                             });
                     });
             });
@@ -6255,16 +6387,28 @@ fn selectable_inventory_ids(
     panels: &NativePanelState,
 ) -> Vec<game_types::EntityId> {
     let query = panels.inventory_search.trim().to_ascii_lowercase();
+    let container_id = active_inventory_container_id(game_state, panels);
 
     let mut items: Vec<_> = game_state
         .inventory
         .iter()
         .filter(|item| item.definition_id != "gold_coin")
         .filter(|item| {
-            if let Some(container_id) = panels.inventory_container_id {
+            if let Some(container_id) = container_id {
                 item.container_id == Some(container_id)
+                    // Characters created before backpacks became the sole
+                    // inventory root can still have legacy root items. Keep
+                    // them visible through the equipped backpack until the
+                    // next authoritative move places them inside it.
+                    || (item.container_id.is_none() && item.equipped_slot.is_none())
             } else {
                 item.container_id.is_none()
+                    && item.equipped_slot.is_none()
+                    && game_state
+                        .item_definitions
+                        .get(&item.definition_id)
+                        .and_then(|definition| definition.equipment_slot.as_deref())
+                        .is_some_and(|slot| slot.eq_ignore_ascii_case("backpack"))
             }
         })
         .filter(|item| {
@@ -6302,7 +6446,44 @@ fn selectable_inventory_ids(
             .then_with(|| left_name.cmp(right_name))
     });
 
+    // The server owns item contents; the client owns the player's visual slot
+    // arrangement. Keep an explicit order so drag/drop between slots feels
+    // like a real inventory instead of snapping back to alphabetical order.
+    items.sort_by_key(|item| {
+        panels
+            .inventory_order
+            .iter()
+            .position(|id| *id == item.instance_id)
+            .unwrap_or(usize::MAX)
+    });
+
     items.into_iter().map(|item| item.instance_id).collect()
+}
+
+pub(crate) fn reorder_inventory_item(
+    game_state: &NativeGameState,
+    panels: &mut NativePanelState,
+    instance_id: game_types::EntityId,
+    target_index: usize,
+) {
+    let mut ids = inventory_reference_ids(game_state, panels);
+    let Some(source_index) = ids.iter().position(|id| *id == instance_id) else {
+        return;
+    };
+    let item = ids.remove(source_index);
+    ids.insert(target_index.min(ids.len()), item);
+    panels.inventory_order = ids;
+}
+
+pub(crate) fn active_inventory_container_id(
+    game_state: &NativeGameState,
+    panels: &NativePanelState,
+) -> Option<game_types::EntityId> {
+    panels.inventory_container_id.or_else(|| {
+        game_state.inventory.iter().find_map(|item| {
+            (item.equipped_slot.as_deref() == Some("backpack")).then_some(item.instance_id)
+        })
+    })
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -6355,6 +6536,23 @@ fn toggle_nearest_npc_panel(game_state: &mut NativeGameState, panels: &mut Nativ
     normalize_npc_tab(game_state, panels);
 
     game_state.push_system_message(format!("Talking to {npc_name}."));
+}
+
+pub(crate) fn open_npc_panel(
+    game_state: &mut NativeGameState,
+    panels: &mut NativePanelState,
+    npc_id: String,
+) {
+    panels.inventory_open = false;
+    panels.character_open = false;
+    panels.skills_open = false;
+    panels.spells_open = false;
+    panels.crafting_open = false;
+    panels.npc_open = true;
+    panels.selected_npc_id = Some(npc_id);
+    panels.npc_index = 0;
+    panels.npc_tab = 0;
+    normalize_npc_tab(game_state, panels);
 }
 
 fn npc_tabs(game_state: &NativeGameState, panels: &NativePanelState) -> Vec<NativeNpcTab> {
@@ -9022,7 +9220,196 @@ pub(crate) fn update_inventory_modal_ui(
     }
 }
 
-fn inventory_reference_ids(
+pub(crate) fn update_item_interaction_overlays(
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    asset_server: Res<AssetServer>,
+    game_state: Res<NativeGameState>,
+    panels: Res<NativePanelState>,
+    drag: Res<NativeDragDropState>,
+    inventory_buttons: Query<(&Interaction, &NativeInventoryButton), With<Button>>,
+    equipment_buttons: Query<(&Interaction, &NativeCharacterEquipmentSlot), With<Button>>,
+    mut tooltip: Query<(&mut Node, &mut Visibility), With<NativeItemTooltip>>,
+    mut tooltip_text: Query<(&mut Text, &mut TextColor), With<NativeItemTooltipText>>,
+    mut ghost: Query<
+        (
+            &mut NativeDragItemGhost,
+            &mut ImageNode,
+            &mut Node,
+            &mut Visibility,
+        ),
+        Without<NativeItemTooltip>,
+    >,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let cursor = window.cursor_position();
+
+    let hovered_item = inventory_buttons
+        .iter()
+        .find_map(|(interaction, button)| (*interaction == Interaction::Hovered).then_some(*button))
+        .and_then(|button| match button {
+            NativeInventoryButton::Slot(index) => inventory_reference_ids(&game_state, &panels)
+                .get(index)
+                .copied(),
+            NativeInventoryButton::Action(_) => None,
+        })
+        .or_else(|| {
+            equipment_buttons.iter().find_map(|(interaction, slot)| {
+                (*interaction == Interaction::Hovered)
+                    .then(|| character_equipment_item_id(&game_state, *slot))
+                    .flatten()
+            })
+        });
+
+    let drag_item = drag.dragged_item_id();
+    if drag_item.is_some() {
+        if let Ok((_, mut visibility)) = tooltip.single_mut() {
+            *visibility = Visibility::Hidden;
+        }
+    } else if let (Some(instance_id), Some(cursor)) = (hovered_item, cursor) {
+        if let Some(item) = game_state
+            .inventory
+            .iter()
+            .find(|item| item.instance_id == instance_id)
+        {
+            if let (Ok((mut node, mut visibility)), Ok((mut text, mut color))) =
+                (tooltip.single_mut(), tooltip_text.single_mut())
+            {
+                node.left = px((cursor.x + 18.0).min((window.width() - 275.0).max(8.0)));
+                node.top = px((cursor.y + 18.0).min((window.height() - 180.0).max(8.0)));
+                text.0 = item_tooltip_text(&game_state, item);
+                color.0 = game_state
+                    .item_definitions
+                    .get(&item.definition_id)
+                    .map(|definition| {
+                        if definition.attack.is_some() || definition.distance_weapon.is_some() {
+                            Color::srgb(1.0, 0.48, 0.32)
+                        } else if definition.defense.is_some() {
+                            Color::srgb(0.42, 0.76, 1.0)
+                        } else if definition
+                            .equipment_slot
+                            .as_deref()
+                            .is_some_and(|slot| slot.ends_with("_tool"))
+                        {
+                            Color::srgb(0.42, 0.92, 0.55)
+                        } else {
+                            TEXT
+                        }
+                    })
+                    .unwrap_or(TEXT);
+                *visibility = Visibility::Visible;
+            }
+        }
+    } else if let Ok((_, mut visibility)) = tooltip.single_mut() {
+        *visibility = Visibility::Hidden;
+    }
+
+    if let Ok((mut ghost_state, mut image, mut node, mut visibility)) = ghost.single_mut() {
+        let Some(instance_id) = drag_item else {
+            *visibility = Visibility::Hidden;
+            return;
+        };
+        let Some(cursor) = cursor else {
+            *visibility = Visibility::Hidden;
+            return;
+        };
+        let Some(item) = game_state
+            .inventory
+            .iter()
+            .find(|item| item.instance_id == instance_id)
+        else {
+            *visibility = Visibility::Hidden;
+            return;
+        };
+
+        if ghost_state.definition_id.as_deref() != Some(item.definition_id.as_str()) {
+            image.image = asset_server.load(format!("sprites/items/{}.png", item.definition_id));
+            ghost_state.definition_id = Some(item.definition_id.clone());
+        }
+        node.left = px(cursor.x + 14.0);
+        node.top = px(cursor.y + 14.0);
+        *visibility = Visibility::Visible;
+    }
+}
+
+fn item_tooltip_text(game_state: &NativeGameState, item: &game_types::ItemInstance) -> String {
+    let Some(definition) = game_state.item_definitions.get(&item.definition_id) else {
+        return item.definition_id.clone();
+    };
+
+    let mut lines = vec![definition.name.to_uppercase()];
+    lines.push(format!(
+        "Weight: {:.1}",
+        definition.weight * f32::from(item.quantity)
+    ));
+    if item.quantity > 1 {
+        lines.push(format!("Quantity: {}", item.quantity));
+    }
+    if let Some(attack) = definition.attack {
+        lines.push(format!("Attack damage: {attack}"));
+    }
+    if let Some(defense) = definition.defense {
+        lines.push(format!("Defense: {defense}"));
+    }
+    if let Some(effect) = &definition.combat_effect {
+        lines.push(format!(
+            "Damage: {}  Range: {}",
+            effect.damage, effect.range
+        ));
+        lines.push(format!("Cooldown: {} ms", effect.cooldown_ms));
+    }
+    if let Some(weapon) = &definition.distance_weapon {
+        lines.push(format!(
+            "Ranged damage: {}  Range: {}",
+            weapon.damage, weapon.range
+        ));
+        lines.push(format!("Cooldown: {} ms", weapon.cooldown_ms));
+        lines.push(format!("Ammo: {}", weapon.ammunition_id.replace('_', " ")));
+    }
+    if let Some(charges) = item.charges {
+        lines.push(format!("Charges: {charges}"));
+    }
+    if let Some(slots) = definition.container_slots {
+        lines.push(format!("Container: {slots} slots"));
+    }
+    if let Some(slot) = definition.equipment_slot.as_deref() {
+        lines.push(format!("Equip: {}", slot.replace('_', " ")));
+        lines.push("Double-click to equip".into());
+    }
+    lines.join("\n")
+}
+
+fn character_equipment_item_id(
+    game_state: &NativeGameState,
+    slot: NativeCharacterEquipmentSlot,
+) -> Option<game_types::EntityId> {
+    let aliases: &[&str] = match slot {
+        NativeCharacterEquipmentSlot::Helmet => &["helmet", "head"],
+        NativeCharacterEquipmentSlot::Amulet => &["amulet", "neck"],
+        NativeCharacterEquipmentSlot::Chest => &["chest", "armor", "body"],
+        NativeCharacterEquipmentSlot::Back => &["back", "cape"],
+        NativeCharacterEquipmentSlot::LeftHand => &["left_hand", "lefthand", "off_hand", "offhand"],
+        NativeCharacterEquipmentSlot::RightHand => {
+            &["right_hand", "righthand", "main_hand", "mainhand", "weapon"]
+        }
+        NativeCharacterEquipmentSlot::Backpack => &["backpack", "bag"],
+        NativeCharacterEquipmentSlot::Ring => &["ring"],
+        NativeCharacterEquipmentSlot::Feet => &["feet", "boots", "shoes"],
+        NativeCharacterEquipmentSlot::Legs => &["legs", "pants"],
+    };
+
+    game_state.inventory.iter().find_map(|item| {
+        item.equipped_slot.as_deref().and_then(|equipped| {
+            aliases
+                .iter()
+                .any(|alias| equipped.eq_ignore_ascii_case(alias))
+                .then_some(item.instance_id)
+        })
+    })
+}
+
+pub(crate) fn inventory_reference_ids(
     game_state: &NativeGameState,
     panels: &NativePanelState,
 ) -> Vec<game_types::EntityId> {
@@ -9033,8 +9420,7 @@ fn inventory_reference_ids(
 }
 
 fn inventory_reference_capacity(game_state: &NativeGameState, panels: &NativePanelState) -> usize {
-    panels
-        .inventory_container_id
+    active_inventory_container_id(game_state, panels)
         .and_then(|container_id| {
             game_state
                 .inventory
@@ -9049,8 +9435,7 @@ fn inventory_reference_capacity(game_state: &NativeGameState, panels: &NativePan
 }
 
 fn inventory_reference_location(game_state: &NativeGameState, panels: &NativePanelState) -> String {
-    panels
-        .inventory_container_id
+    active_inventory_container_id(game_state, panels)
         .and_then(|container_id| {
             game_state
                 .inventory
@@ -9296,7 +9681,36 @@ pub(crate) fn handle_character_modal_buttons(
     }
 }
 
+pub(crate) fn handle_character_outfit_buttons(
+    network: Res<NativeNetwork>,
+    panels: Res<NativePanelState>,
+    mut game_state: ResMut<NativeGameState>,
+    buttons: Query<
+        (&Interaction, &NativeCharacterOutfitButton),
+        (Changed<Interaction>, With<Button>),
+    >,
+) {
+    if !panels.character_open {
+        return;
+    }
+    for (interaction, outfit) in &buttons {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        if network
+            .outbound
+            .send(ClientMessage::SetOutfit {
+                outfit: outfit.0.into(),
+            })
+            .is_err()
+        {
+            game_state.push_system_message("The game connection is offline.");
+        }
+    }
+}
+
 pub(crate) fn update_character_modal_ui(
+    asset_server: Res<AssetServer>,
     game_state: Res<NativeGameState>,
     panels: Res<NativePanelState>,
     mut text_queries: ParamSet<(
@@ -9304,8 +9718,33 @@ pub(crate) fn update_character_modal_ui(
         Query<(&NativeCharacterEquipmentSlot, &mut Text, &mut TextColor)>,
         Query<(&NativeCharacterProfessionSlot, &mut Text, &mut TextColor)>,
     )>,
+    mut images: Query<(
+        &mut NativeCharacterEquipmentImage,
+        &mut ImageNode,
+        &mut Visibility,
+    )>,
+    mut outfit_buttons: Query<(
+        &NativeCharacterOutfitButton,
+        &Interaction,
+        &mut BackgroundColor,
+        &mut BorderColor,
+    )>,
+    mut profession_images: Query<
+        (
+            &mut NativeCharacterProfessionEquipmentImage,
+            &mut ImageNode,
+            &mut Visibility,
+        ),
+        Without<NativeCharacterEquipmentImage>,
+    >,
 ) {
     if !panels.character_open {
+        for (_, _, mut visibility) in &mut images {
+            *visibility = Visibility::Hidden;
+        }
+        for (_, _, mut visibility) in &mut profession_images {
+            *visibility = Visibility::Hidden;
+        }
         return;
     }
 
@@ -9327,6 +9766,22 @@ pub(crate) fn update_character_modal_ui(
 
         return;
     };
+
+    for (outfit, interaction, mut background, mut border) in &mut outfit_buttons {
+        let selected = player.outfit.eq_ignore_ascii_case(outfit.0);
+        background.0 = if selected {
+            Color::srgba(0.28, 0.19, 0.06, 0.92)
+        } else if *interaction == Interaction::Hovered {
+            theme::BUTTON_HOVER
+        } else {
+            theme::BUTTON_BG
+        };
+        *border = BorderColor::all(if selected {
+            theme::GOLD_BRIGHT
+        } else {
+            theme::BUTTON_BORDER
+        });
+    }
 
     for (kind, mut text, mut color) in &mut text_queries.p0() {
         match kind {
@@ -9423,6 +9878,44 @@ pub(crate) fn update_character_modal_ui(
         }
     }
 
+    for (mut image_slot, mut image, mut visibility) in &mut images {
+        let item = character_equipment_item(&game_state, image_slot.slot);
+        let Some(item) = item else {
+            image_slot.definition_id = None;
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        if image_slot.definition_id.as_deref() != Some(item.definition_id.as_str()) {
+            image.image = asset_server.load(format!("sprites/items/{}.png", item.definition_id));
+            image_slot.definition_id = Some(item.definition_id.clone());
+        }
+        *visibility = Visibility::Visible;
+    }
+
+    for (mut slot, mut image, mut visibility) in &mut profession_images {
+        let equipped_slot = match slot.index {
+            0 => "mining_tool",
+            1 => "alchemy_tool",
+            2 => "cooking_tool",
+            3 => "woodcutting_tool",
+            _ => "",
+        };
+        let item = game_state
+            .inventory
+            .iter()
+            .find(|item| item.equipped_slot.as_deref() == Some(equipped_slot));
+        let Some(item) = item else {
+            slot.definition_id = None;
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        if slot.definition_id.as_deref() != Some(item.definition_id.as_str()) {
+            image.image = asset_server.load(format!("sprites/items/{}.png", item.definition_id));
+            slot.definition_id = Some(item.definition_id.clone());
+        }
+        *visibility = Visibility::Visible;
+    }
+
     for (slot, mut text, mut color) in &mut text_queries.p2() {
         if let Some(skill_id) = player.secondary_skills.get(slot.0) {
             let level = game_state
@@ -9478,6 +9971,37 @@ fn character_equipment_slot_name(
                 .map(|definition| definition.name.clone())
                 .unwrap_or_else(|| item.definition_id.clone())
         })
+}
+
+fn character_equipment_item(
+    game_state: &NativeGameState,
+    slot: NativeCharacterEquipmentSlot,
+) -> Option<&game_types::ItemInstance> {
+    let aliases = character_equipment_slot_aliases(slot);
+    game_state.inventory.iter().find(|item| {
+        item.equipped_slot.as_deref().is_some_and(|equipped| {
+            aliases
+                .iter()
+                .any(|alias| equipped.eq_ignore_ascii_case(alias))
+        })
+    })
+}
+
+fn character_equipment_slot_aliases(slot: NativeCharacterEquipmentSlot) -> &'static [&'static str] {
+    match slot {
+        NativeCharacterEquipmentSlot::Helmet => &["helmet", "head"],
+        NativeCharacterEquipmentSlot::Amulet => &["amulet", "neck"],
+        NativeCharacterEquipmentSlot::Chest => &["chest", "armor", "body"],
+        NativeCharacterEquipmentSlot::Back => &["back", "cape"],
+        NativeCharacterEquipmentSlot::LeftHand => &["left_hand", "lefthand", "off_hand", "offhand"],
+        NativeCharacterEquipmentSlot::RightHand => {
+            &["right_hand", "righthand", "main_hand", "mainhand", "weapon"]
+        }
+        NativeCharacterEquipmentSlot::Backpack => &["backpack", "bag"],
+        NativeCharacterEquipmentSlot::Ring => &["ring"],
+        NativeCharacterEquipmentSlot::Feet => &["feet", "boots", "shoes"],
+        NativeCharacterEquipmentSlot::Legs => &["legs", "pants"],
+    }
 }
 
 #[allow(dead_code)]
@@ -9878,8 +10402,28 @@ pub fn update_nearby_loot_ui(
     >,
     mut slot_texts: Query<(&NativeLootSlotText, &mut Text), Without<NativeLootAllText>>,
     mut all_text: Query<&mut Text, (With<NativeLootAllText>, Without<NativeLootSlotText>)>,
+    mut indicator: Query<
+        &mut Visibility,
+        (
+            With<NativeGroundLootIndicator>,
+            Without<NativeNearbyLootPanel>,
+        ),
+    >,
 ) {
     let loot = nearby_loot_items(&game_state);
+    let floor_loot = game_state.local_player().is_some_and(|player| {
+        game_state
+            .ground_items
+            .iter()
+            .any(|ground| ground.position.z == player.position.z)
+    });
+    if let Ok(mut visibility) = indicator.single_mut() {
+        *visibility = if floor_loot {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
 
     if let Ok(mut visibility) = panel.single_mut() {
         *visibility = if loot.is_empty() {

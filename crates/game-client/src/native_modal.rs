@@ -1,6 +1,7 @@
 // TIBIAGAME_V36_46_0_NATIVE_MODAL_FRAMEWORK
 use bevy::prelude::*;
 
+use crate::native_settings::NativeSettingsState;
 use crate::native_ui_theme as theme;
 
 #[derive(Component)]
@@ -38,6 +39,7 @@ pub(crate) fn handle_window_drag(
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     handles: Query<(&Interaction, &NativeDragHandle)>,
     mut surfaces: Query<(&NativeDraggableSurface, &mut UiTransform)>,
+    mut settings: ResMut<NativeSettingsState>,
     mut drag: Local<NativeDragState>,
 ) {
     let Ok(window) = windows.single() else {
@@ -45,9 +47,30 @@ pub(crate) fn handle_window_drag(
     };
 
     if mouse.just_released(MouseButton::Left) {
+        if let Some(active) = drag.active
+            && let Some(offset) = drag.offsets.get(&active)
+        {
+            settings
+                .settings
+                .window_positions
+                .insert(modal_window_key(active).into(), [offset.x, offset.y]);
+            settings.settings.save();
+        }
         drag.active = None;
         drag.last_cursor = None;
         return;
+    }
+
+    for (surface, mut transform) in &mut surfaces {
+        let offset = drag.offsets.entry(surface.0).or_insert_with(|| {
+            settings
+                .settings
+                .window_positions
+                .get(modal_window_key(surface.0))
+                .map(|value| Vec2::new(value[0], value[1]))
+                .unwrap_or(Vec2::ZERO)
+        });
+        transform.translation = bevy::ui::Val2::px(offset.x, offset.y);
     }
 
     let cursor = window.cursor_position();
@@ -109,6 +132,18 @@ pub(crate) fn handle_window_drag(
     }
 
     drag.last_cursor = Some(cursor);
+}
+
+fn modal_window_key(window: NativeModalWindow) -> &'static str {
+    match window {
+        NativeModalWindow::Character => "character",
+        NativeModalWindow::Inventory => "inventory",
+        NativeModalWindow::Skills => "skills",
+        NativeModalWindow::Spells => "spells",
+        NativeModalWindow::Crafting => "crafting",
+        NativeModalWindow::WorldMap => "world_map",
+        NativeModalWindow::Npc => "npc",
+    }
 }
 
 pub(crate) fn root_node() -> Node {

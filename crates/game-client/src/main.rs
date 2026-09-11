@@ -63,6 +63,9 @@ struct LocalPlayer;
 struct PlayerModelRoot;
 
 #[derive(Component)]
+pub(crate) struct NpcModelRoot;
+
+#[derive(Component)]
 struct AnimationTemplateRig;
 
 #[derive(Resource)]
@@ -89,6 +92,9 @@ struct MainCamera;
 
 #[derive(Component)]
 struct NativeHud;
+
+#[derive(Component)]
+struct SunLight;
 
 #[derive(Component)]
 struct WorldStatic;
@@ -220,6 +226,7 @@ impl Plugin for SingleWindowGameplayPlugin {
             .init_resource::<native_ui::NativeChatState>()
             .init_resource::<native_ui::NativePanelState>()
             .init_resource::<native_drag::NativeActionBarState>()
+            .init_resource::<native_drag::NativeDragDropState>()
             .init_resource::<native_map_ui::NativeMapUiState>()
             .init_resource::<native_trade_ui::NativeTradeUiState>()
             .init_resource::<native_settings::NativeSettingsState>()
@@ -385,6 +392,8 @@ impl Plugin for SingleWindowGameplayPlugin {
                         .run_if(native_loading::gameplay_ready)
                         .run_if(native_game_menu::menu_closed)
                         .after(native_modal::handle_window_drag),
+                    native_ui::update_item_interaction_overlays
+                        .after(native_drag::handle_drag_drop),
                     native_ui::handle_inventory_modal_buttons
                         .run_if(native_game_menu::menu_closed)
                         .after(native_ui::handle_panel_close_buttons),
@@ -400,6 +409,8 @@ impl Plugin for SingleWindowGameplayPlugin {
                     native_ui::handle_character_modal_buttons
                         .run_if(native_game_menu::menu_closed)
                         .after(native_ui::handle_panel_close_buttons),
+                    native_ui::handle_character_outfit_buttons
+                        .after(native_ui::handle_character_modal_buttons),
                     native_ui::update_inventory_modal_ui.after(native_ui::update_ui),
                     native_ui::update_skills_modal_ui.after(native_ui::update_ui),
                     native_ui::update_crafting_modal_ui.after(native_ui::update_ui),
@@ -408,6 +419,22 @@ impl Plugin for SingleWindowGameplayPlugin {
                     native_ui::update_character_modal_ui.after(native_ui::update_ui),
                 )
                     .distributive_run_if(single_window_game_active),
+            )
+            .add_systems(
+                Update,
+                face_nearby_npcs
+                    .after(interpolate_player)
+                    .run_if(single_window_game_active),
+            )
+            .add_systems(
+                Update,
+                sync_local_player_outfit
+                    .after(pump_network)
+                    .run_if(single_window_game_active),
+            )
+            .add_systems(
+                Update,
+                update_day_night_cycle.run_if(single_window_game_active),
             );
     }
 }
@@ -512,6 +539,7 @@ fn run_game(session: network::NativeSession) -> Result<()> {
         .init_resource::<native_ui::NativeChatState>()
         .init_resource::<native_ui::NativePanelState>()
         .init_resource::<native_drag::NativeActionBarState>()
+        .init_resource::<native_drag::NativeDragDropState>()
         .init_resource::<native_map_ui::NativeMapUiState>()
         .init_resource::<native_trade_ui::NativeTradeUiState>()
         .init_resource::<native_settings::NativeSettingsState>()
@@ -648,6 +676,9 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                 .after(native_map_ui::handle_input)
                 .before(native_map_ui::update_ui),
         )
+        .add_systems(Update, face_nearby_npcs.after(interpolate_player))
+        .add_systems(Update, sync_local_player_outfit.after(pump_network))
+        .add_systems(Update, update_day_night_cycle)
         // TIBIAGAME_V36_58_1_SPLIT_DIRECT_DRAG_SCHEDULE
         // Keep this separate from the already-full UI tuple. Bevy's tuple
         // schedule configuration has a finite arity; V36.58.0 exceeded it by
@@ -657,6 +688,15 @@ fn run_game(session: network::NativeSession) -> Result<()> {
             native_drag::handle_drag_drop
                 .run_if(native_loading::gameplay_ready)
                 .after(native_ui::handle_action_slot_buttons),
+        )
+        .add_systems(
+            Update,
+            native_ui::handle_character_outfit_buttons
+                .after(native_ui::handle_character_modal_buttons),
+        )
+        .add_systems(
+            Update,
+            native_ui::update_item_interaction_overlays.after(native_drag::handle_drag_drop),
         )
         .run();
 
@@ -879,6 +919,7 @@ fn setup(
 
     commands.spawn((
         Name::new("Sun"),
+        SunLight,
         DirectionalLight {
             illuminance: 7_000.0,
             shadow_maps_enabled: false,
@@ -947,7 +988,6 @@ fn spawn_live_world(
     let floor = welcome.player.position.z;
 
     let tile_mesh = meshes.add(Cuboid::new(0.98, 0.045, 0.98));
-    let actor_mesh = meshes.add(Cuboid::new(0.62, 0.95, 0.62));
 
     let world_materials = world_visuals::create_materials(asset_server, materials);
     world_visuals::describe();
@@ -959,11 +999,6 @@ fn spawn_live_world(
     let house_wall_material = world_materials.house_wall.clone();
     let castle_wall_material = world_materials.castle_wall.clone();
 
-    let npc_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.75, 0.58, 0.16),
-        perceptual_roughness: 0.7,
-        ..default()
-    });
     for center in
         world_architecture::ground_chunk_centers(welcome.region_center, welcome.region_radius)
     {
@@ -1157,13 +1192,23 @@ fn spawn_live_world(
     }
 
     for npc in welcome.npcs.iter().filter(|npc| npc.position.z == floor) {
-        commands.spawn((
-            Name::new(format!("NPC · {}", npc.name)),
-            NpcActor(npc.id.clone()),
-            Mesh3d(actor_mesh.clone()),
-            MeshMaterial3d(npc_material.clone()),
-            Transform::from_translation(position_to_world(npc.position)),
-        ));
+        commands
+            .spawn((
+                Name::new(format!("NPC · {}", npc.name)),
+                NpcActor(npc.id.clone()),
+                Visibility::default(),
+                Transform::from_translation(position_to_world(npc.position)),
+            ))
+            .with_child((
+                WorldAssetRoot(
+                    asset_server.load(
+                        GltfAssetLabel::Scene(0).from_asset(player_model_path(npc_outfit(npc))),
+                    ),
+                ),
+                Transform::from_translation(Vec3::new(0.0, -0.575, 0.0))
+                    .with_scale(Vec3::splat(player_model_scale(npc_outfit(npc))))
+                    .with_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
+            ));
     }
 
     for resource in welcome
@@ -1607,6 +1652,18 @@ fn update_player_facing(
     }
 }
 
+fn face_nearby_npcs(movement: Res<MovementState>, mut npcs: Query<&mut Transform, With<NpcActor>>) {
+    for mut transform in &mut npcs {
+        let delta = movement.visual - transform.translation;
+        let horizontal = Vec2::new(delta.x, delta.z);
+        // NPCs idle in place, but acknowledge players who approach them.
+        if horizontal.length_squared() > 5.5 * 5.5 || horizontal.length_squared() < 0.001 {
+            continue;
+        }
+        transform.rotation = Quat::from_rotation_y(delta.x.atan2(delta.z));
+    }
+}
+
 fn interpolate_player(
     time: Res<Time>,
     mut movement: ResMut<MovementState>,
@@ -1637,7 +1694,13 @@ fn setup_player_animation(
     children: Query<&Children>,
     names: Query<&Name>,
     animation_targets: Query<&AnimationTargetId>,
-    model_roots: Query<Entity, (With<PlayerModelRoot>, Without<PlayerAnimationController>)>,
+    model_roots: Query<
+        Entity,
+        (
+            Or<(With<PlayerModelRoot>, With<NpcModelRoot>)>,
+            Without<PlayerAnimationController>,
+        ),
+    >,
     template_roots: Query<Entity, With<AnimationTemplateRig>>,
 ) {
     let Some(general) = gltfs.get(&sources.general) else {
@@ -1725,11 +1788,14 @@ fn setup_player_animation(
 fn update_player_animation(
     time: Res<Time>,
     movement: Res<MovementState>,
-    mut animations: Query<(
-        &mut AnimationPlayer,
-        &mut AnimationTransitions,
-        &mut PlayerAnimationController,
-    )>,
+    mut animations: Query<
+        (
+            &mut AnimationPlayer,
+            &mut AnimationTransitions,
+            &mut PlayerAnimationController,
+        ),
+        Without<NpcModelRoot>,
+    >,
 ) {
     let moving = movement.from != movement.to
         && time.elapsed_secs_f64() < movement.started_at + movement.duration + 0.045;
@@ -1876,6 +1942,19 @@ fn follow_camera(
     *transform = Transform::from_translation(target + CAMERA_OFFSET).looking_at(target, Vec3::Y);
 }
 
+fn update_day_night_cycle(time: Res<Time>, mut suns: Query<&mut DirectionalLight, With<SunLight>>) {
+    let phase = (time.elapsed_secs() / 240.0) * std::f32::consts::TAU;
+    let daylight = (phase.cos() * 0.5 + 0.5).powf(0.7);
+    for mut sun in &mut suns {
+        sun.illuminance = 450.0 + daylight * 6_550.0;
+        sun.color = Color::srgb(
+            0.34 + daylight * 0.66,
+            0.42 + daylight * 0.50,
+            0.64 + daylight * 0.30,
+        );
+    }
+}
+
 fn toggle_present_mode(keys: Res<ButtonInput<KeyCode>>, mut window: Single<&mut Window>) {
     if !keys.just_pressed(KeyCode::KeyV) {
         return;
@@ -1980,6 +2059,46 @@ fn player_model_path(outfit: &str) -> &'static str {
         "ranger" => "models/kaykit-adventurers/Ranger.glb",
         "rogue" => "models/kaykit-adventurers/Rogue_Hooded.glb",
         _ => "models/kaykit-adventurers/Knight.glb",
+    }
+}
+
+fn sync_local_player_outfit(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    game_state: Res<state::NativeGameState>,
+    mut identity: ResMut<LocalIdentity>,
+    mut model: Query<(Entity, &mut WorldAssetRoot, &mut Transform), With<PlayerModelRoot>>,
+) {
+    let Some(player) = game_state.local_player() else {
+        return;
+    };
+    if player.outfit == identity.outfit {
+        return;
+    }
+    identity.outfit = player.outfit.clone();
+    for (entity, mut root, mut transform) in &mut model {
+        root.0 = asset_server
+            .load(GltfAssetLabel::Scene(0).from_asset(player_model_path(&identity.outfit)));
+        transform.scale = Vec3::splat(player_model_scale(&identity.outfit));
+        commands.entity(entity).remove::<(
+            AnimationPlayer,
+            AnimationGraphHandle,
+            AnimationTransitions,
+            PlayerAnimationController,
+        )>();
+    }
+}
+
+fn npc_outfit(npc: &game_types::NpcView) -> &'static str {
+    let role = format!("{} {} {}", npc.id, npc.title, npc.service).to_ascii_lowercase();
+    if role.contains("mage") || role.contains("wizard") || role.contains("healer") {
+        "mage"
+    } else if role.contains("ranger") || role.contains("hunter") || role.contains("archer") {
+        "ranger"
+    } else if role.contains("rogue") || role.contains("thief") || role.contains("merchant") {
+        "rogue"
+    } else {
+        "knight"
     }
 }
 

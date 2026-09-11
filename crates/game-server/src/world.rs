@@ -3754,7 +3754,21 @@ impl World {
             });
         }
         let (container_id, equipped_slot) = match &destination {
-            ItemDestination::Root => (None, None),
+            ItemDestination::Root => {
+                // Once a backpack is equipped, "root" is represented by its
+                // contents. This also makes unequipped gear return to the
+                // visible inventory instead of an inaccessible hidden root.
+                let backpack_id = player
+                    .inventory
+                    .iter()
+                    .find(|item| item.equipped_slot.as_deref() == Some("backpack"))
+                    .map(|item| item.instance_id);
+                if backpack_id.is_some_and(|backpack_id| backpack_id != instance_id) {
+                    (backpack_id, None)
+                } else {
+                    (None, None)
+                }
+            }
             ItemDestination::Container { container_id } => {
                 if *container_id == instance_id {
                     return Err("container_cycle");
@@ -3871,6 +3885,21 @@ impl World {
                 .expect("checked above");
             item.container_id = container_id;
             item.equipped_slot = equipped_slot;
+
+            // The equipped backpack is the player's actual inventory. When
+            // equipping one, move existing root items into it so they do not
+            // become inaccessible behind the backpack-only UI.
+            if item.equipped_slot.as_deref() == Some("backpack") {
+                for stored in player.inventory.iter_mut() {
+                    if stored.instance_id != instance_id
+                        && stored.container_id.is_none()
+                        && stored.equipped_slot.is_none()
+                        && stored.definition_id != "gold_coin"
+                    {
+                        stored.container_id = Some(instance_id);
+                    }
+                }
+            }
         }
         Ok(())
     }

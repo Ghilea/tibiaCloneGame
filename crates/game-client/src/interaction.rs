@@ -6,6 +6,7 @@ use game_types::{EntityId, Position};
 
 use crate::{
     CreatureActor, MainCamera, MovementState, NativeNetwork, NpcActor,
+    native_ui::NativePanelState,
     state::{NativeGameState, NativeMessageKind},
     world_details::{WorldDoor, WorldObjectActor, WorldResource},
 };
@@ -109,6 +110,7 @@ pub fn handle_pointer_interactions(
     movement: Res<MovementState>,
     network: Res<NativeNetwork>,
     mut game_state: ResMut<NativeGameState>,
+    mut panels: ResMut<NativePanelState>,
 ) {
     let left_click = buttons.just_pressed(MouseButton::Left);
     let right_click = buttons.just_pressed(MouseButton::Right);
@@ -203,7 +205,7 @@ pub fn handle_pointer_interactions(
             .filter(|(_, _, visibility)| **visibility != Visibility::Hidden)
             .map(|(npc, transform, _)| (npc.0.clone(), transform.translation(), 0.44)),
     ) {
-        interact_npc(&movement, &mut game_state, &npc_id);
+        interact_npc(&movement, &mut game_state, &mut panels, &npc_id);
         return;
     }
 
@@ -385,7 +387,12 @@ fn interact_door(
     );
 }
 
-fn interact_npc(movement: &MovementState, game_state: &mut NativeGameState, npc_id: &str) {
+fn interact_npc(
+    movement: &MovementState,
+    game_state: &mut NativeGameState,
+    panels: &mut NativePanelState,
+    npc_id: &str,
+) {
     let Some(npc) = game_state.npcs.get(npc_id).cloned() else {
         game_state.push_system_message("That NPC is no longer here.");
         return;
@@ -398,6 +405,7 @@ fn interact_npc(movement: &MovementState, game_state: &mut NativeGameState, npc_
 
     game_state.set_attack_target(None);
     game_state.focus_npc(Some(npc.id.clone()));
+    crate::native_ui::open_npc_panel(game_state, panels, npc.id.clone());
     game_state.push_system_message(format!("{} — {}: {}", npc.name, npc.title, npc.dialogue,));
 }
 

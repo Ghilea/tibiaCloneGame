@@ -6,6 +6,7 @@ use bevy::{
     prelude::*,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use crate::{
     native_map_ui::NativeMapUiState, native_modal, native_ui::NativePanelState,
@@ -30,6 +31,7 @@ pub(crate) struct NativeSettings {
     pub(crate) muted: bool,
     pub(crate) reduced_motion: bool,
     pub(crate) show_performance: bool,
+    pub(crate) window_positions: HashMap<String, [f32; 2]>,
 }
 
 impl Default for NativeSettings {
@@ -41,6 +43,7 @@ impl Default for NativeSettings {
             muted: false,
             reduced_motion: false,
             show_performance: false,
+            window_positions: HashMap::new(),
         }
     }
 }
@@ -65,7 +68,7 @@ impl NativeSettings {
         self.effects_volume = self.effects_volume.min(100);
     }
 
-    fn save(&self) {
+    pub(crate) fn save(&self) {
         let path = settings_path();
         if let Some(parent) = path.parent() {
             if let Err(error) = fs::create_dir_all(parent) {

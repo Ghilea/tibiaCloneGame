@@ -101,26 +101,38 @@ enum NativeDragPayload {
     Item(EntityId),
 }
 
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub(crate) struct NativeDragDropState {
     payload: Option<NativeDragPayload>,
     start_cursor: Option<Vec2>,
     moved: bool,
+    last_item_click: Option<(EntityId, f64)>,
+}
+
+impl NativeDragDropState {
+    pub(crate) fn dragged_item_id(&self) -> Option<EntityId> {
+        self.moved.then_some(())?;
+        match self.payload.as_ref()? {
+            NativeDragPayload::Item(instance_id) => Some(*instance_id),
+            _ => None,
+        }
+    }
 }
 
 pub(crate) fn handle_drag_drop(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     chat: Res<crate::native_ui::NativeChatState>,
-    panels: Res<NativePanelState>,
+    mut panels: ResMut<NativePanelState>,
     network: Res<NativeNetwork>,
+    time: Res<Time>,
     mut game_state: ResMut<NativeGameState>,
     mut action_bar: ResMut<NativeActionBarState>,
     action_slots: Query<(&Interaction, &NativeActionSlot), With<Button>>,
     inventory_buttons: Query<(&Interaction, &NativeInventoryButton), With<Button>>,
     spellbook_buttons: Query<(&Interaction, &NativeSpellbookButton), With<Button>>,
     equipment_buttons: Query<(&Interaction, &NativeCharacterEquipmentSlot), With<Button>>,
-    mut drag: Local<NativeDragDropState>,
+    mut drag: ResMut<NativeDragDropState>,
 ) {
     let Ok(window) = windows.single() else {
         return;
@@ -204,7 +216,18 @@ pub(crate) fn handle_drag_drop(
                     &action_bar,
                 );
             }
-            NativeDragPayload::SpellbookSpell(_) | NativeDragPayload::Item(_) => {}
+            NativeDragPayload::SpellbookSpell(_) => {}
+            NativeDragPayload::Item(instance_id) => {
+                let now = time.elapsed_secs_f64();
+                let is_double_click = drag.last_item_click.is_some_and(|(last_id, last_at)| {
+                    last_id == instance_id && now - last_at <= 0.35
+                });
+                drag.last_item_click = Some((instance_id, now));
+                if is_double_click {
+                    equip_item_automatically(&network, &mut game_state, instance_id);
+                    drag.last_item_click = None;
+                }
+            }
         }
         return;
     }
@@ -242,13 +265,52 @@ pub(crate) fn handle_drag_drop(
                 move_item_to_inventory(
                     &network,
                     &mut game_state,
-                    &panels,
+                    &mut panels,
                     instance_id,
                     target_index,
                 );
+            } else if network
+                .outbound
+                .send(ClientMessage::DropItem { instance_id })
+                .is_err()
+            {
+                game_state.push_system_message("The game connection is offline.");
+            } else {
+                game_state.push_system_message("Drop item on the ground.");
             }
         }
     }
+}
+
+fn equip_item_automatically(
+    network: &NativeNetwork,
+    game_state: &mut NativeGameState,
+    instance_id: EntityId,
+) {
+    let Some(item) = game_state
+        .inventory
+        .iter()
+        .find(|item| item.instance_id == instance_id)
+    else {
+        return;
+    };
+
+    let Some(definition) = game_state.item_definitions.get(&item.definition_id) else {
+        game_state.push_system_message("Unknown item definition.");
+        return;
+    };
+
+    let Some(slot) = definition.equipment_slot.clone() else {
+        game_state.push_system_message(format!("{} cannot be equipped.", definition.name));
+        return;
+    };
+
+    send_move_item(
+        network,
+        game_state,
+        instance_id,
+        ItemDestination::Equipment { slot },
+    );
 }
 
 fn hovered_action_slot(
@@ -347,94 +409,28 @@ fn learned_spells_sorted(game_state: &NativeGameState) -> Vec<(String, String)> 
 }
 
 fn visible_inventory_ids(game_state: &NativeGameState, panels: &NativePanelState) -> Vec<EntityId> {
-    let query = panels.inventory_search.trim().to_ascii_lowercase();
-
-    let mut items: Vec<_> = game_state
-        .inventory
-        .iter()
-        .filter(|item| item.definition_id != "gold_coin")
-        .filter(|item| {
-            if let Some(container_id) = panels.inventory_container_id {
-                item.container_id == Some(container_id)
-            } else {
-                item.container_id.is_none()
-            }
-        })
-        .filter(|item| {
-            if query.is_empty() {
-                return true;
-            }
-
-            let name = game_state
-                .item_definitions
-                .get(&item.definition_id)
-                .map(|definition| definition.name.as_str())
-                .unwrap_or(item.definition_id.as_str());
-
-            name.to_ascii_lowercase().contains(&query)
-                || item.definition_id.to_ascii_lowercase().contains(&query)
-        })
-        .collect();
-
-    items.sort_by(|left, right| {
-        let left_name = game_state
-            .item_definitions
-            .get(&left.definition_id)
-            .map(|definition| definition.name.as_str())
-            .unwrap_or(left.definition_id.as_str());
-        let right_name = game_state
-            .item_definitions
-            .get(&right.definition_id)
-            .map(|definition| definition.name.as_str())
-            .unwrap_or(right.definition_id.as_str());
-
-        left.equipped_slot
-            .is_none()
-            .cmp(&right.equipped_slot.is_none())
-            .then_with(|| left_name.cmp(right_name))
-    });
-
-    items
-        .into_iter()
-        .take(12)
-        .map(|item| item.instance_id)
-        .collect()
+    crate::native_ui::inventory_reference_ids(game_state, panels)
 }
 
 fn move_item_to_inventory(
     network: &NativeNetwork,
     game_state: &mut NativeGameState,
-    panels: &NativePanelState,
+    panels: &mut NativePanelState,
     instance_id: EntityId,
     target_index: usize,
 ) {
     let visible = visible_inventory_ids(game_state, panels);
+    crate::native_ui::reorder_inventory_item(game_state, panels, instance_id, target_index);
 
-    let destination = visible
-        .get(target_index)
-        .copied()
-        .filter(|target_id| *target_id != instance_id)
-        .and_then(|target_id| {
-            let target = game_state
-                .inventory
-                .iter()
-                .find(|item| item.instance_id == target_id)?;
-            let is_container = game_state
-                .item_definitions
-                .get(&target.definition_id)
-                .and_then(|definition| definition.container_slots)
-                .is_some();
-            is_container.then_some(ItemDestination::Container {
-                container_id: target_id,
-            })
-        })
-        .or_else(|| {
-            panels
-                .inventory_container_id
-                .filter(|container_id| *container_id != instance_id)
-                .map(|container_id| ItemDestination::Container { container_id })
-        })
-        .unwrap_or(ItemDestination::Root);
+    // Slots are a visual arrangement, not item containers. Dropping on any
+    // slot keeps an item in the currently open backpack/container.
+    let destination = crate::native_ui::active_inventory_container_id(game_state, panels)
+        .filter(|container_id| *container_id != instance_id)
+        .map(|container_id| ItemDestination::Container { container_id })
+        .unwrap_or_else(|| {
+            let _ = visible.get(target_index);
+            ItemDestination::Root
+        });
 
     send_move_item(network, game_state, instance_id, destination);
 }

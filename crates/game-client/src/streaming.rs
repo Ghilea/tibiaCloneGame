@@ -7,8 +7,8 @@ use game_protocol::MapView;
 use game_types::{CreatureView, NpcView, Position, ResourceNodeView};
 
 use crate::{
-    NpcActor, ResourceActor, WorldStatic, creature_sprites, world_architecture, world_details,
-    world_visuals,
+    NpcActor, NpcModelRoot, ResourceActor, WorldStatic, creature_sprites, world_architecture,
+    world_details, world_visuals,
 };
 
 const SPAWN_BUDGET_PER_FRAME: usize = 520;
@@ -79,7 +79,10 @@ struct StreamAssets {
     wood_planks: Handle<StandardMaterial>,
     marsh_grass: Handle<StandardMaterial>,
     ash_soil: Handle<StandardMaterial>,
-    npc: Handle<StandardMaterial>,
+    npc_knight: Handle<WorldAsset>,
+    npc_mage: Handle<WorldAsset>,
+    npc_ranger: Handle<WorldAsset>,
+    npc_rogue: Handle<WorldAsset>,
 }
 
 enum SpawnSpec {
@@ -647,11 +650,38 @@ fn create_assets(
         wood_planks: world.wood_planks,
         marsh_grass: world.marsh_grass,
         ash_soil: world.ash_soil,
-        npc: materials.add(StandardMaterial {
-            base_color: Color::srgb(0.75, 0.58, 0.16),
-            perceptual_roughness: 0.7,
-            ..default()
-        }),
+        npc_knight: asset_server
+            .load(GltfAssetLabel::Scene(0).from_asset("models/kaykit-adventurers/Knight.glb")),
+        npc_mage: asset_server
+            .load(GltfAssetLabel::Scene(0).from_asset("models/kaykit-adventurers/Mage.glb")),
+        npc_ranger: asset_server
+            .load(GltfAssetLabel::Scene(0).from_asset("models/kaykit-adventurers/Ranger.glb")),
+        npc_rogue: asset_server.load(
+            GltfAssetLabel::Scene(0).from_asset("models/kaykit-adventurers/Rogue_Hooded.glb"),
+        ),
+    }
+}
+
+fn npc_model(assets: &StreamAssets, npc: &NpcView) -> (Handle<WorldAsset>, f32) {
+    let role = format!("{} {} {}", npc.id, npc.title, npc.service).to_ascii_lowercase();
+    if role.contains("mage") || role.contains("wizard") || role.contains("healer") {
+        (assets.npc_mage.clone(), 0.697)
+    } else if role.contains("ranger") || role.contains("hunter") || role.contains("archer") {
+        (assets.npc_ranger.clone(), 0.814)
+    } else if role.contains("rogue") || role.contains("thief") || role.contains("merchant") {
+        (assets.npc_rogue.clone(), 0.852)
+    } else {
+        match npc
+            .id
+            .bytes()
+            .fold(0u8, |value, byte| value.wrapping_add(byte))
+            % 4
+        {
+            0 => (assets.npc_knight.clone(), 0.727),
+            1 => (assets.npc_mage.clone(), 0.697),
+            2 => (assets.npc_ranger.clone(), 0.814),
+            _ => (assets.npc_rogue.clone(), 0.852),
+        }
     }
 }
 
@@ -889,18 +919,20 @@ fn spawn_spec(
             // Static floor streaming must not create a second actor lifecycle.
         }
         SpawnSpec::Npc(npc) => {
-            commands.spawn((
-                Name::new(format!("NPC · {}", npc.name)),
-                StreamedRegionEntity { generation, floor },
-                NpcActor(npc.id.clone()),
-                Mesh3d(assets.cube.clone()),
-                MeshMaterial3d(assets.npc.clone()),
-                Transform {
-                    translation: world_position(npc.position),
-                    scale: Vec3::new(0.62, 0.95, 0.62),
-                    ..default()
-                },
-            ));
+            commands
+                .spawn((
+                    Name::new(format!("NPC · {}", npc.name)),
+                    StreamedRegionEntity { generation, floor },
+                    NpcActor(npc.id.clone()),
+                    Visibility::default(),
+                    Transform::from_translation(world_position(npc.position)),
+                ))
+                .with_child((
+                    WorldAssetRoot(npc_model(assets, npc).0),
+                    NpcModelRoot,
+                    Transform::from_translation(Vec3::new(0.0, -0.575, 0.0))
+                        .with_scale(Vec3::splat(npc_model(assets, npc).1)),
+                ));
         }
         SpawnSpec::Resource(resource) => {
             let entity = world_details::spawn_resource(commands, details, resource);
