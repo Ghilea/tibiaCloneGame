@@ -1,3 +1,4 @@
+// TIBIAGAME_V36_63_0_CONNECTION_ERRORS_COPPER_VEINS
 use std::collections::HashMap;
 
 use bevy::prelude::*;
@@ -58,6 +59,11 @@ pub struct WorldResource {
 }
 
 #[derive(Component)]
+pub struct WorldResourceCopperAccent {
+    pub id: String,
+}
+
+#[derive(Component)]
 pub struct WorldObjectActor {
     pub id: String,
     pub position: Position,
@@ -101,6 +107,7 @@ pub struct WorldDetailCatalog {
     bog: Handle<StandardMaterial>,
     glass: Handle<StandardMaterial>,
     flame: Handle<StandardMaterial>,
+    copper_ore: Handle<StandardMaterial>,
     facade_plaster: Handle<StandardMaterial>,
     facade_timber: Handle<StandardMaterial>,
 }
@@ -202,6 +209,12 @@ impl WorldDetailCatalog {
                 perceptual_roughness: 0.42,
                 ..default()
             }),
+            copper_ore: materials.add(StandardMaterial {
+                base_color: Color::srgb(0.92, 0.36, 0.09),
+                metallic: 0.48,
+                perceptual_roughness: 0.31,
+                ..default()
+            }),
             facade_plaster: materials.add(StandardMaterial {
                 // Same values as ArchitectureCatalog::plaster.
                 base_color: Color::srgb(0.79, 0.72, 0.58),
@@ -219,6 +232,14 @@ impl WorldDetailCatalog {
 
     fn prop_scene(&self, kind: &str) -> Option<Handle<WorldAsset>> {
         self.prop_scenes.get(kind).cloned()
+    }
+
+    pub fn resource_scene(&self, available: bool) -> Handle<WorldAsset> {
+        if available {
+            self.copper_vein.clone()
+        } else {
+            self.copper_vein_depleted.clone()
+        }
     }
 }
 
@@ -373,11 +394,7 @@ pub fn spawn_resource(
     catalog: &WorldDetailCatalog,
     resource: &ResourceNodeView,
 ) -> Entity {
-    let scene = if resource.available {
-        catalog.copper_vein.clone()
-    } else {
-        catalog.copper_vein_depleted.clone()
-    };
+    let scene = catalog.resource_scene(resource.available);
 
     commands
         .spawn((
@@ -395,6 +412,40 @@ pub fn spawn_resource(
                 .with_scale(Vec3::splat(0.86)),
             Visibility::default(),
         ))
+        .with_children(|parent| {
+            // The authored GLB has a CopperGlow mesh, but at the gameplay camera
+            // angle it can disappear into the stone. These small ore outcrops
+            // deliberately read from above and from both diagonal camera sides.
+            for (index, (translation, scale)) in [
+                (Vec3::new(-0.18, 0.46, -0.08), Vec3::new(0.18, 0.10, 0.13)),
+                (Vec3::new(0.12, 0.49, 0.05), Vec3::new(0.15, 0.09, 0.12)),
+                (Vec3::new(0.27, 0.31, -0.13), Vec3::new(0.12, 0.08, 0.10)),
+                (Vec3::new(-0.28, 0.29, 0.14), Vec3::new(0.13, 0.08, 0.11)),
+                (Vec3::new(0.02, 0.36, 0.25), Vec3::new(0.11, 0.07, 0.10)),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                parent.spawn((
+                    Name::new(format!("Copper ore accent · {} · {index}", resource.id)),
+                    WorldResourceCopperAccent {
+                        id: resource.id.clone(),
+                    },
+                    Mesh3d(catalog.rock_mesh.clone()),
+                    MeshMaterial3d(catalog.copper_ore.clone()),
+                    Transform {
+                        translation,
+                        rotation: Quat::from_rotation_y(index as f32 * 0.73),
+                        scale,
+                    },
+                    if resource.available {
+                        Visibility::Visible
+                    } else {
+                        Visibility::Hidden
+                    },
+                ));
+            }
+        })
         .id()
 }
 

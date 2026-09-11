@@ -1,5 +1,6 @@
 // TIBIAGAME_V36_10_NATIVE_GAMEPLAY_CORE
-pub const MIGRATION_VERSION: &str = "36.62.0";
+// TIBIAGAME_V36_63_0_CONNECTION_ERRORS_COPPER_VEINS
+pub const MIGRATION_VERSION: &str = "36.63.0";
 
 #[allow(dead_code)]
 pub fn client_version() -> String {

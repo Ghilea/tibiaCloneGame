@@ -1,4 +1,5 @@
 // TIBIAGAME_V36_30_NATIVE_LOGIN_CHARACTER_LOBBY
+// TIBIAGAME_V36_63_0_CONNECTION_ERRORS_COPPER_VEINS
 use std::{
     sync::{
         Arc, Mutex,
@@ -808,7 +809,7 @@ fn spawn_launcher_login_form(commands: &mut Commands) {
                 ));
 
                 form.spawn((
-                    Text::new("Click a field or press Tab | Enter logs in"),
+                    Text::new("Click a field or press Tab | Enter logs in | Enter retries connection errors"),
                     TextFont {
                         font_size: FontSize::Px(10.5),
                         ..default()
@@ -1106,14 +1107,20 @@ fn handle_keyboard(
         }
         LauncherMode::Launching | LauncherMode::GameLoading => {}
         LauncherMode::Error => {
-            if keys.just_pressed(KeyCode::Enter)
-                || keys.just_pressed(KeyCode::Escape)
+            if keys.just_pressed(KeyCode::Enter) {
+                if updater.blocks_online_play() {
+                    state.status = updater.gate_message().into();
+                    return;
+                }
+
+                begin_login(&mut state);
+            } else if keys.just_pressed(KeyCode::Escape)
                 || keys.just_pressed(KeyCode::Backspace)
             {
                 state.mode = LauncherMode::Login;
                 state.pending_login = None;
                 state.login = None;
-                state.status = "Try logging in again.".into();
+                state.status = "Edit your account details and try again.".into();
             }
         }
     }
@@ -1141,17 +1148,25 @@ fn handle_launcher_buttons(
 
                 match action {
                     LauncherAction::FocusAccount => {
-                        if state.mode == LauncherMode::Login {
+                        if matches!(state.mode, LauncherMode::Login | LauncherMode::Error) {
+                            if state.mode == LauncherMode::Error {
+                                state.mode = LauncherMode::Login;
+                                state.status = "Edit your account details and try again.".into();
+                            }
                             state.field = LoginField::Account;
                         }
                     }
                     LauncherAction::FocusPassword => {
-                        if state.mode == LauncherMode::Login {
+                        if matches!(state.mode, LauncherMode::Login | LauncherMode::Error) {
+                            if state.mode == LauncherMode::Error {
+                                state.mode = LauncherMode::Login;
+                                state.status = "Edit your account details and try again.".into();
+                            }
                             state.field = LoginField::Password;
                         }
                     }
                     LauncherAction::Login => {
-                        if state.mode == LauncherMode::Login {
+                        if matches!(state.mode, LauncherMode::Login | LauncherMode::Error) {
                             if updater.blocks_online_play() {
                                 state.status = updater.gate_message().into();
                             } else {
@@ -1434,7 +1449,10 @@ fn update_login_form(
     mut fields: Query<(&LauncherFieldFrame, &mut BorderColor)>,
     mut login_text: Query<(&LauncherLoginText, &mut Text, &mut TextColor)>,
 ) {
-    let show_form = matches!(state.mode, LauncherMode::Login | LauncherMode::LoggingIn);
+    let show_form = matches!(
+        state.mode,
+        LauncherMode::Login | LauncherMode::LoggingIn | LauncherMode::Error
+    );
 
     if let Ok(mut visibility) = form.single_mut() {
         *visibility = if show_form {
@@ -1459,7 +1477,8 @@ fn update_login_form(
     }
 
     for (frame, mut border) in &mut fields {
-        let active = state.mode == LauncherMode::Login && frame.0 == state.field;
+        let active = matches!(state.mode, LauncherMode::Login | LauncherMode::Error)
+            && frame.0 == state.field;
 
         *border = BorderColor::all(if active {
             theme::GOLD_BRIGHT
@@ -1507,8 +1526,8 @@ fn update_login_form(
 
                 color.0 = if state.mode == LauncherMode::LoggingIn {
                     theme::GOLD
-                } else if state.status.to_ascii_lowercase().contains("error") {
-                    Color::srgb(0.82, 0.28, 0.22)
+                } else if state.mode == LauncherMode::Error {
+                    Color::srgb(0.90, 0.36, 0.26)
                 } else {
                     theme::MUTED
                 };
@@ -1575,6 +1594,37 @@ fn tick_launch_handoff(time: Res<Time>, mut state: ResMut<NativeLauncherState>) 
     if timer.just_finished() {
         std::process::exit(0);
     }
+}
+
+fn launcher_login_error(error: &str) -> String {
+    let detail = error.to_ascii_lowercase();
+
+    if detail.contains("invalid_credentials")
+        || detail.contains("invalid account")
+        || detail.contains("unauthorized")
+        || detail.contains("login rejected")
+    {
+        return "LOGIN FAILED\nThe account name or password is incorrect.\nError code: ALD-1005".into();
+    }
+
+    if detail.contains("timed out") || detail.contains("timeout") {
+        return "CONNECTION TIMED OUT\nThe Aldoria servers did not respond in time. Please try again.\nError code: ALD-1002".into();
+    }
+
+    if detail.contains("connection refused")
+        || detail.contains("os error 10061")
+        || detail.contains("tcp connect")
+        || detail.contains("could not reach the login endpoint")
+        || detail.contains("failed to connect")
+    {
+        return "UNABLE TO CONNECT\nThe Aldoria servers are currently unavailable. Please try again shortly.\nError code: ALD-1001".into();
+    }
+
+    if detail.contains("http 5") || detail.contains("server error") {
+        return "REALM UNAVAILABLE\nThe Aldoria realm is temporarily unavailable. Please try again shortly.\nError code: ALD-1003".into();
+    }
+
+    "CONNECTION ERROR\nA connection problem occurred. Please try again.\nError code: ALD-1000".into()
 }
 
 fn begin_login(state: &mut NativeLauncherState) {
@@ -1660,8 +1710,9 @@ fn poll_login_worker(mut state: ResMut<NativeLauncherState>) {
             };
         }
         Err(error) => {
+            error!("ALDORIA LOGIN FAILURE · {error}");
             state.mode = LauncherMode::Error;
-            state.status = error;
+            state.status = launcher_login_error(&error);
         }
     }
 }

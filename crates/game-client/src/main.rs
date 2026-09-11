@@ -1298,6 +1298,7 @@ fn count_floor(positions: &[Position], floor: i16) -> usize {
 
 // TIBIAGAME_V36_8_4_PUMP_NETWORK_PARAMSET_FIX
 // TIBIAGAME_V36_10_NATIVE_GAMEPLAY_CORE
+// TIBIAGAME_V36_63_0_CONNECTION_ERRORS_COPPER_VEINS
 fn pump_network(
     network: Res<NativeNetwork>,
     mut ping_state: ResMut<native_ui::NativePingState>,
@@ -1308,6 +1309,7 @@ fn pump_network(
     mut map_state: ResMut<native_map_ui::NativeMapState>,
     mut collision: ResMut<collision::LocalCollision>,
     mut movement: ResMut<MovementState>,
+    world_detail_catalog: Res<world_details::WorldDetailCatalog>,
     mut actor_queries: ParamSet<(
         Query<(&world_details::WorldDoorSwing, &mut Transform)>,
         Query<(&world_details::WorldWindowSwing, &mut Transform)>,
@@ -1318,6 +1320,8 @@ fn pump_network(
             &mut creature_sprites::CreatureMotion,
         )>,
         Query<&mut world_details::WorldDoor>,
+        Query<(&world_details::WorldResource, &mut WorldAssetRoot)>,
+        Query<(&world_details::WorldResourceCopperAccent, &mut Visibility)>,
     )>,
 ) {
     let messages: Vec<ServerMessage> = {
@@ -1428,6 +1432,39 @@ fn pump_network(
             ServerMessage::WindowChanged { window } => {
                 let mut windows = actor_queries.p1();
                 world_details::apply_window_change(&window, &mut windows);
+            }
+            ServerMessage::ResourceNodesChanged { resource_nodes } => {
+                {
+                    let mut roots = actor_queries.p4();
+                    for (resource, mut root) in &mut roots {
+                        let Some(node) = resource_nodes
+                            .iter()
+                            .find(|node| node.id == resource.id)
+                        else {
+                            continue;
+                        };
+
+                        root.0 = world_detail_catalog.resource_scene(node.available);
+                    }
+                }
+
+                {
+                    let mut accents = actor_queries.p5();
+                    for (accent, mut visibility) in &mut accents {
+                        let Some(node) = resource_nodes
+                            .iter()
+                            .find(|node| node.id == accent.id)
+                        else {
+                            continue;
+                        };
+
+                        *visibility = if node.available {
+                            Visibility::Visible
+                        } else {
+                            Visibility::Hidden
+                        };
+                    }
+                }
             }
             ServerMessage::CombatEffect { source_id, .. } => {
                 let now = time.elapsed_secs_f64();
