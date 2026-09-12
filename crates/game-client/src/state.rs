@@ -1,6 +1,10 @@
 // TIBIAGAME_V36_10_NATIVE_GAMEPLAY_CORE
 // TIBIAGAME_V36_11_NATIVE_INTERACTION_FOUNDATION
-use std::collections::{HashMap, HashSet, VecDeque};
+// TIBIAGAME_V36_75_0_ACTION_STATUS_BARS
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    time::Instant,
+};
 
 use bevy::prelude::Resource;
 use game_protocol::{ServerMessage, WelcomePayload};
@@ -86,6 +90,7 @@ pub struct NativeGameState {
     pub profession_skills: HashMap<String, ProfessionSkillView>,
     pub discovered_knowledge_ids: HashSet<String>,
     pub food_remaining_ms: u64,
+    food_status_received_at: Instant,
     pub crafting: Option<NativeCraftingState>,
     pub last_ability: Option<NativeAbilityState>,
     pub last_telegraph: Option<NativeTelegraphState>,
@@ -164,6 +169,7 @@ impl NativeGameState {
                 .collect(),
             discovered_knowledge_ids: welcome.discovered_knowledge_ids.iter().cloned().collect(),
             food_remaining_ms: 0,
+            food_status_received_at: Instant::now(),
             crafting: None,
             last_ability: None,
             last_telegraph: None,
@@ -184,6 +190,12 @@ impl NativeGameState {
 
     pub fn local_player(&self) -> Option<&PlayerView> {
         self.players.get(&self.local_player_id)
+    }
+
+    pub fn current_food_remaining_ms(&self) -> u64 {
+        let elapsed_ms = u64::try_from(self.food_status_received_at.elapsed().as_millis())
+            .unwrap_or(u64::MAX);
+        self.food_remaining_ms.saturating_sub(elapsed_ms)
     }
 
     pub fn latest_message(&self) -> Option<&NativeMessageLine> {
@@ -389,6 +401,7 @@ impl NativeGameState {
                 remaining_ms,
             } if *player_id == self.local_player_id => {
                 self.food_remaining_ms = *remaining_ms;
+                self.food_status_received_at = Instant::now();
             }
             ServerMessage::CombatEffect {
                 source_id,

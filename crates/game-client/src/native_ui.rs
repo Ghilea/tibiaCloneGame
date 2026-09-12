@@ -1,6 +1,11 @@
 // TIBIAGAME_V36_21_NATIVE_GAMEPLAY_UI
 // TIBIAGAME_V36_64_0_COMPACT_UI_ROOF_DEPTH
 // TIBIAGAME_V36_65_0_MATERIAL_DEPTH_OCCLUDERS_BATTLE_TARGETING
+// TIBIAGAME_V36_74_0_INTERACTIVE_INVENTORY_CHAT_SPELLS
+// TIBIAGAME_V36_74_1_UI_QUERY_CONFLICT_FIX
+// TIBIAGAME_V36_75_0_ACTION_STATUS_BARS
+// TIBIAGAME_V36_76_0_HOUSE_LIGHT_STACK_DEPOT_CLARITY
+// TIBIAGAME_V36_77_0_ROBUST_HOUSE_CUTAWAY_DEPOT_FLOW
 use bevy::{
     input::{ButtonState, keyboard::KeyboardInput},
     prelude::*,
@@ -14,10 +19,19 @@ use crate::{
     state::{NativeGameState, NativeMessageKind},
 };
 
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum NativeChatChannel {
+    #[default]
+    General,
+    Combat,
+    Loot,
+}
+
 #[derive(Resource, Default)]
 pub struct NativeChatState {
     pub active: bool,
     pub draft: String,
+    pub(crate) channel: NativeChatChannel,
 }
 
 #[derive(Resource, Default)]
@@ -59,6 +73,12 @@ impl NativePingState {
 
 #[derive(Component)]
 pub(crate) struct NativeChatPanel;
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeChatTab(pub(crate) NativeChatChannel);
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeChatTabLabel(pub(crate) NativeChatChannel);
 
 #[derive(Component)]
 pub(crate) struct NativePingSignalBar(usize);
@@ -127,6 +147,18 @@ pub(crate) enum NativeUiBar {
 }
 
 #[derive(Component, Clone, Copy)]
+pub(crate) enum NativeActionStatusText {
+    Experience,
+    Hunger,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeActionStatusBar {
+    Experience,
+    Hunger,
+}
+
+#[derive(Component, Clone, Copy)]
 pub(crate) enum NativeUiPanel {
     Inventory,
     Character,
@@ -187,6 +219,7 @@ pub(crate) enum NativePanelCloseButton {
 pub(crate) enum NativeNpcModalButton {
     Tab(usize),
     Row(usize),
+    InventoryRow(usize),
     Primary,
     Sell,
     Deposit,
@@ -215,12 +248,34 @@ pub(crate) struct NativeNpcRowText {
 }
 
 #[derive(Component, Clone, Copy)]
+pub(crate) struct NativeNpcInventoryRowText(pub(crate) usize);
+
+#[derive(Component)]
+pub(crate) struct NativeNpcInventoryRowImage {
+    index: usize,
+    definition_id: Option<String>,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) enum NativeNpcHeadingLocation {
+    List,
+    Detail,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeNpcHeadingText {
+    location: NativeNpcHeadingLocation,
+    title: bool,
+}
+
+#[derive(Component, Clone, Copy)]
 pub(crate) enum NativeNpcDetailText {
     Section,
     Title,
     Body,
     PrimaryLabel,
     InventoryHint,
+    InventoryHeading,
 }
 
 #[derive(Component)]
@@ -252,6 +307,17 @@ pub(crate) enum NativeSpellbookListField {
 pub(crate) struct NativeSpellbookLearnedText {
     pub(crate) index: usize,
     pub(crate) field: NativeSpellbookListField,
+}
+
+#[derive(Component)]
+pub(crate) struct NativeSpellbookLearnedImage {
+    index: usize,
+    spell_id: Option<String>,
+}
+
+#[derive(Component)]
+pub(crate) struct NativeSpellbookDetailImage {
+    spell_id: Option<String>,
 }
 
 #[derive(Component, Clone, Copy)]
@@ -408,6 +474,9 @@ pub(crate) enum NativeCharacterEquipmentSlot {
 #[derive(Component, Clone, Copy)]
 pub(crate) struct NativeCharacterProfessionSlot(pub(crate) usize);
 
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeCharacterProfessionEquipmentSlot(pub(crate) usize);
+
 #[derive(Component)]
 pub(crate) struct NativeCharacterProfessionEquipmentImage {
     index: usize,
@@ -433,10 +502,7 @@ pub(crate) enum NativeCharacterModalAction {
 
 #[derive(Component, Clone, Copy)]
 pub(crate) enum NativeInventoryText {
-    Location,
-    Usage,
     Capacity,
-    Search,
     Detail,
     Gold,
 }
@@ -444,7 +510,6 @@ pub(crate) enum NativeInventoryText {
 #[derive(Component, Clone, Copy)]
 pub(crate) enum NativeInventorySlotField {
     Quantity,
-    Name,
 }
 
 #[derive(Component, Clone, Copy)]
@@ -475,8 +540,6 @@ pub(crate) struct NativeDragItemGhost {
 
 #[derive(Component, Clone, Copy)]
 pub(crate) enum NativeInventoryAction {
-    Search,
-    Back,
     Close,
 }
 
@@ -529,7 +592,7 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     spawn_item_interaction_overlays(&mut commands);
     spawn_character_panel(&mut commands);
     spawn_skills_panel(&mut commands);
-    spawn_spellbook_panel(&mut commands);
+    spawn_spellbook_panel(&mut commands, &asset_server);
     spawn_crafting_panel(&mut commands);
     spawn_npc_panel(&mut commands);
 }
@@ -974,10 +1037,7 @@ fn battle_list_entries(game_state: &NativeGameState) -> Vec<BattleListEntry> {
 }
 
 pub fn handle_battle_list_buttons(
-    mut buttons: Query<
-        (&Interaction, &NativeBattleListRow),
-        (Changed<Interaction>, With<Button>),
-    >,
+    mut buttons: Query<(&Interaction, &NativeBattleListRow), (Changed<Interaction>, With<Button>)>,
     mut game_state: ResMut<NativeGameState>,
 ) {
     for (interaction, row) in &mut buttons {
@@ -1457,8 +1517,14 @@ fn spawn_chat(commands: &mut Commands, asset_server: &AssetServer) {
                     ..default()
                 })
                 .with_children(|tabs| {
-                    for (label, active) in [("General", true), ("Combat", false), ("Loot", false)] {
+                    for (label, channel, active) in [
+                        ("General", NativeChatChannel::General, true),
+                        ("Combat", NativeChatChannel::Combat, false),
+                        ("Loot", NativeChatChannel::Loot, false),
+                    ] {
                         tabs.spawn((
+                            Button,
+                            NativeChatTab(channel),
                             Node {
                                 min_width: px(74),
                                 height: px(22),
@@ -1481,6 +1547,7 @@ fn spawn_chat(commands: &mut Commands, asset_server: &AssetServer) {
                             }),
                         ))
                         .with_child((
+                            NativeChatTabLabel(channel),
                             Text::new(label),
                             TextFont {
                                 font_size: FontSize::Px(12.0),
@@ -1523,6 +1590,65 @@ fn spawn_chat(commands: &mut Commands, asset_server: &AssetServer) {
         });
 }
 
+fn spawn_action_status_meter(
+    parent: &mut ChildSpawnerCommands,
+    width: f32,
+    bar: NativeActionStatusBar,
+    label: NativeActionStatusText,
+    fill: Color,
+) {
+    parent
+        .spawn((
+            Node {
+                width: px(width),
+                height: px(17),
+                flex_shrink: 0.0,
+                position_type: PositionType::Relative,
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(4)),
+                overflow: Overflow::clip(),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.018, 0.022, 0.018, 0.98)),
+            BorderColor::all(theme::GOLD_DARK),
+        ))
+        .with_children(|meter| {
+            meter.spawn((
+                bar,
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: px(0),
+                    top: px(0),
+                    width: Val::Percent(0.0),
+                    height: Val::Percent(100.0),
+                    ..default()
+                },
+                BackgroundColor(fill),
+                Pickable::IGNORE,
+            ));
+            meter.spawn((
+                label,
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: px(0),
+                    top: px(0),
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                },
+                Text::new(""),
+                TextFont {
+                    font_size: FontSize::Px(8.2),
+                    ..default()
+                },
+                TextColor(TEXT),
+                Pickable::IGNORE,
+            ));
+        });
+}
+
 // Nine fixed-size slots match the reference. Ornaments are images, never buttons.
 fn spawn_action_bar(commands: &mut Commands, asset_server: &AssetServer) {
     let ability_icons = asset_server.load("ui/ability-icons-v35_12.png");
@@ -1551,6 +1677,36 @@ fn spawn_action_bar(commands: &mut Commands, asset_server: &AssetServer) {
             GlobalZIndex(181),
         ))
         .with_children(|parent| {
+            parent
+                .spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: px(10),
+                        top: px(-23),
+                        width: px(394),
+                        height: px(19),
+                        column_gap: px(4),
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                ))
+                .with_children(|status| {
+                    spawn_action_status_meter(
+                        status,
+                        270.0,
+                        NativeActionStatusBar::Experience,
+                        NativeActionStatusText::Experience,
+                        Color::srgb(0.28, 0.48, 0.86),
+                    );
+                    spawn_action_status_meter(
+                        status,
+                        120.0,
+                        NativeActionStatusBar::Hunger,
+                        NativeActionStatusText::Hunger,
+                        Color::srgb(0.78, 0.49, 0.13),
+                    );
+                });
             for slot in 0..9 {
                 spawn_action_slot(parent, slot, ability_icons.clone());
             }
@@ -1836,6 +1992,7 @@ fn spawn_inventory_panel(commands: &mut Commands) {
             Name::new("Native modal · inventory · compact bag"),
             NativeUiPanel::Inventory,
             native_modal::NativeModalRoot,
+            Pickable::IGNORE,
             GlobalZIndex(191),
             Visibility::Hidden,
             native_modal::root_node(),
@@ -1846,7 +2003,7 @@ fn spawn_inventory_panel(commands: &mut Commands) {
                 Name::new("Greyhaven compact Inventory interface"),
                 native_modal::NativeModalSurface,
                 native_modal::NativeDraggableSurface(native_modal::NativeModalWindow::Inventory),
-                native_modal::panel_node(640.0, 480.0),
+                native_modal::panel_node(640.0, 430.0),
                 native_modal::surface(),
                 native_modal::surface_border(),
             ))
@@ -1893,56 +2050,6 @@ fn spawn_inventory_panel(commands: &mut Commands) {
                             NativeInventoryAction::Close,
                             "X",
                             34.0,
-                        );
-                    });
-
-                panel
-                    .spawn((
-                        Node {
-                            width: Val::Percent(100.0),
-                            min_height: px(50),
-                            padding: UiRect::horizontal(px(10)),
-                            border: UiRect::all(px(1)),
-                            border_radius: BorderRadius::all(px(6)),
-                            flex_direction: FlexDirection::Row,
-                            align_items: AlignItems::Center,
-                            justify_content: JustifyContent::SpaceBetween,
-                            column_gap: px(10),
-                            ..default()
-                        },
-                        BackgroundColor(PANEL_SOFT),
-                        BorderColor::all(theme::BUTTON_BORDER),
-                    ))
-                    .with_children(|summary| {
-                        summary
-                            .spawn(Node {
-                                flex_grow: 1.0,
-                                flex_direction: FlexDirection::Column,
-                                row_gap: px(1),
-                                ..default()
-                            })
-                            .with_children(|copy| {
-                                spawn_inventory_text(
-                                    copy,
-                                    NativeInventoryText::Location,
-                                    "ROOT INVENTORY",
-                                    9.5,
-                                    theme::GOLD,
-                                );
-                                spawn_inventory_text(
-                                    copy,
-                                    NativeInventoryText::Usage,
-                                    "0 / 12 SLOTS USED",
-                                    8.5,
-                                    TEXT,
-                                );
-                            });
-
-                        spawn_inventory_reference_button(
-                            summary,
-                            NativeInventoryAction::Back,
-                            "BACK",
-                            68.0,
                         );
                     });
 
@@ -2027,7 +2134,7 @@ fn spawn_inventory_panel(commands: &mut Commands) {
                                     TextColor(theme::GOLD),
                                 ));
                                 heading.spawn((
-                                    Text::new("Hover for details · drag to move/equip"),
+                                    Text::new("Double-click to use · drag to move/equip"),
                                     TextFont {
                                         font_size: FontSize::Px(7.5),
                                         ..default()
@@ -2523,6 +2630,8 @@ fn spawn_character_equipment_slot(
 fn spawn_character_profession_slot(parent: &mut ChildSpawnerCommands, index: usize) {
     parent
         .spawn((
+            Button,
+            NativeCharacterProfessionEquipmentSlot(index),
             Node {
                 width: Val::Percent(24.0),
                 height: px(38),
@@ -2610,6 +2719,7 @@ fn spawn_character_panel(commands: &mut Commands) {
             Name::new("Native modal · character · compact equipment"),
             NativeUiPanel::Character,
             native_modal::NativeModalRoot,
+            Pickable::IGNORE,
             GlobalZIndex(190),
             Visibility::Hidden,
             character_reference_root_node(),
@@ -2759,12 +2869,32 @@ fn spawn_character_panel(commands: &mut Commands) {
 
                         for (slot, label, left, top) in [
                             (NativeCharacterEquipmentSlot::Helmet, "HELMET", px(8), px(8)),
-                            (NativeCharacterEquipmentSlot::Amulet, "AMULET", px(292), px(8)),
+                            (
+                                NativeCharacterEquipmentSlot::Amulet,
+                                "AMULET",
+                                px(292),
+                                px(8),
+                            ),
                             (NativeCharacterEquipmentSlot::Chest, "CHEST", px(8), px(64)),
                             (NativeCharacterEquipmentSlot::Back, "BACK", px(292), px(64)),
-                            (NativeCharacterEquipmentSlot::LeftHand, "LEFT HAND", px(8), px(120)),
-                            (NativeCharacterEquipmentSlot::RightHand, "RIGHT HAND", px(292), px(120)),
-                            (NativeCharacterEquipmentSlot::Backpack, "BACKPACK", px(8), px(176)),
+                            (
+                                NativeCharacterEquipmentSlot::LeftHand,
+                                "LEFT HAND",
+                                px(8),
+                                px(120),
+                            ),
+                            (
+                                NativeCharacterEquipmentSlot::RightHand,
+                                "RIGHT HAND",
+                                px(292),
+                                px(120),
+                            ),
+                            (
+                                NativeCharacterEquipmentSlot::Backpack,
+                                "BACKPACK",
+                                px(8),
+                                px(176),
+                            ),
                             (NativeCharacterEquipmentSlot::Ring, "RING", px(292), px(176)),
                             (NativeCharacterEquipmentSlot::Feet, "FEET", px(8), px(232)),
                             (NativeCharacterEquipmentSlot::Legs, "LEGS", px(292), px(232)),
@@ -3248,6 +3378,7 @@ fn spawn_skills_panel(commands: &mut Commands) {
             Name::new("Native modal · skills · Greyhaven reference"),
             NativeUiPanel::Skills,
             native_modal::NativeModalRoot,
+            Pickable::IGNORE,
             GlobalZIndex(192),
             Visibility::Hidden,
             native_modal::root_node(),
@@ -3517,7 +3648,11 @@ fn spawn_spellbook_summary_text(
     ));
 }
 
-fn spawn_spellbook_learned_card(parent: &mut ChildSpawnerCommands, index: usize) {
+fn spawn_spellbook_learned_card(
+    parent: &mut ChildSpawnerCommands,
+    index: usize,
+    ability_icons: Handle<Image>,
+) {
     parent
         .spawn((
             Button,
@@ -3551,12 +3686,21 @@ fn spawn_spellbook_learned_card(parent: &mut ChildSpawnerCommands, index: usize)
                 BorderColor::all(theme::GOLD_DARK),
             ))
             .with_child((
-                Text::new("✦"),
-                TextFont {
-                    font_size: FontSize::Px(15.0),
+                NativeSpellbookLearnedImage {
+                    index,
+                    spell_id: None,
+                },
+                ImageNode {
+                    image: ability_icons,
+                    image_mode: NodeImageMode::Stretch,
                     ..default()
                 },
-                TextColor(theme::GOLD_BRIGHT),
+                Node {
+                    width: px(32),
+                    height: px(32),
+                    ..default()
+                },
+                Visibility::Hidden,
             ));
 
             card.spawn(Node {
@@ -3700,12 +3844,14 @@ fn spawn_spellbook_action_button(
         ));
 }
 
-fn spawn_spellbook_panel(commands: &mut Commands) {
+fn spawn_spellbook_panel(commands: &mut Commands, asset_server: &AssetServer) {
+    let ability_icons = asset_server.load("ui/ability-icons-v35_12.png");
     commands
         .spawn((
             Name::new("Native modal · spellbook · Greyhaven reference"),
             NativeUiPanel::Spells,
             native_modal::NativeModalRoot,
+            Pickable::IGNORE,
             GlobalZIndex(194),
             Visibility::Hidden,
             native_modal::root_node(),
@@ -3855,7 +4001,11 @@ fn spawn_spellbook_panel(commands: &mut Commands) {
                                 spawn_spellbook_heading(library, "KNOWN MAGIC", "LEARNED SPELLS");
 
                                 for index in 0..8usize {
-                                    spawn_spellbook_learned_card(library, index);
+                                    spawn_spellbook_learned_card(
+                                        library,
+                                        index,
+                                        ability_icons.clone(),
+                                    );
                                 }
 
                                 library.spawn((
@@ -3915,12 +4065,18 @@ fn spawn_spellbook_panel(commands: &mut Commands) {
                                             BorderColor::all(theme::GOLD),
                                         ))
                                         .with_child((
-                                            Text::new("✦"),
-                                            TextFont {
-                                                font_size: FontSize::Px(28.0),
+                                            NativeSpellbookDetailImage { spell_id: None },
+                                            ImageNode {
+                                                image: ability_icons.clone(),
+                                                image_mode: NodeImageMode::Stretch,
                                                 ..default()
                                             },
-                                            TextColor(theme::GOLD_BRIGHT),
+                                            Node {
+                                                width: px(52),
+                                                height: px(52),
+                                                ..default()
+                                            },
+                                            Visibility::Hidden,
                                         ));
 
                                         hero.spawn(Node {
@@ -4291,6 +4447,7 @@ fn spawn_crafting_panel(commands: &mut Commands) {
             Name::new("Native modal · crafting · Greyhaven reference"),
             NativeUiPanel::Crafting,
             native_modal::NativeModalRoot,
+            Pickable::IGNORE,
             GlobalZIndex(193),
             Visibility::Hidden,
             native_modal::root_node(),
@@ -4726,7 +4883,12 @@ fn npc_modal_card_node() -> Node {
     }
 }
 
-fn spawn_npc_modal_heading(parent: &mut ChildSpawnerCommands, eyebrow: &str, title: &str) {
+fn spawn_npc_modal_heading(
+    parent: &mut ChildSpawnerCommands,
+    location: NativeNpcHeadingLocation,
+    eyebrow: &str,
+    title: &str,
+) {
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
@@ -4736,6 +4898,10 @@ fn spawn_npc_modal_heading(parent: &mut ChildSpawnerCommands, eyebrow: &str, tit
         })
         .with_children(|copy| {
             copy.spawn((
+                NativeNpcHeadingText {
+                    location,
+                    title: false,
+                },
                 Text::new(eyebrow),
                 TextFont {
                     font_size: FontSize::Px(8.0),
@@ -4745,6 +4911,10 @@ fn spawn_npc_modal_heading(parent: &mut ChildSpawnerCommands, eyebrow: &str, tit
             ));
 
             copy.spawn((
+                NativeNpcHeadingText {
+                    location,
+                    title: true,
+                },
                 Text::new(title),
                 TextFont {
                     font_size: FontSize::Px(13.0),
@@ -4831,6 +5001,54 @@ fn spawn_npc_service_row(parent: &mut ChildSpawnerCommands, index: usize) {
         });
 }
 
+fn spawn_npc_inventory_row(parent: &mut ChildSpawnerCommands, index: usize) {
+    parent
+        .spawn((
+            Button,
+            NativeNpcModalButton::InventoryRow(index),
+            Node {
+                width: Val::Percent(100.0),
+                height: px(30),
+                padding: UiRect::horizontal(px(7)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(5)),
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                column_gap: px(7),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.025, 0.055, 0.075, 0.96)),
+            BorderColor::all(Color::srgb(0.20, 0.42, 0.55)),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                NativeNpcInventoryRowImage {
+                    index,
+                    definition_id: None,
+                },
+                ImageNode::default(),
+                Visibility::Hidden,
+                Node {
+                    width: px(22),
+                    height: px(22),
+                    flex_shrink: 0.0,
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
+            row.spawn((
+                NativeNpcInventoryRowText(index),
+                Text::new(""),
+                TextFont {
+                    font_size: FontSize::Px(8.2),
+                    ..default()
+                },
+                TextColor(TEXT),
+                Pickable::IGNORE,
+            ));
+        });
+}
+
 fn spawn_npc_detail_text(
     parent: &mut ChildSpawnerCommands,
     kind: NativeNpcDetailText,
@@ -4905,6 +5123,7 @@ fn spawn_npc_panel(commands: &mut Commands) {
             Name::new("Native modal · NPC services · Greyhaven reference"),
             NativeUiPanel::Npc,
             native_modal::NativeModalRoot,
+            Pickable::IGNORE,
             GlobalZIndex(195),
             Visibility::Hidden,
             native_modal::root_node(),
@@ -5191,6 +5410,7 @@ fn spawn_npc_panel(commands: &mut Commands) {
                                 .with_children(|list| {
                                     spawn_npc_modal_heading(
                                         list,
+                                        NativeNpcHeadingLocation::List,
                                         "AVAILABLE",
                                         "SERVICE ITEMS",
                                     );
@@ -5244,6 +5464,7 @@ fn spawn_npc_panel(commands: &mut Commands) {
                                 .with_children(|detail| {
                                     spawn_npc_modal_heading(
                                         detail,
+                                        NativeNpcHeadingLocation::Detail,
                                         "SELECTED",
                                         "SERVICE DETAIL",
                                     );
@@ -5385,25 +5606,17 @@ fn spawn_npc_panel(commands: &mut Commands) {
                                                 PANEL_DEEP,
                                             ),
                                             BorderColor::all(
-                                                theme::BUTTON_BORDER,
+                                                Color::srgb(0.20, 0.42, 0.55),
                                             ),
                                         ))
                                         .with_children(|inventory| {
-                                            inventory.spawn((
-                                                Text::new(
-                                                    "YOUR INVENTORY",
-                                                ),
-                                                TextFont {
-                                                    font_size:
-                                                        FontSize::Px(
-                                                            8.0,
-                                                        ),
-                                                    ..default()
-                                                },
-                                                TextColor(
-                                                    theme::GOLD,
-                                                ),
-                                            ));
+                                            spawn_npc_detail_text(
+                                                inventory,
+                                                NativeNpcDetailText::InventoryHeading,
+                                                "INVENTORY  ·  SEND TO DEPOT",
+                                                10.0,
+                                                Color::srgb(0.58, 0.84, 1.0),
+                                            );
 
                                             spawn_npc_detail_text(
                                                 inventory,
@@ -5412,6 +5625,10 @@ fn spawn_npc_panel(commands: &mut Commands) {
                                                 8.0,
                                                 MUTED,
                                             );
+
+                                            for index in 0..8usize {
+                                                spawn_npc_inventory_row(inventory, index);
+                                            }
 
                                             inventory
                                                 .spawn(Node {
@@ -5437,7 +5654,7 @@ fn spawn_npc_panel(commands: &mut Commands) {
                                                     spawn_npc_modal_action(
                                                         actions,
                                                         NativeNpcModalButton::Deposit,
-                                                        "DEPOSIT SELECTED",
+                                                        "←  DEPOSIT STACK",
                                                         false,
                                                         142.0,
                                                     );
@@ -5503,17 +5720,40 @@ pub fn update_ui(
     ping: Res<NativePingState>,
     chat: Res<NativeChatState>,
     panel_state: Res<NativePanelState>,
-    mut texts: Query<(&NativeUiText, &mut Text, &mut TextColor), Without<NativeActionSlotText>>,
-    mut action_slot_texts: Query<(&NativeActionSlotText, &mut Text), Without<NativeUiText>>,
+    mut texts: Query<
+        (&NativeUiText, &mut Text, &mut TextColor),
+        (
+            Without<NativeActionSlotText>,
+            Without<NativeActionStatusText>,
+            Without<NativeChatTabLabel>,
+        ),
+    >,
+    mut action_slot_texts: Query<
+        (&NativeActionSlotText, &mut Text),
+        (Without<NativeUiText>, Without<NativeActionStatusText>),
+    >,
     mut action_slot_images: Query<
         (&NativeActionSlotImage, &mut ImageNode, &mut Visibility),
         (Without<NativeUiText>, Without<NativeUiPanel>),
     >,
     mut bars: Query<(&NativeUiBar, &mut Node)>,
     mut panels: Query<(&NativeUiPanel, &mut Visibility), Without<NativeActionSlotImage>>,
-    mut chat_panels: Query<&mut BackgroundColor, With<NativeChatPanel>>,
+    mut chat_panels: Query<&mut BackgroundColor, (With<NativeChatPanel>, Without<NativeChatTab>)>,
+    mut chat_tabs: Query<
+        (
+            &NativeChatTab,
+            &Interaction,
+            &mut BackgroundColor,
+            &mut BorderColor,
+        ),
+        Without<NativeChatPanel>,
+    >,
+    mut chat_tab_labels: Query<(&NativeChatTabLabel, &mut TextColor), Without<NativeUiText>>,
     mut chat_fade: Local<(usize, f64)>,
-    mut ping_bars: Query<(&NativePingSignalBar, &mut BackgroundColor), Without<NativeChatPanel>>,
+    mut ping_bars: Query<
+        (&NativePingSignalBar, &mut BackgroundColor),
+        (Without<NativeChatPanel>, Without<NativeChatTab>),
+    >,
 ) {
     let player = game_state.local_player();
     let target = game_state
@@ -5546,6 +5786,17 @@ pub fn update_ui(
     let mut chat_lines: Vec<String> = game_state
         .messages
         .iter()
+        .filter(|line| match chat.channel {
+            NativeChatChannel::General => matches!(
+                line.kind,
+                NativeMessageKind::Chat
+                    | NativeMessageKind::System
+                    | NativeMessageKind::Discovery
+                    | NativeMessageKind::Error
+            ),
+            NativeChatChannel::Combat => line.kind == NativeMessageKind::Combat,
+            NativeChatChannel::Loot => line.kind == NativeMessageKind::Loot,
+        })
         .rev()
         .take(9)
         .map(|line| format!("{} {}", message_prefix(line.kind), line.text))
@@ -5568,6 +5819,28 @@ pub fn update_ui(
     };
     for mut background in &mut chat_panels {
         background.0 = Color::srgba(0.01, 0.014, 0.011, 0.60 + 0.20 * chat_alpha);
+    }
+    for (tab, interaction, mut background, mut border) in &mut chat_tabs {
+        let selected = tab.0 == chat.channel;
+        background.0 = if selected {
+            Color::srgba(0.12, 0.075, 0.018, 0.96)
+        } else if *interaction == Interaction::Hovered {
+            theme::BUTTON_HOVER
+        } else {
+            Color::srgba(0.015, 0.018, 0.015, 0.84)
+        };
+        *border = BorderColor::all(if selected {
+            theme::GOLD
+        } else {
+            theme::GOLD_DARK
+        });
+    }
+    for (label, mut color) in &mut chat_tab_labels {
+        color.0 = if label.0 == chat.channel {
+            theme::GOLD_BRIGHT
+        } else {
+            MUTED
+        };
     }
 
     for (kind, mut text, mut color) in &mut texts {
@@ -5770,6 +6043,55 @@ pub fn update_ui(
     }
 }
 
+pub fn update_action_status_ui(
+    game_state: Res<NativeGameState>,
+    mut bars: Query<(&NativeActionStatusBar, &mut Node)>,
+    mut texts: Query<(&NativeActionStatusText, &mut Text, &mut TextColor)>,
+) {
+    let player = game_state.local_player();
+    let food_remaining_ms = game_state.current_food_remaining_ms();
+
+    for (kind, mut node) in &mut bars {
+        let fill = match kind {
+            NativeActionStatusBar::Experience => player.map(experience_ratio).unwrap_or(0.0),
+            NativeActionStatusBar::Hunger => ratio(food_remaining_ms as f32, 100_000.0),
+        };
+        node.width = Val::Percent(fill * 100.0);
+    }
+
+    for (kind, mut text, mut color) in &mut texts {
+        match kind {
+            NativeActionStatusText::Experience => {
+                if let Some(player) = player {
+                    text.0 = format!(
+                        "LEVEL {}  ·  XP {}%",
+                        player.level,
+                        (experience_ratio(player) * 100.0).round() as u32,
+                    );
+                    color.0 = Color::srgb(0.84, 0.90, 1.0);
+                } else {
+                    text.0 = "EXPERIENCE".into();
+                    color.0 = MUTED;
+                }
+            }
+            NativeActionStatusText::Hunger => {
+                if food_remaining_ms == 0 {
+                    text.0 = "HUNGRY".into();
+                    color.0 = Color::srgb(1.0, 0.46, 0.30);
+                } else {
+                    let seconds = food_remaining_ms.div_ceil(1_000);
+                    text.0 = format!("FED  {}:{:02}", seconds / 60, seconds % 60);
+                    color.0 = if seconds <= 15 {
+                        Color::srgb(1.0, 0.68, 0.27)
+                    } else {
+                        Color::srgb(1.0, 0.90, 0.60)
+                    };
+                }
+            }
+        }
+    }
+}
+
 fn ability_icon_tile(value: &str) -> Option<(u8, u8)> {
     let normalized = value
         .to_ascii_lowercase()
@@ -5791,6 +6113,17 @@ fn ability_icon_tile(value: &str) -> Option<(u8, u8)> {
         "cleave" | "sweeping_cleave" => Some((2, 2)),
         "war_cry" | "stun" | "battle_cry" => Some((3, 2)),
         _ => None,
+    }
+}
+
+pub fn handle_chat_tabs(
+    mut chat: ResMut<NativeChatState>,
+    tabs: Query<(&Interaction, &NativeChatTab), (Changed<Interaction>, With<Button>)>,
+) {
+    for (interaction, tab) in &tabs {
+        if *interaction == Interaction::Pressed {
+            chat.channel = tab.0;
+        }
     }
 }
 
@@ -6516,6 +6849,7 @@ fn toggle_nearest_npc_panel(game_state: &mut NativeGameState, panels: &mut Nativ
     panels.npc_index = 0;
     panels.npc_tab = 0;
     normalize_npc_tab(game_state, panels);
+    ensure_depot_inventory_selection(game_state, panels);
 
     game_state.push_system_message(format!("Talking to {npc_name}."));
 }
@@ -6535,6 +6869,7 @@ pub(crate) fn open_npc_panel(
     panels.npc_index = 0;
     panels.npc_tab = 0;
     normalize_npc_tab(game_state, panels);
+    ensure_depot_inventory_selection(game_state, panels);
 }
 
 fn npc_tabs(game_state: &NativeGameState, panels: &NativePanelState) -> Vec<NativeNpcTab> {
@@ -6626,6 +6961,41 @@ fn npc_tab_len(
         NativeNpcTab::Recipes => npc.recipe_ids.len(),
         NativeNpcTab::Depot => game_state.depot.len(),
     }
+}
+
+fn depot_inventory_ids(game_state: &NativeGameState) -> Vec<game_types::EntityId> {
+    game_state
+        .inventory
+        .iter()
+        .filter(|item| item.definition_id != "gold_coin" && item.equipped_slot.is_none())
+        .map(|item| item.instance_id)
+        .collect()
+}
+
+fn ensure_depot_inventory_selection(
+    game_state: &NativeGameState,
+    panels: &mut NativePanelState,
+) {
+    if !matches!(current_npc_tab(game_state, panels), Some(NativeNpcTab::Depot)) {
+        return;
+    }
+    let items = depot_inventory_ids(game_state);
+    if !panels.selected_item.is_some_and(|selected| items.contains(&selected)) {
+        panels.selected_item = items.first().copied();
+    }
+}
+
+fn inventory_item_location(game_state: &NativeGameState, item: &game_types::ItemInstance) -> String {
+    item.container_id
+        .and_then(|container_id| {
+            game_state
+                .inventory
+                .iter()
+                .find(|container| container.instance_id == container_id)
+        })
+        .and_then(|container| game_state.item_definitions.get(&container.definition_id))
+        .map(|definition| definition.name.to_uppercase())
+        .unwrap_or_else(|| "ROOT INVENTORY".into())
 }
 
 fn selected_npc<'a>(
@@ -6753,18 +7123,21 @@ fn npc_primary_action(
                 .map(|definition| definition.name.clone())
                 .unwrap_or_else(|| item.definition_id.clone());
 
+            let quantity = item.quantity.max(1);
             if network
                 .outbound
                 .send(ClientMessage::WithdrawItem {
                     npc_id: npc.id.clone(),
                     instance_id: item.instance_id,
-                    quantity: 1,
+                    quantity,
                 })
                 .is_err()
             {
                 game_state.push_system_message("The game connection is offline.");
             } else {
-                game_state.push_system_message(format!("Withdraw {item_name}."));
+                game_state.push_system_message(format!(
+                    "Withdraw {item_name} ×{quantity} to inventory."
+                ));
             }
         }
     }
@@ -6864,7 +7237,10 @@ fn npc_deposit_selected_item(
     {
         game_state.push_system_message("The game connection is offline.");
     } else {
-        game_state.push_system_message(format!("Deposit {item_name}."));
+        game_state.push_system_message(format!(
+            "Deposit {item_name} ×{} to depot.",
+            item.quantity.max(1)
+        ));
     }
 }
 
@@ -6961,7 +7337,10 @@ fn npc_modal_row_copy(
 
             Some((
                 name,
-                format!("×{} stored  ·  Enter withdraw one", item.quantity,),
+                format!(
+                    "DEPOT  ·  ×{}  ·  selected for withdrawal",
+                    item.quantity,
+                ),
             ))
         }
     }
@@ -7024,6 +7403,7 @@ pub(crate) fn handle_npc_modal_buttons(
                             panels.npc_index = 0;
 
                             normalize_npc_tab(&game_state, &mut panels);
+                            ensure_depot_inventory_selection(&game_state, &mut panels);
                         }
                     }
                     NativeNpcModalButton::Row(index) => {
@@ -7035,6 +7415,16 @@ pub(crate) fn handle_npc_modal_buttons(
 
                         if index < count {
                             panels.npc_index = index;
+                        }
+                    }
+                    NativeNpcModalButton::InventoryRow(index) => {
+                        if matches!(
+                            current_npc_tab(&game_state, &panels),
+                            Some(NativeNpcTab::Depot)
+                        ) {
+                            panels.selected_item = depot_inventory_ids(&game_state)
+                                .get(index)
+                                .copied();
                         }
                     }
                     NativeNpcModalButton::Primary => {
@@ -7071,6 +7461,8 @@ pub(crate) fn update_npc_modal_ui(
         Query<(&NativeNpcTabText, &mut Text, &mut TextColor)>,
         Query<(&NativeNpcRowText, &mut Text, &mut TextColor)>,
         Query<(&NativeNpcDetailText, &mut Text, &mut TextColor)>,
+        Query<(&NativeNpcInventoryRowText, &mut Text, &mut TextColor)>,
+        Query<(&NativeNpcHeadingText, &mut Text)>,
     )>,
     mut buttons: Query<
         (
@@ -7082,10 +7474,16 @@ pub(crate) fn update_npc_modal_ui(
         ),
         Without<NativeNpcDetailImage>,
     >,
-    mut images: Query<
-        (&mut NativeNpcDetailImage, &mut ImageNode, &mut Visibility),
-        Without<NativeNpcModalButton>,
-    >,
+    mut image_queries: ParamSet<(
+        Query<
+            (&mut NativeNpcDetailImage, &mut ImageNode, &mut Visibility),
+            (Without<NativeNpcModalButton>, Without<NativeNpcInventoryRowImage>),
+        >,
+        Query<
+            (&mut NativeNpcInventoryRowImage, &mut ImageNode, &mut Visibility),
+            (Without<NativeNpcModalButton>, Without<NativeNpcDetailImage>),
+        >,
+    )>,
 ) {
     if !panels.npc_open {
         // These children are selectively hidden while the modal is open, so
@@ -7095,7 +7493,11 @@ pub(crate) fn update_npc_modal_ui(
             *visibility = Visibility::Hidden;
         }
 
-        for (_, _, mut visibility) in &mut images {
+        for (_, _, mut visibility) in &mut image_queries.p0() {
+            *visibility = Visibility::Hidden;
+        }
+
+        for (_, _, mut visibility) in &mut image_queries.p1() {
             *visibility = Visibility::Hidden;
         }
 
@@ -7178,6 +7580,58 @@ pub(crate) fn update_npc_modal_ui(
         }
     }
 
+    let depot_inventory = depot_inventory_ids(&game_state);
+    for (row, mut text, mut color) in &mut text_queries.p4() {
+        let Some(item) = depot_inventory.get(row.0).and_then(|instance_id| {
+            game_state
+                .inventory
+                .iter()
+                .find(|item| item.instance_id == *instance_id)
+        }) else {
+            text.0.clear();
+            color.0 = MUTED;
+            continue;
+        };
+        let name = game_state
+            .item_definitions
+            .get(&item.definition_id)
+            .map(|definition| definition.name.as_str())
+            .unwrap_or(item.definition_id.as_str());
+        text.0 = format!(
+            "INVENTORY  ·  {} ×{}  ·  {}",
+            name,
+            item.quantity,
+            inventory_item_location(&game_state, item),
+        );
+        color.0 = if panels.selected_item == Some(item.instance_id) {
+            Color::srgb(0.68, 0.90, 1.0)
+        } else {
+            TEXT
+        };
+    }
+
+    for (heading, mut text) in &mut text_queries.p5() {
+        text.0 = match (heading.location, heading.title, current_tab) {
+            (NativeNpcHeadingLocation::List, false, Some(NativeNpcTab::Depot)) => {
+                "DEPOT STORAGE"
+            }
+            (NativeNpcHeadingLocation::List, true, Some(NativeNpcTab::Depot)) => {
+                "STORED IN VAULT"
+            }
+            (NativeNpcHeadingLocation::Detail, false, Some(NativeNpcTab::Depot)) => {
+                "SELECTED DEPOT ITEM"
+            }
+            (NativeNpcHeadingLocation::Detail, true, Some(NativeNpcTab::Depot)) => {
+                "WITHDRAWAL DETAILS"
+            }
+            (NativeNpcHeadingLocation::List, false, _) => "AVAILABLE",
+            (NativeNpcHeadingLocation::List, true, _) => "SERVICE ITEMS",
+            (NativeNpcHeadingLocation::Detail, false, _) => "SELECTED",
+            (NativeNpcHeadingLocation::Detail, true, _) => "SERVICE DETAIL",
+        }
+        .into();
+    }
+
     let detail = npc_detail_text(&game_state, &panels);
 
     let selected_copy = npc_modal_row_copy(&game_state, &panels, panels.npc_index);
@@ -7211,7 +7665,7 @@ pub(crate) fn update_npc_modal_ui(
                     Some(NativeNpcTab::Shop) => "BUY",
                     Some(NativeNpcTab::Spells) => "LEARN SPELL",
                     Some(NativeNpcTab::Recipes) => "LEARN RECIPE",
-                    Some(NativeNpcTab::Depot) => "WITHDRAW",
+                    Some(NativeNpcTab::Depot) => "WITHDRAW STACK  →",
                     None => "USE SERVICE",
                 }
                 .into();
@@ -7221,11 +7675,39 @@ pub(crate) fn update_npc_modal_ui(
             NativeNpcDetailText::InventoryHint => {
                 text.0 = panels
                     .selected_item
-                    .and_then(|id| item_display_name(&game_state, id))
-                    .map(|name| format!("Selected inventory item: {}", name,))
-                    .unwrap_or_else(|| "Select an inventory item before Sell or Deposit.".into());
+                    .and_then(|id| {
+                        game_state
+                            .inventory
+                            .iter()
+                            .find(|item| item.instance_id == id)
+                    })
+                    .map(|item| {
+                        let name = game_state
+                            .item_definitions
+                            .get(&item.definition_id)
+                            .map(|definition| definition.name.as_str())
+                            .unwrap_or(item.definition_id.as_str());
+                        format!(
+                            "READY TO DEPOSIT  ·  {} ×{}  ·  {}",
+                            name,
+                            item.quantity,
+                            inventory_item_location(&game_state, item),
+                        )
+                    })
+                    .unwrap_or_else(|| {
+                        "Select an inventory item, then use ← DEPOSIT STACK".into()
+                    });
 
-                color.0 = MUTED;
+                color.0 = Color::srgb(0.52, 0.78, 0.92);
+            }
+            NativeNpcDetailText::InventoryHeading => {
+                text.0 = match current_tab {
+                    Some(NativeNpcTab::Depot) => "INVENTORY  ·  SEND TO DEPOT",
+                    Some(NativeNpcTab::Shop) => "INVENTORY  ·  ITEMS YOU CAN SELL",
+                    _ => "YOUR INVENTORY",
+                }
+                .into();
+                color.0 = Color::srgb(0.58, 0.84, 1.0);
             }
         }
     }
@@ -7240,6 +7722,11 @@ pub(crate) fn update_npc_modal_ui(
 
                 (index < count, index == panels.npc_index)
             }
+            NativeNpcModalButton::InventoryRow(index) => (
+                matches!(current_tab, Some(NativeNpcTab::Depot))
+                    && index < depot_inventory.len(),
+                depot_inventory.get(index).copied() == panels.selected_item,
+            ),
             NativeNpcModalButton::Primary => (current_tab.is_some(), false),
             NativeNpcModalButton::Sell => (matches!(current_tab, Some(NativeNpcTab::Shop,)), false),
             NativeNpcModalButton::Deposit => {
@@ -7258,11 +7745,19 @@ pub(crate) fn update_npc_modal_ui(
         }
 
         if selected {
-            background.0 = Color::srgba(0.22, 0.145, 0.035, 0.72);
-            *border = BorderColor::all(theme::GOLD_BRIGHT);
+            if matches!(action, NativeNpcModalButton::InventoryRow(_)) {
+                background.0 = Color::srgba(0.045, 0.16, 0.23, 0.96);
+                *border = BorderColor::all(Color::srgb(0.48, 0.82, 1.0));
+            } else {
+                background.0 = Color::srgba(0.22, 0.145, 0.035, 0.72);
+                *border = BorderColor::all(theme::GOLD_BRIGHT);
+            }
         } else if *interaction == Interaction::Hovered {
             background.0 = theme::BUTTON_HOVER;
             *border = BorderColor::all(theme::GOLD);
+        } else if matches!(action, NativeNpcModalButton::InventoryRow(_)) {
+            background.0 = Color::srgba(0.025, 0.055, 0.075, 0.96);
+            *border = BorderColor::all(Color::srgb(0.20, 0.42, 0.55));
         } else {
             background.0 = theme::BUTTON_BG;
             *border = BorderColor::all(theme::BUTTON_BORDER);
@@ -7271,7 +7766,7 @@ pub(crate) fn update_npc_modal_ui(
 
     let image_definition = npc_modal_image_definition(&game_state, &panels);
 
-    for (mut marker, mut image, mut visibility) in &mut images {
+    for (mut marker, mut image, mut visibility) in &mut image_queries.p0() {
         let Some(definition_id) = image_definition else {
             marker.definition_id = None;
 
@@ -7286,6 +7781,30 @@ pub(crate) fn update_npc_modal_ui(
             marker.definition_id = Some(definition_id.to_owned());
         }
 
+        *visibility = Visibility::Inherited;
+    }
+
+    for (mut marker, mut image, mut visibility) in &mut image_queries.p1() {
+        let definition_id = depot_inventory
+            .get(marker.index)
+            .and_then(|instance_id| {
+                game_state
+                    .inventory
+                    .iter()
+                    .find(|item| item.instance_id == *instance_id)
+            })
+            .map(|item| item.definition_id.as_str());
+        let Some(definition_id) = definition_id.filter(|_| {
+            matches!(current_tab, Some(NativeNpcTab::Depot))
+        }) else {
+            marker.definition_id = None;
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        if marker.definition_id.as_deref() != Some(definition_id) {
+            image.image = asset_server.load(format!("sprites/items/{}.png", definition_id));
+            marker.definition_id = Some(definition_id.to_owned());
+        }
         *visibility = Visibility::Inherited;
     }
 }
@@ -8647,8 +9166,30 @@ pub(crate) fn update_spellbook_modal_ui(
         &mut BackgroundColor,
         &mut BorderColor,
     )>,
+    mut learned_images: Query<
+        (
+            &mut NativeSpellbookLearnedImage,
+            &mut ImageNode,
+            &mut Visibility,
+        ),
+        Without<NativeSpellbookDetailImage>,
+    >,
+    mut detail_images: Query<
+        (
+            &mut NativeSpellbookDetailImage,
+            &mut ImageNode,
+            &mut Visibility,
+        ),
+        Without<NativeSpellbookLearnedImage>,
+    >,
 ) {
     if !panels.spells_open {
+        for (_, _, mut visibility) in &mut learned_images {
+            *visibility = Visibility::Hidden;
+        }
+        for (_, _, mut visibility) in &mut detail_images {
+            *visibility = Visibility::Hidden;
+        }
         return;
     }
 
@@ -8663,6 +9204,27 @@ pub(crate) fn update_spellbook_modal_ui(
         .copied()
         .filter(|spell| !game_state.learned_spell_ids.contains(&spell.id))
         .collect();
+
+    for (mut view, mut image, mut visibility) in &mut learned_images {
+        let Some((spell_id, spell_name)) = learned.get(view.index) else {
+            view.spell_id = None;
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        let icon = ability_icon_tile(spell_id).or_else(|| ability_icon_tile(spell_name));
+        let Some((column, row)) = icon else {
+            view.spell_id = None;
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        if view.spell_id.as_deref() != Some(spell_id.as_str()) {
+            let left = column as f32 * 306.0;
+            let top = row as f32 * 306.0;
+            image.rect = Some(Rect::new(left, top, left + 306.0, top + 306.0));
+            view.spell_id = Some(spell_id.clone());
+        }
+        *visibility = Visibility::Visible;
+    }
 
     for (kind, mut text, mut color) in &mut text_queries.p0() {
         match kind {
@@ -8745,6 +9307,28 @@ pub(crate) fn update_spellbook_modal_ui(
         .selected_spell_id
         .as_deref()
         .and_then(|spell_id| game_state.spells.get(spell_id));
+
+    for (mut view, mut image, mut visibility) in &mut detail_images {
+        let Some(spell) = selected else {
+            view.spell_id = None;
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        let Some((column, row)) =
+            ability_icon_tile(&spell.id).or_else(|| ability_icon_tile(&spell.name))
+        else {
+            view.spell_id = None;
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        if view.spell_id.as_deref() != Some(spell.id.as_str()) {
+            let left = column as f32 * 306.0;
+            let top = row as f32 * 306.0;
+            image.rect = Some(Rect::new(left, top, left + 306.0, top + 306.0));
+            view.spell_id = Some(spell.id.clone());
+        }
+        *visibility = Visibility::Visible;
+    }
 
     for (kind, mut text, mut color) in &mut text_queries.p3() {
         let Some(spell) = selected else {
@@ -8940,22 +9524,6 @@ pub(crate) fn handle_inventory_modal_buttons(
 
                 panels.selected_item = items.get(index).copied();
             }
-            NativeInventoryButton::Action(NativeInventoryAction::Search) => {
-                panels.inventory_search_active = true;
-            }
-            NativeInventoryButton::Action(NativeInventoryAction::Back) => {
-                if let Some(container_id) = panels.inventory_container_id {
-                    panels.inventory_container_id = game_state
-                        .inventory
-                        .iter()
-                        .find(|item| item.instance_id == container_id)
-                        .and_then(|container| container.container_id);
-
-                    panels.selected_item = None;
-
-                    ensure_inventory_selection(&game_state, &mut panels);
-                }
-            }
             NativeInventoryButton::Action(NativeInventoryAction::Close) => {
                 panels.inventory_open = false;
                 panels.inventory_search_active = false;
@@ -9004,10 +9572,6 @@ pub(crate) fn update_inventory_modal_ui(
 
     let items = inventory_reference_ids(&game_state, &panels);
 
-    let capacity = inventory_reference_capacity(&game_state, &panels);
-
-    let location = inventory_reference_location(&game_state, &panels);
-
     let gold: u64 = game_state
         .inventory
         .iter()
@@ -9033,7 +9597,7 @@ pub(crate) fn update_inventory_modal_ui(
             let weight = definition.map(|value| value.weight).unwrap_or(0.0);
 
             format!(
-                "{}  ·  ×{}  ·  {:.1} weight  ·  Enter open  E equip  F6 split",
+                "{}  ·  ×{}  ·  {:.1} weight  ·  Double-click use/equip/open  ·  F6 split",
                 name, item.quantity, weight,
             )
         })
@@ -9041,16 +9605,6 @@ pub(crate) fn update_inventory_modal_ui(
 
     for (kind, mut text, mut color) in &mut text_queries.p0() {
         match kind {
-            NativeInventoryText::Location => {
-                text.0 = location.clone().to_uppercase();
-
-                color.0 = theme::GOLD;
-            }
-            NativeInventoryText::Usage => {
-                text.0 = format!("{} / {} SLOTS USED", items.len(), capacity,);
-
-                color.0 = TEXT;
-            }
             NativeInventoryText::Capacity => {
                 text.0 = format!(
                     "{:.1} / {:.1} CAPACITY",
@@ -9058,21 +9612,6 @@ pub(crate) fn update_inventory_modal_ui(
                 );
 
                 color.0 = TEXT;
-            }
-            NativeInventoryText::Search => {
-                text.0 = if panels.inventory_search_active {
-                    format!("Search: {}_", panels.inventory_search,)
-                } else if panels.inventory_search.is_empty() {
-                    "SEARCH INVENTORY".into()
-                } else {
-                    format!("Filter: {}", panels.inventory_search,)
-                };
-
-                color.0 = if panels.inventory_search_active {
-                    theme::GOLD_BRIGHT
-                } else {
-                    MUTED
-                };
             }
             NativeInventoryText::Detail => {
                 text.0 = selected_detail.clone();
@@ -9104,12 +9643,6 @@ pub(crate) fn update_inventory_modal_ui(
             continue;
         };
 
-        let definition = game_state.item_definitions.get(&item.definition_id);
-
-        let name = definition
-            .map(|value| value.name.as_str())
-            .unwrap_or(item.definition_id.as_str());
-
         match slot.field {
             NativeInventorySlotField::Quantity => {
                 text.0 = if item.quantity > 1 {
@@ -9119,15 +9652,6 @@ pub(crate) fn update_inventory_modal_ui(
                 };
 
                 color.0 = theme::GOLD_BRIGHT;
-            }
-            NativeInventorySlotField::Name => {
-                text.0 = name.to_owned();
-
-                color.0 = if Some(*instance_id) == panels.selected_item {
-                    theme::GOLD_BRIGHT
-                } else {
-                    TEXT
-                };
             }
         }
     }
@@ -9215,6 +9739,10 @@ pub(crate) fn update_item_interaction_overlays(
     drag: Res<NativeDragDropState>,
     inventory_buttons: Query<(&Interaction, &NativeInventoryButton), With<Button>>,
     equipment_buttons: Query<(&Interaction, &NativeCharacterEquipmentSlot), With<Button>>,
+    profession_buttons: Query<
+        (&Interaction, &NativeCharacterProfessionEquipmentSlot),
+        With<Button>,
+    >,
     mut tooltip: Query<(&mut Node, &mut Visibility), With<NativeItemTooltip>>,
     mut tooltip_text: Query<(&mut Text, &mut TextColor), With<NativeItemTooltipText>>,
     mut ghost: Query<
@@ -9246,6 +9774,25 @@ pub(crate) fn update_item_interaction_overlays(
                 (*interaction == Interaction::Hovered)
                     .then(|| character_equipment_item_id(&game_state, *slot))
                     .flatten()
+            })
+        })
+        .or_else(|| {
+            profession_buttons.iter().find_map(|(interaction, slot)| {
+                if *interaction != Interaction::Hovered {
+                    return None;
+                }
+                let equipped_slot = match slot.0 {
+                    0 => "mining_tool",
+                    1 => "alchemy_tool",
+                    2 => "cooking_tool",
+                    3 => "woodcutting_tool",
+                    _ => return None,
+                };
+                game_state
+                    .inventory
+                    .iter()
+                    .find(|item| item.equipped_slot.as_deref() == Some(equipped_slot))
+                    .map(|item| item.instance_id)
             })
         });
 
@@ -9404,39 +9951,6 @@ pub(crate) fn inventory_reference_ids(
         .into_iter()
         .take(12)
         .collect()
-}
-
-fn inventory_reference_capacity(game_state: &NativeGameState, panels: &NativePanelState) -> usize {
-    active_inventory_container_id(game_state, panels)
-        .and_then(|container_id| {
-            game_state
-                .inventory
-                .iter()
-                .find(|item| item.instance_id == container_id)
-        })
-        .and_then(|item| game_state.item_definitions.get(&item.definition_id))
-        .and_then(|definition| definition.container_slots)
-        .map(usize::from)
-        .unwrap_or(12)
-        .max(1)
-}
-
-fn inventory_reference_location(game_state: &NativeGameState, panels: &NativePanelState) -> String {
-    active_inventory_container_id(game_state, panels)
-        .and_then(|container_id| {
-            game_state
-                .inventory
-                .iter()
-                .find(|item| item.instance_id == container_id)
-        })
-        .map(|item| {
-            game_state
-                .item_definitions
-                .get(&item.definition_id)
-                .map(|definition| definition.name.clone())
-                .unwrap_or_else(|| item.definition_id.clone())
-        })
-        .unwrap_or_else(|| "Root inventory".into())
 }
 
 fn inventory_panel_text(game_state: &NativeGameState, panels: &NativePanelState) -> String {

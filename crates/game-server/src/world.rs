@@ -1,3 +1,4 @@
+// TIBIAGAME_V36_76_0_HOUSE_LIGHT_STACK_DEPOT_CLARITY
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     env, fs,
@@ -2442,8 +2443,8 @@ impl World {
         if item.definition_id == "gold_coin" {
             return Err("money_not_storable");
         }
-        if item.container_id.is_some() || item.equipped_slot.is_some() {
-            return Err("depot_requires_root_item");
+        if item.equipped_slot.is_some() {
+            return Err("depot_requires_unequipped_item");
         }
 
         let definition = self
@@ -2502,6 +2503,13 @@ impl World {
                 true
             }
         });
+        if let Some(root) = transferred
+            .iter_mut()
+            .find(|entry| entry.instance_id == instance_id)
+        {
+            root.container_id = None;
+            root.equipped_slot = None;
+        }
         player.depot.extend(transferred);
         Ok(())
     }
@@ -5301,8 +5309,24 @@ fn add_crafted_output(
     inventory: &mut Vec<ItemInstance>,
     definition: &ItemDefinition,
     quantity: u16,
-    location: (Option<EntityId>, Option<String>),
+    requested_location: (Option<EntityId>, Option<String>),
 ) {
+    // Generated loot normally requests the inventory root. If the player
+    // already keeps this material inside a bag, continue filling that stack
+    // there instead of creating a visually identical root stack.
+    let location = if definition.stackable && requested_location == (None, None) {
+        inventory
+            .iter()
+            .find(|item| {
+                item.definition_id == definition.id
+                    && item.charges == definition.charges
+                    && item.equipped_slot.is_none()
+            })
+            .map(|item| (item.container_id, None))
+            .unwrap_or(requested_location)
+    } else {
+        requested_location
+    };
     let mut remaining = quantity;
     if definition.stackable {
         for item in inventory.iter_mut().filter(|item| {
@@ -6457,7 +6481,7 @@ mod tests {
         let mut player = test_player(id, 100.0);
         equip_test_backpack(&mut player);
         let mut coins = instance("gold_coin");
-        coins.quantity = 5;
+        coins.quantity = 8;
         player.inventory.push(coins);
         let mut world = World::new(combat_catalog(), vec![]);
         world.insert_player(player);
@@ -6496,26 +6520,26 @@ mod tests {
             .find(|item| item.equipped_slot.as_deref() == Some("backpack"))
             .unwrap()
             .instance_id;
-        let mut arrows = instance("rough_arrow");
-        arrows.quantity = 10;
-        arrows.container_id = Some(backpack_id);
-        let arrow_id = arrows.instance_id;
-        player.inventory.push(arrows);
+        let mut runes = instance("blank_rune");
+        runes.quantity = 2;
+        runes.container_id = Some(backpack_id);
+        let rune_id = runes.instance_id;
+        player.inventory.push(runes);
         let mut world = World::new(combat_catalog(), vec![]);
         world.insert_player(player);
 
         world
-            .sell_to_npc(id, "mara_quartermaster", arrow_id, 5)
+            .sell_to_npc(id, "mara_quartermaster", rune_id, 1)
             .unwrap();
 
         let inventory = &world.player(id).unwrap().inventory;
         assert_eq!(
             inventory
                 .iter()
-                .find(|item| item.instance_id == arrow_id)
+                .find(|item| item.instance_id == rune_id)
                 .unwrap()
                 .quantity,
-            5
+            1
         );
         assert_eq!(
             inventory
@@ -6523,7 +6547,7 @@ mod tests {
                 .filter(|item| item.definition_id == "gold_coin")
                 .map(|item| item.quantity)
                 .sum::<u16>(),
-            5
+            1
         );
     }
 
@@ -6557,7 +6581,7 @@ mod tests {
         let id = Uuid::new_v4();
         let mut player = test_player(id, 0.3);
         let mut coins = instance("gold_coin");
-        coins.quantity = 2;
+        coins.quantity = 3;
         player.inventory.push(coins);
         let mut world = World::new(combat_catalog(), vec![]);
         world.insert_player(player);
@@ -6721,6 +6745,56 @@ mod tests {
                 .collect::<HashSet<_>>(),
             HashSet::from([bag_id, contents_id])
         );
+    }
+
+    #[test]
+    fn depot_accepts_a_stack_selected_inside_an_inventory_bag() {
+        let id = Uuid::new_v4();
+        let bag = instance("bag");
+        let bag_id = bag.instance_id;
+        let mut contents = item(4);
+        let contents_id = contents.instance_id;
+        contents.container_id = Some(bag_id);
+        let mut player = test_player(id, 100.0);
+        player.view.position = Position { x: 8, y: 8, z: 7 };
+        player.inventory = vec![bag, contents];
+        equip_test_backpack(&mut player);
+        let mut world = World::new(advanced_catalog(), vec![]);
+        world.insert_player(player);
+
+        world
+            .deposit_item(id, "aldren_vaultkeeper", contents_id)
+            .unwrap();
+
+        let player = world.player(id).unwrap();
+        assert!(!player
+            .inventory
+            .iter()
+            .any(|entry| entry.instance_id == contents_id));
+        assert_eq!(player.depot.len(), 1);
+        assert_eq!(player.depot[0].definition_id, "test_item");
+        assert_eq!(player.depot[0].quantity, 4);
+        assert_eq!(player.depot[0].container_id, None);
+    }
+
+    #[test]
+    fn generated_stackable_output_joins_the_existing_bag_stack() {
+        let bag = instance("bag");
+        let bag_id = bag.instance_id;
+        let mut ore = item(18);
+        ore.container_id = Some(bag_id);
+        let mut inventory = vec![bag, ore];
+        let definition = advanced_catalog().item("test_item").unwrap().clone();
+
+        add_crafted_output(&mut inventory, &definition, 3, (None, None));
+
+        let stacks: Vec<_> = inventory
+            .iter()
+            .filter(|entry| entry.definition_id == "test_item")
+            .collect();
+        assert_eq!(stacks.len(), 1);
+        assert_eq!(stacks[0].quantity, 21);
+        assert_eq!(stacks[0].container_id, Some(bag_id));
     }
 
     #[test]

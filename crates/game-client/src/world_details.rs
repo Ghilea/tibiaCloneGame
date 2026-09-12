@@ -10,6 +10,11 @@ use crate::{
     world_architecture::{HOUSE_WALL_HEIGHT, WallEdge},
 };
 
+#[derive(Component)]
+pub struct HouseFacadeDetail {
+    pub position: Position,
+}
+
 // TIBIAGAME_V36_8_2_BEVY_WORLDASSET_STREAM_BORROW_FIX
 // TIBIAGAME_V36_13_WORLD_BOUNDARY_FLOOR_PRELOAD
 // TIBIAGAME_V36_15_1_OPENING_FACADE_RAT_GPU_PREWARM
@@ -18,6 +23,7 @@ use crate::{
 // TIBIAGAME_V36_70_0_SINGLE_DRAW_TREES
 // TIBIAGAME_V36_71_0_SINGLE_DRAW_CLIFFS
 // TIBIAGAME_V36_72_0_SHARED_OCCLUDER_MATERIALS
+// TIBIAGAME_V36_76_0_HOUSE_LIGHT_STACK_DEPOT_CLARITY
 
 const OCCLUDER_OPACITIES: [f32; 5] = [1.0, 0.78, 0.58, 0.38, 0.22];
 
@@ -892,6 +898,9 @@ pub fn spawn_door(
                 position: door.position,
                 edge,
             },
+            HouseFacadeDetail {
+                position: door.position,
+            },
             Transform::from_xyz(
                 door.position.x as f32 + boundary.x,
                 0.0,
@@ -1032,6 +1041,9 @@ pub fn spawn_window(
                 id: window.id.clone(),
                 position: window.position,
                 edge,
+            },
+            HouseFacadeDetail {
+                position: window.position,
             },
             Transform::from_xyz(
                 window.position.x as f32 + boundary.x,
@@ -1200,6 +1212,7 @@ pub fn spawn_torch(
         .spawn((
             Name::new("Torch"),
             WorldStatic,
+            HouseFacadeDetail { position },
             Transform::from_xyz(position.x as f32, 0.0, position.y as f32),
             Visibility::default(),
         ))
@@ -1227,9 +1240,10 @@ pub fn spawn_torch(
 
             parent.spawn((
                 PointLight {
-                    intensity: 850.0,
-                    range: 5.0,
-                    radius: 0.12,
+                    color: Color::srgb(1.0, 0.52, 0.20),
+                    intensity: 45_000.0,
+                    range: 6.5,
+                    radius: 0.18,
                     shadow_maps_enabled: false,
                     ..default()
                 },
@@ -1265,6 +1279,7 @@ pub fn spawn_stair(
         .spawn((
             Name::new(format!("Stair · {}", stair.id)),
             WorldStatic,
+            HouseFacadeDetail { position },
             Transform::from_xyz(position.x as f32, 0.0, position.y as f32),
             Visibility::default(),
         ))

@@ -3,6 +3,7 @@ mod content;
 mod persistence;
 mod world;
 
+// TIBIAGAME_V36_76_0_HOUSE_LIGHT_STACK_DEPOT_CLARITY
 use std::{
     collections::HashSet,
     env, fs,
@@ -2280,6 +2281,7 @@ fn depot_error_message(code: &str) -> &'static str {
         "npc_out_of_reach" => "Move next to the vaultkeeper to use your depot",
         "item_not_owned" | "depot_item_not_found" => "That item is no longer available",
         "depot_requires_root_item" => "Move the item to your main inventory first",
+        "depot_requires_unequipped_item" => "Unequip the item before storing it",
         "item_locked_in_trade" | "cannot_use_depot_while_trading" => {
             "Finish or cancel your trade before using the depot"
         }

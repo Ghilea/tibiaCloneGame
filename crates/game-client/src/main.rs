@@ -39,6 +39,11 @@ mod world_visuals;
 // TIBIAGAME_V36_72_0_SHARED_OCCLUDER_MATERIALS
 // TIBIAGAME_V36_72_1_LOCAL_OCCLUDER_FADE
 // TIBIAGAME_V36_73_0_INTERIOR_FRONT_WALL_CUTAWAY
+// TIBIAGAME_V36_74_0_INTERACTIVE_INVENTORY_CHAT_SPELLS
+// TIBIAGAME_V36_74_1_UI_QUERY_CONFLICT_FIX
+// TIBIAGAME_V36_75_0_ACTION_STATUS_BARS
+// TIBIAGAME_V36_76_0_HOUSE_LIGHT_STACK_DEPOT_CLARITY
+// TIBIAGAME_V36_77_0_ROBUST_HOUSE_CUTAWAY_DEPOT_FLOW
 // TIBIAGAME_V36_13_WORLD_BOUNDARY_FLOOR_PRELOAD
 // TIBIAGAME_V36_14_MEDIEVAL_FACADE_CREATURE_WARMUP
 // TIBIAGAME_V36_15_1_OPENING_FACADE_RAT_GPU_PREWARM
@@ -401,6 +406,7 @@ impl Plugin for SingleWindowGameplayPlugin {
                     native_game_menu::handle_buttons.after(native_game_menu::handle_input),
                     native_ui::ping_server,
                     native_ui::update_ui.after(pump_network),
+                    native_ui::update_action_status_ui.after(native_ui::update_ui),
                     native_ui::update_nearby_loot_ui.after(native_ui::update_ui),
                     native_map_ui::update_ui
                         .after(pump_network)
@@ -417,6 +423,9 @@ impl Plugin for SingleWindowGameplayPlugin {
             .add_systems(
                 Update,
                 (
+                    native_ui::handle_chat_tabs
+                        .run_if(native_game_menu::menu_closed)
+                        .after(native_ui::handle_chat_input),
                     native_ui::handle_battle_list_buttons
                         .run_if(native_loading::gameplay_ready)
                         .run_if(native_game_menu::menu_closed),
@@ -724,7 +733,12 @@ fn run_game(session: network::NativeSession) -> Result<()> {
         )
         .add_systems(
             Update,
+            native_ui::update_action_status_ui.after(native_ui::update_ui),
+        )
+        .add_systems(
+            Update,
             (
+                native_ui::handle_chat_tabs.after(native_ui::handle_chat_input),
                 native_ui::handle_battle_list_buttons.run_if(native_loading::gameplay_ready),
                 native_ui::update_battle_list
                     .after(native_ui::handle_battle_list_buttons)
@@ -969,14 +983,28 @@ fn setup(
             Transform::from_translation(movement.visual),
             Visibility::default(),
         ))
-        .with_child((
-            Name::new(format!("{} model", identity.outfit)),
-            PlayerModelRoot,
-            WorldAssetRoot(model_scene),
-            Transform::from_translation(Vec3::new(0.0, -0.575, 0.0))
-                .with_scale(Vec3::splat(model_scale))
-                .with_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
-        ));
+        .with_children(|player| {
+            player.spawn((
+                Name::new(format!("{} model", identity.outfit)),
+                PlayerModelRoot,
+                WorldAssetRoot(model_scene),
+                Transform::from_translation(Vec3::new(0.0, -0.575, 0.0))
+                    .with_scale(Vec3::splat(model_scale))
+                    .with_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
+            ));
+            player.spawn((
+                Name::new("Player light aura"),
+                PointLight {
+                    color: Color::srgb(1.0, 0.76, 0.46),
+                    intensity: 24_000.0,
+                    range: 5.0,
+                    radius: 0.24,
+                    shadow_maps_enabled: false,
+                    ..default()
+                },
+                Transform::from_xyz(0.0, 1.35, 0.0),
+            ));
+        });
 
     commands.spawn((
         Name::new("Sun"),
@@ -988,18 +1016,6 @@ fn setup(
         },
         Transform::from_xyz(movement.visual.x + 8.0, 14.0, movement.visual.z + 6.0)
             .looking_at(movement.visual, Vec3::Y),
-    ));
-
-    commands.spawn((
-        Name::new("Warm Point Light"),
-        PointLight {
-            color: Color::srgb(1.0, 0.67, 0.32),
-            intensity: 160_000.0,
-            range: 9.0,
-            shadow_maps_enabled: false,
-            ..default()
-        },
-        Transform::from_translation(movement.visual + Vec3::new(3.0, 3.0, 3.0)),
     ));
 
     let target = movement.visual - Vec3::Y * 0.5;
@@ -1492,9 +1508,7 @@ fn pump_network(
                 {
                     let mut roots = actor_queries.p4();
                     for (resource, mut root) in &mut roots {
-                        let Some(node) = resource_nodes
-                            .iter()
-                            .find(|node| node.id == resource.id)
+                        let Some(node) = resource_nodes.iter().find(|node| node.id == resource.id)
                         else {
                             continue;
                         };
@@ -1506,9 +1520,7 @@ fn pump_network(
                 {
                     let mut accents = actor_queries.p5();
                     for (accent, mut visibility) in &mut accents {
-                        let Some(node) = resource_nodes
-                            .iter()
-                            .find(|node| node.id == accent.id)
+                        let Some(node) = resource_nodes.iter().find(|node| node.id == accent.id)
                         else {
                             continue;
                         };
@@ -1948,7 +1960,13 @@ fn update_building_roofs(
     camera: Query<&Transform, (With<MainCamera>, Without<BuildingRoof>)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut roofs: Query<(&mut BuildingRoof, &mut Visibility), Without<MainCamera>>,
-    mut walls: Query<(&HouseWallOccluder, &mut Visibility), Without<BuildingRoof>>,
+    mut facade_occluders: ParamSet<(
+        Query<(&HouseWallOccluder, &mut Visibility), Without<BuildingRoof>>,
+        Query<
+            (&world_details::HouseFacadeDetail, &mut Visibility),
+            (Without<BuildingRoof>, Without<HouseWallOccluder>),
+        >,
+    )>,
     mut world_occluders: Query<&mut world_details::WorldOccluder>,
     mut occluder_surfaces: Query<&mut MeshMaterial3d<StandardMaterial>>,
 ) {
@@ -1993,10 +2011,10 @@ fn update_building_roofs(
 
         let roof_min = Vec2::new(roof.min_x - 0.12, roof.min_z - 0.12);
         let roof_max = Vec2::new(roof.max_x + 0.12, roof.max_z + 0.12);
-        let close_to_house =
-            point_rect_distance_squared(player_2d, roof_min, roof_max) <= 0.9 * 0.9;
+        // A roof can cover the player even when its footprint is several tiles
+        // away. Test the complete camera ray so foreground roofs cut away too.
         let between_camera_and_player =
-            close_to_house && segment_samples_rect(player_2d, camera_2d, roof_min, roof_max);
+            segment_samples_rect(player_2d, camera_2d, roof_min, roof_max);
 
         let target_opacity = if inside || between_camera_and_player {
             0.14
@@ -2004,8 +2022,7 @@ fn update_building_roofs(
             1.0
         };
         let previous_opacity = roof.opacity;
-        let mut next_opacity =
-            previous_opacity + (target_opacity - previous_opacity) * fade_step;
+        let mut next_opacity = previous_opacity + (target_opacity - previous_opacity) * fade_step;
         if (target_opacity - next_opacity).abs() < 0.002 {
             next_opacity = target_opacity;
         }
@@ -2034,7 +2051,7 @@ fn update_building_roofs(
     // When the player is indoors, cut away the complete camera-facing wall of
     // that building. Large houses can place this wall several tiles from the
     // player, so a proximity-only test leaves both the player and NPCs hidden.
-    for (wall, mut visibility) in &mut walls {
+    for (wall, mut visibility) in &mut facade_occluders.p0() {
         let point = Vec2::new(wall.position.x as f32, wall.position.y as f32);
         let inside_render_area = (point.x - player_2d.x).abs() <= WORLD_RENDER_RADIUS
             && (point.y - player_2d.y).abs() <= WORLD_RENDER_RADIUS;
@@ -2050,31 +2067,35 @@ fn update_building_roofs(
             && point_segment_distance_squared(point, player_2d, camera_2d) <= 0.68 * 0.68;
         let camera_offset = camera_2d - player_2d;
         let interior_front_wall = interior_cutaways.iter().any(|(min, max)| {
-            let within_building = point.x >= min.x - 0.55
-                && point.x <= max.x + 0.55
-                && point.y >= min.y - 0.55
-                && point.y <= max.y + 0.55;
-            if !within_building {
-                return false;
-            }
-
-            if camera_offset.y.abs() >= camera_offset.x.abs() {
-                if camera_offset.y >= 0.0 {
-                    point.y >= max.y - 1.05
-                } else {
-                    point.y <= min.y + 1.05
-                }
-            } else if camera_offset.x >= 0.0 {
-                point.x >= max.x - 1.05
-            } else {
-                point.x <= min.x + 1.05
-            }
+            point_is_on_camera_facing_house_edge(point, camera_offset, *min, *max)
         });
 
         let desired = if locally_occluding || interior_front_wall {
             Visibility::Hidden
         } else {
             Visibility::Visible
+        };
+        if *visibility != desired {
+            *visibility = desired;
+        }
+    }
+
+    // Doors, windows, wall-mounted torches and stairs are separate scene
+    // roots. Hide the camera-facing ones together with the wall so they do not
+    // remain as opaque silhouettes over an indoor player.
+    for (detail, mut visibility) in &mut facade_occluders.p1() {
+        let point = Vec2::new(detail.position.x as f32, detail.position.y as f32);
+        let visible_floor = detail.position.z == active_floor;
+        let inside_render_area = (point.x - player_2d.x).abs() <= WORLD_RENDER_RADIUS
+            && (point.y - player_2d.y).abs() <= WORLD_RENDER_RADIUS;
+        let camera_offset = camera_2d - player_2d;
+        let interior_front_detail = interior_cutaways.iter().any(|(min, max)| {
+            point_is_on_camera_facing_house_edge(point, camera_offset, *min, *max)
+        });
+        let desired = if visible_floor && inside_render_area && !interior_front_detail {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
         };
         if *visibility != desired {
             *visibility = desired;
@@ -2091,8 +2112,8 @@ fn update_building_roofs(
         let sight_min_z = player_2d.y.min(camera_2d.y) - occluder.radius;
         let sight_max_z = player_2d.y.max(camera_2d.y) + occluder.radius;
         let local_fade_radius = WORLD_OCCLUDER_FADE_RADIUS + occluder.radius;
-        let close_to_player = point.distance_squared(player_2d)
-            <= local_fade_radius * local_fade_radius;
+        let close_to_player =
+            point.distance_squared(player_2d) <= local_fade_radius * local_fade_radius;
         let could_occlude = occluder.position.z == active_floor
             && close_to_player
             && point.x >= sight_min_x
@@ -2111,8 +2132,7 @@ fn update_building_roofs(
             1.0
         };
         let previous_opacity = occluder.opacity;
-        let mut next_opacity = previous_opacity
-            + (target_opacity - previous_opacity) * fade_step;
+        let mut next_opacity = previous_opacity + (target_opacity - previous_opacity) * fade_step;
         if (target_opacity - next_opacity).abs() < 0.002 {
             next_opacity = target_opacity;
         }
@@ -2132,6 +2152,36 @@ fn update_building_roofs(
     }
 }
 
+fn point_is_on_camera_facing_house_edge(
+    point: Vec2,
+    camera_offset: Vec2,
+    min: Vec2,
+    max: Vec2,
+) -> bool {
+    // These bounds describe the inner roof footprint. Facade meshes and their
+    // attached props extend beyond it, so include the outer wall and eaves.
+    let facade_margin = 1.75;
+    let within_building = point.x >= min.x - facade_margin
+        && point.x <= max.x + facade_margin
+        && point.y >= min.y - facade_margin
+        && point.y <= max.y + facade_margin;
+    if !within_building {
+        return false;
+    }
+
+    if camera_offset.y.abs() >= camera_offset.x.abs() {
+        if camera_offset.y >= 0.0 {
+            point.y >= max.y - 1.35
+        } else {
+            point.y <= min.y + 1.35
+        }
+    } else if camera_offset.x >= 0.0 {
+        point.x >= max.x - 1.35
+    } else {
+        point.x <= min.x + 1.35
+    }
+}
+
 fn segment_samples_rect(start: Vec2, end: Vec2, min: Vec2, max: Vec2) -> bool {
     // Houses are several tiles wide, so a short deterministic sample is both
     // cheaper and less error-prone than maintaining a custom ray/AABB solver.
@@ -2144,10 +2194,6 @@ fn segment_samples_rect(start: Vec2, end: Vec2, min: Vec2, max: Vec2) -> bool {
         }
     }
     false
-}
-
-fn point_rect_distance_squared(point: Vec2, min: Vec2, max: Vec2) -> f32 {
-    point.distance_squared(point.clamp(min, max))
 }
 
 fn point_segment_distance_squared(point: Vec2, start: Vec2, end: Vec2) -> f32 {

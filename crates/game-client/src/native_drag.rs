@@ -1,4 +1,5 @@
 // TIBIAGAME_V36_58_0_RUST_COMBAT_DRAG_PARITY
+// TIBIAGAME_V36_74_0_INTERACTIVE_INVENTORY_CHAT_SPELLS
 use std::collections::HashSet;
 
 use bevy::prelude::*;
@@ -8,8 +9,8 @@ use game_types::EntityId;
 use crate::{
     NativeNetwork,
     native_ui::{
-        NativeActionSlot, NativeCharacterEquipmentSlot, NativeInventoryButton, NativePanelState,
-        NativeSpellbookButton,
+        NativeActionSlot, NativeCharacterEquipmentSlot, NativeCharacterProfessionEquipmentSlot,
+        NativeInventoryButton, NativePanelState, NativeSpellbookButton,
     },
     state::NativeGameState,
 };
@@ -101,6 +102,38 @@ enum NativeDragPayload {
     Item(EntityId),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AutomaticItemAction {
+    Unequip,
+    Eat,
+    LearnRecipe,
+    UseOnTarget,
+    OpenContainer,
+    Equip,
+    Unavailable,
+}
+
+fn automatic_item_action(
+    item: &game_types::ItemInstance,
+    definition: &game_types::ItemDefinition,
+) -> AutomaticItemAction {
+    if item.equipped_slot.is_some() {
+        AutomaticItemAction::Unequip
+    } else if definition.food_effect.is_some() {
+        AutomaticItemAction::Eat
+    } else if definition.teaches_recipe_id.is_some() {
+        AutomaticItemAction::LearnRecipe
+    } else if definition.combat_effect.is_some() {
+        AutomaticItemAction::UseOnTarget
+    } else if definition.container_slots.is_some() {
+        AutomaticItemAction::OpenContainer
+    } else if definition.equipment_slot.is_some() {
+        AutomaticItemAction::Equip
+    } else {
+        AutomaticItemAction::Unavailable
+    }
+}
+
 #[derive(Resource, Default)]
 pub(crate) struct NativeDragDropState {
     payload: Option<NativeDragPayload>,
@@ -132,6 +165,10 @@ pub(crate) fn handle_drag_drop(
     inventory_buttons: Query<(&Interaction, &NativeInventoryButton), With<Button>>,
     spellbook_buttons: Query<(&Interaction, &NativeSpellbookButton), With<Button>>,
     equipment_buttons: Query<(&Interaction, &NativeCharacterEquipmentSlot), With<Button>>,
+    profession_buttons: Query<
+        (&Interaction, &NativeCharacterProfessionEquipmentSlot),
+        With<Button>,
+    >,
     mut drag: ResMut<NativeDragDropState>,
 ) {
     let Ok(window) = windows.single() else {
@@ -153,6 +190,10 @@ pub(crate) fn handle_drag_drop(
             .map(NativeDragPayload::Item)
             .or_else(|| {
                 pressed_equipment_item(&equipment_buttons, &game_state).map(NativeDragPayload::Item)
+            })
+            .or_else(|| {
+                pressed_profession_item(&profession_buttons, &game_state)
+                    .map(NativeDragPayload::Item)
             })
             .or_else(|| {
                 pressed_spellbook_spell(&spellbook_buttons, &game_state, &panels)
@@ -224,7 +265,12 @@ pub(crate) fn handle_drag_drop(
                 });
                 drag.last_item_click = Some((instance_id, now));
                 if is_double_click {
-                    equip_item_automatically(&network, &mut game_state, instance_id);
+                    activate_item_automatically(
+                        &network,
+                        &mut game_state,
+                        &mut panels,
+                        instance_id,
+                    );
                     drag.last_item_click = None;
                 }
             }
@@ -256,6 +302,11 @@ pub(crate) fn handle_drag_drop(
             }
         }
         NativeDragPayload::Item(instance_id) => {
+            if let Some(target_slot) = hovered_profession_slot(&profession_buttons) {
+                move_item_to_profession(&network, &mut game_state, instance_id, target_slot);
+                return;
+            }
+
             if let Some(target_slot) = hovered_equipment_slot(&equipment_buttons) {
                 move_item_to_equipment(&network, &mut game_state, instance_id, target_slot);
                 return;
@@ -282,35 +333,102 @@ pub(crate) fn handle_drag_drop(
     }
 }
 
-fn equip_item_automatically(
+fn activate_item_automatically(
     network: &NativeNetwork,
     game_state: &mut NativeGameState,
+    panels: &mut NativePanelState,
     instance_id: EntityId,
 ) {
     let Some(item) = game_state
         .inventory
         .iter()
         .find(|item| item.instance_id == instance_id)
+        .cloned()
     else {
         return;
     };
 
-    let Some(definition) = game_state.item_definitions.get(&item.definition_id) else {
+    let Some(definition) = game_state
+        .item_definitions
+        .get(&item.definition_id)
+        .cloned()
+    else {
         game_state.push_system_message("Unknown item definition.");
         return;
     };
 
-    let Some(slot) = definition.equipment_slot.clone() else {
-        game_state.push_system_message(format!("{} cannot be equipped.", definition.name));
-        return;
-    };
+    match automatic_item_action(&item, &definition) {
+        AutomaticItemAction::Unequip => {
+            send_move_item(network, game_state, instance_id, ItemDestination::Root);
+        }
+        AutomaticItemAction::Eat => {
+            if network
+                .outbound
+                .send(ClientMessage::EatItem { instance_id })
+                .is_err()
+            {
+                game_state.push_system_message("The game connection is offline.");
+            } else {
+                game_state.push_system_message(format!("Use {}.", definition.name));
+            }
+        }
+        AutomaticItemAction::LearnRecipe => {
+            if network
+                .outbound
+                .send(ClientMessage::LearnRecipeFromItem { instance_id })
+                .is_err()
+            {
+                game_state.push_system_message("The game connection is offline.");
+            } else {
+                game_state.push_system_message(format!("Study {}.", definition.name));
+            }
+        }
+        AutomaticItemAction::UseOnTarget => {
+            let Some(target_id) = game_state.attack_target_id else {
+                game_state.push_system_message("Select a target before using that item.");
+                return;
+            };
+            if network
+                .outbound
+                .send(ClientMessage::UseItem {
+                    instance_id,
+                    target_id,
+                })
+                .is_err()
+            {
+                game_state.push_system_message("The game connection is offline.");
+            } else {
+                game_state.push_system_message(format!("Use {}.", definition.name));
+            }
+        }
+        AutomaticItemAction::OpenContainer => {
+            panels.inventory_container_id = Some(instance_id);
+            panels.selected_item = None;
+        }
+        AutomaticItemAction::Equip => {
+            let slot = definition
+                .equipment_slot
+                .clone()
+                .expect("equip action requires an equipment slot");
+            send_move_item(
+                network,
+                game_state,
+                instance_id,
+                ItemDestination::Equipment { slot },
+            );
+        }
+        AutomaticItemAction::Unavailable => {
+            game_state.push_system_message(format!("{} cannot be used.", definition.name));
+        }
+    }
+}
 
-    send_move_item(
-        network,
-        game_state,
-        instance_id,
-        ItemDestination::Equipment { slot },
-    );
+fn hovered_profession_slot(
+    buttons: &Query<(&Interaction, &NativeCharacterProfessionEquipmentSlot), With<Button>>,
+) -> Option<usize> {
+    buttons.iter().find_map(|(interaction, slot)| {
+        matches!(*interaction, Interaction::Hovered | Interaction::Pressed).then_some(slot.0)
+    })
 }
 
 fn hovered_action_slot(
@@ -369,6 +487,17 @@ fn pressed_equipment_item(
             return None;
         }
         equipped_item_id(game_state, *slot)
+    })
+}
+
+fn pressed_profession_item(
+    buttons: &Query<(&Interaction, &NativeCharacterProfessionEquipmentSlot), With<Button>>,
+    game_state: &NativeGameState,
+) -> Option<EntityId> {
+    buttons.iter().find_map(|(interaction, slot)| {
+        (*interaction == Interaction::Pressed)
+            .then(|| profession_item_id(game_state, slot.0))
+            .flatten()
     })
 }
 
@@ -477,6 +606,53 @@ fn move_item_to_equipment(
     );
 }
 
+fn move_item_to_profession(
+    network: &NativeNetwork,
+    game_state: &mut NativeGameState,
+    instance_id: EntityId,
+    target_index: usize,
+) {
+    let Some(slot) = profession_slot_name(target_index) else {
+        return;
+    };
+    let fits = game_state
+        .inventory
+        .iter()
+        .find(|item| item.instance_id == instance_id)
+        .and_then(|item| game_state.item_definitions.get(&item.definition_id))
+        .and_then(|definition| definition.equipment_slot.as_deref())
+        .is_some_and(|item_slot| item_slot.eq_ignore_ascii_case(slot));
+    if !fits {
+        game_state.push_system_message("That item does not fit this profession slot.");
+        return;
+    }
+    send_move_item(
+        network,
+        game_state,
+        instance_id,
+        ItemDestination::Equipment { slot: slot.into() },
+    );
+}
+
+fn profession_item_id(game_state: &NativeGameState, index: usize) -> Option<EntityId> {
+    let slot = profession_slot_name(index)?;
+    game_state
+        .inventory
+        .iter()
+        .find(|item| item.equipped_slot.as_deref() == Some(slot))
+        .map(|item| item.instance_id)
+}
+
+fn profession_slot_name(index: usize) -> Option<&'static str> {
+    match index {
+        0 => Some("mining_tool"),
+        1 => Some("alchemy_tool"),
+        2 => Some("cooking_tool"),
+        3 => Some("woodcutting_tool"),
+        _ => None,
+    }
+}
+
 fn send_move_item(
     network: &NativeNetwork,
     game_state: &mut NativeGameState,
@@ -542,5 +718,71 @@ fn equipment_slot_aliases(slot: NativeCharacterEquipmentSlot) -> &'static [&'sta
         NativeCharacterEquipmentSlot::Ring => &["ring"],
         NativeCharacterEquipmentSlot::Feet => &["feet", "boots", "shoes"],
         NativeCharacterEquipmentSlot::Legs => &["legs", "pants"],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use game_types::{FoodEffect, ItemDefinition, ItemInstance};
+
+    fn item(equipped_slot: Option<&str>) -> ItemInstance {
+        ItemInstance {
+            instance_id: EntityId::nil(),
+            definition_id: "test_item".into(),
+            quantity: 1,
+            charges: None,
+            container_id: None,
+            equipped_slot: equipped_slot.map(str::to_owned),
+        }
+    }
+
+    fn definition() -> ItemDefinition {
+        ItemDefinition {
+            id: "test_item".into(),
+            name: "Test Item".into(),
+            weight: 1.0,
+            stackable: false,
+            max_stack: 1,
+            charges: None,
+            attack: None,
+            defense: None,
+            container_slots: None,
+            equipment_slot: None,
+            pickupable: true,
+            combat_effect: None,
+            distance_weapon: None,
+            food_effect: None,
+            teaches_recipe_id: None,
+            light_source: None,
+        }
+    }
+
+    #[test]
+    fn double_click_uses_food_instead_of_trying_to_equip_it() {
+        let mut food = definition();
+        food.food_effect = Some(FoodEffect {
+            health_per_tick: 2,
+            mana_per_tick: 1,
+            duration_seconds: 30,
+        });
+        assert_eq!(
+            automatic_item_action(&item(None), &food),
+            AutomaticItemAction::Eat
+        );
+    }
+
+    #[test]
+    fn double_click_equips_gear_and_unequips_equipped_gear() {
+        let mut gear = definition();
+        gear.equipment_slot = Some("helmet".into());
+        assert_eq!(
+            automatic_item_action(&item(None), &gear),
+            AutomaticItemAction::Equip
+        );
+        assert_eq!(
+            automatic_item_action(&item(Some("helmet")), &gear),
+            AutomaticItemAction::Unequip
+        );
     }
 }
