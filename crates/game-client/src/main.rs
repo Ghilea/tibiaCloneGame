@@ -37,6 +37,8 @@ mod world_visuals;
 // TIBIAGAME_V36_70_0_SINGLE_DRAW_TREES
 // TIBIAGAME_V36_71_0_SINGLE_DRAW_CLIFFS
 // TIBIAGAME_V36_72_0_SHARED_OCCLUDER_MATERIALS
+// TIBIAGAME_V36_72_1_LOCAL_OCCLUDER_FADE
+// TIBIAGAME_V36_73_0_INTERIOR_FRONT_WALL_CUTAWAY
 // TIBIAGAME_V36_13_WORLD_BOUNDARY_FLOOR_PRELOAD
 // TIBIAGAME_V36_14_MEDIEVAL_FACADE_CREATURE_WARMUP
 // TIBIAGAME_V36_15_1_OPENING_FACADE_RAT_GPU_PREWARM
@@ -77,6 +79,7 @@ const DIAGONAL_FACTOR: f64 = std::f64::consts::SQRT_2;
 // roof depth, avoiding the flattened look of a near-overhead camera.
 const CAMERA_OFFSET: Vec3 = Vec3::new(0.0, 10.5, 12.5);
 const WORLD_RENDER_RADIUS: f32 = 22.0;
+const WORLD_OCCLUDER_FADE_RADIUS: f32 = 2.25;
 
 #[derive(Component)]
 struct LocalPlayer;
@@ -1957,6 +1960,7 @@ fn update_building_roofs(
     let camera_2d = Vec2::new(camera.translation.x, camera.translation.z);
     let active_floor = movement.logical.z;
     let fade_step = (time.delta_secs() * 9.0).clamp(0.0, 1.0);
+    let mut interior_cutaways = Vec::<(Vec2, Vec2)>::new();
 
     for (mut roof, mut visibility) in &mut roofs {
         let roof_center = Vec2::new(
@@ -1980,6 +1984,12 @@ fn update_building_roofs(
             && player_2d.x <= roof.max_x
             && player_2d.y >= roof.min_z
             && player_2d.y <= roof.max_z;
+        if inside {
+            interior_cutaways.push((
+                Vec2::new(roof.min_x, roof.min_z),
+                Vec2::new(roof.max_x, roof.max_z),
+            ));
+        }
 
         let roof_min = Vec2::new(roof.min_x - 0.12, roof.min_z - 0.12);
         let roof_max = Vec2::new(roof.max_x + 0.12, roof.max_z + 0.12);
@@ -2021,9 +2031,9 @@ fn update_building_roofs(
         }
     }
 
-    // Roof fade solves the large obstruction. A wall edge can still sit
-    // directly between the camera and the player, so perform a Tibia-style
-    // local cutaway only on house-wall roots crossed by that sight segment.
+    // When the player is indoors, cut away the complete camera-facing wall of
+    // that building. Large houses can place this wall several tiles from the
+    // player, so a proximity-only test leaves both the player and NPCs hidden.
     for (wall, mut visibility) in &mut walls {
         let point = Vec2::new(wall.position.x as f32, wall.position.y as f32);
         let inside_render_area = (point.x - player_2d.x).abs() <= WORLD_RENDER_RADIUS
@@ -2036,10 +2046,32 @@ fn update_building_roofs(
         }
 
         let close_to_player = point.distance_squared(player_2d) <= 1.5 * 1.5;
-        let occluding = close_to_player
+        let locally_occluding = close_to_player
             && point_segment_distance_squared(point, player_2d, camera_2d) <= 0.68 * 0.68;
+        let camera_offset = camera_2d - player_2d;
+        let interior_front_wall = interior_cutaways.iter().any(|(min, max)| {
+            let within_building = point.x >= min.x - 0.55
+                && point.x <= max.x + 0.55
+                && point.y >= min.y - 0.55
+                && point.y <= max.y + 0.55;
+            if !within_building {
+                return false;
+            }
 
-        let desired = if occluding {
+            if camera_offset.y.abs() >= camera_offset.x.abs() {
+                if camera_offset.y >= 0.0 {
+                    point.y >= max.y - 1.05
+                } else {
+                    point.y <= min.y + 1.05
+                }
+            } else if camera_offset.x >= 0.0 {
+                point.x >= max.x - 1.05
+            } else {
+                point.x <= min.x + 1.05
+            }
+        });
+
+        let desired = if locally_occluding || interior_front_wall {
             Visibility::Hidden
         } else {
             Visibility::Visible
@@ -2049,16 +2081,20 @@ fn update_building_roofs(
         }
     }
 
-    // Trees and mountain walls keep their silhouettes but fade when their
-    // footprint crosses the camera-to-player sight line. Each occluder owns
-    // cloned material handles, so fading one never affects its neighbours.
+    // Trees and mountain walls fade only when they are close enough to cover
+    // the player. Extending this over the full camera ray creates a conspicuous
+    // transparent row in the grid-aligned Tibia camera.
     for mut occluder in &mut world_occluders {
         let point = Vec2::new(occluder.position.x as f32, occluder.position.y as f32);
         let sight_min_x = player_2d.x.min(camera_2d.x) - occluder.radius;
         let sight_max_x = player_2d.x.max(camera_2d.x) + occluder.radius;
         let sight_min_z = player_2d.y.min(camera_2d.y) - occluder.radius;
         let sight_max_z = player_2d.y.max(camera_2d.y) + occluder.radius;
+        let local_fade_radius = WORLD_OCCLUDER_FADE_RADIUS + occluder.radius;
+        let close_to_player = point.distance_squared(player_2d)
+            <= local_fade_radius * local_fade_radius;
         let could_occlude = occluder.position.z == active_floor
+            && close_to_player
             && point.x >= sight_min_x
             && point.x <= sight_max_x
             && point.y >= sight_min_z
