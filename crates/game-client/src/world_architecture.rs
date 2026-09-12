@@ -1,7 +1,9 @@
+use std::collections::HashSet;
+
 use bevy::{
     asset::RenderAssetUsages, mesh::Indices, prelude::*, render::render_resource::PrimitiveTopology,
 };
-use game_protocol::{BuildingView, DoorView, WindowView};
+use game_protocol::{BuildingView, DoorView, MapView, WindowView};
 use game_types::Position;
 
 use crate::{BuildingRoof, HouseWallOccluder, WorldStatic};
@@ -15,6 +17,10 @@ use crate::{BuildingRoof, HouseWallOccluder, WorldStatic};
 // TIBIAGAME_V36_65_0_MATERIAL_DEPTH_OCCLUDERS_BATTLE_TARGETING
 // TIBIAGAME_V36_66_2_SEALED_FLOORS_AND_ROOF_EAVES
 // TIBIAGAME_V36_66_3_CLEAN_WALL_CORNERS_AND_ROOF_TRIM
+// TIBIAGAME_V36_67_0_BATCHED_GRASS_TUFTS
+// TIBIAGAME_V36_67_1_FINE_TAPERED_GRASS
+// TIBIAGAME_V36_68_0_STABLE_OPAQUE_ROOFS
+// TIBIAGAME_V36_69_0_NEAR_FIELD_GRASS_DETAIL
 
 pub const HOUSE_WALL_HEIGHT: f32 = 2.64;
 pub const CASTLE_WALL_HEIGHT: f32 = 3.00;
@@ -43,6 +49,7 @@ const ROOF_EAVE_FASCIA_HEIGHT: f32 = 0.22;
 const ROOF_EAVE_FASCIA_THICKNESS: f32 = 0.18;
 const GABLE_STEP_HEIGHT: f32 = 0.22;
 const GROUND_CHUNK_TILES: i32 = 16;
+const GRASS_CHUNK_TILES: i32 = 8;
 
 #[derive(Debug, Clone, Copy)]
 pub struct BridgeEdges {
@@ -56,6 +63,11 @@ pub struct BridgeEdges {
 pub struct GroundPatch {
     pub center: Vec2,
     pub size: Vec2,
+}
+
+#[derive(Component)]
+pub struct StandingGrassChunk {
+    pub half_size: Vec2,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -582,6 +594,197 @@ pub fn spawn_ground_chunk(
         .id()
 }
 
+pub fn grass_exclusions(map: &MapView, floor: i16) -> HashSet<Position> {
+    let mut excluded: HashSet<Position> = map
+        .terrain_materials
+        .iter()
+        .filter(|terrain| terrain.position.z == floor && terrain.material != "marsh_grass")
+        .map(|terrain| terrain.position)
+        .chain(map.roads.iter().copied().filter(|position| position.z == floor))
+        .chain(map.water.iter().copied().filter(|position| position.z == floor))
+        .chain(map.bridges.iter().copied().filter(|position| position.z == floor))
+        .chain(
+            map.house_walls
+                .iter()
+                .copied()
+                .filter(|position| position.z == floor),
+        )
+        .chain(
+            map.castle_walls
+                .iter()
+                .copied()
+                .filter(|position| position.z == floor),
+        )
+        .chain(
+            map.doors
+                .iter()
+                .filter(|door| door.position.z == floor)
+                .map(|door| door.position),
+        )
+        .chain(
+            map.windows
+                .iter()
+                .filter(|window| window.position.z == floor)
+                .map(|window| window.position),
+        )
+        .collect();
+
+    for building in map.buildings.iter().filter(|building| building.floor == floor) {
+        for y in building.y..building.y + building.height.max(1) {
+            for x in building.x..building.x + building.width.max(1) {
+                excluded.insert(Position { x, y, z: floor });
+            }
+        }
+    }
+
+    excluded
+}
+
+pub fn grass_tiles_for_patch(
+    patch: GroundPatch,
+    floor: i16,
+    excluded: &HashSet<Position>,
+) -> Vec<Position> {
+    let width = patch.size.x.round() as i32;
+    let height = patch.size.y.round() as i32;
+    let start_x = (patch.center.x - (width - 1) as f32 * 0.5).round() as i32;
+    let start_y = (patch.center.y - (height - 1) as f32 * 0.5).round() as i32;
+    let mut tiles = Vec::with_capacity((width * height).max(0) as usize);
+
+    for y in start_y..start_y + height {
+        for x in start_x..start_x + width {
+            let position = Position { x, y, z: floor };
+            if !excluded.contains(&position) {
+                tiles.push(position);
+            }
+        }
+    }
+
+    tiles
+}
+
+pub fn grass_detail_patches(patch: GroundPatch) -> Vec<GroundPatch> {
+    let width = patch.size.x.round() as i32;
+    let height = patch.size.y.round() as i32;
+    let start_x = (patch.center.x - (width - 1) as f32 * 0.5).round() as i32;
+    let start_y = (patch.center.y - (height - 1) as f32 * 0.5).round() as i32;
+    let mut patches = Vec::with_capacity(4);
+
+    let mut y = start_y;
+    while y < start_y + height {
+        let patch_height = (start_y + height - y).min(GRASS_CHUNK_TILES);
+        let mut x = start_x;
+        while x < start_x + width {
+            let patch_width = (start_x + width - x).min(GRASS_CHUNK_TILES);
+            patches.push(GroundPatch {
+                center: Vec2::new(
+                    x as f32 + (patch_width - 1) as f32 * 0.5,
+                    y as f32 + (patch_height - 1) as f32 * 0.5,
+                ),
+                size: Vec2::new(patch_width as f32, patch_height as f32),
+            });
+            x += patch_width;
+        }
+        y += patch_height;
+    }
+
+    patches
+}
+
+pub fn spawn_grass_tuft_chunk(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    material: Handle<StandardMaterial>,
+    patch: GroundPatch,
+    tiles: &[Position],
+) -> Option<Entity> {
+    if tiles.is_empty() {
+        return None;
+    }
+
+    // Three tapered triangles retain a small tuft while keeping this strictly
+    // a cheap near-field detail layer above the textured ground.
+    let mut positions = Vec::<[f32; 3]>::with_capacity(tiles.len() * 9);
+    let mut normals = Vec::<[f32; 3]>::with_capacity(tiles.len() * 9);
+    let mut colors = Vec::<[f32; 4]>::with_capacity(tiles.len() * 9);
+    let mut uvs = Vec::<[f32; 2]>::with_capacity(tiles.len() * 9);
+    let mut indices = Vec::<u32>::with_capacity(tiles.len() * 9);
+
+    for tile in tiles {
+        let seed = grass_hash(tile.x, tile.y);
+        let tile_x = tile.x as f32 - patch.center.x;
+        let tile_z = tile.y as f32 - patch.center.y;
+
+        for blade in 0..3u32 {
+            let blade_seed = seed ^ 0x9e37_79b9u32.wrapping_mul(blade + 1);
+            let scatter_angle = hash_unit(blade_seed ^ 0x68bc_21eb) * std::f32::consts::TAU;
+            let scatter_radius = 0.055 + hash_unit(blade_seed ^ 0x02e5_be93) * 0.18;
+            let base_x = tile_x + scatter_angle.cos() * scatter_radius;
+            let base_z = tile_z + scatter_angle.sin() * scatter_radius;
+            let angle = hash_unit(blade_seed ^ 0xb529_7a4d) * std::f32::consts::PI;
+            let direction = Vec2::new(angle.cos(), angle.sin());
+            let width = 0.016 + hash_unit(blade_seed ^ 0x967a_889b) * 0.012;
+            let height = 0.085 + hash_unit(blade_seed ^ 0x4f1b_bcdd) * 0.085;
+            let lean_direction = Vec2::new(-direction.y, direction.x);
+            let lean = lean_direction * (hash_unit(blade_seed ^ 0xa24b_aed4) * 0.040 - 0.020);
+            let left = direction * -width;
+            let right = direction * width;
+            let vertex = positions.len() as u32;
+            let green = 0.30 + hash_unit(blade_seed ^ 0x7f4a_7c15) * 0.11;
+            let bottom_color = [green * 0.43, green * 0.82, green * 0.16, 1.0];
+            let tip_color = [green * 0.58, green * 1.08, green * 0.24, 1.0];
+
+            positions.extend_from_slice(&[
+                [base_x + left.x, 0.035, base_z + left.y],
+                [base_x + right.x, 0.035, base_z + right.y],
+                [base_x + lean.x, 0.035 + height, base_z + lean.y],
+            ]);
+            let normal = [-direction.y, 0.08, direction.x];
+            normals.extend_from_slice(&[normal; 3]);
+            colors.extend_from_slice(&[bottom_color, bottom_color, tip_color]);
+            uvs.extend_from_slice(&[[0.0, 1.0], [1.0, 1.0], [0.5, 0.0]]);
+            indices.extend_from_slice(&[vertex, vertex + 1, vertex + 2]);
+        }
+    }
+
+    let mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_indices(Indices::U32(indices))
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colors)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+
+    Some(
+        commands
+            .spawn((
+                Name::new("Batched standing grass tufts"),
+                WorldStatic,
+                StandingGrassChunk {
+                    half_size: patch.size * 0.5,
+                },
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(material),
+                Transform::from_xyz(patch.center.x, 0.0, patch.center.y),
+            ))
+            .id(),
+    )
+}
+
+fn grass_hash(x: i32, y: i32) -> u32 {
+    let mut value = (x as u32).wrapping_mul(0x8da6_b343)
+        ^ (y as u32).wrapping_mul(0xd816_3841);
+    value ^= value >> 13;
+    value = value.wrapping_mul(0xcb1a_b31f);
+    value ^ (value >> 16)
+}
+
+fn hash_unit(value: u32) -> f32 {
+    (value & 0xffff) as f32 / u16::MAX as f32
+}
+
 pub fn infer_bridge_edges(position: Position, bridges: &[Position]) -> BridgeEdges {
     let has = |x: i32, y: i32| {
         bridges
@@ -761,10 +964,10 @@ pub fn spawn_building(
         .get(&roof_material)
         .cloned()
         .expect("world roof material exists before building spawn");
-    roof_material_value.alpha_mode = AlphaMode::Blend;
+    roof_material_value.alpha_mode = AlphaMode::Opaque;
     // The procedural course mesh contains deliberately exposed lips/end faces.
     // Disable back-face culling for this per-building roof material so every
-    // real edge remains visible from the fixed isometric camera.
+    // real edge remains visible from the fixed grid-aligned camera.
     roof_material_value.cull_mode = None;
     let roof_material = materials.add(roof_material_value);
 
@@ -776,7 +979,7 @@ pub fn spawn_building(
     let roof_edge_material = materials.add(StandardMaterial {
         base_color: Color::srgb(0.31, 0.10, 0.065),
         perceptual_roughness: 0.96,
-        alpha_mode: AlphaMode::Blend,
+        alpha_mode: AlphaMode::Opaque,
         cull_mode: None,
         ..default()
     });
@@ -785,7 +988,7 @@ pub fn spawn_building(
         .get(&wall_material)
         .cloned()
         .expect("world wall material exists before building spawn");
-    gable_material_value.alpha_mode = AlphaMode::Blend;
+    gable_material_value.alpha_mode = AlphaMode::Opaque;
     let gable_material = materials.add(gable_material_value);
 
     let floor_scale_x = (width - BUILDING_FLOOR_INSET * 2.0).max(0.58);
@@ -1575,6 +1778,41 @@ mod tests {
         let edges = infer_castle_wall_edges(position, &[tile(11, 11)], &[], &[]);
 
         assert!(!edges.any());
+    }
+
+    #[test]
+    fn grass_patch_omits_covered_tiles_without_splitting_the_chunk() {
+        let patch = GroundPatch {
+            center: Vec2::new(0.5, 0.5),
+            size: Vec2::new(2.0, 2.0),
+        };
+        let excluded = HashSet::from([tile(0, 0)]);
+        let grass = grass_tiles_for_patch(patch, 7, &excluded);
+
+        assert_eq!(grass.len(), 3);
+        assert!(!grass.contains(&tile(0, 0)));
+        assert!(grass.contains(&tile(1, 1)));
+    }
+
+    #[test]
+    fn grass_detail_splits_a_ground_patch_into_eight_tile_chunks() {
+        let patch = GroundPatch {
+            center: Vec2::new(7.5, 7.5),
+            size: Vec2::new(16.0, 16.0),
+        };
+        let chunks = grass_detail_patches(patch);
+
+        assert_eq!(chunks.len(), 4);
+        assert!(chunks
+            .iter()
+            .all(|chunk| chunk.size == Vec2::new(8.0, 8.0)));
+        assert_eq!(
+            chunks
+                .iter()
+                .map(|chunk| chunk.size.x * chunk.size.y)
+                .sum::<f32>(),
+            patch.size.x * patch.size.y
+        );
     }
 
     #[test]

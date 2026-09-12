@@ -14,6 +14,9 @@ use crate::{
 // TIBIAGAME_V36_13_WORLD_BOUNDARY_FLOOR_PRELOAD
 // TIBIAGAME_V36_15_1_OPENING_FACADE_RAT_GPU_PREWARM
 // TIBIAGAME_V36_65_0_MATERIAL_DEPTH_OCCLUDERS_BATTLE_TARGETING
+// TIBIAGAME_V36_68_1_BATCHED_TREE_GEOMETRY
+// TIBIAGAME_V36_70_0_SINGLE_DRAW_TREES
+// TIBIAGAME_V36_71_0_SINGLE_DRAW_CLIFFS
 
 const PROP_MODELS: [(&str, &str); 15] = [
     ("chair", "models/world-props/chair.glb"),
@@ -70,6 +73,12 @@ pub struct WorldObjectActor {
     pub position: Position,
 }
 
+#[derive(Component)]
+pub struct TreeRenderMesh;
+
+#[derive(Component)]
+pub struct RockFormationRenderMesh;
+
 pub struct WorldOccluderMaterial {
     pub handle: Handle<StandardMaterial>,
     pub tint: Color,
@@ -106,17 +115,19 @@ pub struct WorldDetailCatalog {
     copper_vein: Handle<WorldAsset>,
     copper_vein_depleted: Handle<WorldAsset>,
     trunk_mesh: Handle<Mesh>,
-    foliage_mesh: Handle<Mesh>,
     rock_mesh: Handle<Mesh>,
+    forest_tree_mesh: Handle<Mesh>,
+    pine_tree_mesh: Handle<Mesh>,
+    snowy_tree_mesh: Handle<Mesh>,
+    mountain_wall_mesh: Handle<Mesh>,
+    snow_bank_mesh: Handle<Mesh>,
     detail_cube: Handle<Mesh>,
     flame_mesh: Handle<Mesh>,
-    wood: Handle<StandardMaterial>,
-    foliage: Handle<StandardMaterial>,
-    pine_foliage: Handle<StandardMaterial>,
+    tree_surface: Handle<StandardMaterial>,
+    rock_surface: Handle<StandardMaterial>,
     snow: Handle<StandardMaterial>,
     dark_wood: Handle<StandardMaterial>,
     stone: Handle<StandardMaterial>,
-    dark_stone: Handle<StandardMaterial>,
     dirt: Handle<StandardMaterial>,
     reeds: Handle<StandardMaterial>,
     bog: Handle<StandardMaterial>,
@@ -148,13 +159,17 @@ impl WorldDetailCatalog {
             copper_vein_depleted: asset_server
                 .load(GltfAssetLabel::Scene(0).from_asset(COPPER_VEIN_DEPLETED)),
             trunk_mesh: meshes.add(Cylinder::default()),
-            foliage_mesh: meshes.add(Cone::default()),
             rock_mesh: meshes.add(
                 Sphere::new(0.5)
                     .mesh()
                     .ico(2)
                     .expect("native world-detail rock sphere"),
             ),
+            forest_tree_mesh: meshes.add(create_tree_mesh(TreeStyle::Forest)),
+            pine_tree_mesh: meshes.add(create_tree_mesh(TreeStyle::Pine)),
+            snowy_tree_mesh: meshes.add(create_tree_mesh(TreeStyle::SnowyPine)),
+            mountain_wall_mesh: meshes.add(create_rock_formation_mesh(true, false)),
+            snow_bank_mesh: meshes.add(create_rock_formation_mesh(false, true)),
             detail_cube: meshes.add(Cuboid::default()),
             flame_mesh: meshes.add(
                 Sphere::new(0.5)
@@ -162,18 +177,17 @@ impl WorldDetailCatalog {
                     .ico(2)
                     .expect("native world-detail flame sphere"),
             ),
-            wood: materials.add(StandardMaterial {
-                base_color: Color::srgb(0.31, 0.18, 0.09),
-                perceptual_roughness: 0.92,
+            tree_surface: materials.add(StandardMaterial {
+                // Wood, foliage and snow colors are baked into the mesh's
+                // vertex colors so the complete tree can use one draw call.
+                base_color: Color::WHITE,
+                perceptual_roughness: 0.98,
                 ..default()
             }),
-            foliage: materials.add(StandardMaterial {
-                base_color: Color::srgb(0.10, 0.31, 0.12),
-                perceptual_roughness: 0.96,
-                ..default()
-            }),
-            pine_foliage: materials.add(StandardMaterial {
-                base_color: Color::srgb(0.055, 0.22, 0.14),
+            rock_surface: materials.add(StandardMaterial {
+                // Light and dark stones are stored as vertex colors so an
+                // entire cliff tile can be submitted in one draw call.
+                base_color: Color::WHITE,
                 perceptual_roughness: 0.98,
                 ..default()
             }),
@@ -190,11 +204,6 @@ impl WorldDetailCatalog {
             stone: materials.add(StandardMaterial {
                 base_color: Color::srgb(0.36, 0.36, 0.34),
                 perceptual_roughness: 0.94,
-                ..default()
-            }),
-            dark_stone: materials.add(StandardMaterial {
-                base_color: Color::srgb(0.22, 0.235, 0.23),
-                perceptual_roughness: 0.98,
                 ..default()
             }),
             dirt: materials.add(StandardMaterial {
@@ -264,8 +273,7 @@ pub fn spawn_tree(
     materials: &mut Assets<StandardMaterial>,
     position: Position,
 ) -> Entity {
-    let (wood, wood_tracked) = fading_material(materials, &catalog.wood);
-    let (foliage, foliage_tracked) = fading_material(materials, &catalog.foliage);
+    let (surface, surface_tracked) = fading_material(materials, &catalog.tree_surface);
     commands
         .spawn((
             Name::new("Tree"),
@@ -281,11 +289,11 @@ pub fn spawn_tree(
                 radius: 1.05,
                 faded_opacity: 0.24,
                 opacity: 1.0,
-                materials: vec![wood_tracked, foliage_tracked],
+                materials: vec![surface_tracked],
             },
         ))
         .with_children(|parent| {
-            spawn_tree_geometry(parent, catalog, TreeStyle::Forest, wood, foliage, None)
+            spawn_tree_geometry(parent, catalog, TreeStyle::Forest, surface)
         })
         .id()
 }
@@ -307,20 +315,7 @@ pub fn spawn_world_object(
             "snowy_pine" => TreeStyle::SnowyPine,
             _ => TreeStyle::Forest,
         };
-        let (wood, wood_tracked) = fading_material(materials, &catalog.wood);
-        let foliage_source = match style {
-            TreeStyle::Forest => &catalog.foliage,
-            TreeStyle::Pine | TreeStyle::SnowyPine => &catalog.pine_foliage,
-        };
-        let (foliage, foliage_tracked) = fading_material(materials, foliage_source);
-        let (snow, snow_tracked) = if matches!(style, TreeStyle::SnowyPine) {
-            let (handle, tracked) = fading_material(materials, &catalog.snow);
-            (Some(handle), Some(tracked))
-        } else {
-            (None, None)
-        };
-        let mut tracked_materials = vec![wood_tracked, foliage_tracked];
-        tracked_materials.extend(snow_tracked);
+        let (surface, surface_tracked) = fading_material(materials, &catalog.tree_surface);
         return commands
             .spawn((
                 Name::new(format!("World tree: {}: {}", object.kind, object.id)),
@@ -341,11 +336,11 @@ pub fn spawn_world_object(
                     radius: 1.05,
                     faded_opacity: 0.24,
                     opacity: 1.0,
-                    materials: tracked_materials,
+                    materials: vec![surface_tracked],
                 },
             ))
             .with_children(|parent| {
-                spawn_tree_geometry(parent, catalog, style, wood, foliage, snow)
+                spawn_tree_geometry(parent, catalog, style, surface)
             })
             .id();
     }
@@ -511,41 +506,83 @@ fn spawn_tree_geometry(
     parent: &mut ChildSpawnerCommands,
     catalog: &WorldDetailCatalog,
     style: TreeStyle,
-    wood: Handle<StandardMaterial>,
-    foliage: Handle<StandardMaterial>,
-    snow: Option<Handle<StandardMaterial>>,
+    surface: Handle<StandardMaterial>,
 ) {
+    let mesh = match style {
+        TreeStyle::Forest => catalog.forest_tree_mesh.clone(),
+        TreeStyle::Pine => catalog.pine_tree_mesh.clone(),
+        TreeStyle::SnowyPine => catalog.snowy_tree_mesh.clone(),
+    };
     parent.spawn((
-        Name::new("Tree trunk"),
-        Mesh3d(catalog.trunk_mesh.clone()),
-        MeshMaterial3d(wood.clone()),
-        Transform {
-            translation: Vec3::new(0.0, 0.78, 0.0),
-            scale: Vec3::new(0.28, 0.82, 0.28),
-            ..default()
-        },
+        Name::new("Single-draw tree"),
+        TreeRenderMesh,
+        Mesh3d(mesh),
+        MeshMaterial3d(surface),
+        Transform::default(),
     ));
+}
 
-    for (index, (translation, rotation)) in [
+fn create_tree_mesh(style: TreeStyle) -> Mesh {
+    let mut combined = vertex_colored_mesh(create_tree_wood_mesh(), [0.31, 0.18, 0.09, 1.0]);
+    let foliage_color = match style {
+        TreeStyle::Forest => [0.10, 0.31, 0.12, 1.0],
+        TreeStyle::Pine | TreeStyle::SnowyPine => [0.055, 0.22, 0.14, 1.0],
+    };
+    let crown = vertex_colored_mesh(create_tree_crown_mesh(style, false), foliage_color);
+    combined
+        .merge(&crown)
+        .expect("tree wood and crown use compatible colored mesh layouts");
+
+    if matches!(style, TreeStyle::SnowyPine) {
+        let snow = vertex_colored_mesh(
+            create_tree_crown_mesh(TreeStyle::SnowyPine, true),
+            [0.82, 0.88, 0.90, 1.0],
+        );
+        combined
+            .merge(&snow)
+            .expect("snow overlay uses the tree's colored mesh layout");
+    }
+
+    combined
+}
+
+fn vertex_colored_mesh(mut mesh: Mesh, color: [f32; 4]) -> Mesh {
+    // These procedural materials have no textures, so UV/tangent attributes
+    // can be removed to give cylinders, spheres and cones one merge layout.
+    mesh.remove_attribute(Mesh::ATTRIBUTE_UV_0);
+    mesh.remove_attribute(Mesh::ATTRIBUTE_UV_1);
+    mesh.remove_attribute(Mesh::ATTRIBUTE_TANGENT);
+    let vertex_count = mesh.count_vertices();
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, vec![color; vertex_count]);
+    mesh
+}
+
+fn create_tree_wood_mesh() -> Mesh {
+    let mut combined = Mesh::from(Cylinder::default()).transformed_by(Transform {
+        translation: Vec3::new(0.0, 0.78, 0.0),
+        scale: Vec3::new(0.28, 0.82, 0.28),
+        ..default()
+    });
+
+    for (translation, rotation) in [
         (Vec3::new(-0.20, 1.18, 0.0), Quat::from_rotation_z(0.82)),
         (Vec3::new(0.17, 1.38, 0.10), Quat::from_rotation_z(-0.72)),
         (Vec3::new(0.0, 1.52, -0.16), Quat::from_rotation_x(0.76)),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        parent.spawn((
-            Name::new(format!("Tree branch {index}")),
-            Mesh3d(catalog.trunk_mesh.clone()),
-            MeshMaterial3d(wood.clone()),
-            Transform {
-                translation,
-                rotation,
-                scale: Vec3::new(0.09, 0.42, 0.09),
-            },
-        ));
+    ] {
+        let branch = Mesh::from(Cylinder::default()).transformed_by(Transform {
+            translation,
+            rotation,
+            scale: Vec3::new(0.09, 0.42, 0.09),
+        });
+        combined
+            .merge(&branch)
+            .expect("tree wood primitives use compatible mesh layouts");
     }
 
+    combined
+}
+
+fn create_tree_crown_mesh(style: TreeStyle, snow_overlay: bool) -> Mesh {
     let crowns = match style {
         TreeStyle::Forest => [
             (Vec3::new(0.0, 1.72, 0.0), Vec3::new(1.20, 1.10, 1.20)),
@@ -558,38 +595,39 @@ fn spawn_tree_geometry(
             (Vec3::new(0.0, 2.57, 0.0), Vec3::new(0.65, 0.92, 0.65)),
         ],
     };
-    for (index, (translation, scale)) in crowns.into_iter().enumerate() {
-        let crown_mesh = if matches!(style, TreeStyle::Forest) {
-            catalog.rock_mesh.clone()
+
+    let make_part = |translation: Vec3, scale: Vec3| {
+        let mesh = if matches!(style, TreeStyle::Forest) {
+            Sphere::new(0.5)
+                .mesh()
+                .ico(2)
+                .expect("batched forest crown sphere")
         } else {
-            catalog.foliage_mesh.clone()
+            Mesh::from(Cone::default())
         };
-        parent.spawn((
-            Name::new(format!("Tree crown {index}")),
-            Mesh3d(crown_mesh),
-            MeshMaterial3d(foliage.clone()),
-            Transform {
-                translation,
-                scale,
-                ..default()
+        mesh.transformed_by(Transform {
+            translation: if snow_overlay {
+                translation + Vec3::Y * 0.08
+            } else {
+                translation
             },
-        ));
-        if matches!(style, TreeStyle::SnowyPine) {
-            parent.spawn((
-                Name::new(format!("Snowy tree crown {index}")),
-                Mesh3d(catalog.foliage_mesh.clone()),
-                MeshMaterial3d(
-                    snow.clone()
-                        .expect("snowy pine creates a fading snow material"),
-                ),
-                Transform {
-                    translation: translation + Vec3::Y * 0.08,
-                    scale: scale * Vec3::new(1.035, 0.25, 1.035),
-                    ..default()
-                },
-            ));
-        }
+            scale: if snow_overlay {
+                scale * Vec3::new(1.035, 0.25, 1.035)
+            } else {
+                scale
+            },
+            ..default()
+        })
+    };
+
+    let mut combined = make_part(crowns[0].0, crowns[0].1);
+    for (translation, scale) in crowns.into_iter().skip(1) {
+        let part = make_part(translation, scale);
+        combined
+            .merge(&part)
+            .expect("tree crown primitives use compatible mesh layouts");
     }
+    combined
 }
 
 fn spawn_rock_formation(
@@ -599,22 +637,16 @@ fn spawn_rock_formation(
     object: &WorldObjectView,
     wall: bool,
 ) -> Entity {
-    let source = if object.kind == "snow_bank" {
-        catalog.snow.clone()
-    } else {
-        catalog.stone.clone()
-    };
-    let (material, main_tracked) = if wall {
-        let (handle, tracked) = fading_material(materials, &source);
+    let (material, tracked) = if wall {
+        let (handle, tracked) = fading_material(materials, &catalog.rock_surface);
         (handle, Some(tracked))
     } else {
-        (source, None)
+        (catalog.rock_surface.clone(), None)
     };
-    let (dark_material, dark_tracked) = if wall {
-        let (handle, tracked) = fading_material(materials, &catalog.dark_stone);
-        (handle, Some(tracked))
+    let mesh = if wall {
+        catalog.mountain_wall_mesh.clone()
     } else {
-        (catalog.dark_stone.clone(), None)
+        catalog.snow_bank_mesh.clone()
     };
     let entity = commands
         .spawn((
@@ -628,82 +660,17 @@ fn spawn_rock_formation(
             Visibility::default(),
         ))
         .with_children(|parent| {
-            if wall {
-                parent.spawn((
-                    Name::new("Cliff wall mass"),
-                    Mesh3d(catalog.detail_cube.clone()),
-                    MeshMaterial3d(material.clone()),
-                    Transform {
-                        translation: Vec3::new(0.0, 0.45, 0.0),
-                        scale: Vec3::new(1.02, 0.90, 0.88),
-                        ..default()
-                    },
-                ));
-                parent.spawn((
-                    Name::new("Cliff dark foundation"),
-                    Mesh3d(catalog.detail_cube.clone()),
-                    MeshMaterial3d(dark_material.clone()),
-                    Transform {
-                        translation: Vec3::new(0.0, 0.13, 0.0),
-                        scale: Vec3::new(1.04, 0.22, 0.91),
-                        ..default()
-                    },
-                ));
-
-                for (index, x) in [-0.34f32, 0.0, 0.34].into_iter().enumerate() {
-                    parent.spawn((
-                        Name::new(format!("Cliff crown {index}")),
-                        Mesh3d(catalog.rock_mesh.clone()),
-                        MeshMaterial3d(material.clone()),
-                        Transform {
-                            translation: Vec3::new(x, 0.91 + (index % 2) as f32 * 0.07, -0.03),
-                            rotation: Quat::from_euler(
-                                EulerRot::YXZ,
-                                index as f32 * 0.77,
-                                0.12,
-                                0.0,
-                            ),
-                            scale: Vec3::new(0.72, 0.46 + (index % 2) as f32 * 0.10, 0.78),
-                        },
-                    ));
-                }
-
-                for (index, (x, y)) in [(-0.31f32, 0.34f32), (0.16, 0.52)].into_iter().enumerate() {
-                    parent.spawn((
-                        Name::new(format!("Cliff face stone {index}")),
-                        Mesh3d(catalog.rock_mesh.clone()),
-                        MeshMaterial3d(dark_material.clone()),
-                        Transform {
-                            translation: Vec3::new(x, y, -0.43),
-                            rotation: Quat::from_rotation_z(index as f32 * 0.48),
-                            scale: Vec3::new(0.42, 0.26, 0.16),
-                        },
-                    ));
-                }
-            } else {
-                for index in 0..3 {
-                    let offset = index as f32 - 1.0;
-                    parent.spawn((
-                        Name::new(format!("Rock {index}")),
-                        Mesh3d(catalog.rock_mesh.clone()),
-                        MeshMaterial3d(material.clone()),
-                        Transform {
-                            translation: Vec3::new(
-                                offset * 0.18,
-                                0.14,
-                                ((index * 7) % 3) as f32 * 0.11 - 0.11,
-                            ),
-                            rotation: Quat::from_euler(
-                                EulerRot::YXZ,
-                                index as f32 * 0.71,
-                                0.10 * (index % 3) as f32,
-                                0.0,
-                            ),
-                            scale: Vec3::new(0.50, 0.32, 0.45),
-                        },
-                    ));
-                }
-            }
+            parent.spawn((
+                Name::new(if wall {
+                    "Single-draw cliff wall"
+                } else {
+                    "Single-draw snow bank"
+                }),
+                RockFormationRenderMesh,
+                Mesh3d(mesh),
+                MeshMaterial3d(material),
+                Transform::default(),
+            ));
         })
         .id();
 
@@ -713,11 +680,112 @@ fn spawn_rock_formation(
             radius: 0.72,
             faded_opacity: 0.20,
             opacity: 1.0,
-            materials: main_tracked.into_iter().chain(dark_tracked).collect(),
+            materials: tracked.into_iter().collect(),
         });
     }
 
     entity
+}
+
+fn create_rock_formation_mesh(wall: bool, snow: bool) -> Mesh {
+    let stone = if snow {
+        [0.82, 0.88, 0.90, 1.0]
+    } else {
+        [0.36, 0.36, 0.34, 1.0]
+    };
+    let dark_stone = [0.22, 0.235, 0.23, 1.0];
+
+    if !wall {
+        let make_rock = |index: usize| {
+            let offset = index as f32 - 1.0;
+            vertex_colored_mesh(
+                Sphere::new(0.5)
+                    .mesh()
+                    .ico(2)
+                    .expect("snow-bank rock sphere")
+                    .transformed_by(Transform {
+                        translation: Vec3::new(
+                            offset * 0.18,
+                            0.14,
+                            ((index * 7) % 3) as f32 * 0.11 - 0.11,
+                        ),
+                        rotation: Quat::from_euler(
+                            EulerRot::YXZ,
+                            index as f32 * 0.71,
+                            0.10 * (index % 3) as f32,
+                            0.0,
+                        ),
+                        scale: Vec3::new(0.50, 0.32, 0.45),
+                    }),
+                stone,
+            )
+        };
+        let mut combined = make_rock(0);
+        for index in 1..3 {
+            combined
+                .merge(&make_rock(index))
+                .expect("snow-bank rocks use compatible colored mesh layouts");
+        }
+        return combined;
+    }
+
+    let mut combined = vertex_colored_mesh(
+        Mesh::from(Cuboid::default()).transformed_by(Transform {
+            translation: Vec3::new(0.0, 0.45, 0.0),
+            scale: Vec3::new(1.02, 0.90, 0.88),
+            ..default()
+        }),
+        stone,
+    );
+    let foundation = vertex_colored_mesh(
+        Mesh::from(Cuboid::default()).transformed_by(Transform {
+            translation: Vec3::new(0.0, 0.13, 0.0),
+            scale: Vec3::new(1.04, 0.22, 0.91),
+            ..default()
+        }),
+        dark_stone,
+    );
+    combined
+        .merge(&foundation)
+        .expect("cliff cubes use compatible colored mesh layouts");
+
+    for (index, x) in [-0.34f32, 0.0, 0.34].into_iter().enumerate() {
+        let crown = vertex_colored_mesh(
+            Sphere::new(0.5)
+                .mesh()
+                .ico(2)
+                .expect("cliff crown sphere")
+                .transformed_by(Transform {
+                    translation: Vec3::new(x, 0.91 + (index % 2) as f32 * 0.07, -0.03),
+                    rotation: Quat::from_euler(EulerRot::YXZ, index as f32 * 0.77, 0.12, 0.0),
+                    scale: Vec3::new(0.72, 0.46 + (index % 2) as f32 * 0.10, 0.78),
+                }),
+            stone,
+        );
+        combined
+            .merge(&crown)
+            .expect("cliff crowns use compatible colored mesh layouts");
+    }
+
+    for (index, (x, y)) in [(-0.31f32, 0.34f32), (0.16, 0.52)].into_iter().enumerate() {
+        let face = vertex_colored_mesh(
+            Sphere::new(0.5)
+                .mesh()
+                .ico(2)
+                .expect("cliff face sphere")
+                .transformed_by(Transform {
+                    translation: Vec3::new(x, y, -0.43),
+                    rotation: Quat::from_rotation_z(index as f32 * 0.48),
+                    scale: Vec3::new(0.42, 0.26, 0.16),
+                }),
+            dark_stone,
+        );
+        combined
+            .merge(&face)
+            .expect("cliff face stones use compatible colored mesh layouts");
+    }
+
+    combined
 }
 
 fn fading_material(
@@ -1290,4 +1358,29 @@ pub fn describe() {
     info!(
         "ALDORIA WORLD DETAILS · authored GLB props/resources · procedural trees · sight-line fading trees/cliffs · collision-aligned hinged doors/windows · stairs · torch point lights"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_tree_style_builds_as_one_vertex_colored_mesh() {
+        for style in [TreeStyle::Forest, TreeStyle::Pine, TreeStyle::SnowyPine] {
+            let mesh = create_tree_mesh(style);
+            assert!(mesh.count_vertices() > 0);
+            assert!(mesh.attribute(Mesh::ATTRIBUTE_COLOR).is_some());
+        }
+    }
+
+    #[test]
+    fn rock_formations_build_as_single_vertex_colored_meshes() {
+        for mesh in [
+            create_rock_formation_mesh(true, false),
+            create_rock_formation_mesh(false, true),
+        ] {
+            assert!(mesh.count_vertices() > 0);
+            assert!(mesh.attribute(Mesh::ATTRIBUTE_COLOR).is_some());
+        }
+    }
 }

@@ -5,6 +5,9 @@ use bevy::{
 };
 
 // TIBIAGAME_V36_65_0_MATERIAL_DEPTH_OCCLUDERS_BATTLE_TARGETING
+// TIBIAGAME_V36_67_0_BATCHED_GRASS_TUFTS
+// TIBIAGAME_V36_67_1_FINE_TAPERED_GRASS
+// TIBIAGAME_V36_67_0_BATCHED_GRASS_TUFTS
 
 const GRASS: &str = "world/greyhaven-grass.png";
 const ROAD: &str = "world/greyhaven-cobble.png";
@@ -30,6 +33,7 @@ const GROUND_CHUNK_TEXTURE_REPEAT: f32 = 16.0;
 pub struct WorldMaterialSet {
     pub floor: Handle<StandardMaterial>,
     pub ground_underlay: Handle<StandardMaterial>,
+    pub grass_tuft: Handle<StandardMaterial>,
     pub road: Handle<StandardMaterial>,
     pub water: Handle<StandardMaterial>,
     pub bridge: Handle<StandardMaterial>,
@@ -81,6 +85,14 @@ pub fn create_materials(
         uv_transform: Affine2::from_scale(Vec2::splat(GROUND_CHUNK_TEXTURE_REPEAT)),
         ..default()
     });
+    let grass_tuft = materials.add(StandardMaterial {
+        base_color: Color::WHITE,
+        perceptual_roughness: 1.0,
+        unlit: true,
+        double_sided: true,
+        cull_mode: None,
+        ..default()
+    });
 
     let road = add_textured(asset_server, materials, ROAD, Color::WHITE, 1.0);
     let bridge = add_textured(asset_server, materials, BRIDGE, Color::WHITE, 0.88);
@@ -108,6 +120,7 @@ pub fn create_materials(
     WorldMaterialSet {
         floor,
         ground_underlay,
+        grass_tuft,
         road,
         water,
         bridge,

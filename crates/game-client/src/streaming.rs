@@ -2,6 +2,8 @@ use std::collections::HashSet;
 // TIBIAGAME_V36_64_1_TRUE_3D_ROOF_VOLUME
 // TIBIAGAME_V36_65_0_MATERIAL_DEPTH_OCCLUDERS_BATTLE_TARGETING
 // TIBIAGAME_V36_65_1_RENDER_BUDGET_STABLE_VISIBILITY
+// TIBIAGAME_V36_67_0_BATCHED_GRASS_TUFTS
+// TIBIAGAME_V36_69_0_NEAR_FIELD_GRASS_DETAIL
 // TIBIAGAME_V36_9_1_UNUSED_BUILDINGROOF_IMPORT_FIX
 use std::time::Instant;
 
@@ -20,6 +22,7 @@ const CLEANUP_BUDGET_PER_FRAME: usize = 180;
 // complete 64-tile region instantiated avoids movement stalls, but rendering
 // it all defeats that cache and can push the native client below 20 FPS.
 const STREAM_RENDER_RADIUS: f32 = 22.0;
+const GRASS_DETAIL_RADIUS: f32 = 7.0;
 
 #[derive(Component)]
 pub struct StreamedRegionEntity {
@@ -70,6 +73,7 @@ struct StreamAssets {
     cube: Handle<Mesh>,
     floor: Handle<StandardMaterial>,
     ground_underlay: Handle<StandardMaterial>,
+    grass_tuft: Handle<StandardMaterial>,
     road: Handle<StandardMaterial>,
     water: Handle<StandardMaterial>,
     bridge: Handle<StandardMaterial>,
@@ -96,6 +100,11 @@ enum SpawnSpec {
     GroundChunk {
         patch: world_architecture::GroundPatch,
         floor: i16,
+    },
+    GrassTufts {
+        patch: world_architecture::GroundPatch,
+        floor: i16,
+        tiles: Vec<Position>,
     },
     Floor(Position),
     Terrain {
@@ -156,7 +165,7 @@ enum SpawnSpec {
 impl SpawnSpec {
     fn floor(&self) -> i16 {
         match self {
-            Self::GroundChunk { floor, .. } => *floor,
+            Self::GroundChunk { floor, .. } | Self::GrassTufts { floor, .. } => *floor,
             Self::Floor(position)
             | Self::Road(position)
             | Self::Water(position)
@@ -332,7 +341,17 @@ pub fn sync_streamed_floor_visibility(
         (
             Without<crate::BuildingRoof>,
             Without<crate::HouseWallOccluder>,
+            Without<world_architecture::StandingGrassChunk>,
         ),
+    >,
+    mut grass_chunks: Query<
+        (
+            &StreamedRegionEntity,
+            &Transform,
+            &world_architecture::StandingGrassChunk,
+            &mut Visibility,
+        ),
+        With<world_architecture::StandingGrassChunk>,
     >,
 ) {
     if stream.active_generation == 0 {
@@ -349,6 +368,23 @@ pub fn sync_streamed_floor_visibility(
             streamed.generation == stream.active_generation
                 && streamed.floor == visible_floor
                 && inside_render_area;
+        let desired = if should_show {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+        if *visibility != desired {
+            *visibility = desired;
+        }
+    }
+
+    for (streamed, transform, grass, mut visibility) in &mut grass_chunks {
+        let offset = transform.translation - player;
+        let near_player = offset.x.abs() <= GRASS_DETAIL_RADIUS + grass.half_size.x
+            && offset.z.abs() <= GRASS_DETAIL_RADIUS + grass.half_size.y;
+        let should_show = streamed.generation == stream.active_generation
+            && streamed.floor == visible_floor
+            && near_player;
         let desired = if should_show {
             Visibility::Inherited
         } else {
@@ -421,7 +457,9 @@ fn build_specs(payload: RegionPayload) -> Vec<SpawnSpec> {
         .chain(map.windows.iter().map(|window| window.position))
         .collect();
 
-    let estimated = ground_patches.len() * floors.len()
+    // One textured ground mesh plus at most four 8x8 grass-detail chunks per
+    // 16x16 ground patch.
+    let estimated = ground_patches.len() * floors.len() * 5
         + map.floors.len()
         + map.terrain_materials.len()
         + map.roads.len()
@@ -470,12 +508,24 @@ fn build_specs(payload: RegionPayload) -> Vec<SpawnSpec> {
                 .map(SpawnSpec::Resource),
         );
 
-        specs.extend(
-            ground_patches
-                .iter()
-                .copied()
-                .map(|patch| SpawnSpec::GroundChunk { patch, floor }),
-        );
+        let grass_exclusions = world_architecture::grass_exclusions(&map, floor);
+        for patch in ground_patches.iter().copied() {
+            specs.push(SpawnSpec::GroundChunk { patch, floor });
+            for grass_patch in world_architecture::grass_detail_patches(patch) {
+                let tiles = world_architecture::grass_tiles_for_patch(
+                    grass_patch,
+                    floor,
+                    &grass_exclusions,
+                );
+                if !tiles.is_empty() {
+                    specs.push(SpawnSpec::GrassTufts {
+                        patch: grass_patch,
+                        floor,
+                        tiles,
+                    });
+                }
+            }
+        }
 
         specs.extend(
             map.floors
@@ -656,6 +706,7 @@ fn create_assets(
         cube: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
         floor: world.floor,
         ground_underlay: world.ground_underlay,
+        grass_tuft: world.grass_tuft,
         road: world.road,
         water: world.water,
         bridge: world.bridge,
@@ -730,6 +781,19 @@ fn spawn_spec(
             commands
                 .entity(entity)
                 .insert(StreamedRegionEntity { generation, floor });
+        }
+        SpawnSpec::GrassTufts { patch, tiles, .. } => {
+            if let Some(entity) = world_architecture::spawn_grass_tuft_chunk(
+                commands,
+                meshes,
+                assets.grass_tuft.clone(),
+                *patch,
+                tiles,
+            ) {
+                commands
+                    .entity(entity)
+                    .insert(StreamedRegionEntity { generation, floor });
+            }
         }
         SpawnSpec::Floor(position) => {
             spawn_cube(

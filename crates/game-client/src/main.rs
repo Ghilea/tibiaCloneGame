@@ -29,6 +29,13 @@ mod world_visuals;
 // TIBIAGAME_V36_66_1_TIBIA_CAMERA_PROPORTIONS
 // TIBIAGAME_V36_66_2_SEALED_FLOORS_AND_ROOF_EAVES
 // TIBIAGAME_V36_66_3_CLEAN_WALL_CORNERS_AND_ROOF_TRIM
+// TIBIAGAME_V36_67_0_BATCHED_GRASS_TUFTS
+// TIBIAGAME_V36_67_1_FINE_TAPERED_GRASS
+// TIBIAGAME_V36_68_0_STABLE_OPAQUE_ROOFS
+// TIBIAGAME_V36_68_1_BATCHED_TREE_GEOMETRY
+// TIBIAGAME_V36_69_0_NEAR_FIELD_GRASS_DETAIL
+// TIBIAGAME_V36_70_0_SINGLE_DRAW_TREES
+// TIBIAGAME_V36_71_0_SINGLE_DRAW_CLIFFS
 // TIBIAGAME_V36_13_WORLD_BOUNDARY_FLOOR_PRELOAD
 // TIBIAGAME_V36_14_MEDIEVAL_FACADE_CREATURE_WARMUP
 // TIBIAGAME_V36_15_1_OPENING_FACADE_RAT_GPU_PREWARM
@@ -1984,16 +1991,30 @@ fn update_building_roofs(
         } else {
             1.0
         };
-        roof.opacity += (target_opacity - roof.opacity) * fade_step;
+        let previous_opacity = roof.opacity;
+        let mut next_opacity =
+            previous_opacity + (target_opacity - previous_opacity) * fade_step;
+        if (target_opacity - next_opacity).abs() < 0.002 {
+            next_opacity = target_opacity;
+        }
+        if (next_opacity - previous_opacity).abs() <= f32::EPSILON {
+            continue;
+        }
+        roof.opacity = next_opacity;
+        let alpha_mode = if roof.opacity >= 0.999 {
+            AlphaMode::Opaque
+        } else {
+            AlphaMode::Blend
+        };
 
         for handle in [&roof.roof_material, &roof.gable_material] {
             if let Some(mut material) = materials.get_mut(handle) {
-                material.alpha_mode = AlphaMode::Blend;
+                material.alpha_mode = alpha_mode;
                 material.base_color = Color::srgba(1.0, 1.0, 1.0, roof.opacity);
             }
         }
         if let Some(mut material) = materials.get_mut(&roof.roof_edge_material) {
-            material.alpha_mode = AlphaMode::Blend;
+            material.alpha_mode = alpha_mode;
             material.base_color = Color::srgba(0.31, 0.10, 0.065, roof.opacity);
         }
     }
@@ -2031,7 +2052,19 @@ fn update_building_roofs(
     // cloned material handles, so fading one never affects its neighbours.
     for mut occluder in &mut world_occluders {
         let point = Vec2::new(occluder.position.x as f32, occluder.position.y as f32);
-        let between_camera_and_player = occluder.position.z == active_floor
+        let sight_min_x = player_2d.x.min(camera_2d.x) - occluder.radius;
+        let sight_max_x = player_2d.x.max(camera_2d.x) + occluder.radius;
+        let sight_min_z = player_2d.y.min(camera_2d.y) - occluder.radius;
+        let sight_max_z = player_2d.y.max(camera_2d.y) + occluder.radius;
+        let could_occlude = occluder.position.z == active_floor
+            && point.x >= sight_min_x
+            && point.x <= sight_max_x
+            && point.y >= sight_min_z
+            && point.y <= sight_max_z;
+        if !could_occlude && occluder.opacity >= 0.999 {
+            continue;
+        }
+        let between_camera_and_player = could_occlude
             && point_segment_distance_squared(point, player_2d, camera_2d)
                 <= occluder.radius * occluder.radius;
         let target_opacity = if between_camera_and_player {
@@ -2134,6 +2167,9 @@ fn frame_pacing_probe(
     time: Res<Time>,
     mut probe: ResMut<FrameProbe>,
     meshes: Query<&ViewVisibility, With<Mesh3d>>,
+    grass_chunks: Query<&ViewVisibility, With<world_architecture::StandingGrassChunk>>,
+    tree_meshes: Query<&ViewVisibility, With<world_details::TreeRenderMesh>>,
+    cliff_meshes: Query<&ViewVisibility, With<world_details::RockFormationRenderMesh>>,
     materials: Res<Assets<StandardMaterial>>,
 ) {
     let now = time.elapsed_secs_f64();
@@ -2167,15 +2203,30 @@ fn frame_pacing_probe(
     probe.fps = probe.frames as f64 / elapsed.max(f64::EPSILON);
     probe.last_max_ms = probe.max_ms;
     let visible_meshes = meshes.iter().filter(|visibility| visibility.get()).count();
+    let visible_grass_chunks = grass_chunks
+        .iter()
+        .filter(|visibility| visibility.get())
+        .count();
+    let visible_tree_meshes = tree_meshes
+        .iter()
+        .filter(|visibility| visibility.get())
+        .count();
+    let visible_cliff_meshes = cliff_meshes
+        .iter()
+        .filter(|visibility| visibility.get())
+        .count();
 
     info!(
-        "ALDORIA NATIVE PERF · avg={:.2}ms max={:.2}ms fps={:.1} drops24={} drops32={} visible_meshes={} materials={}",
+        "ALDORIA NATIVE PERF · avg={:.2}ms max={:.2}ms fps={:.1} drops24={} drops32={} visible_meshes={} grass_chunks={} tree_meshes={} cliff_meshes={} materials={}",
         probe.avg_ms,
         probe.last_max_ms,
         probe.fps,
         probe.drops_24,
         probe.drops_32,
         visible_meshes,
+        visible_grass_chunks,
+        visible_tree_meshes,
+        visible_cliff_meshes,
         materials.len(),
     );
 
