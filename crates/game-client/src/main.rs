@@ -36,6 +36,7 @@ mod world_visuals;
 // TIBIAGAME_V36_69_0_NEAR_FIELD_GRASS_DETAIL
 // TIBIAGAME_V36_70_0_SINGLE_DRAW_TREES
 // TIBIAGAME_V36_71_0_SINGLE_DRAW_CLIFFS
+// TIBIAGAME_V36_72_0_SHARED_OCCLUDER_MATERIALS
 // TIBIAGAME_V36_13_WORLD_BOUNDARY_FLOOR_PRELOAD
 // TIBIAGAME_V36_14_MEDIEVAL_FACADE_CREATURE_WARMUP
 // TIBIAGAME_V36_15_1_OPENING_FACADE_RAT_GPU_PREWARM
@@ -1946,6 +1947,7 @@ fn update_building_roofs(
     mut roofs: Query<(&mut BuildingRoof, &mut Visibility), Without<MainCamera>>,
     mut walls: Query<(&HouseWallOccluder, &mut Visibility), Without<BuildingRoof>>,
     mut world_occluders: Query<&mut world_details::WorldOccluder>,
+    mut occluder_surfaces: Query<&mut MeshMaterial3d<StandardMaterial>>,
 ) {
     let Ok(camera) = camera.single() else {
         return;
@@ -2084,14 +2086,11 @@ fn update_building_roofs(
         occluder.opacity = next_opacity;
 
         for tracked in &occluder.materials {
-            if let Some(mut material) = materials.get_mut(&tracked.handle) {
-                let tint = tracked.tint.to_srgba();
-                material.base_color = Color::srgba(tint.red, tint.green, tint.blue, occluder.opacity);
-                material.alpha_mode = if occluder.opacity >= 0.999 {
-                    AlphaMode::Opaque
-                } else {
-                    AlphaMode::Blend
-                };
+            if let Ok(mut surface) = occluder_surfaces.get_mut(tracked.entity) {
+                let desired = tracked.handle_for_opacity(occluder.opacity);
+                if surface.0 != desired {
+                    surface.0 = desired;
+                }
             }
         }
     }

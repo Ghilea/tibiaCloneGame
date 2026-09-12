@@ -17,6 +17,9 @@ use crate::{
 // TIBIAGAME_V36_68_1_BATCHED_TREE_GEOMETRY
 // TIBIAGAME_V36_70_0_SINGLE_DRAW_TREES
 // TIBIAGAME_V36_71_0_SINGLE_DRAW_CLIFFS
+// TIBIAGAME_V36_72_0_SHARED_OCCLUDER_MATERIALS
+
+const OCCLUDER_OPACITIES: [f32; 5] = [1.0, 0.78, 0.58, 0.38, 0.22];
 
 const PROP_MODELS: [(&str, &str); 15] = [
     ("chair", "models/world-props/chair.glb"),
@@ -80,8 +83,24 @@ pub struct TreeRenderMesh;
 pub struct RockFormationRenderMesh;
 
 pub struct WorldOccluderMaterial {
-    pub handle: Handle<StandardMaterial>,
-    pub tint: Color,
+    pub entity: Entity,
+    pub levels: [Handle<StandardMaterial>; OCCLUDER_OPACITIES.len()],
+}
+
+impl WorldOccluderMaterial {
+    pub fn handle_for_opacity(&self, opacity: f32) -> Handle<StandardMaterial> {
+        let index = OCCLUDER_OPACITIES
+            .iter()
+            .enumerate()
+            .min_by(|(_, left), (_, right)| {
+                (opacity - **left)
+                    .abs()
+                    .total_cmp(&(opacity - **right).abs())
+            })
+            .map(|(index, _)| index)
+            .unwrap_or(0);
+        self.levels[index].clone()
+    }
 }
 
 #[derive(Component)]
@@ -123,8 +142,7 @@ pub struct WorldDetailCatalog {
     snow_bank_mesh: Handle<Mesh>,
     detail_cube: Handle<Mesh>,
     flame_mesh: Handle<Mesh>,
-    tree_surface: Handle<StandardMaterial>,
-    rock_surface: Handle<StandardMaterial>,
+    occluder_materials: [Handle<StandardMaterial>; OCCLUDER_OPACITIES.len()],
     snow: Handle<StandardMaterial>,
     dark_wood: Handle<StandardMaterial>,
     stone: Handle<StandardMaterial>,
@@ -153,6 +171,23 @@ impl WorldDetailCatalog {
             );
         }
 
+        let occluder_materials = OCCLUDER_OPACITIES.map(|opacity| {
+            materials.add(StandardMaterial {
+                // Tree and cliff colors live in their vertex colors. A small
+                // shared alpha palette lets identical instances batch while
+                // retaining a stepped, smooth-looking sight-line fade.
+                base_color: Color::srgba(1.0, 1.0, 1.0, opacity),
+                perceptual_roughness: 0.98,
+                alpha_mode: if opacity >= 0.999 {
+                    AlphaMode::Opaque
+                } else {
+                    AlphaMode::Blend
+                },
+                cull_mode: None,
+                ..default()
+            })
+        });
+
         Self {
             prop_scenes,
             copper_vein: asset_server.load(GltfAssetLabel::Scene(0).from_asset(COPPER_VEIN)),
@@ -177,20 +212,7 @@ impl WorldDetailCatalog {
                     .ico(2)
                     .expect("native world-detail flame sphere"),
             ),
-            tree_surface: materials.add(StandardMaterial {
-                // Wood, foliage and snow colors are baked into the mesh's
-                // vertex colors so the complete tree can use one draw call.
-                base_color: Color::WHITE,
-                perceptual_roughness: 0.98,
-                ..default()
-            }),
-            rock_surface: materials.add(StandardMaterial {
-                // Light and dark stones are stored as vertex colors so an
-                // entire cliff tile can be submitted in one draw call.
-                base_color: Color::WHITE,
-                perceptual_roughness: 0.98,
-                ..default()
-            }),
+            occluder_materials,
             snow: materials.add(StandardMaterial {
                 base_color: Color::srgb(0.82, 0.88, 0.90),
                 perceptual_roughness: 0.86,
@@ -270,11 +292,12 @@ impl WorldDetailCatalog {
 pub fn spawn_tree(
     commands: &mut Commands,
     catalog: &WorldDetailCatalog,
-    materials: &mut Assets<StandardMaterial>,
+    _materials: &mut Assets<StandardMaterial>,
     position: Position,
 ) -> Entity {
-    let (surface, surface_tracked) = fading_material(materials, &catalog.tree_surface);
-    commands
+    let surface = catalog.occluder_materials[0].clone();
+    let mut surface_entity = None;
+    let entity = commands
         .spawn((
             Name::new("Tree"),
             WorldStatic,
@@ -284,18 +307,27 @@ pub fn spawn_tree(
                 ..default()
             },
             Visibility::default(),
-            WorldOccluder {
-                position,
-                radius: 1.05,
-                faded_opacity: 0.24,
-                opacity: 1.0,
-                materials: vec![surface_tracked],
-            },
         ))
         .with_children(|parent| {
-            spawn_tree_geometry(parent, catalog, TreeStyle::Forest, surface)
+            surface_entity = Some(spawn_tree_geometry(
+                parent,
+                catalog,
+                TreeStyle::Forest,
+                surface,
+            ));
         })
-        .id()
+        .id();
+    commands.entity(entity).insert(WorldOccluder {
+        position,
+        radius: 1.05,
+        faded_opacity: 0.24,
+        opacity: 1.0,
+        materials: vec![tracked_occluder_surface(
+            surface_entity.expect("tree spawns its render surface"),
+            catalog,
+        )],
+    });
+    entity
 }
 
 pub fn spawn_world_object(
@@ -315,8 +347,9 @@ pub fn spawn_world_object(
             "snowy_pine" => TreeStyle::SnowyPine,
             _ => TreeStyle::Forest,
         };
-        let (surface, surface_tracked) = fading_material(materials, &catalog.tree_surface);
-        return commands
+        let surface = catalog.occluder_materials[0].clone();
+        let mut surface_entity = None;
+        let entity = commands
             .spawn((
                 Name::new(format!("World tree: {}: {}", object.kind, object.id)),
                 WorldStatic,
@@ -331,18 +364,22 @@ pub fn spawn_world_object(
                     ..default()
                 },
                 Visibility::default(),
-                WorldOccluder {
-                    position: object.position,
-                    radius: 1.05,
-                    faded_opacity: 0.24,
-                    opacity: 1.0,
-                    materials: vec![surface_tracked],
-                },
             ))
             .with_children(|parent| {
-                spawn_tree_geometry(parent, catalog, style, surface)
+                surface_entity = Some(spawn_tree_geometry(parent, catalog, style, surface));
             })
             .id();
+        commands.entity(entity).insert(WorldOccluder {
+            position: object.position,
+            radius: 1.05,
+            faded_opacity: 0.24,
+            opacity: 1.0,
+            materials: vec![tracked_occluder_surface(
+                surface_entity.expect("world tree spawns its render surface"),
+                catalog,
+            )],
+        });
+        return entity;
     }
 
     if object.kind == "mountain_wall" {
@@ -507,19 +544,21 @@ fn spawn_tree_geometry(
     catalog: &WorldDetailCatalog,
     style: TreeStyle,
     surface: Handle<StandardMaterial>,
-) {
+) -> Entity {
     let mesh = match style {
         TreeStyle::Forest => catalog.forest_tree_mesh.clone(),
         TreeStyle::Pine => catalog.pine_tree_mesh.clone(),
         TreeStyle::SnowyPine => catalog.snowy_tree_mesh.clone(),
     };
-    parent.spawn((
-        Name::new("Single-draw tree"),
-        TreeRenderMesh,
-        Mesh3d(mesh),
-        MeshMaterial3d(surface),
-        Transform::default(),
-    ));
+    parent
+        .spawn((
+            Name::new("Single-draw tree"),
+            TreeRenderMesh,
+            Mesh3d(mesh),
+            MeshMaterial3d(surface),
+            Transform::default(),
+        ))
+        .id()
 }
 
 fn create_tree_mesh(style: TreeStyle) -> Mesh {
@@ -633,21 +672,17 @@ fn create_tree_crown_mesh(style: TreeStyle, snow_overlay: bool) -> Mesh {
 fn spawn_rock_formation(
     commands: &mut Commands,
     catalog: &WorldDetailCatalog,
-    materials: &mut Assets<StandardMaterial>,
+    _materials: &mut Assets<StandardMaterial>,
     object: &WorldObjectView,
     wall: bool,
 ) -> Entity {
-    let (material, tracked) = if wall {
-        let (handle, tracked) = fading_material(materials, &catalog.rock_surface);
-        (handle, Some(tracked))
-    } else {
-        (catalog.rock_surface.clone(), None)
-    };
+    let material = catalog.occluder_materials[0].clone();
     let mesh = if wall {
         catalog.mountain_wall_mesh.clone()
     } else {
         catalog.snow_bank_mesh.clone()
     };
+    let mut surface_entity = None;
     let entity = commands
         .spawn((
             Name::new(format!("Rock formation: {}: {}", object.kind, object.id)),
@@ -660,7 +695,7 @@ fn spawn_rock_formation(
             Visibility::default(),
         ))
         .with_children(|parent| {
-            parent.spawn((
+            surface_entity = Some(parent.spawn((
                 Name::new(if wall {
                     "Single-draw cliff wall"
                 } else {
@@ -670,7 +705,7 @@ fn spawn_rock_formation(
                 Mesh3d(mesh),
                 MeshMaterial3d(material),
                 Transform::default(),
-            ));
+            )).id());
         })
         .id();
 
@@ -680,7 +715,10 @@ fn spawn_rock_formation(
             radius: 0.72,
             faded_opacity: 0.20,
             opacity: 1.0,
-            materials: tracked.into_iter().collect(),
+            materials: vec![tracked_occluder_surface(
+                surface_entity.expect("cliff wall spawns its render surface"),
+                catalog,
+            )],
         });
     }
 
@@ -788,24 +826,14 @@ fn create_rock_formation_mesh(wall: bool, snow: bool) -> Mesh {
     combined
 }
 
-fn fading_material(
-    materials: &mut Assets<StandardMaterial>,
-    source: &Handle<StandardMaterial>,
-) -> (Handle<StandardMaterial>, WorldOccluderMaterial) {
-    let mut material = materials
-        .get(source)
-        .cloned()
-        .expect("world detail material exists before occluder spawn");
-    let tint = material.base_color;
-    // Most occluders never cross the player sight line. Start in the cheaper
-    // opaque pass and switch only the few actively fading materials to Blend.
-    material.alpha_mode = AlphaMode::Opaque;
-    material.cull_mode = None;
-    let handle = materials.add(material);
-    (
-        handle.clone(),
-        WorldOccluderMaterial { handle, tint },
-    )
+fn tracked_occluder_surface(
+    entity: Entity,
+    catalog: &WorldDetailCatalog,
+) -> WorldOccluderMaterial {
+    WorldOccluderMaterial {
+        entity,
+        levels: catalog.occluder_materials.clone(),
+    }
 }
 
 fn spawn_reeds(
