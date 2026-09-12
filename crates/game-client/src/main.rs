@@ -22,6 +22,13 @@ mod world_architecture;
 mod world_details;
 mod world_visuals;
 // TIBIAGAME_V36_64_1_TRUE_3D_ROOF_VOLUME
+// TIBIAGAME_V36_64_2_ROOF_UV_EDGE_FIX
+// TIBIAGAME_V36_65_0_MATERIAL_DEPTH_OCCLUDERS_BATTLE_TARGETING
+// TIBIAGAME_V36_65_1_RENDER_BUDGET_STABLE_VISIBILITY
+// TIBIAGAME_V36_66_0_TIBIA_ALIGNED_CAMERA
+// TIBIAGAME_V36_66_1_TIBIA_CAMERA_PROPORTIONS
+// TIBIAGAME_V36_66_2_SEALED_FLOORS_AND_ROOF_EAVES
+// TIBIAGAME_V36_66_3_CLEAN_WALL_CORNERS_AND_ROOF_TRIM
 // TIBIAGAME_V36_13_WORLD_BOUNDARY_FLOOR_PRELOAD
 // TIBIAGAME_V36_14_MEDIEVAL_FACADE_CREATURE_WARMUP
 // TIBIAGAME_V36_15_1_OPENING_FACADE_RAT_GPU_PREWARM
@@ -55,7 +62,13 @@ use tokio::sync::mpsc::UnboundedSender;
 
 const TILE_STEP_SECONDS: f64 = 0.165;
 const DIAGONAL_FACTOR: f64 = std::f64::consts::SQRT_2;
-const CAMERA_OFFSET: Vec3 = Vec3::new(10.5, 12.5, 10.5);
+// Keep the orthographic camera aligned with the world grid. Looking from the
+// south instead of across a diagonal makes X horizontal and Z vertical on
+// screen, matching the classic tile presentation. The roughly 40-degree
+// elevation gives facades substantially more screen height and foreshortens
+// roof depth, avoiding the flattened look of a near-overhead camera.
+const CAMERA_OFFSET: Vec3 = Vec3::new(0.0, 10.5, 12.5);
+const WORLD_RENDER_RADIUS: f32 = 22.0;
 
 #[derive(Component)]
 struct LocalPlayer;
@@ -108,6 +121,7 @@ struct BuildingRoof {
     min_z: f32,
     max_z: f32,
     roof_material: Handle<StandardMaterial>,
+    roof_edge_material: Handle<StandardMaterial>,
     gable_material: Handle<StandardMaterial>,
     opacity: f32,
 }
@@ -386,6 +400,18 @@ impl Plugin for SingleWindowGameplayPlugin {
                     native_game_menu::update_ui.after(native_settings::update_ui),
                     native_settings::sync_world_music.after(pump_network),
                     native_settings::apply_audio_settings.after(native_settings::sync_world_music),
+                )
+                    .distributive_run_if(single_window_game_active),
+            )
+            .add_systems(
+                Update,
+                (
+                    native_ui::handle_battle_list_buttons
+                        .run_if(native_loading::gameplay_ready)
+                        .run_if(native_game_menu::menu_closed),
+                    native_ui::update_battle_list
+                        .after(native_ui::handle_battle_list_buttons)
+                        .after(pump_network),
                 )
                     .distributive_run_if(single_window_game_active),
             )
@@ -683,6 +709,15 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                 native_settings::update_ui,
                 native_settings::sync_world_music.after(pump_network),
                 native_settings::apply_audio_settings.after(native_settings::sync_world_music),
+            ),
+        )
+        .add_systems(
+            Update,
+            (
+                native_ui::handle_battle_list_buttons.run_if(native_loading::gameplay_ready),
+                native_ui::update_battle_list
+                    .after(native_ui::handle_battle_list_buttons)
+                    .after(pump_network),
             ),
         )
         .add_systems(
@@ -1002,7 +1037,11 @@ fn spawn_live_world(
     let map = &welcome.map;
     let floor = welcome.player.position.z;
 
-    let tile_mesh = meshes.add(Cuboid::new(0.98, 0.045, 0.98));
+    let tile_mesh = meshes.add(Cuboid::new(
+        world_architecture::TILE_SURFACE_SIZE,
+        0.045,
+        world_architecture::TILE_SURFACE_SIZE,
+    ));
 
     let world_materials = world_visuals::create_materials(asset_server, materials);
     world_visuals::describe();
@@ -1118,21 +1157,24 @@ fn spawn_live_world(
             continue;
         }
 
-        let axes =
-            world_architecture::infer_wall_axes(*position, &map.house_walls, &map.castle_walls);
+        let edges = world_architecture::infer_castle_wall_edges(
+            *position,
+            &map.floors,
+            &map.house_walls,
+            &map.castle_walls,
+        );
 
-        world_architecture::spawn_wall(
+        world_architecture::spawn_castle_wall(
             commands,
             architecture_catalog,
             castle_wall_material.clone(),
             *position,
-            axes,
-            true,
+            edges,
         );
     }
 
     for position in map.trees.iter().filter(|position| position.z == floor) {
-        world_details::spawn_tree(commands, world_detail_catalog, *position);
+        world_details::spawn_tree(commands, world_detail_catalog, materials, *position);
     }
 
     for object in map
@@ -1140,7 +1182,7 @@ fn spawn_live_world(
         .iter()
         .filter(|object| object.position.z == floor)
     {
-        world_details::spawn_world_object(commands, world_detail_catalog, object);
+        world_details::spawn_world_object(commands, world_detail_catalog, materials, object);
     }
 
     for door in map.doors.iter().filter(|door| door.position.z == floor) {
@@ -1896,6 +1938,7 @@ fn update_building_roofs(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut roofs: Query<(&mut BuildingRoof, &mut Visibility), Without<MainCamera>>,
     mut walls: Query<(&HouseWallOccluder, &mut Visibility), Without<BuildingRoof>>,
+    mut world_occluders: Query<&mut world_details::WorldOccluder>,
 ) {
     let Ok(camera) = camera.single() else {
         return;
@@ -1907,12 +1950,22 @@ fn update_building_roofs(
     let fade_step = (time.delta_secs() * 9.0).clamp(0.0, 1.0);
 
     for (mut roof, mut visibility) in &mut roofs {
-        if roof.floor != active_floor {
-            *visibility = Visibility::Hidden;
+        let roof_center = Vec2::new(
+            (roof.min_x + roof.max_x) * 0.5,
+            (roof.min_z + roof.max_z) * 0.5,
+        );
+        let inside_render_area = (roof_center.x - player_2d.x).abs() <= WORLD_RENDER_RADIUS
+            && (roof_center.y - player_2d.y).abs() <= WORLD_RENDER_RADIUS;
+        if roof.floor != active_floor || !inside_render_area {
+            if *visibility != Visibility::Hidden {
+                *visibility = Visibility::Hidden;
+            }
             continue;
         }
 
-        *visibility = Visibility::Visible;
+        if *visibility != Visibility::Visible {
+            *visibility = Visibility::Visible;
+        }
 
         let inside = player_2d.x >= roof.min_x
             && player_2d.x <= roof.max_x
@@ -1939,27 +1992,75 @@ fn update_building_roofs(
                 material.base_color = Color::srgba(1.0, 1.0, 1.0, roof.opacity);
             }
         }
+        if let Some(mut material) = materials.get_mut(&roof.roof_edge_material) {
+            material.alpha_mode = AlphaMode::Blend;
+            material.base_color = Color::srgba(0.31, 0.10, 0.065, roof.opacity);
+        }
     }
 
     // Roof fade solves the large obstruction. A wall edge can still sit
     // directly between the camera and the player, so perform a Tibia-style
     // local cutaway only on house-wall roots crossed by that sight segment.
     for (wall, mut visibility) in &mut walls {
-        if wall.position.z != active_floor {
-            *visibility = Visibility::Hidden;
+        let point = Vec2::new(wall.position.x as f32, wall.position.y as f32);
+        let inside_render_area = (point.x - player_2d.x).abs() <= WORLD_RENDER_RADIUS
+            && (point.y - player_2d.y).abs() <= WORLD_RENDER_RADIUS;
+        if wall.position.z != active_floor || !inside_render_area {
+            if *visibility != Visibility::Hidden {
+                *visibility = Visibility::Hidden;
+            }
             continue;
         }
 
-        let point = Vec2::new(wall.position.x as f32, wall.position.y as f32);
         let close_to_player = point.distance_squared(player_2d) <= 1.5 * 1.5;
         let occluding = close_to_player
             && point_segment_distance_squared(point, player_2d, camera_2d) <= 0.68 * 0.68;
 
-        *visibility = if occluding {
+        let desired = if occluding {
             Visibility::Hidden
         } else {
             Visibility::Visible
         };
+        if *visibility != desired {
+            *visibility = desired;
+        }
+    }
+
+    // Trees and mountain walls keep their silhouettes but fade when their
+    // footprint crosses the camera-to-player sight line. Each occluder owns
+    // cloned material handles, so fading one never affects its neighbours.
+    for mut occluder in &mut world_occluders {
+        let point = Vec2::new(occluder.position.x as f32, occluder.position.y as f32);
+        let between_camera_and_player = occluder.position.z == active_floor
+            && point_segment_distance_squared(point, player_2d, camera_2d)
+                <= occluder.radius * occluder.radius;
+        let target_opacity = if between_camera_and_player {
+            occluder.faded_opacity
+        } else {
+            1.0
+        };
+        let previous_opacity = occluder.opacity;
+        let mut next_opacity = previous_opacity
+            + (target_opacity - previous_opacity) * fade_step;
+        if (target_opacity - next_opacity).abs() < 0.002 {
+            next_opacity = target_opacity;
+        }
+        if (next_opacity - previous_opacity).abs() <= f32::EPSILON {
+            continue;
+        }
+        occluder.opacity = next_opacity;
+
+        for tracked in &occluder.materials {
+            if let Some(mut material) = materials.get_mut(&tracked.handle) {
+                let tint = tracked.tint.to_srgba();
+                material.base_color = Color::srgba(tint.red, tint.green, tint.blue, occluder.opacity);
+                material.alpha_mode = if occluder.opacity >= 0.999 {
+                    AlphaMode::Opaque
+                } else {
+                    AlphaMode::Blend
+                };
+            }
+        }
     }
 }
 
@@ -2029,7 +2130,12 @@ fn toggle_present_mode(keys: Res<ButtonInput<KeyCode>>, mut window: Single<&mut 
     info!("ALDORIA NATIVE PRESENT MODE · {:?}", window.present_mode);
 }
 
-fn frame_pacing_probe(time: Res<Time>, mut probe: ResMut<FrameProbe>) {
+fn frame_pacing_probe(
+    time: Res<Time>,
+    mut probe: ResMut<FrameProbe>,
+    meshes: Query<&ViewVisibility, With<Mesh3d>>,
+    materials: Res<Assets<StandardMaterial>>,
+) {
     let now = time.elapsed_secs_f64();
     let frame_ms = time.delta_secs_f64() * 1_000.0;
 
@@ -2060,10 +2166,17 @@ fn frame_pacing_probe(time: Res<Time>, mut probe: ResMut<FrameProbe>) {
     probe.avg_ms = probe.total_ms / probe.frames.max(1) as f64;
     probe.fps = probe.frames as f64 / elapsed.max(f64::EPSILON);
     probe.last_max_ms = probe.max_ms;
+    let visible_meshes = meshes.iter().filter(|visibility| visibility.get()).count();
 
     info!(
-        "ALDORIA NATIVE PERF · avg={:.2}ms max={:.2}ms fps={:.1} drops24={} drops32={}",
-        probe.avg_ms, probe.last_max_ms, probe.fps, probe.drops_24, probe.drops_32,
+        "ALDORIA NATIVE PERF · avg={:.2}ms max={:.2}ms fps={:.1} drops24={} drops32={} visible_meshes={} materials={}",
+        probe.avg_ms,
+        probe.last_max_ms,
+        probe.fps,
+        probe.drops_24,
+        probe.drops_32,
+        visible_meshes,
+        materials.len(),
     );
 
     probe.sample_started_at = now;

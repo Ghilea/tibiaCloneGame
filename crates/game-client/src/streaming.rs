@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 // TIBIAGAME_V36_64_1_TRUE_3D_ROOF_VOLUME
+// TIBIAGAME_V36_65_0_MATERIAL_DEPTH_OCCLUDERS_BATTLE_TARGETING
+// TIBIAGAME_V36_65_1_RENDER_BUDGET_STABLE_VISIBILITY
 // TIBIAGAME_V36_9_1_UNUSED_BUILDINGROOF_IMPORT_FIX
 use std::time::Instant;
 
@@ -14,6 +16,10 @@ use crate::{
 
 const SPAWN_BUDGET_PER_FRAME: usize = 520;
 const CLEANUP_BUDGET_PER_FRAME: usize = 180;
+// The server cache is intentionally much wider than the camera. Keeping the
+// complete 64-tile region instantiated avoids movement stalls, but rendering
+// it all defeats that cache and can push the native client below 20 FPS.
+const STREAM_RENDER_RADIUS: f32 = 22.0;
 
 #[derive(Component)]
 pub struct StreamedRegionEntity {
@@ -108,7 +114,7 @@ enum SpawnSpec {
     },
     CastleWall {
         position: Position,
-        axes: world_architecture::WallAxes,
+        edges: world_architecture::WallEdges,
     },
     Tree(Position),
     Object {
@@ -322,7 +328,7 @@ pub fn sync_streamed_floor_visibility(
     stream: Res<RegionStream>,
     movement: Res<crate::MovementState>,
     mut entities: Query<
-        (&StreamedRegionEntity, &mut Visibility),
+        (&StreamedRegionEntity, &Transform, &mut Visibility),
         (
             Without<crate::BuildingRoof>,
             Without<crate::HouseWallOccluder>,
@@ -334,14 +340,23 @@ pub fn sync_streamed_floor_visibility(
     }
 
     let visible_floor = movement.logical.z;
-    for (streamed, mut visibility) in &mut entities {
+    let player = movement.visual;
+    for (streamed, transform, mut visibility) in &mut entities {
+        let offset = transform.translation - player;
+        let inside_render_area = offset.x.abs() <= STREAM_RENDER_RADIUS
+            && offset.z.abs() <= STREAM_RENDER_RADIUS;
         let should_show =
-            streamed.generation == stream.active_generation && streamed.floor == visible_floor;
-        *visibility = if should_show {
+            streamed.generation == stream.active_generation
+                && streamed.floor == visible_floor
+                && inside_render_area;
+        let desired = if should_show {
             Visibility::Inherited
         } else {
             Visibility::Hidden
         };
+        if *visibility != desired {
+            *visibility = desired;
+        }
     }
 }
 
@@ -527,8 +542,9 @@ fn build_specs(payload: RegionPayload) -> Vec<SpawnSpec> {
                 .filter(|position| !opening_positions.contains(position))
                 .map(|position| SpawnSpec::CastleWall {
                     position,
-                    axes: world_architecture::infer_wall_axes(
+                    edges: world_architecture::infer_castle_wall_edges(
                         position,
+                        &map.floors,
                         &map.house_walls,
                         &map.castle_walls,
                     ),
@@ -724,7 +740,11 @@ fn spawn_spec(
                 "Stream Floor",
                 assets.floor.clone(),
                 Vec3::new(position.x as f32, 0.015, position.y as f32),
-                Vec3::new(0.98, 0.03, 0.98),
+                Vec3::new(
+                    world_architecture::TILE_SURFACE_SIZE,
+                    0.03,
+                    world_architecture::TILE_SURFACE_SIZE,
+                ),
                 EntityKind::Static,
             );
         }
@@ -750,7 +770,11 @@ fn spawn_spec(
                 "Stream Terrain",
                 material,
                 Vec3::new(position.x as f32, 0.028, position.y as f32),
-                Vec3::new(0.98, 0.03, 0.98),
+                Vec3::new(
+                    world_architecture::TILE_SURFACE_SIZE,
+                    0.03,
+                    world_architecture::TILE_SURFACE_SIZE,
+                ),
                 EntityKind::Static,
             );
         }
@@ -763,7 +787,11 @@ fn spawn_spec(
                 "Stream Road",
                 assets.road.clone(),
                 Vec3::new(position.x as f32, 0.045, position.y as f32),
-                Vec3::new(0.98, 0.04, 0.98),
+                Vec3::new(
+                    world_architecture::TILE_SURFACE_SIZE,
+                    0.04,
+                    world_architecture::TILE_SURFACE_SIZE,
+                ),
                 EntityKind::Static,
             );
         }
@@ -776,7 +804,11 @@ fn spawn_spec(
                 "Stream Water",
                 assets.water.clone(),
                 Vec3::new(position.x as f32, 0.03, position.y as f32),
-                Vec3::new(0.98, 0.035, 0.98),
+                Vec3::new(
+                    world_architecture::TILE_SURFACE_SIZE,
+                    0.035,
+                    world_architecture::TILE_SURFACE_SIZE,
+                ),
                 EntityKind::Static,
             );
         }
@@ -804,21 +836,20 @@ fn spawn_spec(
                 .entity(entity)
                 .insert(StreamedRegionEntity { generation, floor });
         }
-        SpawnSpec::CastleWall { position, axes } => {
-            let entity = world_architecture::spawn_wall(
+        SpawnSpec::CastleWall { position, edges } => {
+            let entity = world_architecture::spawn_castle_wall(
                 commands,
                 architecture,
                 assets.castle_wall.clone(),
                 *position,
-                *axes,
-                true,
+                *edges,
             );
             commands
                 .entity(entity)
                 .insert(StreamedRegionEntity { generation, floor });
         }
         SpawnSpec::Tree(position) => {
-            let entity = world_details::spawn_tree(commands, details, *position);
+            let entity = world_details::spawn_tree(commands, details, materials, *position);
             commands
                 .entity(entity)
                 .insert(StreamedRegionEntity { generation, floor });
@@ -829,7 +860,7 @@ fn spawn_spec(
                 kind: kind.clone(),
                 position: *position,
             };
-            let entity = world_details::spawn_world_object(commands, details, &object);
+            let entity = world_details::spawn_world_object(commands, details, materials, &object);
             commands
                 .entity(entity)
                 .insert(StreamedRegionEntity { generation, floor });

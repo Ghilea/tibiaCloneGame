@@ -13,6 +13,7 @@ use crate::{
 // TIBIAGAME_V36_8_2_BEVY_WORLDASSET_STREAM_BORROW_FIX
 // TIBIAGAME_V36_13_WORLD_BOUNDARY_FLOOR_PRELOAD
 // TIBIAGAME_V36_15_1_OPENING_FACADE_RAT_GPU_PREWARM
+// TIBIAGAME_V36_65_0_MATERIAL_DEPTH_OCCLUDERS_BATTLE_TARGETING
 
 const PROP_MODELS: [(&str, &str); 15] = [
     ("chair", "models/world-props/chair.glb"),
@@ -67,6 +68,20 @@ pub struct WorldResourceCopperAccent {
 pub struct WorldObjectActor {
     pub id: String,
     pub position: Position,
+}
+
+pub struct WorldOccluderMaterial {
+    pub handle: Handle<StandardMaterial>,
+    pub tint: Color,
+}
+
+#[derive(Component)]
+pub struct WorldOccluder {
+    pub position: Position,
+    pub radius: f32,
+    pub faded_opacity: f32,
+    pub opacity: f32,
+    pub materials: Vec<WorldOccluderMaterial>,
 }
 
 #[derive(Component)]
@@ -246,8 +261,11 @@ impl WorldDetailCatalog {
 pub fn spawn_tree(
     commands: &mut Commands,
     catalog: &WorldDetailCatalog,
+    materials: &mut Assets<StandardMaterial>,
     position: Position,
 ) -> Entity {
+    let (wood, wood_tracked) = fading_material(materials, &catalog.wood);
+    let (foliage, foliage_tracked) = fading_material(materials, &catalog.foliage);
     commands
         .spawn((
             Name::new("Tree"),
@@ -258,14 +276,24 @@ pub fn spawn_tree(
                 ..default()
             },
             Visibility::default(),
+            WorldOccluder {
+                position,
+                radius: 1.05,
+                faded_opacity: 0.24,
+                opacity: 1.0,
+                materials: vec![wood_tracked, foliage_tracked],
+            },
         ))
-        .with_children(|parent| spawn_tree_geometry(parent, catalog, TreeStyle::Forest))
+        .with_children(|parent| {
+            spawn_tree_geometry(parent, catalog, TreeStyle::Forest, wood, foliage, None)
+        })
         .id()
 }
 
 pub fn spawn_world_object(
     commands: &mut Commands,
     catalog: &WorldDetailCatalog,
+    materials: &mut Assets<StandardMaterial>,
     object: &WorldObjectView,
 ) -> Entity {
     let rotation = natural_rotation(object);
@@ -279,6 +307,20 @@ pub fn spawn_world_object(
             "snowy_pine" => TreeStyle::SnowyPine,
             _ => TreeStyle::Forest,
         };
+        let (wood, wood_tracked) = fading_material(materials, &catalog.wood);
+        let foliage_source = match style {
+            TreeStyle::Forest => &catalog.foliage,
+            TreeStyle::Pine | TreeStyle::SnowyPine => &catalog.pine_foliage,
+        };
+        let (foliage, foliage_tracked) = fading_material(materials, foliage_source);
+        let (snow, snow_tracked) = if matches!(style, TreeStyle::SnowyPine) {
+            let (handle, tracked) = fading_material(materials, &catalog.snow);
+            (Some(handle), Some(tracked))
+        } else {
+            (None, None)
+        };
+        let mut tracked_materials = vec![wood_tracked, foliage_tracked];
+        tracked_materials.extend(snow_tracked);
         return commands
             .spawn((
                 Name::new(format!("World tree: {}: {}", object.kind, object.id)),
@@ -294,17 +336,26 @@ pub fn spawn_world_object(
                     ..default()
                 },
                 Visibility::default(),
+                WorldOccluder {
+                    position: object.position,
+                    radius: 1.05,
+                    faded_opacity: 0.24,
+                    opacity: 1.0,
+                    materials: tracked_materials,
+                },
             ))
-            .with_children(|parent| spawn_tree_geometry(parent, catalog, style))
+            .with_children(|parent| {
+                spawn_tree_geometry(parent, catalog, style, wood, foliage, snow)
+            })
             .id();
     }
 
     if object.kind == "mountain_wall" {
-        return spawn_rock_formation(commands, catalog, object, true);
+        return spawn_rock_formation(commands, catalog, materials, object, true);
     }
 
     if object.kind == "snow_bank" {
-        return spawn_rock_formation(commands, catalog, object, false);
+        return spawn_rock_formation(commands, catalog, materials, object, false);
     }
 
     if matches!(
@@ -460,11 +511,14 @@ fn spawn_tree_geometry(
     parent: &mut ChildSpawnerCommands,
     catalog: &WorldDetailCatalog,
     style: TreeStyle,
+    wood: Handle<StandardMaterial>,
+    foliage: Handle<StandardMaterial>,
+    snow: Option<Handle<StandardMaterial>>,
 ) {
     parent.spawn((
         Name::new("Tree trunk"),
         Mesh3d(catalog.trunk_mesh.clone()),
-        MeshMaterial3d(catalog.wood.clone()),
+        MeshMaterial3d(wood.clone()),
         Transform {
             translation: Vec3::new(0.0, 0.78, 0.0),
             scale: Vec3::new(0.28, 0.82, 0.28),
@@ -483,7 +537,7 @@ fn spawn_tree_geometry(
         parent.spawn((
             Name::new(format!("Tree branch {index}")),
             Mesh3d(catalog.trunk_mesh.clone()),
-            MeshMaterial3d(catalog.wood.clone()),
+            MeshMaterial3d(wood.clone()),
             Transform {
                 translation,
                 rotation,
@@ -492,10 +546,6 @@ fn spawn_tree_geometry(
         ));
     }
 
-    let foliage = match style {
-        TreeStyle::Forest => catalog.foliage.clone(),
-        TreeStyle::Pine | TreeStyle::SnowyPine => catalog.pine_foliage.clone(),
-    };
     let crowns = match style {
         TreeStyle::Forest => [
             (Vec3::new(0.0, 1.72, 0.0), Vec3::new(1.20, 1.10, 1.20)),
@@ -528,7 +578,10 @@ fn spawn_tree_geometry(
             parent.spawn((
                 Name::new(format!("Snowy tree crown {index}")),
                 Mesh3d(catalog.foliage_mesh.clone()),
-                MeshMaterial3d(catalog.snow.clone()),
+                MeshMaterial3d(
+                    snow.clone()
+                        .expect("snowy pine creates a fading snow material"),
+                ),
                 Transform {
                     translation: translation + Vec3::Y * 0.08,
                     scale: scale * Vec3::new(1.035, 0.25, 1.035),
@@ -542,15 +595,28 @@ fn spawn_tree_geometry(
 fn spawn_rock_formation(
     commands: &mut Commands,
     catalog: &WorldDetailCatalog,
+    materials: &mut Assets<StandardMaterial>,
     object: &WorldObjectView,
     wall: bool,
 ) -> Entity {
-    let material = if object.kind == "snow_bank" {
+    let source = if object.kind == "snow_bank" {
         catalog.snow.clone()
     } else {
         catalog.stone.clone()
     };
-    commands
+    let (material, main_tracked) = if wall {
+        let (handle, tracked) = fading_material(materials, &source);
+        (handle, Some(tracked))
+    } else {
+        (source, None)
+    };
+    let (dark_material, dark_tracked) = if wall {
+        let (handle, tracked) = fading_material(materials, &catalog.dark_stone);
+        (handle, Some(tracked))
+    } else {
+        (catalog.dark_stone.clone(), None)
+    };
+    let entity = commands
         .spawn((
             Name::new(format!("Rock formation: {}: {}", object.kind, object.id)),
             WorldStatic,
@@ -576,7 +642,7 @@ fn spawn_rock_formation(
                 parent.spawn((
                     Name::new("Cliff dark foundation"),
                     Mesh3d(catalog.detail_cube.clone()),
-                    MeshMaterial3d(catalog.dark_stone.clone()),
+                    MeshMaterial3d(dark_material.clone()),
                     Transform {
                         translation: Vec3::new(0.0, 0.13, 0.0),
                         scale: Vec3::new(1.04, 0.22, 0.91),
@@ -606,7 +672,7 @@ fn spawn_rock_formation(
                     parent.spawn((
                         Name::new(format!("Cliff face stone {index}")),
                         Mesh3d(catalog.rock_mesh.clone()),
-                        MeshMaterial3d(catalog.dark_stone.clone()),
+                        MeshMaterial3d(dark_material.clone()),
                         Transform {
                             translation: Vec3::new(x, y, -0.43),
                             rotation: Quat::from_rotation_z(index as f32 * 0.48),
@@ -639,7 +705,39 @@ fn spawn_rock_formation(
                 }
             }
         })
-        .id()
+        .id();
+
+    if wall {
+        commands.entity(entity).insert(WorldOccluder {
+            position: object.position,
+            radius: 0.72,
+            faded_opacity: 0.20,
+            opacity: 1.0,
+            materials: main_tracked.into_iter().chain(dark_tracked).collect(),
+        });
+    }
+
+    entity
+}
+
+fn fading_material(
+    materials: &mut Assets<StandardMaterial>,
+    source: &Handle<StandardMaterial>,
+) -> (Handle<StandardMaterial>, WorldOccluderMaterial) {
+    let mut material = materials
+        .get(source)
+        .cloned()
+        .expect("world detail material exists before occluder spawn");
+    let tint = material.base_color;
+    // Most occluders never cross the player sight line. Start in the cheaper
+    // opaque pass and switch only the few actively fading materials to Blend.
+    material.alpha_mode = AlphaMode::Opaque;
+    material.cull_mode = None;
+    let handle = materials.add(material);
+    (
+        handle.clone(),
+        WorldOccluderMaterial { handle, tint },
+    )
 }
 
 fn spawn_reeds(
@@ -1190,6 +1288,6 @@ fn natural_rotation(object: &WorldObjectView) -> f32 {
 
 pub fn describe() {
     info!(
-        "ALDORIA WORLD DETAILS · authored GLB props/resources · procedural trees · collision-aligned hinged doors/windows · stairs · torch point lights"
+        "ALDORIA WORLD DETAILS · authored GLB props/resources · procedural trees · sight-line fading trees/cliffs · collision-aligned hinged doors/windows · stairs · torch point lights"
     );
 }

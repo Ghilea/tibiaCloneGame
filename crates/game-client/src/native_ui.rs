@@ -1,5 +1,6 @@
 // TIBIAGAME_V36_21_NATIVE_GAMEPLAY_UI
 // TIBIAGAME_V36_64_0_COMPACT_UI_ROOF_DEPTH
+// TIBIAGAME_V36_65_0_MATERIAL_DEPTH_OCCLUDERS_BATTLE_TARGETING
 use bevy::{
     input::{ButtonState, keyboard::KeyboardInput},
     prelude::*,
@@ -62,6 +63,15 @@ pub(crate) struct NativeChatPanel;
 #[derive(Component)]
 pub(crate) struct NativePingSignalBar(usize);
 
+#[derive(Component)]
+pub(crate) struct NativeBattleListRow {
+    index: usize,
+    target_id: Option<game_types::EntityId>,
+}
+
+#[derive(Component, Clone, Copy)]
+pub(crate) struct NativeBattleListRowText(usize);
+
 // Shared geometry keeps the menu clear of the latency badge at every resolution.
 const HUD_PING_RIGHT: f32 = 12.0;
 const HUD_PING_WIDTH: f32 = 84.0;
@@ -90,7 +100,6 @@ pub(crate) enum NativeUiText {
     Ping,
     Target,
     TargetHealth,
-    BattleList,
     ChatLog,
     ChatInput,
     #[allow(dead_code)]
@@ -831,9 +840,41 @@ fn spawn_battle_list(commands: &mut Commands, asset_server: &AssetServer) {
                 .spawn(Node {
                     width: Val::Percent(100.0),
                     padding: UiRect::all(px(6)),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(1),
                     ..default()
                 })
-                .with_child(text_bundle("", NativeUiText::BattleList, 9.5, TEXT));
+                .with_children(|list| {
+                    for index in 0..8 {
+                        list.spawn((
+                            Name::new(format!("Battle list row {}", index + 1)),
+                            Button,
+                            NativeBattleListRow {
+                                index,
+                                target_id: None,
+                            },
+                            Node {
+                                width: percent(100.0),
+                                height: px(12),
+                                padding: UiRect::horizontal(px(3)),
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            BackgroundColor(Color::NONE),
+                            BorderColor::all(Color::NONE),
+                            Visibility::Hidden,
+                        ))
+                        .with_child((
+                            NativeBattleListRowText(index),
+                            Text::new(""),
+                            TextFont {
+                                font_size: FontSize::Px(9.5),
+                                ..default()
+                            },
+                            TextColor(TEXT),
+                        ));
+                    }
+                });
         });
 }
 
@@ -891,6 +932,126 @@ fn spawn_panel_dock(commands: &mut Commands, asset_server: &AssetServer) {
                 "B",
             );
         });
+}
+
+struct BattleListEntry {
+    id: game_types::EntityId,
+    name: String,
+    health: u16,
+    max_health: u16,
+}
+
+fn battle_list_entries(game_state: &NativeGameState) -> Vec<BattleListEntry> {
+    let Some(local) = game_state.local_player() else {
+        return Vec::new();
+    };
+
+    let mut nearby: Vec<_> = game_state
+        .creatures
+        .values()
+        .filter(|creature| creature.position.z == local.position.z && creature.health > 0)
+        .filter_map(|creature| {
+            let dx = (creature.position.x - local.position.x).abs();
+            let dy = (creature.position.y - local.position.y).abs();
+            let distance = dx.max(dy);
+            (distance <= 12).then_some((distance, creature))
+        })
+        .collect();
+    nearby.sort_by(|(distance_a, a), (distance_b, b)| {
+        distance_a.cmp(distance_b).then_with(|| a.name.cmp(&b.name))
+    });
+
+    nearby
+        .into_iter()
+        .take(8)
+        .map(|(_, creature)| BattleListEntry {
+            id: creature.id,
+            name: creature.name.clone(),
+            health: creature.health,
+            max_health: creature.max_health,
+        })
+        .collect()
+}
+
+pub fn handle_battle_list_buttons(
+    mut buttons: Query<
+        (&Interaction, &NativeBattleListRow),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut game_state: ResMut<NativeGameState>,
+) {
+    for (interaction, row) in &mut buttons {
+        if *interaction == Interaction::Pressed
+            && let Some(target_id) = row.target_id
+            && game_state.creatures.contains_key(&target_id)
+        {
+            game_state.set_attack_target(Some(target_id));
+        }
+    }
+}
+
+pub fn update_battle_list(
+    game_state: Res<NativeGameState>,
+    mut rows: Query<
+        (
+            &mut NativeBattleListRow,
+            &Interaction,
+            &mut BackgroundColor,
+            &mut Visibility,
+        ),
+        With<Button>,
+    >,
+    mut labels: Query<(&NativeBattleListRowText, &mut Text, &mut TextColor)>,
+) {
+    let entries = battle_list_entries(&game_state);
+    let empty_message = if game_state.local_player().is_some() {
+        "No creatures nearby."
+    } else {
+        "No local player."
+    };
+
+    for (mut row, interaction, mut background, mut visibility) in &mut rows {
+        row.target_id = entries.get(row.index).map(|entry| entry.id);
+        let show_empty_message = entries.is_empty() && row.index == 0;
+        *visibility = if row.target_id.is_some() || show_empty_message {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+
+        let selected = row.target_id == game_state.attack_target_id;
+        background.0 = if selected {
+            Color::srgba(0.38, 0.075, 0.045, 0.92)
+        } else if row.target_id.is_some() && *interaction == Interaction::Hovered {
+            Color::srgba(0.20, 0.14, 0.045, 0.88)
+        } else {
+            Color::NONE
+        };
+    }
+
+    for (label, mut text, mut color) in &mut labels {
+        if let Some(entry) = entries.get(label.0) {
+            let marker = if game_state.attack_target_id == Some(entry.id) {
+                "▶"
+            } else {
+                " "
+            };
+            text.0 = format!(
+                "{marker} {:<13} {:>3}/{:<3}",
+                entry.name, entry.health, entry.max_health,
+            );
+            color.0 = if game_state.attack_target_id == Some(entry.id) {
+                theme::GOLD_BRIGHT
+            } else {
+                TEXT
+            };
+        } else if entries.is_empty() && label.0 == 0 {
+            text.0 = empty_message.into();
+            color.0 = MUTED;
+        } else {
+            text.0.clear();
+        }
+    }
 }
 
 fn spawn_panel_dock_button(
@@ -5369,52 +5530,6 @@ pub fn update_ui(
         };
     }
 
-    let battle_list_text = match game_state.local_player() {
-        Some(local) => {
-            let mut nearby: Vec<_> = game_state
-                .creatures
-                .values()
-                .filter(|creature| creature.position.z == local.position.z && creature.health > 0)
-                .map(|creature| {
-                    let dx = (creature.position.x - local.position.x).abs();
-                    let dy = (creature.position.y - local.position.y).abs();
-                    (
-                        dx.max(dy),
-                        creature.id,
-                        creature.name.clone(),
-                        creature.health,
-                        creature.max_health,
-                    )
-                })
-                .filter(|(distance, _, _, _, _)| *distance <= 12)
-                .collect();
-
-            nearby.sort_by_key(|entry| entry.0);
-
-            let mut lines = Vec::new();
-
-            if nearby.is_empty() {
-                lines.push("No creatures nearby.".into());
-            } else {
-                for (_distance, id, name, health, max_health) in nearby.into_iter().take(8) {
-                    let marker = if game_state.attack_target_id == Some(id) {
-                        "▶"
-                    } else {
-                        " "
-                    };
-
-                    lines.push(format!(
-                        "{marker} {:<18} {:>3}/{:<3}",
-                        name, health, max_health,
-                    ));
-                }
-            }
-
-            lines.join("\n")
-        }
-        None => "BATTLE LIST\nNo local player.".to_owned(),
-    };
-
     let action_line = action_bar_text(&game_state, &action_bar);
     let inventory_text = inventory_panel_text(&game_state, &panel_state);
     let inventory_detail = inventory_detail_text(&game_state, &panel_state);
@@ -5530,10 +5645,6 @@ pub fn update_ui(
                     text.0.clear();
                     color.0 = MUTED;
                 }
-            }
-            NativeUiText::BattleList => {
-                text.0 = battle_list_text.clone();
-                color.0 = TEXT;
             }
             NativeUiText::ChatLog => {
                 text.0 = chat_lines.join("\n");

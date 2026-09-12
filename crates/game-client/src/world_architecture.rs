@@ -1,8 +1,5 @@
 use bevy::{
-    asset::RenderAssetUsages,
-    mesh::Indices,
-    prelude::*,
-    render::render_resource::PrimitiveTopology,
+    asset::RenderAssetUsages, mesh::Indices, prelude::*, render::render_resource::PrimitiveTopology,
 };
 use game_protocol::{BuildingView, DoorView, WindowView};
 use game_types::Position;
@@ -14,9 +11,14 @@ use crate::{BuildingRoof, HouseWallOccluder, WorldStatic};
 // TIBIAGAME_V36_14_MEDIEVAL_FACADE_CREATURE_WARMUP
 // TIBIAGAME_V36_64_0_COMPACT_UI_ROOF_DEPTH
 // TIBIAGAME_V36_64_1_TRUE_3D_ROOF_VOLUME
+// TIBIAGAME_V36_64_2_ROOF_UV_EDGE_FIX
+// TIBIAGAME_V36_65_0_MATERIAL_DEPTH_OCCLUDERS_BATTLE_TARGETING
+// TIBIAGAME_V36_66_2_SEALED_FLOORS_AND_ROOF_EAVES
+// TIBIAGAME_V36_66_3_CLEAN_WALL_CORNERS_AND_ROOF_TRIM
 
 pub const HOUSE_WALL_HEIGHT: f32 = 2.64;
 pub const CASTLE_WALL_HEIGHT: f32 = 3.00;
+pub const TILE_SURFACE_SIZE: f32 = 1.004;
 const HOUSE_WALL_THICKNESS: f32 = 0.16;
 const CASTLE_WALL_THICKNESS: f32 = 0.24;
 const HOUSE_WALL_LENGTH: f32 = 1.00;
@@ -25,16 +27,20 @@ const HOUSE_WALL_PANEL_ROWS: usize = 3;
 const CASTLE_WALL_PANEL_ROWS: usize = 3;
 const WALL_EDGE_OFFSET: f32 = 0.50;
 const BUILDING_FLOOR_INSET: f32 = 0.10;
-const ROOF_EAVE_Y: f32 = HOUSE_WALL_HEIGHT + 0.02;
-const ROOF_ANGLE: f32 = 0.52;
+// Seat the roof slightly into the wall instead of balancing it above the top
+// beam. The overlap prevents a bright slit when viewed from the aligned camera.
+const ROOF_EAVE_Y: f32 = HOUSE_WALL_HEIGHT - 0.08;
+const ROOF_ANGLE: f32 = 0.44;
 const ROOF_OVERHANG: f32 = 0.34;
 const ROOF_SLAB_THICKNESS: f32 = 0.075;
 const ROOF_COURSE_TARGET: f32 = 0.42;
 const ROOF_COURSE_OVERLAP: f32 = 0.115;
-const ROOF_TILE_THICKNESS: f32 = 0.070;
-const ROOF_COURSE_RISE: f32 = 0.018;
-const ROOF_RIDGE_WIDTH: f32 = 0.34;
-const ROOF_RIDGE_THICKNESS: f32 = 0.075;
+const ROOF_TILE_THICKNESS: f32 = 0.050;
+const ROOF_COURSE_RISE: f32 = 0.022;
+const ROOF_RIDGE_WIDTH: f32 = 0.20;
+const ROOF_RIDGE_THICKNESS: f32 = 0.11;
+const ROOF_EAVE_FASCIA_HEIGHT: f32 = 0.22;
+const ROOF_EAVE_FASCIA_THICKNESS: f32 = 0.18;
 const GABLE_STEP_HEIGHT: f32 = 0.22;
 const GROUND_CHUNK_TILES: i32 = 16;
 
@@ -154,6 +160,51 @@ pub fn infer_wall_axes(
             horizontal,
             vertical,
         }
+    }
+}
+
+/// Place cellar/castle wall faces on the edge that actually touches a tiled
+/// floor. The legacy north/west-only placement leaves a full empty tile along
+/// south and east boundaries. Surface walls without an adjacent authored floor
+/// retain the legacy axis fallback.
+pub fn infer_castle_wall_edges(
+    position: Position,
+    floors: &[Position],
+    house_walls: &[Position],
+    castle_walls: &[Position],
+) -> WallEdges {
+    let has_floor = |x: i32, y: i32| {
+        floors
+            .iter()
+            .any(|floor| floor.z == position.z && floor.x == x && floor.y == y)
+    };
+    let edges = WallEdges {
+        north: has_floor(position.x, position.y - 1),
+        south: has_floor(position.x, position.y + 1),
+        west: has_floor(position.x - 1, position.y),
+        east: has_floor(position.x + 1, position.y),
+    };
+    if edges.any() {
+        return edges;
+    }
+
+    // Rectangular cellar corners only touch the interior floor diagonally.
+    // Their neighbouring straight wall tiles already meet at that corner;
+    // applying the legacy fallback here creates a one-tile exterior spur.
+    let touches_floor_diagonally = [-1, 1].into_iter().any(|dx| {
+        [-1, 1]
+            .into_iter()
+            .any(|dy| has_floor(position.x + dx, position.y + dy))
+    });
+    if touches_floor_diagonally {
+        return WallEdges::default();
+    }
+
+    let axes = infer_wall_axes(position, house_walls, castle_walls);
+    WallEdges {
+        north: axes.horizontal,
+        west: axes.vertical,
+        ..default()
     }
 }
 
@@ -289,19 +340,16 @@ pub fn spawn_house_wall(
     root
 }
 
-/// Free-form/castle walls keep the old axis semantics. House walls should use
-/// spawn_house_wall so south/east boundary signs are not lost.
-pub fn spawn_wall(
+pub fn spawn_castle_wall(
     commands: &mut Commands,
     catalog: &ArchitectureCatalog,
     material: Handle<StandardMaterial>,
     position: Position,
-    axes: WallAxes,
-    castle: bool,
+    edges: WallEdges,
 ) -> Entity {
     let root = commands
         .spawn((
-            Name::new(if castle { "Castle Wall" } else { "Legacy Wall" }),
+            Name::new("Castle Wall"),
             WorldStatic,
             Transform::from_xyz(position.x as f32, 0.0, position.y as f32),
             Visibility::default(),
@@ -309,11 +357,17 @@ pub fn spawn_wall(
         .id();
 
     commands.entity(root).with_children(|parent| {
-        if axes.horizontal {
-            spawn_wall_edge(parent, catalog, material.clone(), WallEdge::North, castle);
+        if edges.north {
+            spawn_wall_edge(parent, catalog, material.clone(), WallEdge::North, true);
         }
-        if axes.vertical {
-            spawn_wall_edge(parent, catalog, material.clone(), WallEdge::West, castle);
+        if edges.south {
+            spawn_wall_edge(parent, catalog, material.clone(), WallEdge::South, true);
+        }
+        if edges.west {
+            spawn_wall_edge(parent, catalog, material.clone(), WallEdge::West, true);
+        }
+        if edges.east {
+            spawn_wall_edge(parent, catalog, material.clone(), WallEdge::East, true);
         }
     });
 
@@ -714,6 +768,19 @@ pub fn spawn_building(
     roof_material_value.cull_mode = None;
     let roof_material = materials.add(roof_material_value);
 
+    // The tile image belongs on the broad pitched faces only. Mapping the
+    // complete image onto a course edge just a few centimetres high compresses
+    // every tile row into a dark stripe (most visible on the far roof slope).
+    // A separate clay material keeps those real edges readable and distortion
+    // free while still participating in the per-building roof fade.
+    let roof_edge_material = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.31, 0.10, 0.065),
+        perceptual_roughness: 0.96,
+        alpha_mode: AlphaMode::Blend,
+        cull_mode: None,
+        ..default()
+    });
+
     let mut gable_material_value = materials
         .get(&wall_material)
         .cloned()
@@ -749,6 +816,7 @@ pub fn spawn_building(
                 min_z: center_z - depth * 0.5 - 0.05,
                 max_z: center_z + depth * 0.5 + 0.05,
                 roof_material: roof_material.clone(),
+                roof_edge_material: roof_edge_material.clone(),
                 gable_material: gable_material.clone(),
                 opacity: 1.0,
             },
@@ -775,6 +843,7 @@ pub fn spawn_building(
                     catalog,
                     meshes,
                     roof_material.clone(),
+                    roof_edge_material.clone(),
                     Vec3::new(sign * half_offset, ROOF_EAVE_Y + rise * 0.5, 0.0),
                     rotation,
                     slope_length,
@@ -784,10 +853,29 @@ pub fn spawn_building(
                 );
             }
 
+            spawn_roof_eave_fascias(
+                parent,
+                catalog,
+                roof_edge_material.clone(),
+                true,
+                run,
+                long_span,
+            );
+            spawn_roof_rake_trims(
+                parent,
+                catalog,
+                roof_edge_material.clone(),
+                true,
+                run,
+                rise,
+                slope_length,
+                long_span,
+            );
+
             spawn_pitched_ridge_cap(
                 parent,
                 catalog,
-                roof_material.clone(),
+                roof_edge_material.clone(),
                 true,
                 long_span,
                 ROOF_EAVE_Y + rise + 0.075,
@@ -819,6 +907,7 @@ pub fn spawn_building(
                     catalog,
                     meshes,
                     roof_material.clone(),
+                    roof_edge_material.clone(),
                     Vec3::new(0.0, ROOF_EAVE_Y + rise * 0.5, sign * half_offset),
                     rotation,
                     slope_length,
@@ -828,10 +917,29 @@ pub fn spawn_building(
                 );
             }
 
+            spawn_roof_eave_fascias(
+                parent,
+                catalog,
+                roof_edge_material.clone(),
+                false,
+                run,
+                long_span,
+            );
+            spawn_roof_rake_trims(
+                parent,
+                catalog,
+                roof_edge_material.clone(),
+                false,
+                run,
+                rise,
+                slope_length,
+                long_span,
+            );
+
             spawn_pitched_ridge_cap(
                 parent,
                 catalog,
-                roof_material.clone(),
+                roof_edge_material.clone(),
                 false,
                 long_span,
                 ROOF_EAVE_Y + rise + 0.075,
@@ -854,11 +962,98 @@ pub fn spawn_building(
     (floor_entity, roof)
 }
 
+fn spawn_roof_eave_fascias(
+    parent: &mut ChildSpawnerCommands,
+    catalog: &ArchitectureCatalog,
+    material: Handle<StandardMaterial>,
+    ridge_along_z: bool,
+    run: f32,
+    long_span: f32,
+) {
+    for sign in [-1.0f32, 1.0] {
+        parent.spawn((
+            Name::new("Roof solid eave fascia"),
+            Mesh3d(catalog.cube.clone()),
+            MeshMaterial3d(material.clone()),
+            Transform {
+                translation: if ridge_along_z {
+                    Vec3::new(sign * run, ROOF_EAVE_Y + 0.03, 0.0)
+                } else {
+                    Vec3::new(0.0, ROOF_EAVE_Y + 0.03, sign * run)
+                },
+                scale: if ridge_along_z {
+                    Vec3::new(
+                        ROOF_EAVE_FASCIA_THICKNESS,
+                        ROOF_EAVE_FASCIA_HEIGHT,
+                        long_span + 0.04,
+                    )
+                } else {
+                    Vec3::new(
+                        long_span + 0.04,
+                        ROOF_EAVE_FASCIA_HEIGHT,
+                        ROOF_EAVE_FASCIA_THICKNESS,
+                    )
+                },
+                ..default()
+            },
+        ));
+    }
+}
+
+fn spawn_roof_rake_trims(
+    parent: &mut ChildSpawnerCommands,
+    catalog: &ArchitectureCatalog,
+    material: Handle<StandardMaterial>,
+    ridge_along_z: bool,
+    run: f32,
+    rise: f32,
+    slope_length: f32,
+    long_span: f32,
+) {
+    for slope_sign in [-1.0f32, 1.0] {
+        for gable_sign in [-1.0f32, 1.0] {
+            let (translation, rotation, scale) = if ridge_along_z {
+                (
+                    Vec3::new(
+                        slope_sign * run * 0.5,
+                        ROOF_EAVE_Y + rise * 0.5 + 0.045,
+                        gable_sign * long_span * 0.5,
+                    ),
+                    Quat::from_rotation_z(-slope_sign * ROOF_ANGLE),
+                    Vec3::new(slope_length + 0.08, 0.11, 0.15),
+                )
+            } else {
+                (
+                    Vec3::new(
+                        gable_sign * long_span * 0.5,
+                        ROOF_EAVE_Y + rise * 0.5 + 0.045,
+                        slope_sign * run * 0.5,
+                    ),
+                    Quat::from_rotation_x(slope_sign * ROOF_ANGLE),
+                    Vec3::new(0.15, 0.11, slope_length + 0.08),
+                )
+            };
+
+            parent.spawn((
+                Name::new("Roof solid gable rake trim"),
+                Mesh3d(catalog.cube.clone()),
+                MeshMaterial3d(material.clone()),
+                Transform {
+                    translation,
+                    rotation,
+                    scale,
+                },
+            ));
+        }
+    }
+}
+
 fn spawn_lapped_roof_slope(
     parent: &mut ChildSpawnerCommands,
     catalog: &ArchitectureCatalog,
     meshes: &mut Assets<Mesh>,
     material: Handle<StandardMaterial>,
+    edge_material: Handle<StandardMaterial>,
     center: Vec3,
     rotation: Quat,
     slope_length: f32,
@@ -867,11 +1062,12 @@ fn spawn_lapped_roof_slope(
     eave_positive: bool,
 ) {
     // A thin continuous under-roof gives the courses a solid silhouette from
-    // below/eaves. The authored tile texture remains the exact same material.
+    // below/eaves. It deliberately uses the solid edge material: cuboid side
+    // UVs would otherwise squeeze the complete tile sheet onto the fascia.
     parent.spawn((
         Name::new("Roof textured under-slab"),
         Mesh3d(catalog.cube.clone()),
-        MeshMaterial3d(material.clone()),
+        MeshMaterial3d(edge_material.clone()),
         Transform {
             translation: center,
             rotation,
@@ -888,16 +1084,22 @@ fn spawn_lapped_roof_slope(
     // so the existing Aldoria roof-tile texture is preserved instead of being
     // restarted/stretched once per row. Vertical lips and gable-side edges
     // receive different lighting normals and make the volume readable.
-    let mesh = create_lapped_roof_mesh(
-        slope_length,
-        long_span,
-        slope_along_x,
-        eave_positive,
-    );
+    let (tile_mesh, edge_mesh) =
+        create_lapped_roof_meshes(slope_length, long_span, slope_along_x, eave_positive);
     parent.spawn((
         Name::new("Roof lapped tile courses"),
-        Mesh3d(meshes.add(mesh)),
+        Mesh3d(meshes.add(tile_mesh)),
         MeshMaterial3d(material),
+        Transform {
+            translation: center,
+            rotation,
+            ..default()
+        },
+    ));
+    parent.spawn((
+        Name::new("Roof lapped course edges"),
+        Mesh3d(meshes.add(edge_mesh)),
+        MeshMaterial3d(edge_material),
         Transform {
             translation: center,
             rotation,
@@ -906,22 +1108,26 @@ fn spawn_lapped_roof_slope(
     ));
 }
 
-fn create_lapped_roof_mesh(
+fn create_lapped_roof_meshes(
     slope_length: f32,
     long_span: f32,
     slope_along_x: bool,
     eave_positive: bool,
-) -> Mesh {
+) -> (Mesh, Mesh) {
     let half_slope = slope_length * 0.5;
     let half_long = long_span * 0.5;
     let course_count = (slope_length / ROOF_COURSE_TARGET).ceil().max(3.0) as usize;
     let course_span = slope_length / course_count as f32;
     let slab_top = ROOF_SLAB_THICKNESS * 0.5;
 
-    let mut positions: Vec<[f32; 3]> = Vec::with_capacity(course_count * 16);
-    let mut normals: Vec<[f32; 3]> = Vec::with_capacity(course_count * 16);
-    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity(course_count * 16);
-    let mut indices: Vec<u32> = Vec::with_capacity(course_count * 24);
+    let mut tile_positions: Vec<[f32; 3]> = Vec::with_capacity(course_count * 4);
+    let mut tile_normals: Vec<[f32; 3]> = Vec::with_capacity(course_count * 4);
+    let mut tile_uvs: Vec<[f32; 2]> = Vec::with_capacity(course_count * 4);
+    let mut tile_indices: Vec<u32> = Vec::with_capacity(course_count * 6);
+    let mut edge_positions: Vec<[f32; 3]> = Vec::with_capacity(course_count * 12);
+    let mut edge_normals: Vec<[f32; 3]> = Vec::with_capacity(course_count * 12);
+    let mut edge_uvs: Vec<[f32; 2]> = Vec::with_capacity(course_count * 12);
+    let mut edge_indices: Vec<u32> = Vec::with_capacity(course_count * 18);
 
     let slope_coord = |distance_from_eave: f32| {
         if eave_positive {
@@ -939,9 +1145,7 @@ fn create_lapped_roof_mesh(
             (nominal_start - ROOF_COURSE_OVERLAP).max(0.0)
         };
         let end = ((row + 1) as f32 * course_span).min(slope_length);
-        let top_y = slab_top
-            + ROOF_TILE_THICKNESS
-            + row as f32 * ROOF_COURSE_RISE;
+        let top_y = slab_top + ROOF_TILE_THICKNESS + row as f32 * ROOF_COURSE_RISE;
         let bottom_y = top_y - ROOF_TILE_THICKNESS;
 
         let a = slope_coord(start);
@@ -950,10 +1154,10 @@ fn create_lapped_roof_mesh(
         let slope_max = a.max(b);
 
         push_roof_top_quad(
-            &mut positions,
-            &mut normals,
-            &mut uvs,
-            &mut indices,
+            &mut tile_positions,
+            &mut tile_normals,
+            &mut tile_uvs,
+            &mut tile_indices,
             slope_min,
             slope_max,
             -half_long,
@@ -962,16 +1166,17 @@ fn create_lapped_roof_mesh(
             half_slope,
             half_long,
             slope_along_x,
+            eave_positive,
         );
 
         // Expose the eave-facing lower edge of every overlapping course. These
         // small vertical faces are what create visible dark/light breaks with
         // ordinary PBR lighting even when global shadow maps are disabled.
         push_roof_course_lip(
-            &mut positions,
-            &mut normals,
-            &mut uvs,
-            &mut indices,
+            &mut edge_positions,
+            &mut edge_normals,
+            &mut edge_uvs,
+            &mut edge_indices,
             slope_coord(start),
             -half_long,
             half_long,
@@ -984,10 +1189,10 @@ fn create_lapped_roof_mesh(
         // Give the two gable ends real thickness instead of ending in a single
         // infinitely thin textured surface.
         push_roof_course_end(
-            &mut positions,
-            &mut normals,
-            &mut uvs,
-            &mut indices,
+            &mut edge_positions,
+            &mut edge_normals,
+            &mut edge_uvs,
+            &mut edge_indices,
             slope_min,
             slope_max,
             -half_long,
@@ -997,10 +1202,10 @@ fn create_lapped_roof_mesh(
             slope_along_x,
         );
         push_roof_course_end(
-            &mut positions,
-            &mut normals,
-            &mut uvs,
-            &mut indices,
+            &mut edge_positions,
+            &mut edge_normals,
+            &mut edge_uvs,
+            &mut edge_indices,
             slope_min,
             slope_max,
             half_long,
@@ -1011,11 +1216,26 @@ fn create_lapped_roof_mesh(
         );
     }
 
-    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
-        .with_inserted_indices(Indices::U32(indices))
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+    let mut tiles = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_indices(Indices::U32(tile_indices))
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, tile_positions)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, tile_normals)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, tile_uvs);
+    tiles
+        .generate_tangents()
+        .expect("lapped roof mesh has valid positions, normals, and UVs");
+    let edges = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_indices(Indices::U32(edge_indices))
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, edge_positions)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, edge_normals)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, edge_uvs);
+    (tiles, edges)
 }
 
 fn push_mesh_quad(
@@ -1042,6 +1262,11 @@ fn roof_point(slope: f32, y: f32, long: f32, slope_along_x: bool) -> Vec3 {
     }
 }
 
+fn roof_v(slope: f32, half_slope: f32, eave_positive: bool) -> f32 {
+    let signed = (slope + half_slope) / (half_slope * 2.0).max(0.001);
+    if eave_positive { signed } else { 1.0 - signed }
+}
+
 fn push_roof_top_quad(
     positions: &mut Vec<[f32; 3]>,
     normals: &mut Vec<[f32; 3]>,
@@ -1055,11 +1280,12 @@ fn push_roof_top_quad(
     half_slope: f32,
     half_long: f32,
     slope_along_x: bool,
+    eave_positive: bool,
 ) {
     let uv = |slope: f32, long: f32| {
         [
             (long + half_long) / (half_long * 2.0).max(0.001),
-            (slope + half_slope) / (half_slope * 2.0).max(0.001),
+            roof_v(slope, half_slope, eave_positive),
         ]
     };
 
@@ -1174,7 +1400,11 @@ fn push_roof_course_end(
     let b = roof_point(slope_min, top_y, long, slope_along_x);
     let c = roof_point(slope_max, top_y, long, slope_along_x);
     let d = roof_point(slope_max, bottom_y, long, slope_along_x);
-    let points = if positive_long { [a, b, c, d] } else { [d, c, b, a] };
+    let points = if positive_long {
+        [a, b, c, d]
+    } else {
+        [d, c, b, a]
+    };
 
     push_mesh_quad(
         positions,
@@ -1190,42 +1420,35 @@ fn push_roof_course_end(
 fn spawn_pitched_ridge_cap(
     parent: &mut ChildSpawnerCommands,
     catalog: &ArchitectureCatalog,
-    material: Handle<StandardMaterial>,
+    edge_material: Handle<StandardMaterial>,
     along_z: bool,
     long_span: f32,
     y: f32,
 ) {
-    // Two pitched cap faces replace the previous rectangular bar. Their
-    // different normals make the crown read as a real ridge from the fixed
-    // isometric camera while still using the same roof-tile material.
-    let cap_angle = 0.48f32;
-    let half_offset = ROOF_RIDGE_WIDTH * 0.19;
-    for sign in [-1.0f32, 1.0] {
-        let (translation, rotation, scale) = if along_z {
-            (
-                Vec3::new(sign * half_offset, y, 0.0),
-                Quat::from_rotation_z(-sign * cap_angle),
-                Vec3::new(ROOF_RIDGE_WIDTH * 0.62, ROOF_RIDGE_THICKNESS, long_span + 0.10),
-            )
-        } else {
-            (
-                Vec3::new(0.0, y, sign * half_offset),
-                Quat::from_rotation_x(sign * cap_angle),
-                Vec3::new(long_span + 0.10, ROOF_RIDGE_THICKNESS, ROOF_RIDGE_WIDTH * 0.62),
-            )
-        };
-
-        parent.spawn((
-            Name::new("Roof pitched ridge cap"),
-            Mesh3d(catalog.cube.clone()),
-            MeshMaterial3d(material.clone()),
-            Transform {
-                translation,
-                rotation,
-                scale,
+    // Keep the ridge closed with one clean cap. The previous overlapping pair
+    // produced a doubled center seam and square tabs at both gable ends.
+    parent.spawn((
+        Name::new("Roof continuous ridge cap"),
+        Mesh3d(catalog.cube.clone()),
+        MeshMaterial3d(edge_material),
+        Transform {
+            translation: Vec3::new(0.0, y + 0.025, 0.0),
+            scale: if along_z {
+                Vec3::new(
+                    ROOF_RIDGE_WIDTH,
+                    ROOF_RIDGE_THICKNESS,
+                    long_span + 0.08,
+                )
+            } else {
+                Vec3::new(
+                    long_span + 0.08,
+                    ROOF_RIDGE_THICKNESS,
+                    ROOF_RIDGE_WIDTH,
+                )
             },
-        ));
-    }
+            ..default()
+        },
+    ));
 }
 
 fn spawn_gable_fill(
@@ -1306,6 +1529,52 @@ mod tests {
 
     fn tile(x: i32, y: i32) -> Position {
         Position { x, y, z: 7 }
+    }
+
+    #[test]
+    fn both_roof_slopes_map_ridge_to_top_and_eave_to_bottom_of_texture() {
+        let half_slope = 2.0;
+
+        assert_eq!(roof_v(-half_slope, half_slope, false), 1.0);
+        assert_eq!(roof_v(half_slope, half_slope, false), 0.0);
+        assert_eq!(roof_v(half_slope, half_slope, true), 1.0);
+        assert_eq!(roof_v(-half_slope, half_slope, true), 0.0);
+    }
+
+    #[test]
+    fn cellar_wall_faces_are_placed_on_the_adjoining_floor_edges() {
+        let position = tile(10, 10);
+        let floors = [
+            tile(10, 9),
+            tile(10, 11),
+            tile(9, 10),
+            tile(11, 10),
+        ];
+        let edges = infer_castle_wall_edges(position, &floors, &[], &[]);
+
+        assert!(edges.north);
+        assert!(edges.south);
+        assert!(edges.west);
+        assert!(edges.east);
+    }
+
+    #[test]
+    fn cellar_wall_does_not_leave_a_tile_gap_on_east_boundary() {
+        let position = tile(10, 10);
+        let edges = infer_castle_wall_edges(position, &[tile(9, 10)], &[], &[]);
+
+        assert!(edges.west);
+        assert!(!edges.east);
+        assert!(!edges.north);
+        assert!(!edges.south);
+    }
+
+    #[test]
+    fn cellar_corner_with_diagonal_floor_does_not_spawn_an_exterior_spur() {
+        let position = tile(10, 10);
+        let edges = infer_castle_wall_edges(position, &[tile(11, 11)], &[], &[]);
+
+        assert!(!edges.any());
     }
 
     #[test]

@@ -4,6 +4,8 @@ use bevy::{
     prelude::*,
 };
 
+// TIBIAGAME_V36_65_0_MATERIAL_DEPTH_OCCLUDERS_BATTLE_TARGETING
+
 const GRASS: &str = "world/greyhaven-grass.png";
 const ROAD: &str = "world/greyhaven-cobble.png";
 const PACKED_EARTH: &str = "world/aldoria-packed-earth-v1.png";
@@ -20,6 +22,7 @@ const BRIDGE: &str = "world/aldoria-bridge-planks-v1.png";
 const CASTLE_STONE: &str = "world/aldoria-castle-stone-v2.png";
 const TIMBER_PLASTER: &str = "world/aldoria-timber-plaster-v1.png";
 const ROOF_TILES: &str = "world/aldoria-roof-tiles-v1.png";
+const ROOF_TILES_NORMAL: &str = "world/aldoria-roof-tiles-normal-v1.png";
 
 const GROUND_CHUNK_TEXTURE_REPEAT: f32 = 16.0;
 
@@ -84,7 +87,14 @@ pub fn create_materials(
     let house_wall = add_textured(asset_server, materials, TIMBER_PLASTER, Color::WHITE, 0.86);
     let castle_wall = add_textured(asset_server, materials, CASTLE_STONE, Color::WHITE, 0.82);
     let building_floor = add_textured(asset_server, materials, WOOD_PLANKS, Color::WHITE, 0.93);
-    let roof = add_textured(asset_server, materials, ROOF_TILES, Color::WHITE, 0.90);
+    let roof = materials.add(StandardMaterial {
+        base_color: Color::WHITE,
+        base_color_texture: Some(load_repeating(asset_server, ROOF_TILES)),
+        normal_map_texture: Some(load_linear_repeating(asset_server, ROOF_TILES_NORMAL)),
+        perceptual_roughness: 0.86,
+        reflectance: 0.32,
+        ..default()
+    });
 
     let water = materials.add(StandardMaterial {
         base_color: Color::srgba(0.80, 0.91, 1.0, 0.82),
@@ -148,8 +158,23 @@ fn load_repeating(asset_server: &AssetServer, path: &'static str) -> Handle<Imag
         .load(path)
 }
 
+fn load_linear_repeating(asset_server: &AssetServer, path: &'static str) -> Handle<Image> {
+    asset_server
+        .load_builder()
+        .with_settings::<ImageLoaderSettings>(|settings| {
+            settings.is_srgb = false;
+            settings.sampler = ImageSampler::linear();
+            settings
+                .sampler
+                .get_or_init_descriptor()
+                .set_address_mode(ImageAddressMode::Repeat)
+                .set_anisotropic_filter(8);
+        })
+        .load(path)
+}
+
 pub fn describe() {
     info!(
-        "ALDORIA WORLD VISUALS · repeating linear world textures · textured grass underlay · authored terrain/roads/water/bridges/walls/floors/roofs"
+        "ALDORIA WORLD VISUALS · repeating linear world textures · textured grass underlay · authored terrain/roads/water/bridges/walls/floors · normal-mapped tile roofs"
     );
 }

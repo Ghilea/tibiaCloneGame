@@ -1,5 +1,6 @@
 // TIBIAGAME_V36_11_NATIVE_INTERACTION_FOUNDATION
 // TIBIAGAME_V36_12_INTERACTION_ARCHITECTURE_FIX
+// TIBIAGAME_V36_65_0_MATERIAL_DEPTH_OCCLUDERS_BATTLE_TARGETING
 use bevy::prelude::*;
 use game_protocol::ClientMessage;
 use game_types::{EntityId, Position};
@@ -220,6 +221,7 @@ pub fn setup(
 
 pub fn handle_pointer_interactions(
     buttons: Res<ButtonInput<MouseButton>>,
+    ui_buttons: Query<&Interaction, With<Button>>,
     window: Single<&Window>,
     camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     creatures: Query<
@@ -251,6 +253,9 @@ pub fn handle_pointer_interactions(
     let left_click = buttons.just_pressed(MouseButton::Left);
     let right_click = buttons.just_pressed(MouseButton::Right);
     if !left_click && !right_click {
+        return;
+    }
+    if ui_buttons.iter().any(|interaction| *interaction == Interaction::Pressed) {
         return;
     }
 
@@ -922,8 +927,8 @@ fn send(network: &NativeNetwork, game_state: &mut NativeGameState, message: Clie
 }
 
 // Screen-space selection is the important V36.12 change. Each object gets a
-// short vertical pick segment so clicking the visible body works even though
-// an isometric camera shifts elevated geometry away from its ground tile.
+// short vertical pick segment so clicking its visible 2.5D body works even
+// when elevated geometry is displaced from its ground tile on screen.
 fn nearest_screen<T: Clone>(
     cursor: Vec2,
     camera: &Camera,
