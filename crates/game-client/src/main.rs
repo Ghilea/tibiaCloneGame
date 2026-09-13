@@ -1,3 +1,8 @@
+#![cfg_attr(
+    all(target_os = "windows", not(debug_assertions)),
+    windows_subsystem = "windows"
+)]
+
 mod interaction;
 mod native_drag;
 mod native_game_menu;
@@ -44,6 +49,7 @@ mod world_visuals;
 // TIBIAGAME_V36_75_0_ACTION_STATUS_BARS
 // TIBIAGAME_V36_76_0_HOUSE_LIGHT_STACK_DEPOT_CLARITY
 // TIBIAGAME_V36_77_0_ROBUST_HOUSE_CUTAWAY_DEPOT_FLOW
+// TIBIAGAME_V36_77_1_WINDOWED_RELEASE_SUBSYSTEM
 // TIBIAGAME_V36_13_WORLD_BOUNDARY_FLOOR_PRELOAD
 // TIBIAGAME_V36_14_MEDIEVAL_FACADE_CREATURE_WARMUP
 // TIBIAGAME_V36_15_1_OPENING_FACADE_RAT_GPU_PREWARM
