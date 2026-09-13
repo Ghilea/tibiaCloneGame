@@ -11,6 +11,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow, bail};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use bevy::prelude::*;
 use minisign_verify::{PublicKey, Signature};
 use serde::Deserialize;
@@ -297,7 +298,8 @@ fn verify_payload(payload: &[u8], signature_text: &str) -> Result<()> {
     let public_key = PublicKey::from_base64(NATIVE_UPDATER_PUBLIC_KEY)
         .map_err(|error| anyhow!("embedded updater public key is invalid: {error:?}"))?;
 
-    let signature = Signature::decode(signature_text)
+    let decoded_signature = decode_signature_envelope(signature_text)?;
+    let signature = Signature::decode(&decoded_signature)
         .map_err(|error| anyhow!("native updater signature is invalid: {error:?}"))?;
 
     public_key
@@ -305,6 +307,22 @@ fn verify_payload(payload: &[u8], signature_text: &str) -> Result<()> {
         .map_err(|error| anyhow!("native updater signature verification failed: {error:?}"))?;
 
     Ok(())
+}
+
+fn decode_signature_envelope(signature_text: &str) -> Result<String> {
+    let signature_text = signature_text.trim();
+
+    // Tauri's updater signer stores the complete four-line Minisign document
+    // inside a Base64 envelope. Accept a plain Minisign document as well so a
+    // future publishing-tool change does not strand existing installations.
+    if signature_text.starts_with("untrusted comment:") {
+        return Ok(signature_text.to_owned());
+    }
+
+    let decoded = BASE64_STANDARD
+        .decode(signature_text)
+        .context("native updater signature envelope is not valid base64")?;
+    String::from_utf8(decoded).context("native updater signature envelope is not UTF-8")
 }
 
 fn stage_verified_bundle(version: &str, payload: &[u8]) -> Result<PathBuf> {
@@ -435,11 +453,43 @@ fn parse_semver(value: &str) -> Result<[u64; 3]> {
 
 #[cfg(test)]
 mod tests {
-    use super::{NativeUpdateManifest, parse_semver, validate_manifest};
+    use super::{
+        NativeUpdateManifest, decode_signature_envelope, parse_semver, validate_manifest,
+        verify_payload,
+    };
+
+    const TAURI_SIGNATURE_ENVELOPE: &str = concat!(
+        "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkK",
+        "UlVSOXNUcEpHNklqcHJLSHhnZkdzb0pSYmxPU0Zua3JWVnNOOVRCdVlXbCtNN2pxakNG",
+        "d2s4Q0lNWWhoMGhTNHpLdWtBaDViZkZoMTdidUh5d2NKeU5PcmlvVUlKN2VzYXdZPQp0",
+        "cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5Mjc5NjYyCWZpbGU6RW1iZXJzLW9m",
+        "LUFsZG9yaWEtTmF0aXZlLXdpbmRvd3MteDg2XzY0LnppcApJNlRXUEtqUU5ydnZTWXZB",
+        "UzRHcGRtWnpzWm11UmdUK1V5a2dyU05va3o2a1lLOWZPaHF2TnBWS1dZdzBmcCt5UWxS",
+        "b21HREM3b084WDI0aEdESU5Ddz09Cg==",
+    );
 
     #[test]
     fn compares_release_versions() {
         assert!(parse_semver("0.1.10").unwrap() > parse_semver("0.1.9").unwrap());
+    }
+
+    #[test]
+    fn decodes_tauri_wrapped_minisign_document() {
+        let decoded = decode_signature_envelope(TAURI_SIGNATURE_ENVELOPE).unwrap();
+
+        assert!(decoded.starts_with("untrusted comment: signature from tauri secret key\n"));
+        assert!(decoded.contains("trusted comment: timestamp:"));
+        minisign_verify::Signature::decode(&decoded).unwrap();
+    }
+
+    #[test]
+    fn published_signature_reaches_cryptographic_verification() {
+        let error = verify_payload(b"deliberately not the published bundle", TAURI_SIGNATURE_ENVELOPE)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("signature verification failed"));
+        assert!(!error.contains("signature is invalid"));
     }
 
     #[test]

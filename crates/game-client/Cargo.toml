@@ -15,6 +15,7 @@ serde.workspace = true
 minisign-verify = "0.2.5"
 futures-util.workspace = true
 anyhow.workspace = true
+base64 = "0.22"
 bevy = { version = "0.19.1", features = ["webp", "mp3"] } # TIBIAGAME_V36_7_3_ENABLE_BEVY_WEBP
 game-types = { path = "../game-types" }
 game-protocol = { path = "../game-protocol" }

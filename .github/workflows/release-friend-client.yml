@@ -97,7 +97,17 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$zipPath.sig")) {
             throw "Native bundle signing failed."
           }
-          $signature = (Get-Content -Raw "$zipPath.sig").Trim()
+          $signatureEnvelope = (Get-Content -Raw "$zipPath.sig").Trim()
+          try {
+            $signature = [Text.Encoding]::UTF8.GetString(
+              [Convert]::FromBase64String($signatureEnvelope)
+            ).Trim()
+          } catch {
+            throw "Native bundle signature is not a valid Tauri Base64 envelope."
+          }
+          if (-not $signature.StartsWith("untrusted comment: signature from tauri secret key")) {
+            throw "Decoded native bundle signature is not a Minisign document."
+          }
           $manifestPath = Join-Path $env:RUNNER_TEMP "native-latest.json"
           $downloadUrl = "https://github.com/Ghilea/tibiaCloneGame/releases/download/$tag/Embers-of-Aldoria-Native-windows-x86_64.zip"
           $manifest = [ordered]@{
