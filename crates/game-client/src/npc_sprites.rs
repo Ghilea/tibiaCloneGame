@@ -1,4 +1,7 @@
 // TIBIAGAME_V36_83_PRODUCTION_SPRITE_PIPELINE
+// TIBIAGAME_V36_89_NPC_SERVICE_VARIANTS
+use std::collections::HashMap;
+
 use bevy::{camera::visibility::NoFrustumCulling, prelude::*};
 use game_types::{NpcView, Position};
 
@@ -6,12 +9,13 @@ use crate::{
     MainCamera, MovementState, NpcActor,
     actor_sprites::{
         ActorAnimation, ActorSpriteAssets, SpriteDirection, atlas_uv, billboard_rotation,
-        face_direction,
+        face_direction, load_actor_index,
     },
     state::NativeGameState,
 };
 
-const NPC_MANIFEST: &str = "actors/npcs/default/actor.json";
+const NPC_INDEX: &str = "actors/npcs/index.json";
+const NPC_FALLBACK_MANIFEST: &str = "actors/npcs/default/actor.json";
 
 #[derive(Component)]
 pub struct NpcSprite {
@@ -19,6 +23,8 @@ pub struct NpcSprite {
     direction: SpriteDirection,
     animation: ActorAnimation,
     animation_started_at: f64,
+    actor_key: String,
+    last_actor_key: String,
     last_frame: usize,
     last_direction: SpriteDirection,
     last_animation: ActorAnimation,
@@ -28,7 +34,8 @@ pub struct NpcSprite {
 #[derive(Resource)]
 pub struct NpcSpriteCatalog {
     quad: Handle<Mesh>,
-    actor: ActorSpriteAssets,
+    fallback: ActorSpriteAssets,
+    actors: HashMap<String, ActorSpriteAssets>,
 }
 
 impl NpcSpriteCatalog {
@@ -38,9 +45,31 @@ impl NpcSpriteCatalog {
             warn!("ALDORIA NPC SPRITE · tangent generation failed: {error}");
         }
 
+        let mut actors = HashMap::new();
+        for entry in load_actor_index(NPC_INDEX) {
+            let service = entry.game_definition_id;
+            let actor = ActorSpriteAssets::load(asset_server, &entry.manifest);
+            actors.insert(service, actor);
+        }
+
+        info!(
+            "ALDORIA NPC SPRITES · {} service variants · fallback={}",
+            actors.len(),
+            NPC_FALLBACK_MANIFEST,
+        );
+
         Self {
             quad: meshes.add(quad),
-            actor: ActorSpriteAssets::load(asset_server, NPC_MANIFEST),
+            fallback: ActorSpriteAssets::load(asset_server, NPC_FALLBACK_MANIFEST),
+            actors,
+        }
+    }
+
+    fn actor_for(&self, service: &str) -> (&ActorSpriteAssets, bool) {
+        if let Some(actor) = self.actors.get(service) {
+            (actor, true)
+        } else {
+            (&self.fallback, false)
         }
     }
 }
@@ -51,19 +80,23 @@ pub fn spawn_npc_sprite(
     catalog: &NpcSpriteCatalog,
     npc: &NpcView,
 ) -> Entity {
-    let definition = &catalog.actor.definition;
+    let (actor, authored_variant) = catalog.actor_for(&npc.service);
+    let definition = &actor.definition;
     let idle = definition
         .spec(ActorAnimation::Idle)
         .expect("validated NPC manifest must define idle");
-    let idle_texture = catalog
-        .actor
+    let idle_texture = actor
         .texture(ActorAnimation::Idle)
         .expect("validated NPC manifest must load idle texture");
 
     let material = materials.add(StandardMaterial {
-        base_color: npc_tint(npc),
+        base_color: if authored_variant {
+            Color::srgb(1.0, 1.0, 1.0)
+        } else {
+            npc_tint(npc)
+        },
         base_color_texture: Some(idle_texture.clone()),
-        normal_map_texture: catalog.actor.normal(ActorAnimation::Idle).cloned(),
+        normal_map_texture: actor.normal(ActorAnimation::Idle).cloned(),
         uv_transform: atlas_uv(
             idle.columns,
             definition.atlas_rows,
@@ -81,13 +114,15 @@ pub fn spawn_npc_sprite(
 
     commands
         .spawn((
-            Name::new(format!("NPC Sprite · {}", npc.name)),
+            Name::new(format!("NPC Sprite · {} · {}", npc.name, npc.service)),
             NpcActor(npc.id.clone()),
             NpcSprite {
                 logical_position: npc.position,
                 direction: SpriteDirection::South,
                 animation: ActorAnimation::Idle,
                 animation_started_at: 0.0,
+                actor_key: npc.service.clone(),
+                last_actor_key: String::new(),
                 last_frame: usize::MAX,
                 last_direction: SpriteDirection::North,
                 last_animation: ActorAnimation::Use,
@@ -115,24 +150,40 @@ pub fn animate_npc_sprites(
     mut npcs: Query<(&NpcActor, &mut NpcSprite, &mut Transform)>,
 ) {
     let now = time.elapsed_secs_f64();
-    let definition = &catalog.actor.definition;
-    let spec = definition
-        .spec(ActorAnimation::Idle)
-        .expect("validated NPC manifest must define idle");
-    let idle_texture = catalog
-        .actor
-        .texture(ActorAnimation::Idle)
-        .expect("validated NPC manifest must load idle texture");
 
-    for (actor, mut sprite, mut transform) in &mut npcs {
-        if let Some(npc) = game_state.npcs.get(&actor.0) {
+    for (npc_actor, mut sprite, mut transform) in &mut npcs {
+        let npc = game_state.npcs.get(&npc_actor.0);
+
+        if let Some(npc) = npc {
+            if sprite.actor_key != npc.service {
+                sprite.actor_key = npc.service.clone();
+                sprite.last_actor_key.clear();
+                sprite.last_frame = usize::MAX;
+            }
+        }
+
+        let (actor, authored_variant) = catalog.actor_for(&sprite.actor_key);
+        let definition = &actor.definition;
+        let spec = definition
+            .spec(ActorAnimation::Idle)
+            .expect("validated NPC manifest must define idle");
+        let idle_texture = actor
+            .texture(ActorAnimation::Idle)
+            .expect("validated NPC manifest must load idle texture");
+
+        if let Some(npc) = npc {
             if sprite.logical_position != npc.position {
                 sprite.logical_position = npc.position;
-                transform.translation = sprite_world_position(npc.position, definition.render_height);
             }
 
+            transform.translation =
+                sprite_world_position(sprite.logical_position, definition.render_height);
+            transform.scale =
+                Vec3::new(definition.render_width, definition.render_height, 1.0);
+
             if npc.position.z == movement.logical.z {
-                sprite.direction = face_direction(npc.position, movement.logical, sprite.direction);
+                sprite.direction =
+                    face_direction(npc.position, movement.logical, sprite.direction);
             }
         }
 
@@ -145,8 +196,10 @@ pub fn animate_npc_sprites(
         let elapsed = (now - sprite.animation_started_at).max(0.0);
         let frame = spec.frame_at(elapsed);
         let direction = sprite.direction;
+        let actor_changed = sprite.last_actor_key != sprite.actor_key;
 
-        if sprite.last_frame == frame
+        if !actor_changed
+            && sprite.last_frame == frame
             && sprite.last_direction == direction
             && sprite.last_animation == sprite.animation
         {
@@ -156,8 +209,16 @@ pub fn animate_npc_sprites(
         let Some(mut material) = materials.get_mut(&sprite.material) else {
             continue;
         };
+
+        material.base_color = if authored_variant {
+            Color::srgb(1.0, 1.0, 1.0)
+        } else if let Some(npc) = npc {
+            npc_tint(npc)
+        } else {
+            Color::srgb(1.0, 1.0, 1.0)
+        };
         material.base_color_texture = Some(idle_texture.clone());
-        material.normal_map_texture = catalog.actor.normal(ActorAnimation::Idle).cloned();
+        material.normal_map_texture = actor.normal(ActorAnimation::Idle).cloned();
         material.uv_transform = atlas_uv(
             spec.columns,
             definition.atlas_rows,
@@ -165,6 +226,7 @@ pub fn animate_npc_sprites(
             direction.atlas_row(definition.authored_directions),
         );
 
+        sprite.last_actor_key = sprite.actor_key.clone();
         sprite.last_frame = frame;
         sprite.last_direction = direction;
         sprite.last_animation = sprite.animation;
@@ -221,7 +283,7 @@ fn npc_tint(npc: &NpcView) -> Color {
 
 pub fn describe_catalog() {
     info!(
-        "ALDORIA NPC SPRITES · manifest={} · data-driven 8-direction presentation",
-        NPC_MANIFEST,
+        "ALDORIA NPC SPRITES · index={} · service-driven 8-direction presentation",
+        NPC_INDEX,
     );
 }

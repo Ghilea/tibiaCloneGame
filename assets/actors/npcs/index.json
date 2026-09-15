@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "actors": [
+    {
+      "game_definition_id": "shop",
+      "manifest": "actors/npcs/merchant/actor.json"
+    },
+    {
+      "game_definition_id": "depot",
+      "manifest": "actors/npcs/vaultkeeper/actor.json"
+    },
+    {
+      "game_definition_id": "spell_trainer",
+      "manifest": "actors/npcs/arcanist/actor.json"
+    },
+    {
+      "game_definition_id": "craft_trainer",
+      "manifest": "actors/npcs/artificer/actor.json"
+    }
+  ]
+}

@@ -1,18 +1,24 @@
 // TIBIAGAME_V36_83_PRODUCTION_SPRITE_PIPELINE
 // TIBIAGAME_V36_81_CAST_USE_GATHERING_ACTIONS
+// TIBIAGAME_V36_90_PLAYER_EQUIPMENT_LAYERS
+use std::collections::HashMap;
+
 use bevy::{camera::visibility::NoFrustumCulling, prelude::*};
-use game_types::{EntityId, Position};
+use game_types::{EntityId, ItemInstance, Position};
 
 use crate::{
     LocalIdentity, MainCamera, MovementState,
     actor_sprites::{
         ActorAnimation, ActorSpriteAssets, ActorSpriteDefinition, SpriteDirection, atlas_uv,
-        billboard_rotation, face_direction,
+        billboard_rotation, face_direction, load_actor_index,
     },
     state::NativeGameState,
 };
 
 const PLAYER_MANIFEST: &str = "actors/players/default/actor.json";
+const PLAYER_EQUIPMENT_INDEX: &str = "actors/players/equipment/index.json";
+
+const EQUIPMENT_LAYER_ORDER: [&str; 12] = ["back","backpack","chest","legs","feet","helmet","amulet","ring","weapon_melee","weapon_ranged","offhand_guard","offhand_light"];
 
 #[derive(Component)]
 pub struct LocalPlayerSprite {
@@ -27,10 +33,21 @@ pub struct LocalPlayerSprite {
     material: Handle<StandardMaterial>,
 }
 
+
+#[derive(Component)]
+pub(crate) struct PlayerEquipmentLayer {
+    key: String,
+    material: Handle<StandardMaterial>,
+}
+
+#[derive(Component)]
+pub(crate) struct PlayerEquipmentLayersReady;
+
 #[derive(Resource)]
 pub struct PlayerSpriteCatalog {
     quad: Handle<Mesh>,
     actor: ActorSpriteAssets,
+    equipment: HashMap<String, ActorSpriteAssets>,
 }
 
 impl PlayerSpriteCatalog {
@@ -40,9 +57,23 @@ impl PlayerSpriteCatalog {
             warn!("ALDORIA PLAYER SPRITE · tangent generation failed: {error}");
         }
 
+        let mut equipment = HashMap::new();
+        for entry in load_actor_index(PLAYER_EQUIPMENT_INDEX) {
+            let key = entry.game_definition_id;
+            let actor = ActorSpriteAssets::load(asset_server, &entry.manifest);
+            equipment.insert(key, actor);
+        }
+
+        info!(
+            "ALDORIA PLAYER EQUIPMENT · {} synchronized layers · index={}",
+            equipment.len(),
+            PLAYER_EQUIPMENT_INDEX,
+        );
+
         Self {
             quad: meshes.add(quad),
             actor: ActorSpriteAssets::load(asset_server, PLAYER_MANIFEST),
+            equipment,
         }
     }
 }
@@ -102,6 +133,172 @@ pub fn local_player_sprite_bundle(
         },
         Visibility::default(),
     )
+}
+
+
+pub(crate) fn ensure_local_player_equipment_layers(
+    mut commands: Commands,
+    catalog: Res<PlayerSpriteCatalog>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    roots: Query<Entity, (With<LocalPlayerSprite>, Without<PlayerEquipmentLayersReady>)>,
+) {
+    for root in &roots {
+        for key in EQUIPMENT_LAYER_ORDER {
+            let actor = catalog
+                .equipment
+                .get(key)
+                .unwrap_or_else(|| panic!("validated player equipment catalog missing '{key}'"));
+            let definition = &actor.definition;
+            let idle = definition
+                .spec(ActorAnimation::Idle)
+                .expect("validated equipment layer must define idle");
+            let idle_texture = actor
+                .texture(ActorAnimation::Idle)
+                .expect("validated equipment layer must load idle texture");
+
+            let material = materials.add(StandardMaterial {
+                base_color: Color::WHITE,
+                base_color_texture: Some(idle_texture.clone()),
+                normal_map_texture: actor.normal(ActorAnimation::Idle).cloned(),
+                uv_transform: atlas_uv(
+                    idle.columns,
+                    definition.atlas_rows,
+                    0,
+                    SpriteDirection::South.atlas_row(definition.authored_directions),
+                ),
+                perceptual_roughness: 0.9,
+                metallic: 0.0,
+                unlit: true,
+                alpha_mode: AlphaMode::Mask(0.05),
+                double_sided: true,
+                cull_mode: None,
+                depth_bias: equipment_layer_depth_bias(key),
+                ..default()
+            });
+
+            commands.spawn((
+                Name::new(format!("Player Equipment Layer · {key}")),
+                PlayerEquipmentLayer {
+                    key: key.to_owned(),
+                    material: material.clone(),
+                },
+                NoFrustumCulling,
+                ChildOf(root),
+                Mesh3d(catalog.quad.clone()),
+                MeshMaterial3d(material),
+                Transform::default(),
+                Visibility::Hidden,
+            ));
+        }
+        commands.entity(root).insert(PlayerEquipmentLayersReady);
+    }
+}
+
+pub(crate) fn sync_local_player_equipment_layers(
+    time: Res<Time>,
+    game_state: Res<NativeGameState>,
+    catalog: Res<PlayerSpriteCatalog>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    bodies: Query<&LocalPlayerSprite>,
+    mut layers: Query<(&PlayerEquipmentLayer, &mut Visibility)>,
+) {
+    let Some(body) = bodies.iter().next() else {
+        return;
+    };
+    let now = time.elapsed_secs_f64();
+
+    for (layer, mut visibility) in &mut layers {
+        let active = game_state.inventory.iter().any(|item| {
+            equipment_visual_key_for_item(&game_state, item)
+                .is_some_and(|key| key == layer.key)
+        });
+
+        *visibility = if active { Visibility::Visible } else { Visibility::Hidden };
+        if !active {
+            continue;
+        }
+
+        let Some(actor) = catalog.equipment.get(&layer.key) else {
+            continue;
+        };
+        let definition = &actor.definition;
+        let animation = if definition.spec(body.animation).is_some()
+            && actor.texture(body.animation).is_some()
+        {
+            body.animation
+        } else {
+            ActorAnimation::Idle
+        };
+        let Some(spec) = definition.spec(animation) else {
+            continue;
+        };
+        let Some(texture) = actor.texture(animation) else {
+            continue;
+        };
+
+        let frame = spec.frame_at((now - body.animation_started_at).max(0.0));
+        let Some(mut material) = materials.get_mut(&layer.material) else {
+            continue;
+        };
+        material.base_color_texture = Some(texture.clone());
+        material.normal_map_texture = actor.normal(animation).cloned();
+        material.uv_transform = atlas_uv(
+            spec.columns,
+            definition.atlas_rows,
+            frame,
+            body.direction.atlas_row(definition.authored_directions),
+        );
+    }
+}
+
+fn equipment_visual_key_for_item(
+    game_state: &NativeGameState,
+    item: &ItemInstance,
+) -> Option<&'static str> {
+    let slot = item.equipped_slot.as_deref()?.to_ascii_lowercase();
+    match slot.as_str() {
+        "helmet" | "head" => Some("helmet"),
+        "chest" | "armor" | "body" => Some("chest"),
+        "legs" | "pants" => Some("legs"),
+        "feet" | "boots" | "shoes" => Some("feet"),
+        "back" | "cape" => Some("back"),
+        "backpack" | "bag" => Some("backpack"),
+        "amulet" | "neck" => Some("amulet"),
+        "ring" | "ring1" | "ring2" => Some("ring"),
+        "weapon" | "right_hand" | "righthand" | "main_hand" | "mainhand" => {
+            let ranged = game_state
+                .item_definitions
+                .get(&item.definition_id)
+                .is_some_and(|definition| definition.distance_weapon.is_some());
+            Some(if ranged { "weapon_ranged" } else { "weapon_melee" })
+        }
+        "offhand" | "off_hand" | "left_hand" | "lefthand" => {
+            let light = game_state
+                .item_definitions
+                .get(&item.definition_id)
+                .is_some_and(|definition| definition.light_source.is_some());
+            Some(if light { "offhand_light" } else { "offhand_guard" })
+        }
+        _ => None,
+    }
+}
+
+fn equipment_layer_depth_bias(key: &str) -> f32 {
+    match key {
+        "back" => -30.0,
+        "backpack" => -20.0,
+        "chest" => 10.0,
+        "legs" => 14.0,
+        "feet" => 18.0,
+        "helmet" => 22.0,
+        "amulet" => 28.0,
+        "ring" => 32.0,
+        "weapon_melee" => 42.0,
+        "weapon_ranged" => 42.0,
+        "offhand_guard" => 46.0,
+        "offhand_light" => 46.0,
+        _ => 8.0,
+    }
 }
 
 pub fn update_local_player_sprite(

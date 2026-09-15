@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "actors": [
+    {
+      "game_definition_id": "back",
+      "manifest": "actors/players/equipment/back/actor.json"
+    },
+    {
+      "game_definition_id": "backpack",
+      "manifest": "actors/players/equipment/backpack/actor.json"
+    },
+    {
+      "game_definition_id": "chest",
+      "manifest": "actors/players/equipment/chest/actor.json"
+    },
+    {
+      "game_definition_id": "legs",
+      "manifest": "actors/players/equipment/legs/actor.json"
+    },
+    {
+      "game_definition_id": "feet",
+      "manifest": "actors/players/equipment/feet/actor.json"
+    },
+    {
+      "game_definition_id": "helmet",
+      "manifest": "actors/players/equipment/helmet/actor.json"
+    },
+    {
+      "game_definition_id": "amulet",
+      "manifest": "actors/players/equipment/amulet/actor.json"
+    },
+    {
+      "game_definition_id": "ring",
+      "manifest": "actors/players/equipment/ring/actor.json"
+    },
+    {
+      "game_definition_id": "weapon_melee",
+      "manifest": "actors/players/equipment/weapon_melee/actor.json"
+    },
+    {
+      "game_definition_id": "weapon_ranged",
+      "manifest": "actors/players/equipment/weapon_ranged/actor.json"
+    },
+    {
+      "game_definition_id": "offhand_guard",
+      "manifest": "actors/players/equipment/offhand_guard/actor.json"
+    },
+    {
+      "game_definition_id": "offhand_light",
+      "manifest": "actors/players/equipment/offhand_light/actor.json"
+    }
+  ]
+}

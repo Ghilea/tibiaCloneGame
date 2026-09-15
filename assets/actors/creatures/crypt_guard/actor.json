@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "id": "creature.crypt_guard",
+  "style_revision": "aldoria-v1-v36.87",
+  "authored_directions": 8,
+  "atlas_rows": 8,
+  "render_width": 1.0,
+  "render_height": 1.38,
+  "frame_width": 48,
+  "frame_height": 48,
+  "animations": {
+    "idle": {
+      "texture": "monsters/crypt_guard/atlases/crypt_guard_idle_albedo_8dir_aldoria_v36_87.png",
+      "columns": 6,
+      "frames": 6,
+      "fps": 5.0,
+      "looping": true,
+      "lock_until_complete": false,
+      "terminal": false
+    },
+    "walk": {
+      "texture": "monsters/crypt_guard/atlases/crypt_guard_walk_albedo_8dir_aldoria_v36_87.png",
+      "columns": 8,
+      "frames": 8,
+      "fps": 9.0,
+      "looping": true,
+      "lock_until_complete": false,
+      "terminal": false
+    },
+    "attack": {
+      "texture": "monsters/crypt_guard/atlases/crypt_guard_attack_albedo_8dir_aldoria_v36_87.png",
+      "columns": 8,
+      "frames": 8,
+      "fps": 11.0,
+      "looping": false,
+      "lock_until_complete": true,
+      "terminal": false
+    },
+    "hit": {
+      "texture": "monsters/crypt_guard/atlases/crypt_guard_hit_albedo_8dir_aldoria_v36_87.png",
+      "columns": 4,
+      "frames": 4,
+      "fps": 11.0,
+      "looping": false,
+      "lock_until_complete": true,
+      "terminal": false
+    },
+    "death": {
+      "texture": "monsters/crypt_guard/atlases/crypt_guard_death_albedo_8dir_aldoria_v36_87.png",
+      "columns": 8,
+      "frames": 8,
+      "fps": 7.0,
+      "looping": false,
+      "lock_until_complete": true,
+      "terminal": true
+    }
+  }
+}

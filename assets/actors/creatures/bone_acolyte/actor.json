@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "id": "creature.bone_acolyte",
+  "style_revision": "aldoria-v1-v36.87",
+  "authored_directions": 8,
+  "atlas_rows": 8,
+  "render_width": 0.95,
+  "render_height": 1.32,
+  "frame_width": 48,
+  "frame_height": 48,
+  "animations": {
+    "idle": {
+      "texture": "monsters/bone_acolyte/atlases/bone_acolyte_idle_albedo_8dir_aldoria_v36_87.png",
+      "columns": 6,
+      "frames": 6,
+      "fps": 6.0,
+      "looping": true,
+      "lock_until_complete": false,
+      "terminal": false
+    },
+    "walk": {
+      "texture": "monsters/bone_acolyte/atlases/bone_acolyte_walk_albedo_8dir_aldoria_v36_87.png",
+      "columns": 8,
+      "frames": 8,
+      "fps": 9.0,
+      "looping": true,
+      "lock_until_complete": false,
+      "terminal": false
+    },
+    "attack": {
+      "texture": "monsters/bone_acolyte/atlases/bone_acolyte_attack_albedo_8dir_aldoria_v36_87.png",
+      "columns": 8,
+      "frames": 8,
+      "fps": 12.0,
+      "looping": false,
+      "lock_until_complete": true,
+      "terminal": false
+    },
+    "hit": {
+      "texture": "monsters/bone_acolyte/atlases/bone_acolyte_hit_albedo_8dir_aldoria_v36_87.png",
+      "columns": 4,
+      "frames": 4,
+      "fps": 12.0,
+      "looping": false,
+      "lock_until_complete": true,
+      "terminal": false
+    },
+    "death": {
+      "texture": "monsters/bone_acolyte/atlases/bone_acolyte_death_albedo_8dir_aldoria_v36_87.png",
+      "columns": 8,
+      "frames": 8,
+      "fps": 8.0,
+      "looping": false,
+      "lock_until_complete": true,
+      "terminal": true
+    }
+  }
+}

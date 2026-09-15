@@ -1,0 +1,147 @@
+#!/usr/bin/env node
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
+
+const root = process.cwd();
+const checkOnly = process.argv.includes("--check");
+const MARKER = "TIBIAGAME_V36_89_NPC_SERVICE_VARIANTS";
+
+const npcSourcePath = path.join(root, "crates/game-client/src/npc_sprites.rs");
+const validatorPath = path.join(root, "scripts/validate-actor-sprites.mjs");
+const npcIndexPath = path.join(root, "assets/actors/npcs/index.json");
+
+const services = new Map([
+  ["shop", "actors/npcs/merchant/actor.json"],
+  ["depot", "actors/npcs/vaultkeeper/actor.json"],
+  ["spell_trainer", "actors/npcs/arcanist/actor.json"],
+  ["craft_trainer", "actors/npcs/artificer/actor.json"],
+]);
+
+const atlases = new Map([
+  ["assets/npcs/merchant/atlases/merchant_idle_8dir_aldoria_v36_89.png", [384,640]],
+  ["assets/npcs/vaultkeeper/atlases/vaultkeeper_idle_8dir_aldoria_v36_89.png", [384,640]],
+  ["assets/npcs/arcanist/atlases/arcanist_idle_8dir_aldoria_v36_89.png", [384,640]],
+  ["assets/npcs/artificer/atlases/artificer_idle_8dir_aldoria_v36_89.png", [384,640]],
+]);
+
+const replacementNpcSource = Buffer.from("Ly8gVElCSUFHQU1FX1YzNl84M19QUk9EVUNUSU9OX1NQUklURV9QSVBFTElORQovLyBUSUJJQUdBTUVfVjM2Xzg5X05QQ19TRVJWSUNFX1ZBUklBTlRTCnVzZSBzdGQ6OmNvbGxlY3Rpb25zOjpIYXNoTWFwOwoKdXNlIGJldnk6OntjYW1lcmE6OnZpc2liaWxpdHk6Ok5vRnJ1c3R1bUN1bGxpbmcsIHByZWx1ZGU6Oip9Owp1c2UgZ2FtZV90eXBlczo6e05wY1ZpZXcsIFBvc2l0aW9ufTsKCnVzZSBjcmF0ZTo6ewogICAgTWFpbkNhbWVyYSwgTW92ZW1lbnRTdGF0ZSwgTnBjQWN0b3IsCiAgICBhY3Rvcl9zcHJpdGVzOjp7CiAgICAgICAgQWN0b3JBbmltYXRpb24sIEFjdG9yU3ByaXRlQXNzZXRzLCBTcHJpdGVEaXJlY3Rpb24sIGF0bGFzX3V2LCBiaWxsYm9hcmRfcm90YXRpb24sCiAgICAgICAgZmFjZV9kaXJlY3Rpb24sIGxvYWRfYWN0b3JfaW5kZXgsCiAgICB9LAogICAgc3RhdGU6Ok5hdGl2ZUdhbWVTdGF0ZSwKfTsKCmNvbnN0IE5QQ19JTkRFWDogJnN0ciA9ICJhY3RvcnMvbnBjcy9pbmRleC5qc29uIjsKY29uc3QgTlBDX0ZBTExCQUNLX01BTklGRVNUOiAmc3RyID0gImFjdG9ycy9ucGNzL2RlZmF1bHQvYWN0b3IuanNvbiI7CgojW2Rlcml2ZShDb21wb25lbnQpXQpwdWIgc3RydWN0IE5wY1Nwcml0ZSB7CiAgICBsb2dpY2FsX3Bvc2l0aW9uOiBQb3NpdGlvbiwKICAgIGRpcmVjdGlvbjogU3ByaXRlRGlyZWN0aW9uLAogICAgYW5pbWF0aW9uOiBBY3RvckFuaW1hdGlvbiwKICAgIGFuaW1hdGlvbl9zdGFydGVkX2F0OiBmNjQsCiAgICBhY3Rvcl9rZXk6IFN0cmluZywKICAgIGxhc3RfYWN0b3Jfa2V5OiBTdHJpbmcsCiAgICBsYXN0X2ZyYW1lOiB1c2l6ZSwKICAgIGxhc3RfZGlyZWN0aW9uOiBTcHJpdGVEaXJlY3Rpb24sCiAgICBsYXN0X2FuaW1hdGlvbjogQWN0b3JBbmltYXRpb24sCiAgICBtYXRlcmlhbDogSGFuZGxlPFN0YW5kYXJkTWF0ZXJpYWw+LAp9CgojW2Rlcml2ZShSZXNvdXJjZSldCnB1YiBzdHJ1Y3QgTnBjU3ByaXRlQ2F0YWxvZyB7CiAgICBxdWFkOiBIYW5kbGU8TWVzaD4sCiAgICBmYWxsYmFjazogQWN0b3JTcHJpdGVBc3NldHMsCiAgICBhY3RvcnM6IEhhc2hNYXA8U3RyaW5nLCBBY3RvclNwcml0ZUFzc2V0cz4sCn0KCmltcGwgTnBjU3ByaXRlQ2F0YWxvZyB7CiAgICBwdWIgZm4gbmV3KGFzc2V0X3NlcnZlcjogJkFzc2V0U2VydmVyLCBtZXNoZXM6ICZtdXQgQXNzZXRzPE1lc2g+KSAtPiBTZWxmIHsKICAgICAgICBsZXQgbXV0IHF1YWQgPSBSZWN0YW5nbGU6Om5ldygxLjAsIDEuMCkubWVzaCgpLmJ1aWxkKCk7CiAgICAgICAgaWYgbGV0IEVycihlcnJvcikgPSBxdWFkLmdlbmVyYXRlX3RhbmdlbnRzKCkgewogICAgICAgICAgICB3YXJuISgiQUxET1JJQSBOUEMgU1BSSVRFIMK3IHRhbmdlbnQgZ2VuZXJhdGlvbiBmYWlsZWQ6IHtlcnJvcn0iKTsKICAgICAgICB9CgogICAgICAgIGxldCBtdXQgYWN0b3JzID0gSGFzaE1hcDo6bmV3KCk7CiAgICAgICAgZm9yIGVudHJ5IGluIGxvYWRfYWN0b3JfaW5kZXgoTlBDX0lOREVYKSB7CiAgICAgICAgICAgIGxldCBzZXJ2aWNlID0gZW50cnkuZ2FtZV9kZWZpbml0aW9uX2lkOwogICAgICAgICAgICBsZXQgYWN0b3IgPSBBY3RvclNwcml0ZUFzc2V0czo6bG9hZChhc3NldF9zZXJ2ZXIsICZlbnRyeS5tYW5pZmVzdCk7CiAgICAgICAgICAgIGFjdG9ycy5pbnNlcnQoc2VydmljZSwgYWN0b3IpOwogICAgICAgIH0KCiAgICAgICAgaW5mbyEoCiAgICAgICAgICAgICJBTERPUklBIE5QQyBTUFJJVEVTIMK3IHt9IHNlcnZpY2UgdmFyaWFudHMgwrcgZmFsbGJhY2s9e30iLAogICAgICAgICAgICBhY3RvcnMubGVuKCksCiAgICAgICAgICAgIE5QQ19GQUxMQkFDS19NQU5JRkVTVCwKICAgICAgICApOwoKICAgICAgICBTZWxmIHsKICAgICAgICAgICAgcXVhZDogbWVzaGVzLmFkZChxdWFkKSwKICAgICAgICAgICAgZmFsbGJhY2s6IEFjdG9yU3ByaXRlQXNzZXRzOjpsb2FkKGFzc2V0X3NlcnZlciwgTlBDX0ZBTExCQUNLX01BTklGRVNUKSwKICAgICAgICAgICAgYWN0b3JzLAogICAgICAgIH0KICAgIH0KCiAgICBmbiBhY3Rvcl9mb3IoJnNlbGYsIHNlcnZpY2U6ICZzdHIpIC0+ICgmQWN0b3JTcHJpdGVBc3NldHMsIGJvb2wpIHsKICAgICAgICBpZiBsZXQgU29tZShhY3RvcikgPSBzZWxmLmFjdG9ycy5nZXQoc2VydmljZSkgewogICAgICAgICAgICAoYWN0b3IsIHRydWUpCiAgICAgICAgfSBlbHNlIHsKICAgICAgICAgICAgKCZzZWxmLmZhbGxiYWNrLCBmYWxzZSkKICAgICAgICB9CiAgICB9Cn0KCnB1YiBmbiBzcGF3bl9ucGNfc3ByaXRlKAogICAgY29tbWFuZHM6ICZtdXQgQ29tbWFuZHMsCiAgICBtYXRlcmlhbHM6ICZtdXQgQXNzZXRzPFN0YW5kYXJkTWF0ZXJpYWw+LAogICAgY2F0YWxvZzogJk5wY1Nwcml0ZUNhdGFsb2csCiAgICBucGM6ICZOcGNWaWV3LAopIC0+IEVudGl0eSB7CiAgICBsZXQgKGFjdG9yLCBhdXRob3JlZF92YXJpYW50KSA9IGNhdGFsb2cuYWN0b3JfZm9yKCZucGMuc2VydmljZSk7CiAgICBsZXQgZGVmaW5pdGlvbiA9ICZhY3Rvci5kZWZpbml0aW9uOwogICAgbGV0IGlkbGUgPSBkZWZpbml0aW9uCiAgICAgICAgLnNwZWMoQWN0b3JBbmltYXRpb246OklkbGUpCiAgICAgICAgLmV4cGVjdCgidmFsaWRhdGVkIE5QQyBtYW5pZmVzdCBtdXN0IGRlZmluZSBpZGxlIik7CiAgICBsZXQgaWRsZV90ZXh0dXJlID0gYWN0b3IKICAgICAgICAudGV4dHVyZShBY3RvckFuaW1hdGlvbjo6SWRsZSkKICAgICAgICAuZXhwZWN0KCJ2YWxpZGF0ZWQgTlBDIG1hbmlmZXN0IG11c3QgbG9hZCBpZGxlIHRleHR1cmUiKTsKCiAgICBsZXQgbWF0ZXJpYWwgPSBtYXRlcmlhbHMuYWRkKFN0YW5kYXJkTWF0ZXJpYWwgewogICAgICAgIGJhc2VfY29sb3I6IGlmIGF1dGhvcmVkX3ZhcmlhbnQgewogICAgICAgICAgICBDb2xvcjo6c3JnYigxLjAsIDEuMCwgMS4wKQogICAgICAgIH0gZWxzZSB7CiAgICAgICAgICAgIG5wY190aW50KG5wYykKICAgICAgICB9LAogICAgICAgIGJhc2VfY29sb3JfdGV4dHVyZTogU29tZShpZGxlX3RleHR1cmUuY2xvbmUoKSksCiAgICAgICAgbm9ybWFsX21hcF90ZXh0dXJlOiBhY3Rvci5ub3JtYWwoQWN0b3JBbmltYXRpb246OklkbGUpLmNsb25lZCgpLAogICAgICAgIHV2X3RyYW5zZm9ybTogYXRsYXNfdXYoCiAgICAgICAgICAgIGlkbGUuY29sdW1ucywKICAgICAgICAgICAgZGVmaW5pdGlvbi5hdGxhc19yb3dzLAogICAgICAgICAgICAwLAogICAgICAgICAgICBTcHJpdGVEaXJlY3Rpb246OlNvdXRoLmF0bGFzX3JvdyhkZWZpbml0aW9uLmF1dGhvcmVkX2RpcmVjdGlvbnMpLAogICAgICAgICksCiAgICAgICAgcGVyY2VwdHVhbF9yb3VnaG5lc3M6IDAuOSwKICAgICAgICBtZXRhbGxpYzogMC4wLAogICAgICAgIHVubGl0OiB0cnVlLAogICAgICAgIGFscGhhX21vZGU6IEFscGhhTW9kZTo6TWFzaygwLjA1KSwKICAgICAgICBkb3VibGVfc2lkZWQ6IHRydWUsCiAgICAgICAgY3VsbF9tb2RlOiBOb25lLAogICAgICAgIC4uZGVmYXVsdCgpCiAgICB9KTsKCiAgICBjb21tYW5kcwogICAgICAgIC5zcGF3bigoCiAgICAgICAgICAgIE5hbWU6Om5ldyhmb3JtYXQhKCJOUEMgU3ByaXRlIMK3IHt9IMK3IHt9IiwgbnBjLm5hbWUsIG5wYy5zZXJ2aWNlKSksCiAgICAgICAgICAgIE5wY0FjdG9yKG5wYy5pZC5jbG9uZSgpKSwKICAgICAgICAgICAgTnBjU3ByaXRlIHsKICAgICAgICAgICAgICAgIGxvZ2ljYWxfcG9zaXRpb246IG5wYy5wb3NpdGlvbiwKICAgICAgICAgICAgICAgIGRpcmVjdGlvbjogU3ByaXRlRGlyZWN0aW9uOjpTb3V0aCwKICAgICAgICAgICAgICAgIGFuaW1hdGlvbjogQWN0b3JBbmltYXRpb246OklkbGUsCiAgICAgICAgICAgICAgICBhbmltYXRpb25fc3RhcnRlZF9hdDogMC4wLAogICAgICAgICAgICAgICAgYWN0b3Jfa2V5OiBucGMuc2VydmljZS5jbG9uZSgpLAogICAgICAgICAgICAgICAgbGFzdF9hY3Rvcl9rZXk6IFN0cmluZzo6bmV3KCksCiAgICAgICAgICAgICAgICBsYXN0X2ZyYW1lOiB1c2l6ZTo6TUFYLAogICAgICAgICAgICAgICAgbGFzdF9kaXJlY3Rpb246IFNwcml0ZURpcmVjdGlvbjo6Tm9ydGgsCiAgICAgICAgICAgICAgICBsYXN0X2FuaW1hdGlvbjogQWN0b3JBbmltYXRpb246OlVzZSwKICAgICAgICAgICAgICAgIG1hdGVyaWFsOiBtYXRlcmlhbC5jbG9uZSgpLAogICAgICAgICAgICB9LAogICAgICAgICAgICBOb0ZydXN0dW1DdWxsaW5nLAogICAgICAgICAgICBNZXNoM2QoY2F0YWxvZy5xdWFkLmNsb25lKCkpLAogICAgICAgICAgICBNZXNoTWF0ZXJpYWwzZChtYXRlcmlhbCksCiAgICAgICAgICAgIFRyYW5zZm9ybSB7CiAgICAgICAgICAgICAgICB0cmFuc2xhdGlvbjogc3ByaXRlX3dvcmxkX3Bvc2l0aW9uKG5wYy5wb3NpdGlvbiwgZGVmaW5pdGlvbi5yZW5kZXJfaGVpZ2h0KSwKICAgICAgICAgICAgICAgIHJvdGF0aW9uOiBRdWF0Ojpmcm9tX3JvdGF0aW9uX3koc3RkOjpmMzI6OmNvbnN0czo6UEkpLAogICAgICAgICAgICAgICAgc2NhbGU6IFZlYzM6Om5ldyhkZWZpbml0aW9uLnJlbmRlcl93aWR0aCwgZGVmaW5pdGlvbi5yZW5kZXJfaGVpZ2h0LCAxLjApLAogICAgICAgICAgICB9LAogICAgICAgICAgICBWaXNpYmlsaXR5OjpkZWZhdWx0KCksCiAgICAgICAgKSkKICAgICAgICAuaWQoKQp9CgpwdWIgZm4gYW5pbWF0ZV9ucGNfc3ByaXRlcygKICAgIHRpbWU6IFJlczxUaW1lPiwKICAgIG1vdmVtZW50OiBSZXM8TW92ZW1lbnRTdGF0ZT4sCiAgICBnYW1lX3N0YXRlOiBSZXM8TmF0aXZlR2FtZVN0YXRlPiwKICAgIGNhdGFsb2c6IFJlczxOcGNTcHJpdGVDYXRhbG9nPiwKICAgIG11dCBtYXRlcmlhbHM6IFJlc011dDxBc3NldHM8U3RhbmRhcmRNYXRlcmlhbD4+LAogICAgbXV0IG5wY3M6IFF1ZXJ5PCgmTnBjQWN0b3IsICZtdXQgTnBjU3ByaXRlLCAmbXV0IFRyYW5zZm9ybSk+LAopIHsKICAgIGxldCBub3cgPSB0aW1lLmVsYXBzZWRfc2Vjc19mNjQoKTsKCiAgICBmb3IgKG5wY19hY3RvciwgbXV0IHNwcml0ZSwgbXV0IHRyYW5zZm9ybSkgaW4gJm11dCBucGNzIHsKICAgICAgICBsZXQgbnBjID0gZ2FtZV9zdGF0ZS5ucGNzLmdldCgmbnBjX2FjdG9yLjApOwoKICAgICAgICBpZiBsZXQgU29tZShucGMpID0gbnBjIHsKICAgICAgICAgICAgaWYgc3ByaXRlLmFjdG9yX2tleSAhPSBucGMuc2VydmljZSB7CiAgICAgICAgICAgICAgICBzcHJpdGUuYWN0b3Jfa2V5ID0gbnBjLnNlcnZpY2UuY2xvbmUoKTsKICAgICAgICAgICAgICAgIHNwcml0ZS5sYXN0X2FjdG9yX2tleS5jbGVhcigpOwogICAgICAgICAgICAgICAgc3ByaXRlLmxhc3RfZnJhbWUgPSB1c2l6ZTo6TUFYOwogICAgICAgICAgICB9CiAgICAgICAgfQoKICAgICAgICBsZXQgKGFjdG9yLCBhdXRob3JlZF92YXJpYW50KSA9IGNhdGFsb2cuYWN0b3JfZm9yKCZzcHJpdGUuYWN0b3Jfa2V5KTsKICAgICAgICBsZXQgZGVmaW5pdGlvbiA9ICZhY3Rvci5kZWZpbml0aW9uOwogICAgICAgIGxldCBzcGVjID0gZGVmaW5pdGlvbgogICAgICAgICAgICAuc3BlYyhBY3RvckFuaW1hdGlvbjo6SWRsZSkKICAgICAgICAgICAgLmV4cGVjdCgidmFsaWRhdGVkIE5QQyBtYW5pZmVzdCBtdXN0IGRlZmluZSBpZGxlIik7CiAgICAgICAgbGV0IGlkbGVfdGV4dHVyZSA9IGFjdG9yCiAgICAgICAgICAgIC50ZXh0dXJlKEFjdG9yQW5pbWF0aW9uOjpJZGxlKQogICAgICAgICAgICAuZXhwZWN0KCJ2YWxpZGF0ZWQgTlBDIG1hbmlmZXN0IG11c3QgbG9hZCBpZGxlIHRleHR1cmUiKTsKCiAgICAgICAgaWYgbGV0IFNvbWUobnBjKSA9IG5wYyB7CiAgICAgICAgICAgIGlmIHNwcml0ZS5sb2dpY2FsX3Bvc2l0aW9uICE9IG5wYy5wb3NpdGlvbiB7CiAgICAgICAgICAgICAgICBzcHJpdGUubG9naWNhbF9wb3NpdGlvbiA9IG5wYy5wb3NpdGlvbjsKICAgICAgICAgICAgfQoKICAgICAgICAgICAgdHJhbnNmb3JtLnRyYW5zbGF0aW9uID0KICAgICAgICAgICAgICAgIHNwcml0ZV93b3JsZF9wb3NpdGlvbihzcHJpdGUubG9naWNhbF9wb3NpdGlvbiwgZGVmaW5pdGlvbi5yZW5kZXJfaGVpZ2h0KTsKICAgICAgICAgICAgdHJhbnNmb3JtLnNjYWxlID0KICAgICAgICAgICAgICAgIFZlYzM6Om5ldyhkZWZpbml0aW9uLnJlbmRlcl93aWR0aCwgZGVmaW5pdGlvbi5yZW5kZXJfaGVpZ2h0LCAxLjApOwoKICAgICAgICAgICAgaWYgbnBjLnBvc2l0aW9uLnogPT0gbW92ZW1lbnQubG9naWNhbC56IHsKICAgICAgICAgICAgICAgIHNwcml0ZS5kaXJlY3Rpb24gPQogICAgICAgICAgICAgICAgICAgIGZhY2VfZGlyZWN0aW9uKG5wYy5wb3NpdGlvbiwgbW92ZW1lbnQubG9naWNhbCwgc3ByaXRlLmRpcmVjdGlvbik7CiAgICAgICAgICAgIH0KICAgICAgICB9CgogICAgICAgIGlmIHNwcml0ZS5hbmltYXRpb24gIT0gQWN0b3JBbmltYXRpb246OklkbGUgewogICAgICAgICAgICBzcHJpdGUuYW5pbWF0aW9uID0gQWN0b3JBbmltYXRpb246OklkbGU7CiAgICAgICAgICAgIHNwcml0ZS5hbmltYXRpb25fc3RhcnRlZF9hdCA9IG5vdzsKICAgICAgICAgICAgc3ByaXRlLmxhc3RfZnJhbWUgPSB1c2l6ZTo6TUFYOwogICAgICAgIH0KCiAgICAgICAgbGV0IGVsYXBzZWQgPSAobm93IC0gc3ByaXRlLmFuaW1hdGlvbl9zdGFydGVkX2F0KS5tYXgoMC4wKTsKICAgICAgICBsZXQgZnJhbWUgPSBzcGVjLmZyYW1lX2F0KGVsYXBzZWQpOwogICAgICAgIGxldCBkaXJlY3Rpb24gPSBzcHJpdGUuZGlyZWN0aW9uOwogICAgICAgIGxldCBhY3Rvcl9jaGFuZ2VkID0gc3ByaXRlLmxhc3RfYWN0b3Jfa2V5ICE9IHNwcml0ZS5hY3Rvcl9rZXk7CgogICAgICAgIGlmICFhY3Rvcl9jaGFuZ2VkCiAgICAgICAgICAgICYmIHNwcml0ZS5sYXN0X2ZyYW1lID09IGZyYW1lCiAgICAgICAgICAgICYmIHNwcml0ZS5sYXN0X2RpcmVjdGlvbiA9PSBkaXJlY3Rpb24KICAgICAgICAgICAgJiYgc3ByaXRlLmxhc3RfYW5pbWF0aW9uID09IHNwcml0ZS5hbmltYXRpb24KICAgICAgICB7CiAgICAgICAgICAgIGNvbnRpbnVlOwogICAgICAgIH0KCiAgICAgICAgbGV0IFNvbWUobXV0IG1hdGVyaWFsKSA9IG1hdGVyaWFscy5nZXRfbXV0KCZzcHJpdGUubWF0ZXJpYWwpIGVsc2UgewogICAgICAgICAgICBjb250aW51ZTsKICAgICAgICB9OwoKICAgICAgICBtYXRlcmlhbC5iYXNlX2NvbG9yID0gaWYgYXV0aG9yZWRfdmFyaWFudCB7CiAgICAgICAgICAgIENvbG9yOjpzcmdiKDEuMCwgMS4wLCAxLjApCiAgICAgICAgfSBlbHNlIGlmIGxldCBTb21lKG5wYykgPSBucGMgewogICAgICAgICAgICBucGNfdGludChucGMpCiAgICAgICAgfSBlbHNlIHsKICAgICAgICAgICAgQ29sb3I6OnNyZ2IoMS4wLCAxLjAsIDEuMCkKICAgICAgICB9OwogICAgICAgIG1hdGVyaWFsLmJhc2VfY29sb3JfdGV4dHVyZSA9IFNvbWUoaWRsZV90ZXh0dXJlLmNsb25lKCkpOwogICAgICAgIG1hdGVyaWFsLm5vcm1hbF9tYXBfdGV4dHVyZSA9IGFjdG9yLm5vcm1hbChBY3RvckFuaW1hdGlvbjo6SWRsZSkuY2xvbmVkKCk7CiAgICAgICAgbWF0ZXJpYWwudXZfdHJhbnNmb3JtID0gYXRsYXNfdXYoCiAgICAgICAgICAgIHNwZWMuY29sdW1ucywKICAgICAgICAgICAgZGVmaW5pdGlvbi5hdGxhc19yb3dzLAogICAgICAgICAgICBmcmFtZSwKICAgICAgICAgICAgZGlyZWN0aW9uLmF0bGFzX3JvdyhkZWZpbml0aW9uLmF1dGhvcmVkX2RpcmVjdGlvbnMpLAogICAgICAgICk7CgogICAgICAgIHNwcml0ZS5sYXN0X2FjdG9yX2tleSA9IHNwcml0ZS5hY3Rvcl9rZXkuY2xvbmUoKTsKICAgICAgICBzcHJpdGUubGFzdF9mcmFtZSA9IGZyYW1lOwogICAgICAgIHNwcml0ZS5sYXN0X2RpcmVjdGlvbiA9IGRpcmVjdGlvbjsKICAgICAgICBzcHJpdGUubGFzdF9hbmltYXRpb24gPSBzcHJpdGUuYW5pbWF0aW9uOwogICAgfQp9CgpwdWIgZm4gZmFjZV9ucGNfc3ByaXRlc190b19jYW1lcmEoCiAgICBjYW1lcmE6IFF1ZXJ5PCZHbG9iYWxUcmFuc2Zvcm0sIFdpdGg8TWFpbkNhbWVyYT4+LAogICAgbXV0IG5wY3M6IFF1ZXJ5PCgmR2xvYmFsVHJhbnNmb3JtLCAmbXV0IFRyYW5zZm9ybSksIFdpdGg8TnBjU3ByaXRlPj4sCikgewogICAgbGV0IFNvbWUoY2FtZXJhX3RyYW5zZm9ybSkgPSBjYW1lcmEuaXRlcigpLm5leHQoKSBlbHNlIHsKICAgICAgICByZXR1cm47CiAgICB9OwogICAgbGV0IGNhbWVyYV9wb3NpdGlvbiA9IGNhbWVyYV90cmFuc2Zvcm0udHJhbnNsYXRpb24oKTsKCiAgICBmb3IgKGdsb2JhbCwgbXV0IHRyYW5zZm9ybSkgaW4gJm11dCBucGNzIHsKICAgICAgICBpZiBsZXQgU29tZShyb3RhdGlvbikgPSBiaWxsYm9hcmRfcm90YXRpb24oZ2xvYmFsLnRyYW5zbGF0aW9uKCksIGNhbWVyYV9wb3NpdGlvbikgewogICAgICAgICAgICB0cmFuc2Zvcm0ucm90YXRpb24gPSByb3RhdGlvbjsKICAgICAgICB9CiAgICB9Cn0KCmZuIHNwcml0ZV93b3JsZF9wb3NpdGlvbihwb3NpdGlvbjogUG9zaXRpb24sIHJlbmRlcl9oZWlnaHQ6IGYzMikgLT4gVmVjMyB7CiAgICBWZWMzOjpuZXcoCiAgICAgICAgcG9zaXRpb24ueCBhcyBmMzIsCiAgICAgICAgcmVuZGVyX2hlaWdodCAqIDAuNSArIDAuMDI1LAogICAgICAgIHBvc2l0aW9uLnkgYXMgZjMyLAogICAgKQp9CgpmbiBucGNfdGludChucGM6ICZOcGNWaWV3KSAtPiBDb2xvciB7CiAgICBsZXQgcm9sZSA9IGZvcm1hdCEoInt9IHt9IHt9IiwgbnBjLmlkLCBucGMudGl0bGUsIG5wYy5zZXJ2aWNlKS50b19hc2NpaV9sb3dlcmNhc2UoKTsKCiAgICBpZiByb2xlLmNvbnRhaW5zKCJtYWdlIikgfHwgcm9sZS5jb250YWlucygid2l6YXJkIikgfHwgcm9sZS5jb250YWlucygiaGVhbGVyIikgewogICAgICAgIENvbG9yOjpzcmdiKDAuNzIsIDAuNzgsIDEuMCkKICAgIH0gZWxzZSBpZiByb2xlLmNvbnRhaW5zKCJyYW5nZXIiKSB8fCByb2xlLmNvbnRhaW5zKCJodW50ZXIiKSB8fCByb2xlLmNvbnRhaW5zKCJhcmNoZXIiKSB7CiAgICAgICAgQ29sb3I6OnNyZ2IoMC43MiwgMC45MiwgMC43MCkKICAgIH0gZWxzZSBpZiByb2xlLmNvbnRhaW5zKCJyb2d1ZSIpIHx8IHJvbGUuY29udGFpbnMoInRoaWVmIikgfHwgcm9sZS5jb250YWlucygibWVyY2hhbnQiKSB7CiAgICAgICAgQ29sb3I6OnNyZ2IoMC44OCwgMC43OCwgMC42NCkKICAgIH0gZWxzZSB7CiAgICAgICAgbWF0Y2ggbnBjCiAgICAgICAgICAgIC5pZAogICAgICAgICAgICAuYnl0ZXMoKQogICAgICAgICAgICAuZm9sZCgwdTgsIHx2YWx1ZSwgYnl0ZXwgdmFsdWUud3JhcHBpbmdfYWRkKGJ5dGUpKQogICAgICAgICAgICAlIDQKICAgICAgICB7CiAgICAgICAgICAgIDAgPT4gQ29sb3I6OnNyZ2IoMC45MiwgMC45MiwgMC45NiksCiAgICAgICAgICAgIDEgPT4gQ29sb3I6OnNyZ2IoMC43OCwgMC44NCwgMS4wKSwKICAgICAgICAgICAgMiA9PiBDb2xvcjo6c3JnYigwLjc4LCAwLjk2LCAwLjc2KSwKICAgICAgICAgICAgXyA9PiBDb2xvcjo6c3JnYigwLjkyLCAwLjgwLCAwLjY4KSwKICAgICAgICB9CiAgICB9Cn0KCnB1YiBmbiBkZXNjcmliZV9jYXRhbG9nKCkgewogICAgaW5mbyEoCiAgICAgICAgIkFMRE9SSUEgTlBDIFNQUklURVMgwrcgaW5kZXg9e30gwrcgc2VydmljZS1kcml2ZW4gOC1kaXJlY3Rpb24gcHJlc2VudGF0aW9uIiwKICAgICAgICBOUENfSU5ERVgsCiAgICApOwp9Cg==", "base64").toString("utf8");
+
+function fail(message) {
+  console.error("\nV36.89 PATCH FAILED: " + message);
+  process.exit(1);
+}
+
+function readJson(file, label) {
+  if (!fs.existsSync(file)) fail(`${label} missing: ${path.relative(root,file)}`);
+  try { return JSON.parse(fs.readFileSync(file, "utf8")); }
+  catch (error) { fail(`${label} invalid JSON: ${error.message}`); }
+}
+
+function pngSize(file) {
+  const bytes = fs.readFileSync(file);
+  const sig = Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]);
+  if (bytes.length < 24 || !bytes.subarray(0,8).equals(sig) || bytes.toString("ascii",12,16) !== "IHDR") {
+    fail(`invalid PNG: ${path.relative(root,file)}`);
+  }
+  return [bytes.readUInt32BE(16), bytes.readUInt32BE(20)];
+}
+
+for (const file of [npcSourcePath, validatorPath, npcIndexPath]) {
+  if (!fs.existsSync(file)) {
+    fail(`missing ${path.relative(root,file)}; extract the COMPLETE V36.89 ZIP into repo root first`);
+  }
+}
+
+const currentNpcSource = fs.readFileSync(npcSourcePath, "utf8");
+if (currentNpcSource.includes(MARKER)) {
+  console.log("V36.89 already applied.");
+  process.exit(0);
+}
+if (!currentNpcSource.includes("TIBIAGAME_V36_83_PRODUCTION_SPRITE_PIPELINE")) {
+  fail("V36.83 NPC sprite pipeline marker is missing.");
+}
+if (!currentNpcSource.includes('const NPC_MANIFEST: &str = "actors/npcs/default/actor.json";')) {
+  fail("npc_sprites.rs does not match the expected pre-V36.89 single-manifest baseline.");
+}
+
+for (const [relativePath, expected] of atlases) {
+  const absolute = path.join(root, relativePath);
+  if (!fs.existsSync(absolute)) fail(`missing V36.89 atlas: ${relativePath}`);
+  const actual = pngSize(absolute);
+  if (actual[0] !== expected[0] || actual[1] !== expected[1]) {
+    fail(`${relativePath} is ${actual[0]}x${actual[1]}, expected ${expected[0]}x${expected[1]}`);
+  }
+}
+
+const index = readJson(npcIndexPath, "NPC actor index");
+if (index.schema !== 1 || !Array.isArray(index.actors)) {
+  fail("assets/actors/npcs/index.json must use schema 1 and actors[].");
+}
+if (index.actors.length !== services.size) {
+  fail(`NPC actor index must contain exactly ${services.size} service variants.`);
+}
+for (const [service, manifestPath] of services) {
+  const entry = index.actors.find((candidate) => candidate.game_definition_id === service);
+  if (!entry || entry.manifest !== manifestPath) {
+    fail(`NPC actor index mapping mismatch for service '${service}'`);
+  }
+  const manifest = readJson(path.join(root, "assets", ...manifestPath.split("/")), `${service} manifest`);
+  if (
+    manifest.schema !== 1 ||
+    manifest.authored_directions !== 8 ||
+    manifest.atlas_rows !== 8 ||
+    manifest.frame_width !== 64 ||
+    manifest.frame_height !== 80
+  ) {
+    fail(`${manifestPath} must use the 8-direction 64x80 NPC actor contract`);
+  }
+  if (!manifest.animations?.idle || manifest.animations.idle.columns !== 6 || manifest.animations.idle.frames !== 6) {
+    fail(`${manifestPath} must define a six-frame idle animation`);
+  }
+}
+
+let validator = fs.readFileSync(validatorPath, "utf8");
+const finalAnchor = "if (errors.length > 0) {";
+if (!validator.includes(finalAnchor)) {
+  fail("actor validator final error block was not found.");
+}
+
+if (checkOnly) {
+  console.log("V36.89 PRECHECK PASSED");
+  console.log("4 NPC service atlases match the exact 64x80 x 8-row contract.");
+  console.log("Will replace the single NPC manifest runtime with a service-indexed actor catalog.");
+  console.log("Mappings: shop / depot / spell_trainer / craft_trainer.");
+  console.log("Unknown future NPC services retain the existing default actor fallback.");
+  process.exit(0);
+}
+
+fs.writeFileSync(
+  npcSourcePath,
+  replacementNpcSource.replace(/[ \t]*(?:\r?\n)+$/u, "\n"),
+  "utf8"
+);
+
+if (!validator.includes(MARKER)) {
+  const block =
+    "\n// " + MARKER + "\n" +
+    "const npcIndex = path.join(actorsRoot, 'npcs', 'index.json');\n" +
+    "if (!fs.existsSync(npcIndex)) fail(relative(npcIndex) + ' is missing');\n" +
+    "else validateCreatureIndex(npcIndex);\n\n";
+  validator = validator.replace(finalAnchor, block + finalAnchor);
+}
+validator = validator.replace(/[ \t]*(?:\r?\n)+$/u, "\n");
+fs.writeFileSync(validatorPath, validator, "utf8");
+
+try {
+  execFileSync(process.execPath, ["scripts/validate-actor-sprites.mjs"], {
+    cwd: root,
+    stdio: "inherit",
+  });
+} catch {
+  fail("actor sprite validation failed after applying V36.89");
+}
+
+console.log("V36.89 PATCH APPLIED");
+console.log("NPC visuals are now selected from NpcView.service through actors/npcs/index.json.");
+console.log("Default NPC actor remains the fallback for unknown services.");

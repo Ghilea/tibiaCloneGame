@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "id": "creature.mireling",
+  "style_revision": "aldoria-v1-v36.85",
+  "authored_directions": 8,
+  "atlas_rows": 8,
+  "render_width": 0.9,
+  "render_height": 1.05,
+  "frame_width": 48,
+  "frame_height": 48,
+  "animations": {
+    "idle": {
+      "texture": "monsters/mireling/atlases/mireling_idle_albedo_8dir_aldoria_v36_85.png",
+      "columns": 6,
+      "frames": 6,
+      "fps": 6.0,
+      "looping": true,
+      "lock_until_complete": false,
+      "terminal": false
+    },
+    "walk": {
+      "texture": "monsters/mireling/atlases/mireling_walk_albedo_8dir_aldoria_v36_85.png",
+      "columns": 8,
+      "frames": 8,
+      "fps": 10.0,
+      "looping": true,
+      "lock_until_complete": false,
+      "terminal": false
+    },
+    "attack": {
+      "texture": "monsters/mireling/atlases/mireling_attack_albedo_8dir_aldoria_v36_85.png",
+      "columns": 6,
+      "frames": 6,
+      "fps": 12.0,
+      "looping": false,
+      "lock_until_complete": true,
+      "terminal": false
+    },
+    "hit": {
+      "texture": "monsters/mireling/atlases/mireling_hit_albedo_8dir_aldoria_v36_85.png",
+      "columns": 4,
+      "frames": 4,
+      "fps": 12.0,
+      "looping": false,
+      "lock_until_complete": true,
+      "terminal": false
+    },
+    "death": {
+      "texture": "monsters/mireling/atlases/mireling_death_albedo_8dir_aldoria_v36_85.png",
+      "columns": 8,
+      "frames": 8,
+      "fps": 8.0,
+      "looping": false,
+      "lock_until_complete": true,
+      "terminal": true
+    }
+  }
+}

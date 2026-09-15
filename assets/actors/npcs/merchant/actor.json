@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "id": "npc.shop",
+  "style_revision": "aldoria-v1-v36.89",
+  "authored_directions": 8,
+  "atlas_rows": 8,
+  "render_width": 0.94,
+  "render_height": 1.38,
+  "frame_width": 64,
+  "frame_height": 80,
+  "animations": {
+    "idle": {
+      "texture": "npcs/merchant/atlases/merchant_idle_8dir_aldoria_v36_89.png",
+      "columns": 6,
+      "frames": 6,
+      "fps": 4.5,
+      "looping": true,
+      "lock_until_complete": false,
+      "terminal": false
+    }
+  }
+}

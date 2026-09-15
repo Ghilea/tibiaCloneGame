@@ -201,6 +201,38 @@ function validateCreatureIndex(file) {
   }
 }
 
+
+// TIBIAGAME_V36_85_MIRE_CREATURE_EXPANSION
+function validateCreatureIndexCoverage(file) {
+  const index = readJson(file);
+  if (!index || !Array.isArray(index.actors)) return;
+
+  const indexed = new Set(
+    index.actors
+      .filter((entry) => entry && typeof entry.manifest === 'string')
+      .map((entry) => entry.manifest),
+  );
+
+  const creatureRoot = path.join(actorsRoot, 'creatures');
+  const creatureManifests = new Set(
+    walk(creatureRoot)
+      .filter((candidate) => path.basename(candidate) === 'actor.json')
+      .map((candidate) => path.relative(assetRoot, candidate).replaceAll('\\', '/')),
+  );
+
+  for (const manifest of creatureManifests) {
+    if (!indexed.has(manifest)) {
+      fail(`assets/actors/creatures/index.json: creature manifest is not registered: ${manifest}`);
+    }
+  }
+
+  for (const manifest of indexed) {
+    if (!creatureManifests.has(manifest)) {
+      fail(`assets/actors/creatures/index.json: registered manifest is not a creature actor.json: ${manifest}`);
+    }
+  }
+}
+
 function walk(directory, output = []) {
   if (!fs.existsSync(directory)) return output;
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -223,7 +255,22 @@ for (const file of actorManifests) validateActorManifest(file);
 
 const creatureIndex = path.join(actorsRoot, 'creatures', 'index.json');
 if (!fs.existsSync(creatureIndex)) fail(`${relative(creatureIndex)} is missing`);
-else validateCreatureIndex(creatureIndex);
+else {
+  validateCreatureIndex(creatureIndex);
+  validateCreatureIndexCoverage(creatureIndex);
+}
+
+
+// TIBIAGAME_V36_89_NPC_SERVICE_VARIANTS
+const npcIndex = path.join(actorsRoot, 'npcs', 'index.json');
+if (!fs.existsSync(npcIndex)) fail(relative(npcIndex) + ' is missing');
+else validateCreatureIndex(npcIndex);
+
+
+// TIBIAGAME_V36_90_PLAYER_EQUIPMENT_LAYERS
+const playerEquipmentIndex = path.join(actorsRoot, 'players', 'equipment', 'index.json');
+if (!fs.existsSync(playerEquipmentIndex)) fail(relative(playerEquipmentIndex) + ' is missing');
+else validateCreatureIndex(playerEquipmentIndex);
 
 if (errors.length > 0) {
   console.error('ACTOR SPRITE VALIDATION FAILED');

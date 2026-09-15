@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "id": "player.equipment.weapon_ranged",
+  "style_revision": "aldoria-v1-v36.90",
+  "authored_directions": 8,
+  "atlas_rows": 8,
+  "render_width": 1.02,
+  "render_height": 1.36,
+  "frame_width": 48,
+  "frame_height": 64,
+  "animations": {
+    "idle": {
+      "texture": "players/equipment/weapon_ranged/atlases/weapon_ranged_idle_8dir_aldoria_v36_90.png",
+      "columns": 4,
+      "frames": 4,
+      "fps": 5.0,
+      "looping": true,
+      "lock_until_complete": false,
+      "terminal": false
+    },
+    "walk": {
+      "texture": "players/equipment/weapon_ranged/atlases/weapon_ranged_walk_8dir_aldoria_v36_90.png",
+      "columns": 8,
+      "frames": 8,
+      "fps": 12.0,
+      "looping": true,
+      "lock_until_complete": false,
+      "terminal": false
+    },
+    "attack": {
+      "texture": "players/equipment/weapon_ranged/atlases/weapon_ranged_attack_8dir_aldoria_v36_90.png",
+      "columns": 6,
+      "frames": 6,
+      "fps": 12.0,
+      "looping": false,
+      "lock_until_complete": true,
+      "terminal": false
+    },
+    "hit": {
+      "texture": "players/equipment/weapon_ranged/atlases/weapon_ranged_hit_8dir_aldoria_v36_90.png",
+      "columns": 4,
+      "frames": 4,
+      "fps": 12.0,
+      "looping": false,
+      "lock_until_complete": true,
+      "terminal": false
+    },
+    "death": {
+      "texture": "players/equipment/weapon_ranged/atlases/weapon_ranged_death_8dir_aldoria_v36_90.png",
+      "columns": 8,
+      "frames": 8,
+      "fps": 8.0,
+      "looping": false,
+      "lock_until_complete": true,
+      "terminal": true
+    },
+    "cast": {
+      "texture": "players/equipment/weapon_ranged/atlases/weapon_ranged_cast_8dir_aldoria_v36_90.png",
+      "columns": 6,
+      "frames": 6,
+      "fps": 10.0,
+      "looping": false,
+      "lock_until_complete": true,
+      "terminal": false
+    },
+    "use": {
+      "texture": "players/equipment/weapon_ranged/atlases/weapon_ranged_use_8dir_aldoria_v36_90.png",
+      "columns": 6,
+      "frames": 6,
+      "fps": 10.0,
+      "looping": false,
+      "lock_until_complete": true,
+      "terminal": false
+    }
+  }
+}

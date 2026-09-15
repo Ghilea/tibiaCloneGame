@@ -4,6 +4,34 @@
     {
       "game_definition_id": "castle_rat",
       "manifest": "actors/creatures/castle_rat/actor.json"
+    },
+    {
+      "game_definition_id": "mireling",
+      "manifest": "actors/creatures/mireling/actor.json"
+    },
+    {
+      "game_definition_id": "mire_skulker",
+      "manifest": "actors/creatures/mire_skulker/actor.json"
+    },
+    {
+      "game_definition_id": "reed_stalker",
+      "manifest": "actors/creatures/reed_stalker/actor.json"
+    },
+    {
+      "game_definition_id": "fen_brute",
+      "manifest": "actors/creatures/fen_brute/actor.json"
+    },
+    {
+      "game_definition_id": "crypt_guard",
+      "manifest": "actors/creatures/crypt_guard/actor.json"
+    },
+    {
+      "game_definition_id": "bone_acolyte",
+      "manifest": "actors/creatures/bone_acolyte/actor.json"
+    },
+    {
+      "game_definition_id": "cellar_warden",
+      "manifest": "actors/creatures/cellar_warden/actor.json"
     }
   ]
 }

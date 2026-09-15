@@ -56,3 +56,13 @@ data-driven; replacing or iterating art only requires changing manifest texture 
 
 The first pack covers player.default, npc.default and creature.castle_rat. It keeps the
 same frame dimensions and eight-direction row contract introduced by V36.83.
+
+<!-- TIBIAGAME_V36_85_MIRE_CREATURE_EXPANSION -->
+## Mire creature expansion
+
+V36.85 adds full eight-direction Idle/Walk/Attack/Hit/Death manifests for
+`mireling` and `mire_skulker`. Both are registered only through
+`actors/creatures/index.json`; their old solid-fallback rows are removed from Rust.
+
+The validator also requires every creature `actor.json` to be represented by
+the creature index, preventing orphaned content packs.

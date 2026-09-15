@@ -1,3 +1,4 @@
+// TIBIAGAME_V36_88_CELLAR_WARDEN_AREA_TELEGRAPH
 // TIBIAGAME_V36_10_NATIVE_GAMEPLAY_CORE
 // TIBIAGAME_V36_11_NATIVE_INTERACTION_FOUNDATION
 // TIBIAGAME_V36_75_0_ACTION_STATUS_BARS
@@ -50,6 +51,7 @@ pub struct NativeAbilityState {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct NativeTelegraphState {
+    pub sequence: u64,
     pub source_id: EntityId,
     pub position: Position,
     pub effect_id: String,
@@ -106,6 +108,7 @@ pub struct NativeGameState {
     pub crafting: Option<NativeCraftingState>,
     pub ability_visual_sequence: u64,
     pub last_ability: Option<NativeAbilityState>,
+    pub telegraph_visual_sequence: u64,
     pub last_telegraph: Option<NativeTelegraphState>,
     pub combat_visual_sequence: u64,
     pub combat_visuals: VecDeque<NativeCombatVisualState>,
@@ -188,6 +191,7 @@ impl NativeGameState {
             crafting: None,
             ability_visual_sequence: 0,
             last_ability: None,
+            telegraph_visual_sequence: 0,
             last_telegraph: None,
             combat_visual_sequence: 0,
             combat_visuals: VecDeque::new(),
@@ -473,7 +477,10 @@ impl NativeGameState {
                 radius,
                 duration_ms,
             } => {
+                self.telegraph_visual_sequence =
+                    self.telegraph_visual_sequence.saturating_add(1);
                 self.last_telegraph = Some(NativeTelegraphState {
+                    sequence: self.telegraph_visual_sequence,
                     source_id: *source_id,
                     position: *position,
                     effect_id: effect_id.clone(),

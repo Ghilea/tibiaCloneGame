@@ -1,5 +1,10 @@
 // TIBIAGAME_V36_83_PRODUCTION_SPRITE_PIPELINE
+// TIBIAGAME_V36_85_MIRE_CREATURE_EXPANSION
+// TIBIAGAME_V36_86_SWAMP_CREATURE_EXPANSION
+// TIBIAGAME_V36_87_CRYPT_CREATURE_EXPANSION
+// TIBIAGAME_V36_88_CELLAR_WARDEN_AREA_TELEGRAPH
 use std::collections::{HashMap, HashSet};
+use std::sync::Mutex;
 
 use bevy::{camera::visibility::NoFrustumCulling, math::Affine2, prelude::*};
 use game_types::{CreatureView, Position};
@@ -53,6 +58,7 @@ pub struct CreatureSpriteCatalog {
     quad: Handle<Mesh>,
     placeholder: Handle<Image>,
     actors: HashMap<String, ActorSpriteAssets>,
+    missing_manifest_warnings: Mutex<HashSet<String>>,
 }
 
 impl CreatureSpriteCatalog {
@@ -86,11 +92,26 @@ impl CreatureSpriteCatalog {
             quad: meshes.add(quad),
             placeholder: asset_server.load(PLACEHOLDER_TEXTURE),
             actors,
+            missing_manifest_warnings: Mutex::new(HashSet::new()),
         }
     }
 
     fn actor(&self, definition_id: &str) -> Option<&ActorSpriteAssets> {
         self.actors.get(definition_id)
+    }
+
+    fn actor_or_warn(&self, definition_id: &str) -> Option<&ActorSpriteAssets> {
+        let actor = self.actor(definition_id);
+        if actor.is_none()
+            && let Ok(mut warned) = self.missing_manifest_warnings.lock()
+            && warned.insert(definition_id.to_owned())
+        {
+            warn!(
+                "ALDORIA CREATURE SPRITE FALLBACK · no actor manifest registered for definition_id='{}' · using solid billboard fallback",
+                definition_id,
+            );
+        }
+        actor
     }
 }
 
@@ -192,7 +213,7 @@ pub fn spawn_creature_sprite(
     catalog: &CreatureSpriteCatalog,
     creature: &CreatureView,
 ) -> Entity {
-    let authored = catalog.actor(&creature.definition_id);
+    let authored = catalog.actor_or_warn(&creature.definition_id);
     let (render_width, render_height, tint) = if let Some(actor) = authored {
         (
             actor.definition.render_width,
@@ -483,6 +504,23 @@ pub fn trigger_attack(sprite: &mut CreatureSprite, now: f64) {
     }
 }
 
+pub fn trigger_telegraphed_attack(
+    sprite: &mut CreatureSprite,
+    target: Position,
+    now: f64,
+) {
+    if sprite.animation == SpriteAnimation::Death {
+        return;
+    }
+
+    sprite.direction = SpriteDirection::from_delta(
+        target.x - sprite.logical_position.x,
+        target.y - sprite.logical_position.y,
+        sprite.direction,
+    );
+    set_animation(sprite, SpriteAnimation::Attack, now);
+}
+
 pub fn trigger_hit(sprite: &mut CreatureSprite, now: f64) {
     if sprite.animation != SpriteAnimation::Death {
         set_animation(sprite, SpriteAnimation::Hit, now);
@@ -740,13 +778,6 @@ fn sprite_world_position(position: Position, render_height: f32) -> Vec3 {
 
 fn creature_visual_style(definition_id: &str) -> (f32, f32, Color) {
     match definition_id {
-        "mireling" => (0.90, 1.05, Color::srgb(0.44, 0.68, 0.35)),
-        "mire_skulker" => (1.00, 1.12, Color::srgb(0.27, 0.52, 0.34)),
-        "reed_stalker" => (0.95, 1.28, Color::srgb(0.48, 0.58, 0.25)),
-        "fen_brute" => (1.30, 1.55, Color::srgb(0.50, 0.36, 0.23)),
-        "crypt_guard" => (1.00, 1.38, Color::srgb(0.45, 0.52, 0.60)),
-        "bone_acolyte" => (0.95, 1.32, Color::srgb(0.78, 0.77, 0.67)),
-        "cellar_warden" => (1.15, 1.48, Color::srgb(0.43, 0.36, 0.56)),
         _ => (0.95, 1.15, Color::srgb(0.68, 0.32, 0.38)),
     }
 }

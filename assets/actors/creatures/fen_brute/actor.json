@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "id": "creature.fen_brute",
+  "style_revision": "aldoria-v1-v36.86",
+  "authored_directions": 8,
+  "atlas_rows": 8,
+  "render_width": 1.3,
+  "render_height": 1.55,
+  "frame_width": 48,
+  "frame_height": 48,
+  "animations": {
+    "idle": {
+      "texture": "monsters/fen_brute/atlases/fen_brute_idle_albedo_8dir_aldoria_v36_86.png",
+      "columns": 6,
+      "frames": 6,
+      "fps": 5.0,
+      "looping": true,
+      "lock_until_complete": false,
+      "terminal": false
+    },
+    "walk": {
+      "texture": "monsters/fen_brute/atlases/fen_brute_walk_albedo_8dir_aldoria_v36_86.png",
+      "columns": 8,
+      "frames": 8,
+      "fps": 8.0,
+      "looping": true,
+      "lock_until_complete": false,
+      "terminal": false
+    },
+    "attack": {
+      "texture": "monsters/fen_brute/atlases/fen_brute_attack_albedo_8dir_aldoria_v36_86.png",
+      "columns": 8,
+      "frames": 8,
+      "fps": 10.0,
+      "looping": false,
+      "lock_until_complete": true,
+      "terminal": false
+    },
+    "hit": {
+      "texture": "monsters/fen_brute/atlases/fen_brute_hit_albedo_8dir_aldoria_v36_86.png",
+      "columns": 4,
+      "frames": 4,
+      "fps": 10.0,
+      "looping": false,
+      "lock_until_complete": true,
+      "terminal": false
+    },
+    "death": {
+      "texture": "monsters/fen_brute/atlases/fen_brute_death_albedo_8dir_aldoria_v36_86.png",
+      "columns": 8,
+      "frames": 8,
+      "fps": 7.0,
+      "looping": false,
+      "lock_until_complete": true,
+      "terminal": true
+    }
+  }
+}

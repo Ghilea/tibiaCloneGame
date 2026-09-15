@@ -23,6 +23,8 @@ mod actor_sprites;
 mod creature_sprites;
 mod npc_sprites;
 mod player_sprites;
+mod telegraph_visuals;
+// TIBIAGAME_V36_88_CELLAR_WARDEN_AREA_TELEGRAPH
 // TIBIAGAME_V36_80_UNIFIED_ACTOR_SPRITE_SYSTEM
 // TIBIAGAME_V36_78_1_EIGHT_DIRECTION_2D_ACTORS
 // TIBIAGAME_V36_7_NATIVE_SPRITE_CREATURE_PIPELINE
@@ -64,7 +66,6 @@ mod world_visuals;
 // TIBIAGAME_V36_8_NATIVE_WORLD_VISUAL_FOUNDATION
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use std::sync::{Mutex, mpsc::Receiver};
 
@@ -100,6 +101,7 @@ const WORLD_OCCLUDER_FADE_RADIUS: f32 = 2.25;
 struct LocalPlayer;
 
 // TIBIAGAME_V36_82_REMOVE_LEGACY_3D_ACTOR_PIPELINE
+// TIBIAGAME_V36_85_1_EOF_AND_DURATION_CLEANUP
 // Player/NPC presentation is now exclusively handled by the unified 2D actor
 // sprite pipeline. The old KayKit skeletal actor pipeline has been retired.
 
@@ -472,6 +474,27 @@ impl Plugin for SingleWindowGameplayPlugin {
             )
             .add_systems(
                 Update,
+                player_sprites::ensure_local_player_equipment_layers
+                    .after(player_sprites::update_local_player_sprite)
+                    .run_if(single_window_game_active),
+            )
+            .add_systems(
+                Update,
+                player_sprites::sync_local_player_equipment_layers
+                    .after(player_sprites::ensure_local_player_equipment_layers)
+                    .after(player_sprites::update_local_player_sprite)
+                    .run_if(single_window_game_active),
+            )
+            // TIBIAGAME_V36_90_PLAYER_EQUIPMENT_LAYERS
+            .add_systems(
+                Update,
+                telegraph_visuals::update
+                    .after(pump_network)
+                    .before(creature_sprites::animate_creature_sprites)
+                    .run_if(single_window_game_active),
+            )
+            .add_systems(
+                Update,
                 update_day_night_cycle.run_if(single_window_game_active),
             );
     }
@@ -748,6 +771,23 @@ fn run_game(session: network::NativeSession) -> Result<()> {
         )
 
         .add_systems(Update, player_sprites::sync_local_player_outfit.after(pump_network))
+        .add_systems(
+            Update,
+            player_sprites::ensure_local_player_equipment_layers
+                .after(player_sprites::update_local_player_sprite),
+        )
+        .add_systems(
+            Update,
+            player_sprites::sync_local_player_equipment_layers
+                .after(player_sprites::ensure_local_player_equipment_layers)
+                .after(player_sprites::update_local_player_sprite),
+        )
+        .add_systems(
+            Update,
+            telegraph_visuals::update
+                .after(pump_network)
+                .before(creature_sprites::animate_creature_sprites),
+        )
         .add_systems(Update, update_day_night_cycle)
         // TIBIAGAME_V36_58_1_SPLIT_DIRECT_DRAG_SCHEDULE
         // Keep this separate from the already-full UI tuple. Bevy's tuple
