@@ -14,6 +14,7 @@ mod native_settings;
 mod native_appearance;
 // TIBIAGAME_V36_94_CHARACTER_CUSTOMIZATION_UI
 // TIBIAGAME_V36_94_1_CHARACTER_CUSTOMIZATION_RECOVERY
+// TIBIAGAME_V36_95_AUTHORITATIVE_APPEARANCE
 mod native_trade_ui;
 mod native_ui;
 mod native_ui_theme;
@@ -545,6 +546,12 @@ impl Plugin for SingleWindowGameplayPlugin {
             )
             .add_systems(
                 Update,
+                remote_player_sprites::sync_remote_player_appearance_layers
+                    .after(remote_player_sprites::sync_remote_player_sprites)
+                    .run_if(single_window_game_active),
+            )
+            .add_systems(
+                Update,
                 remote_player_sprites::sync_remote_player_equipment_layers
                     .after(remote_player_sprites::sync_remote_player_sprites)
                     .run_if(single_window_game_active),
@@ -896,6 +903,11 @@ fn run_game(session: network::NativeSession) -> Result<()> {
             remote_player_sprites::sync_remote_player_sprites
                 .after(pump_network)
                 .after(player_sprites::update_local_player_sprite),
+        )
+        .add_systems(
+            Update,
+            remote_player_sprites::sync_remote_player_appearance_layers
+                .after(remote_player_sprites::sync_remote_player_sprites),
         )
         .add_systems(
             Update,

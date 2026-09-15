@@ -1,4 +1,5 @@
 // TIBIAGAME_V36_92_REMOTE_EQUIPMENT_REPLICATION
+// TIBIAGAME_V36_95_AUTHORITATIVE_APPEARANCE
 // TIBIAGAME_V36_88_CELLAR_WARDEN_AREA_TELEGRAPH
 // TIBIAGAME_V36_10_NATIVE_GAMEPLAY_CORE
 // TIBIAGAME_V36_11_NATIVE_INTERACTION_FOUNDATION
@@ -325,6 +326,14 @@ impl NativeGameState {
             ServerMessage::PlayerOutfitChanged { player_id, outfit } => {
                 if let Some(player) = self.players.get_mut(player_id) {
                     player.outfit = outfit.clone();
+                }
+            }
+            ServerMessage::PlayerAppearanceChanged {
+                player_id,
+                appearance,
+            } => {
+                if let Some(player) = self.players.get_mut(player_id) {
+                    player.appearance = appearance.clone();
                 }
             }
             ServerMessage::PlayerSecondarySkillsChanged { player_id, skills } => {

@@ -1,4 +1,5 @@
 // TIBIAGAME_V36_92_REMOTE_EQUIPMENT_REPLICATION
+// TIBIAGAME_V36_95_AUTHORITATIVE_APPEARANCE
 // TIBIAGAME_V36_76_0_HOUSE_LIGHT_STACK_DEPOT_CLARITY
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -14,7 +15,8 @@ use game_protocol::{
     WorldObjectView,
 };
 use game_types::{
-    CreatureAttack, CreatureView, EntityId, GroundItem, ItemDefinition, ItemInstance,
+    CharacterAppearance, CreatureAttack, CreatureView, EntityId, GroundItem, ItemDefinition,
+    ItemInstance,
     MASTERY_BUDGET, MAX_SKILL_LEVEL, NpcView, PlayerView, Position, ProfessionSkillView,
     ResourceNodeView, RuneRecipe, SpellDefinition, mastery_spent, skill_mastery_cost,
 };
@@ -1736,6 +1738,16 @@ impl World {
     pub fn player(&self, id: EntityId) -> Option<&Player> {
         self.players.get(&id)
     }
+    pub fn set_player_appearance(
+        &mut self,
+        id: EntityId,
+        appearance: CharacterAppearance,
+    ) -> Result<(), &'static str> {
+        let player = self.players.get_mut(&id).ok_or("unknown_player")?;
+        player.view.appearance = appearance;
+        Ok(())
+    }
+
     pub fn set_player_outfit(&mut self, id: EntityId, outfit: String) -> Result<(), &'static str> {
         let player = self.players.get_mut(&id).ok_or("unknown_player")?;
         player.view.outfit = outfit;

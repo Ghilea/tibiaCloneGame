@@ -1,18 +1,20 @@
 // TIBIAGAME_V36_94_CHARACTER_CUSTOMIZATION_UI
 // TIBIAGAME_V36_94_1_CHARACTER_CUSTOMIZATION_RECOVERY
+// TIBIAGAME_V36_95_AUTHORITATIVE_APPEARANCE
 use std::{fs, path::PathBuf};
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
+use game_protocol::ClientMessage;
 
 use crate::{
-    LocalIdentity,
+    LocalIdentity, NativeNetwork,
     actor_sprites::SpriteDirection,
     native_map_ui::NativeMapUiState,
     native_settings::NativeSettingsState,
     native_ui::{NativeChatState, NativePanelState},
     native_ui_theme as theme,
-    player_sprites::{LocalCharacterAppearance, LocalPlayerSprite},
+    player_sprites::{self, LocalCharacterAppearance, LocalPlayerSprite},
     state::NativeGameState,
 };
 
@@ -500,6 +502,8 @@ fn spawn_button(
 
 pub(crate) fn hydrate_saved_appearance(
     identity: Res<LocalIdentity>,
+    game_state: Res<NativeGameState>,
+    network: Res<NativeNetwork>,
     appearance: Option<ResMut<LocalCharacterAppearance>>,
     mut ui: ResMut<NativeAppearanceUiState>,
 ) {
@@ -513,18 +517,47 @@ pub(crate) fn hydrate_saved_appearance(
     }
     ui.loaded_character = Some(character_key);
 
+    let Some(player) = game_state.local_player() else {
+        return;
+    };
     let path = appearance_path(&identity);
     let Ok(raw) = fs::read_to_string(&path) else {
         return;
     };
+
+    let server_legacy = game_types::CharacterAppearance::from_legacy_outfit(&player.outfit);
+    if player.appearance != server_legacy {
+        let _ = fs::remove_file(&path);
+        info!(
+            "ALDORIA APPEARANCE · discarded stale V36.94 local file; server appearance is authoritative"
+        );
+        return;
+    }
+
     let Ok(saved) = serde_json::from_str::<SavedAppearance>(&raw) else {
-        warn!("ALDORIA APPEARANCE · invalid saved appearance {}", path.display());
+        warn!("ALDORIA APPEARANCE · invalid legacy saved appearance {}", path.display());
         return;
     };
 
     saved.sanitize().apply_to(&mut appearance);
+    appearance.customized = true;
+    let authoritative = player_sprites::authoritative_appearance_from_local(&appearance);
+
+    if network
+        .outbound
+        .send(ClientMessage::SetAppearance {
+            appearance: authoritative,
+        })
+        .is_err()
+    {
+        ui.status = "Could not migrate the old local appearance to the server.".to_owned();
+        return;
+    }
+
+    let _ = fs::remove_file(&path);
+    ui.status = "Migrated your previous local appearance to the server.".to_owned();
     info!(
-        "ALDORIA APPEARANCE · loaded local customization for {}",
+        "ALDORIA APPEARANCE · migrated V36.94 local customization for {}",
         identity.name,
     );
 }
@@ -534,6 +567,7 @@ pub(crate) fn handle_input(
     chat: Res<NativeChatState>,
     game_state: Res<NativeGameState>,
     identity: Res<LocalIdentity>,
+    network: Res<NativeNetwork>,
     appearance: Option<ResMut<LocalCharacterAppearance>>,
     mut ui: ResMut<NativeAppearanceUiState>,
     mut panels: ResMut<NativePanelState>,
@@ -594,7 +628,7 @@ pub(crate) fn handle_input(
     if keys.just_pressed(KeyCode::Enter)
         && (keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight))
     {
-        if save_current(&identity, &mut appearance, &mut ui) {
+        if save_current(&identity, &network, &mut appearance, &mut ui) {
             ui.open = false;
         }
     }
@@ -606,6 +640,7 @@ pub(crate) fn handle_buttons(
         (Changed<Interaction>, With<Button>),
     >,
     identity: Res<LocalIdentity>,
+    network: Res<NativeNetwork>,
     appearance: Option<ResMut<LocalCharacterAppearance>>,
     mut ui: ResMut<NativeAppearanceUiState>,
 ) {
@@ -641,7 +676,7 @@ pub(crate) fn handle_buttons(
                         ui.status = "Preview reset to a neutral customizable base.".to_owned();
                     }
                     AppearanceAction::Save => {
-                        if save_current(&identity, &mut appearance, &mut ui) {
+                        if save_current(&identity, &network, &mut appearance, &mut ui) {
                             ui.open = false;
                         }
                     }
@@ -698,38 +733,35 @@ fn mark_dirty(
 
 fn save_current(
     identity: &LocalIdentity,
+    network: &NativeNetwork,
     appearance: &mut LocalCharacterAppearance,
     ui: &mut NativeAppearanceUiState,
 ) -> bool {
     appearance.customized = true;
-    let saved = SavedAppearance::capture(appearance).sanitize();
-    saved.apply_to(appearance);
+    let authoritative = player_sprites::authoritative_appearance_from_local(appearance);
 
-    let path = appearance_path(identity);
-    if let Some(parent) = path.parent() {
-        if let Err(error) = fs::create_dir_all(parent) {
-            ui.status = format!("Could not create appearance folder: {error}");
-            return false;
-        }
-    }
-
-    let Ok(raw) = serde_json::to_string_pretty(&saved) else {
-        ui.status = "Could not serialize appearance.".to_owned();
-        return false;
-    };
-
-    if let Err(error) = fs::write(&path, raw) {
-        ui.status = format!("Could not save appearance: {error}");
+    if !authoritative.is_valid() {
+        ui.status = "The selected appearance is invalid.".to_owned();
         return false;
     }
 
-    ui.snapshot = Some(saved);
+    if network
+        .outbound
+        .send(ClientMessage::SetAppearance {
+            appearance: authoritative,
+        })
+        .is_err()
+    {
+        ui.status = "Could not send the appearance to the server.".to_owned();
+        return false;
+    }
+
+    ui.snapshot = Some(SavedAppearance::capture(appearance));
     ui.dirty = false;
-    ui.status = format!("Appearance saved for {}.", identity.name);
+    ui.status = format!("Appearance saved on the server for {}.", identity.name);
     info!(
-        "ALDORIA APPEARANCE · saved local customization for {} · {}",
+        "ALDORIA APPEARANCE · submitted authoritative customization for {}",
         identity.name,
-        path.display(),
     );
     true
 }

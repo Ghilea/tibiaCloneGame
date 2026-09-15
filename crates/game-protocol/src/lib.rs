@@ -1,5 +1,6 @@
 use game_types::{
-    CreatureView, GroundItem, ItemDefinition, ItemInstance, NpcView, PlayerView, Position,
+    CharacterAppearance, CreatureView, GroundItem, ItemDefinition, ItemInstance, NpcView,
+    PlayerView, Position,
     ProfessionSkillView, ResourceNodeView, RuneRecipe, SpellDefinition,
 };
 use serde::{Deserialize, Serialize};
@@ -7,7 +8,8 @@ use serde::{Deserialize, Serialize};
 // TIBIAGAME_STREAMING_FIX_V9
 // TIBIAGAME_V34_FRIEND_FEEDBACK
 // TIBIAGAME_V36_92_REMOTE_EQUIPMENT_REPLICATION
-pub const PROTOCOL_VERSION: u16 = 31;
+// TIBIAGAME_V36_95_AUTHORITATIVE_APPEARANCE
+pub const PROTOCOL_VERSION: u16 = 32;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -67,6 +69,9 @@ pub enum ClientMessage {
     },
     SetOutfit {
         outfit: String,
+    },
+    SetAppearance {
+        appearance: CharacterAppearance,
     },
     SetSecondarySkills {
         skills: Vec<String>,
@@ -251,6 +256,10 @@ pub enum ServerMessage {
     PlayerOutfitChanged {
         player_id: game_types::EntityId,
         outfit: String,
+    },
+    PlayerAppearanceChanged {
+        player_id: game_types::EntityId,
+        appearance: CharacterAppearance,
     },
     PlayerSecondarySkillsChanged {
         player_id: game_types::EntityId,

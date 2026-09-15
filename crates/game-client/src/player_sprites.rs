@@ -6,10 +6,11 @@
 // TIBIAGAME_V36_93_CHARACTER_APPEARANCE_COMPOSER
 // TIBIAGAME_V36_94_CHARACTER_CUSTOMIZATION_UI
 // TIBIAGAME_V36_94_1_CHARACTER_CUSTOMIZATION_RECOVERY
+// TIBIAGAME_V36_95_AUTHORITATIVE_APPEARANCE
 use std::collections::HashMap;
 
 use bevy::{camera::visibility::NoFrustumCulling, prelude::*};
-use game_types::{EntityId, ItemInstance, Position};
+use game_types::{CharacterAppearance, EntityId, ItemInstance, Position};
 
 use crate::{
     LocalIdentity, MainCamera, MovementState,
@@ -139,6 +140,50 @@ impl LocalCharacterAppearance {
         value.feet_color = "leather_brown".to_owned();
         value.customized = true;
         value
+    }
+}
+
+
+pub(crate) fn local_appearance_from_authoritative(
+    value: &CharacterAppearance,
+    outfit: &str,
+) -> LocalCharacterAppearance {
+    LocalCharacterAppearance {
+        body: value.body.clone(),
+        head: value.head.clone(),
+        face: value.face.clone(),
+        hair: value.hair.clone(),
+        facial_hair: value.facial_hair.clone(),
+        torso: value.torso.clone(),
+        legs: value.legs.clone(),
+        feet: value.feet.clone(),
+        skin_tone: value.skin_tone.clone(),
+        hair_color: value.hair_color.clone(),
+        torso_color: value.torso_color.clone(),
+        legs_color: value.legs_color.clone(),
+        feet_color: value.feet_color.clone(),
+        customized: true,
+        last_legacy_outfit: outfit.to_owned(),
+    }
+}
+
+pub(crate) fn authoritative_appearance_from_local(
+    value: &LocalCharacterAppearance,
+) -> CharacterAppearance {
+    CharacterAppearance {
+        body: value.body.clone(),
+        head: value.head.clone(),
+        face: value.face.clone(),
+        hair: value.hair.clone(),
+        facial_hair: value.facial_hair.clone(),
+        torso: value.torso.clone(),
+        legs: value.legs.clone(),
+        feet: value.feet.clone(),
+        skin_tone: value.skin_tone.clone(),
+        hair_color: value.hair_color.clone(),
+        torso_color: value.torso_color.clone(),
+        legs_color: value.legs_color.clone(),
+        feet_color: value.feet_color.clone(),
     }
 }
 
@@ -311,15 +356,18 @@ pub fn local_player_sprite_bundle(
 pub(crate) fn sync_local_character_appearance_resource(
     mut commands: Commands,
     identity: Res<LocalIdentity>,
+    game_state: Res<NativeGameState>,
     appearance: Option<ResMut<LocalCharacterAppearance>>,
 ) {
-    let Some(mut appearance) = appearance else {
-        commands.insert_resource(LocalCharacterAppearance::legacy_preset(&identity.outfit));
+    let Some(player) = game_state.local_player() else {
         return;
     };
 
-    if !appearance.customized && appearance.last_legacy_outfit != identity.outfit {
-        *appearance = LocalCharacterAppearance::legacy_preset(&identity.outfit);
+    if appearance.is_none() {
+        commands.insert_resource(local_appearance_from_authoritative(
+            &player.appearance,
+            &identity.outfit,
+        ));
     }
 }
 
@@ -504,7 +552,7 @@ pub(crate) fn appearance_color(id: &str) -> Color {
     }
 }
 
-fn appearance_layer_depth_bias(category: &str) -> f32 {
+pub(crate) fn appearance_layer_depth_bias(category: &str) -> f32 {
     match category {
         "torso" => 2.0,
         "legs" => 3.0,

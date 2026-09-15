@@ -1,4 +1,5 @@
 // TIBIAGAME_V36_92_REMOTE_EQUIPMENT_REPLICATION
+// TIBIAGAME_V36_95_AUTHORITATIVE_APPEARANCE
 mod auth;
 mod content;
 mod persistence;
@@ -31,7 +32,7 @@ use futures_util::{SinkExt, StreamExt};
 use game_protocol::{
     ClientMessage, ItemDestination, PROTOCOL_VERSION, ServerMessage, WelcomePayload,
 };
-use game_types::{PlayerView, Position};
+use game_types::{CharacterAppearance, PlayerView, Position};
 use serde_json::json;
 use tokio::sync::{RwLock, mpsc, watch};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -516,6 +517,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
         id,
         name,
         outfit,
+        appearance,
         secondary_skills,
         position,
         level,
@@ -576,6 +578,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
             character.id,
             character.name,
             character.outfit,
+            character.appearance,
             character.secondary_skills,
             position,
             u32::try_from(character.level).unwrap_or(1),
@@ -616,6 +619,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
             Uuid::new_v4(),
             name,
             "knight".to_owned(),
+            CharacterAppearance::from_legacy_outfit("knight"),
             Vec::new(),
             position,
             1,
@@ -679,6 +683,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
             id,
             name: name.clone(),
             outfit,
+            appearance,
             secondary_skills,
             position,
             health: health.min(world::max_health_for_level(level)),
@@ -1175,6 +1180,45 @@ async fn session(mut socket: WebSocket, state: AppState) {
                     state.broadcast(ServerMessage::PlayerOutfitChanged {
                         player_id: id,
                         outfit,
+                    });
+                }
+            }
+            Ok(ClientMessage::SetAppearance { appearance }) => {
+                if !appearance.is_valid() {
+                    state.private(
+                        id,
+                        ServerMessage::Error {
+                            code: "invalid_appearance".into(),
+                            message: "That character appearance is not available".into(),
+                        },
+                    );
+                    continue;
+                }
+
+                if let Some(database) = &state.database
+                    && let Err(error) = database.save_appearance(id, &appearance).await
+                {
+                    warn!(%id, %error, "could not save character appearance");
+                    state.private(
+                        id,
+                        ServerMessage::Error {
+                            code: "appearance_save_failed".into(),
+                            message: "Your appearance could not be saved".into(),
+                        },
+                    );
+                    continue;
+                }
+
+                if state
+                    .world
+                    .write()
+                    .await
+                    .set_player_appearance(id, appearance.clone())
+                    .is_ok()
+                {
+                    state.broadcast(ServerMessage::PlayerAppearanceChanged {
+                        player_id: id,
+                        appearance,
                     });
                 }
             }

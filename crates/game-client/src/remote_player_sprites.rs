@@ -1,9 +1,10 @@
 // TIBIAGAME_V36_91_REMOTE_PLAYER_SPRITES
 // TIBIAGAME_V36_92_REMOTE_EQUIPMENT_REPLICATION
+// TIBIAGAME_V36_95_AUTHORITATIVE_APPEARANCE
 use std::collections::HashSet;
 
 use bevy::{camera::visibility::NoFrustumCulling, prelude::*};
-use game_types::{EntityId, Position};
+use game_types::{CharacterAppearance, EntityId, Position};
 
 use crate::{
     MainCamera, MovementState,
@@ -14,6 +15,9 @@ use crate::{
 
 const REMOTE_TILE_STEP_SECONDS: f64 = 0.165;
 const REMOTE_DIAGONAL_FACTOR: f64 = std::f64::consts::SQRT_2;
+
+const REMOTE_APPEARANCE_LAYER_CATEGORIES: [&str; 7] =
+    ["head", "face", "hair", "facial_hair", "torso", "legs", "feet"];
 
 const REMOTE_EQUIPMENT_LAYER_ORDER: [&str; 12] = [
     "back",
@@ -45,7 +49,14 @@ pub(crate) struct RemotePlayerSprite {
     last_frame: usize,
     last_direction: SpriteDirection,
     last_animation: ActorAnimation,
-    outfit: String,
+    last_body: String,
+    material: Handle<StandardMaterial>,
+}
+
+#[derive(Component)]
+pub(crate) struct RemotePlayerAppearanceLayer {
+    player_id: EntityId,
+    category: String,
     material: Handle<StandardMaterial>,
 }
 
@@ -90,13 +101,6 @@ pub(crate) fn sync_remote_player_sprites(
         } else {
             Visibility::Hidden
         };
-
-        if sprite.outfit != player.outfit {
-            sprite.outfit = player.outfit.clone();
-            if let Some(mut material) = materials.get_mut(&sprite.material) {
-                material.base_color = player_sprites::outfit_tint(&sprite.outfit);
-            }
-        }
 
         if sprite.logical_position != player.position {
             let previous = sprite.logical_position;
@@ -201,7 +205,13 @@ pub(crate) fn sync_remote_player_sprites(
             }
         }
 
-        update_material(&mut sprite, &catalog, &mut materials, now);
+        update_material(
+            &mut sprite,
+            &player.appearance,
+            &catalog,
+            &mut materials,
+            now,
+        );
     }
 
     for player in game_state.players.values() {
@@ -214,11 +224,80 @@ pub(crate) fn sync_remote_player_sprites(
             &catalog,
             &mut materials,
             player.id,
-            &player.outfit,
+            &player.appearance,
             player.position,
             player.position.z == movement.logical.z,
             now,
         );
+    }
+}
+
+pub(crate) fn sync_remote_player_appearance_layers(
+    time: Res<Time>,
+    game_state: Res<NativeGameState>,
+    catalog: Res<PlayerSpriteCatalog>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    bodies: Query<&RemotePlayerSprite>,
+    mut layers: Query<(&RemotePlayerAppearanceLayer, &mut Visibility)>,
+) {
+    let now = time.elapsed_secs_f64();
+
+    for (layer, mut visibility) in &mut layers {
+        let Some(body) = bodies
+            .iter()
+            .find(|body| body.player_id == layer.player_id)
+        else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        let Some(player) = game_state.players.get(&layer.player_id) else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+
+        let Some(variant) = remote_appearance_variant(&player.appearance, &layer.category) else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        let Some(actor) = catalog.appearance_actor(variant) else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+
+        let animation = if actor.definition.spec(body.animation).is_some()
+            && actor.texture(body.animation).is_some()
+        {
+            body.animation
+        } else {
+            ActorAnimation::Idle
+        };
+
+        let Some(spec) = actor.definition.spec(animation) else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        let Some(texture) = actor.texture(animation) else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+
+        let frame = spec.frame_at((now - body.animation_started_at).max(0.0));
+        let Some(mut material) = materials.get_mut(&layer.material) else {
+            continue;
+        };
+
+        material.base_color =
+            remote_appearance_layer_color(&player.appearance, &layer.category);
+        material.base_color_texture = Some(texture.clone());
+        material.normal_map_texture = actor.normal(animation).cloned();
+        material.uv_transform = atlas_uv(
+            spec.columns,
+            actor.definition.atlas_rows,
+            frame,
+            body.direction
+                .atlas_row(actor.definition.authored_directions),
+        );
+        *visibility = Visibility::Visible;
     }
 }
 
@@ -297,12 +376,12 @@ fn spawn_remote_player(
     catalog: &PlayerSpriteCatalog,
     materials: &mut Assets<StandardMaterial>,
     player_id: EntityId,
-    outfit: &str,
+    appearance: &CharacterAppearance,
     position: Position,
     visible_on_floor: bool,
     now: f64,
 ) {
-    let actor = catalog.body_actor();
+    let actor = remote_body_actor(catalog, appearance);
     let definition = &actor.definition;
     let idle = definition
         .spec(ActorAnimation::Idle)
@@ -312,7 +391,7 @@ fn spawn_remote_player(
         .expect("validated player actor must load idle texture");
 
     let material = materials.add(StandardMaterial {
-        base_color: player_sprites::outfit_tint(outfit),
+        base_color: player_sprites::appearance_color(&appearance.skin_tone),
         base_color_texture: Some(idle_texture.clone()),
         normal_map_texture: actor.normal(ActorAnimation::Idle).cloned(),
         uv_transform: atlas_uv(
@@ -349,7 +428,7 @@ fn spawn_remote_player(
                 last_frame: usize::MAX,
                 last_direction: SpriteDirection::North,
                 last_animation: ActorAnimation::Death,
-                outfit: outfit.to_owned(),
+                last_body: String::new(),
                 material: material.clone(),
             },
             NoFrustumCulling,
@@ -368,7 +447,47 @@ fn spawn_remote_player(
         ))
         .id();
 
+    spawn_remote_appearance_layers(commands, catalog, materials, root, player_id);
     spawn_remote_equipment_layers(commands, catalog, materials, root, player_id);
+}
+
+fn spawn_remote_appearance_layers(
+    commands: &mut Commands,
+    catalog: &PlayerSpriteCatalog,
+    materials: &mut Assets<StandardMaterial>,
+    root: Entity,
+    player_id: EntityId,
+) {
+    for category in REMOTE_APPEARANCE_LAYER_CATEGORIES {
+        let material = materials.add(StandardMaterial {
+            base_color: Color::WHITE,
+            perceptual_roughness: 0.9,
+            metallic: 0.0,
+            unlit: true,
+            alpha_mode: AlphaMode::Mask(0.05),
+            double_sided: true,
+            cull_mode: None,
+            depth_bias: player_sprites::appearance_layer_depth_bias(category),
+            ..default()
+        });
+
+        commands.spawn((
+            Name::new(format!(
+                "Remote Player Appearance · {player_id} · {category}"
+            )),
+            RemotePlayerAppearanceLayer {
+                player_id,
+                category: category.to_owned(),
+                material: material.clone(),
+            },
+            NoFrustumCulling,
+            ChildOf(root),
+            Mesh3d(catalog.body_quad()),
+            MeshMaterial3d(material),
+            Transform::default(),
+            Visibility::Hidden,
+        ));
+    }
 }
 
 fn spawn_remote_equipment_layers(
@@ -430,11 +549,12 @@ fn spawn_remote_equipment_layers(
 
 fn update_material(
     sprite: &mut RemotePlayerSprite,
+    appearance: &CharacterAppearance,
     catalog: &PlayerSpriteCatalog,
     materials: &mut Assets<StandardMaterial>,
     now: f64,
 ) {
-    let actor = catalog.body_actor();
+    let actor = remote_body_actor(catalog, appearance);
     let definition = &actor.definition;
 
     let animation = if definition.spec(sprite.animation).is_some()
@@ -456,7 +576,8 @@ fn update_material(
     let elapsed = (now - sprite.animation_started_at).max(0.0);
     let frame = spec.frame_at(elapsed);
 
-    if sprite.last_frame == frame
+    if sprite.last_body == appearance.body
+        && sprite.last_frame == frame
         && sprite.last_direction == sprite.direction
         && sprite.last_animation == sprite.animation
     {
@@ -466,6 +587,7 @@ fn update_material(
     let Some(mut material) = materials.get_mut(&sprite.material) else {
         return;
     };
+    material.base_color = player_sprites::appearance_color(&appearance.skin_tone);
     material.base_color_texture = Some(texture.clone());
     material.normal_map_texture = actor.normal(animation).cloned();
     material.uv_transform = atlas_uv(
@@ -475,9 +597,50 @@ fn update_material(
         sprite.direction.atlas_row(definition.authored_directions),
     );
 
+    sprite.last_body = appearance.body.clone();
     sprite.last_frame = frame;
     sprite.last_direction = sprite.direction;
     sprite.last_animation = sprite.animation;
+}
+
+fn remote_body_actor<'a>(
+    catalog: &'a PlayerSpriteCatalog,
+    appearance: &CharacterAppearance,
+) -> &'a crate::actor_sprites::ActorSpriteAssets {
+    catalog
+        .appearance_actor(&appearance.body)
+        .unwrap_or_else(|| catalog.body_actor())
+}
+
+fn remote_appearance_variant<'a>(
+    appearance: &'a CharacterAppearance,
+    category: &str,
+) -> Option<&'a str> {
+    match category {
+        "head" => Some(&appearance.head),
+        "face" => Some(&appearance.face),
+        "hair" => Some(&appearance.hair),
+        "facial_hair" => appearance.facial_hair.as_deref(),
+        "torso" => Some(&appearance.torso),
+        "legs" => Some(&appearance.legs),
+        "feet" => Some(&appearance.feet),
+        _ => None,
+    }
+}
+
+fn remote_appearance_layer_color(
+    appearance: &CharacterAppearance,
+    category: &str,
+) -> Color {
+    match category {
+        "head" => player_sprites::appearance_color(&appearance.skin_tone),
+        "face" => Color::WHITE,
+        "hair" | "facial_hair" => player_sprites::appearance_color(&appearance.hair_color),
+        "torso" => player_sprites::appearance_color(&appearance.torso_color),
+        "legs" => player_sprites::appearance_color(&appearance.legs_color),
+        "feet" => player_sprites::appearance_color(&appearance.feet_color),
+        _ => Color::WHITE,
+    }
 }
 
 fn animation_locked(

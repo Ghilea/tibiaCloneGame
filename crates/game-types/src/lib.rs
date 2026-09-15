@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+// TIBIAGAME_V36_95_AUTHORITATIVE_APPEARANCE
+
 pub type EntityId = Uuid;
 
 pub const SECONDARY_SKILLS: [&str; 7] = [
@@ -288,12 +290,153 @@ impl Position {
     }
 }
 
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CharacterAppearance {
+    pub body: String,
+    pub head: String,
+    pub face: String,
+    pub hair: String,
+    #[serde(default)]
+    pub facial_hair: Option<String>,
+    pub torso: String,
+    pub legs: String,
+    pub feet: String,
+    pub skin_tone: String,
+    pub hair_color: String,
+    pub torso_color: String,
+    pub legs_color: String,
+    pub feet_color: String,
+}
+
+impl Default for CharacterAppearance {
+    fn default() -> Self {
+        Self::from_legacy_outfit("knight")
+    }
+}
+
+impl CharacterAppearance {
+    pub fn from_legacy_outfit(outfit: &str) -> Self {
+        match outfit {
+            "mage" => Self {
+                body: "body_01".into(),
+                head: "head_03".into(),
+                face: "face_03".into(),
+                hair: "hair_04".into(),
+                facial_hair: None,
+                torso: "torso_03".into(),
+                legs: "legs_03".into(),
+                feet: "feet_01".into(),
+                skin_tone: "skin_light".into(),
+                hair_color: "hair_black".into(),
+                torso_color: "cloth_violet".into(),
+                legs_color: "cloth_navy".into(),
+                feet_color: "leather_dark".into(),
+            },
+            "ranger" => Self {
+                body: "body_01".into(),
+                head: "head_02".into(),
+                face: "face_02".into(),
+                hair: "hair_03".into(),
+                facial_hair: Some("beard_02".into()),
+                torso: "torso_01".into(),
+                legs: "legs_01".into(),
+                feet: "feet_02".into(),
+                skin_tone: "skin_tan".into(),
+                hair_color: "hair_auburn".into(),
+                torso_color: "cloth_forest".into(),
+                legs_color: "cloth_earth".into(),
+                feet_color: "leather_brown".into(),
+            },
+            "rogue" => Self {
+                body: "body_01".into(),
+                head: "head_02".into(),
+                face: "face_02".into(),
+                hair: "hair_01".into(),
+                facial_hair: None,
+                torso: "torso_02".into(),
+                legs: "legs_03".into(),
+                feet: "feet_01".into(),
+                skin_tone: "skin_warm".into(),
+                hair_color: "hair_black".into(),
+                torso_color: "cloth_charcoal".into(),
+                legs_color: "cloth_charcoal".into(),
+                feet_color: "leather_dark".into(),
+            },
+            _ => Self {
+                body: "body_02".into(),
+                head: "head_01".into(),
+                face: "face_01".into(),
+                hair: "hair_02".into(),
+                facial_hair: Some("beard_01".into()),
+                torso: "torso_02".into(),
+                legs: "legs_02".into(),
+                feet: "feet_02".into(),
+                skin_tone: "skin_warm".into(),
+                hair_color: "hair_brown".into(),
+                torso_color: "cloth_burgundy".into(),
+                legs_color: "cloth_charcoal".into(),
+                feet_color: "leather_brown".into(),
+            },
+        }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        const BODY: [&str; 2] = ["body_01", "body_02"];
+        const HEAD: [&str; 3] = ["head_01", "head_02", "head_03"];
+        const FACE: [&str; 3] = ["face_01", "face_02", "face_03"];
+        const HAIR: [&str; 4] = ["hair_01", "hair_02", "hair_03", "hair_04"];
+        const FACIAL_HAIR: [&str; 2] = ["beard_01", "beard_02"];
+        const TORSO: [&str; 3] = ["torso_01", "torso_02", "torso_03"];
+        const LEGS: [&str; 3] = ["legs_01", "legs_02", "legs_03"];
+        const FEET: [&str; 2] = ["feet_01", "feet_02"];
+        const SKIN: [&str; 4] = ["skin_light", "skin_warm", "skin_tan", "skin_deep"];
+        const HAIR_COLOR: [&str; 5] = [
+            "hair_black",
+            "hair_brown",
+            "hair_auburn",
+            "hair_blonde",
+            "hair_gray",
+        ];
+        const CLOTH: [&str; 7] = [
+            "cloth_burgundy",
+            "cloth_forest",
+            "cloth_violet",
+            "cloth_charcoal",
+            "cloth_navy",
+            "cloth_earth",
+            "cloth_cream",
+        ];
+        const LEATHER: [&str; 3] = ["leather_brown", "leather_dark", "leather_tan"];
+
+        BODY.contains(&self.body.as_str())
+            && HEAD.contains(&self.head.as_str())
+            && FACE.contains(&self.face.as_str())
+            && HAIR.contains(&self.hair.as_str())
+            && self
+                .facial_hair
+                .as_deref()
+                .is_none_or(|value| FACIAL_HAIR.contains(&value))
+            && TORSO.contains(&self.torso.as_str())
+            && LEGS.contains(&self.legs.as_str())
+            && FEET.contains(&self.feet.as_str())
+            && SKIN.contains(&self.skin_tone.as_str())
+            && HAIR_COLOR.contains(&self.hair_color.as_str())
+            && CLOTH.contains(&self.torso_color.as_str())
+            && CLOTH.contains(&self.legs_color.as_str())
+            && LEATHER.contains(&self.feet_color.as_str())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerView {
     pub id: EntityId,
     pub name: String,
     pub outfit: String,
+    #[serde(default)]
+    pub appearance: CharacterAppearance,
     pub secondary_skills: Vec<String>,
     pub position: Position,
     pub health: u16,

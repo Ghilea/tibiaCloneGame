@@ -1,10 +1,11 @@
+// TIBIAGAME_V36_95_AUTHORITATIVE_APPEARANCE
 use std::{
     collections::{HashMap, HashSet},
     env,
 };
 
 use anyhow::Context;
-use game_types::{EntityId, GroundItem, ItemInstance, Position, ProfessionSkillView};
+use game_types::{CharacterAppearance, EntityId, GroundItem, ItemInstance, Position, ProfessionSkillView};
 use sqlx::{PgPool, Postgres, Transaction, postgres::PgPoolOptions};
 use tracing::{info, warn};
 
@@ -22,6 +23,7 @@ struct CharacterRow {
     account_id: EntityId,
     name: String,
     outfit: String,
+    appearance_json: String,
     secondary_skills: Vec<String>,
     level: i32,
     experience: i64,
@@ -74,6 +76,7 @@ pub struct CharacterRecord {
     pub account_id: EntityId,
     pub name: String,
     pub outfit: String,
+    pub appearance: CharacterAppearance,
     pub secondary_skills: Vec<String>,
     pub level: i32,
     pub experience: i64,
@@ -162,7 +165,7 @@ impl Database {
         account_id: EntityId,
     ) -> Result<Vec<CharacterRecord>, sqlx::Error> {
         let rows: Vec<CharacterRow> = sqlx::query_as(
-            "SELECT id, account_id, name, vocation, outfit, secondary_skills, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, shielding_skill, shielding_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized \
+            "SELECT id, account_id, name, vocation, outfit, appearance_json, secondary_skills, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, shielding_skill, shielding_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized \
              FROM characters WHERE account_id = $1 ORDER BY created_at, name",
         )
         .bind(account_id)
@@ -182,7 +185,7 @@ impl Database {
         let mut transaction = self.pool.begin().await?;
         let row: CharacterRow = sqlx::query_as(
             "INSERT INTO characters (id, account_id, name, vocation, outfit, health, mana, max_mana, sword_skill, distance_skill, magic_level, position_x, position_y, position_z, spawn_initialized) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, TRUE) \
-             RETURNING id, account_id, name, vocation, outfit, secondary_skills, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, shielding_skill, shielding_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized",
+             RETURNING id, account_id, name, vocation, outfit, appearance_json, secondary_skills, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, shielding_skill, shielding_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized",
         )
         .bind(id)
         .bind(account_id)
@@ -247,7 +250,7 @@ impl Database {
         character_id: EntityId,
     ) -> Result<Option<CharacterRecord>, sqlx::Error> {
         let row: Option<CharacterRow> = sqlx::query_as(
-            "SELECT id, account_id, name, vocation, outfit, secondary_skills, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, shielding_skill, shielding_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized \
+            "SELECT id, account_id, name, vocation, outfit, appearance_json, secondary_skills, level, experience, health, mana, max_mana, sword_skill, sword_tries, distance_skill, distance_tries, shielding_skill, shielding_tries, fletching_skill, fletching_tries, magic_level, magic_tries, position_x, position_y, position_z, spawn_initialized \
              FROM characters WHERE id = $1 AND account_id = $2",
         )
         .bind(character_id)
@@ -284,6 +287,23 @@ impl Database {
             .bind(outfit)
             .execute(&self.pool)
             .await?;
+        Ok(())
+    }
+
+    pub async fn save_appearance(
+        &self,
+        character_id: EntityId,
+        appearance: &CharacterAppearance,
+    ) -> Result<(), sqlx::Error> {
+        let raw = serde_json::to_string(appearance)
+            .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+        sqlx::query(
+            "UPDATE characters SET appearance_json = $2, updated_at = NOW() WHERE id = $1",
+        )
+        .bind(character_id)
+        .bind(raw)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -856,11 +876,17 @@ fn item_from_row(row: ItemRow) -> Option<ItemInstance> {
 }
 
 fn character_from_row(row: CharacterRow) -> CharacterRecord {
+    let appearance = serde_json::from_str::<CharacterAppearance>(&row.appearance_json)
+        .ok()
+        .filter(|appearance| appearance.is_valid())
+        .unwrap_or_else(|| CharacterAppearance::from_legacy_outfit(&row.outfit));
+
     CharacterRecord {
         id: row.id,
         account_id: row.account_id,
         name: row.name,
         outfit: row.outfit,
+        appearance,
         secondary_skills: row.secondary_skills,
         level: row.level,
         experience: row.experience,

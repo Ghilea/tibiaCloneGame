@@ -1,7 +1,8 @@
 // TIBIAGAME_STREAMING_FIX_V9
 // TIBIAGAME_V34_FRIEND_FEEDBACK
 // TIBIAGAME_V36_92_REMOTE_EQUIPMENT_REPLICATION
-export const PROTOCOL_VERSION = 31;
+// TIBIAGAME_V36_95_AUTHORITATIVE_APPEARANCE
+export const PROTOCOL_VERSION = 32;
 export const CLIENT_VERSION = "0.1.2";
 
 export type Position = { x: number; y: number; z: number };
@@ -9,6 +10,7 @@ export type PlayerView = {
   id: string;
   name: string;
   outfit: CharacterOutfit;
+  appearance: CharacterAppearance;
   secondarySkills: SecondarySkill[];
   position: Position;
   health: number;
@@ -27,6 +29,21 @@ export type PlayerView = {
   fletchingTries: number;
   magicLevel: number;
   magicTries: number;
+};
+export type CharacterAppearance = {
+  body: string;
+  head: string;
+  face: string;
+  hair: string;
+  facialHair?: string | null;
+  torso: string;
+  legs: string;
+  feet: string;
+  skinTone: string;
+  hairColor: string;
+  torsoColor: string;
+  legsColor: string;
+  feetColor: string;
 };
 export type CharacterOutfit = "knight" | "mage" | "ranger" | "rogue";
 export type SecondarySkill = "alchemy" | "mining" | "woodcutting" | "fishing" | "cooking" | "smithing" | "leatherworking";
@@ -77,6 +94,7 @@ export type ClientMessage =
   | { type: "say"; text: string }
   | { type: "ping"; sent_at: number }
   | { type: "set_outfit"; outfit: CharacterOutfit }
+  | { type: "set_appearance"; appearance: CharacterAppearance }
   | { type: "set_secondary_skills"; skills: SecondarySkill[] }
   | { type: "pickup_item"; instance_id: string }
   | { type: "drop_item"; instance_id: string }
@@ -116,6 +134,7 @@ export type ServerMessage =
   | { type: "spoken"; player_id: string; player_name: string; text: string }
   | { type: "pong"; player_id: string; sent_at: number }
   | { type: "player_outfit_changed"; player_id: string; outfit: CharacterOutfit }
+  | { type: "player_appearance_changed"; player_id: string; appearance: CharacterAppearance }
   | { type: "player_secondary_skills_changed"; player_id: string; skills: SecondarySkill[] }
   | { type: "inventory_changed"; player_id: string; inventory: ItemInstance[]; inventory_weight: number; max_capacity: number }
   | { type: "player_equipment_changed"; player_id: string; visual_keys: string[] }
