@@ -9,13 +9,14 @@
   "frame_height": 80,
   "animations": {
     "idle": {
-      "texture": "npcs/default/atlases/npc_idle_8dir_v36_80.png",
+      "texture": "npcs/default/atlases/npc_idle_8dir_aldoria_v36_84.png",
       "columns": 4,
       "frames": 4,
-      "fps": 4.0,
+      "fps": 4,
       "looping": true,
       "lock_until_complete": false,
       "terminal": false
     }
-  }
+  },
+  "style_revision": "aldoria-v1-v36.84"
 }

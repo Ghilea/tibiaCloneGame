@@ -9,54 +9,50 @@
   "frame_height": 48,
   "animations": {
     "idle": {
-      "texture": "monsters/castle_rat/atlases/castle_rat_idle_albedo_8dir_v36_79.png",
-      "normal": "monsters/castle_rat/atlases/castle_rat_idle_normal_8dir_v36_79.png",
+      "texture": "monsters/castle_rat/atlases/castle_rat_idle_albedo_8dir_aldoria_v36_84.png",
       "columns": 12,
       "frames": 12,
-      "fps": 10.0,
+      "fps": 10,
       "looping": true,
       "lock_until_complete": false,
       "terminal": false
     },
     "walk": {
-      "texture": "monsters/castle_rat/atlases/castle_rat_walk_albedo_8dir_v36_79.png",
-      "normal": "monsters/castle_rat/atlases/castle_rat_walk_normal_8dir_v36_79.png",
+      "texture": "monsters/castle_rat/atlases/castle_rat_walk_albedo_8dir_aldoria_v36_84.png",
       "columns": 8,
       "frames": 8,
-      "fps": 12.0,
+      "fps": 12,
       "looping": true,
       "lock_until_complete": false,
       "terminal": false
     },
     "attack": {
-      "texture": "monsters/castle_rat/atlases/castle_rat_attack_albedo_8dir_v36_79.png",
-      "normal": "monsters/castle_rat/atlases/castle_rat_attack_normal_8dir_v36_79.png",
+      "texture": "monsters/castle_rat/atlases/castle_rat_attack_albedo_8dir_aldoria_v36_84.png",
       "columns": 8,
       "frames": 8,
-      "fps": 14.0,
+      "fps": 14,
       "looping": false,
       "lock_until_complete": true,
       "terminal": false
     },
     "hit": {
-      "texture": "monsters/castle_rat/atlases/castle_rat_hit_albedo_8dir_v36_79.png",
-      "normal": "monsters/castle_rat/atlases/castle_rat_hit_normal_8dir_v36_79.png",
+      "texture": "monsters/castle_rat/atlases/castle_rat_hit_albedo_8dir_aldoria_v36_84.png",
       "columns": 5,
       "frames": 5,
-      "fps": 14.0,
+      "fps": 14,
       "looping": false,
       "lock_until_complete": true,
       "terminal": false
     },
     "death": {
-      "texture": "monsters/castle_rat/atlases/castle_rat_death_albedo_8dir_v36_79.png",
-      "normal": "monsters/castle_rat/atlases/castle_rat_death_normal_8dir_v36_79.png",
+      "texture": "monsters/castle_rat/atlases/castle_rat_death_albedo_8dir_aldoria_v36_84.png",
       "columns": 10,
       "frames": 10,
-      "fps": 10.0,
+      "fps": 10,
       "looping": false,
       "lock_until_complete": true,
       "terminal": true
     }
-  }
+  },
+  "style_revision": "aldoria-v1-v36.84"
 }

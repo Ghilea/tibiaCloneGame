@@ -47,3 +47,12 @@ For PNG files, expected dimensions are calculated as:
 - height = `frame_height * atlas_rows`
 
 This catches accidental wrong row/column layouts before the game reaches gameplay.
+
+<!-- TIBIAGAME_V36_84_ALDORIA_STYLE_PACK -->
+## Aldoria visual style v1
+
+V36.84 is the first production-style actor pack. Runtime animation metadata remains
+data-driven; replacing or iterating art only requires changing manifest texture paths.
+
+The first pack covers player.default, npc.default and creature.castle_rat. It keeps the
+same frame dimensions and eight-direction row contract introduced by V36.83.

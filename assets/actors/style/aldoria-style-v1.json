@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "id": "aldoria-v1",
+  "revision": "v36.84",
+  "direction_rows": [
+    "north",
+    "north_east",
+    "east",
+    "south_east",
+    "south",
+    "south_west",
+    "west",
+    "north_west"
+  ],
+  "rendering": {
+    "alpha": "hard_mask",
+    "lighting": "painted_albedo",
+    "normal_maps": "optional",
+    "pixel_edges": true
+  },
+  "palette": {
+    "outline": "#191618",
+    "player_ivory": "#CAC4AD",
+    "player_steel": "#86969E",
+    "player_burgundy": "#742E30",
+    "leather": "#5B3D2B",
+    "magic_teal": "#4DC5C5",
+    "npc_ochre": "#9D7644",
+    "npc_green": "#495C3F",
+    "rat_brown": "#57483B",
+    "rat_tail": "#8F5954"
+  }
+}
