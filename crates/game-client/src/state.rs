@@ -41,6 +41,7 @@ pub struct NativeCraftingState {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct NativeAbilityState {
+    pub sequence: u64,
     pub ability_id: String,
     pub cooldown_ms: u64,
     pub duration_ms: u64,
@@ -56,12 +57,13 @@ pub struct NativeTelegraphState {
     pub duration_ms: u64,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct NativeCombatVisualState {
     pub sequence: u64,
     pub source_id: EntityId,
     pub target_id: EntityId,
+    pub effect_id: String,
     pub damage: u16,
 }
 
@@ -102,6 +104,7 @@ pub struct NativeGameState {
     pub food_remaining_ms: u64,
     food_status_received_at: Instant,
     pub crafting: Option<NativeCraftingState>,
+    pub ability_visual_sequence: u64,
     pub last_ability: Option<NativeAbilityState>,
     pub last_telegraph: Option<NativeTelegraphState>,
     pub combat_visual_sequence: u64,
@@ -183,6 +186,7 @@ impl NativeGameState {
             food_remaining_ms: 0,
             food_status_received_at: Instant::now(),
             crafting: None,
+            ability_visual_sequence: 0,
             last_ability: None,
             last_telegraph: None,
             combat_visual_sequence: 0,
@@ -420,6 +424,7 @@ impl NativeGameState {
             ServerMessage::CombatEffect {
                 source_id,
                 target_id,
+                effect_id,
                 damage,
                 ..
             } => {
@@ -428,6 +433,7 @@ impl NativeGameState {
                     sequence: self.combat_visual_sequence,
                     source_id: *source_id,
                     target_id: *target_id,
+                    effect_id: effect_id.clone(),
                     damage: *damage,
                 });
                 while self.combat_visuals.len() > 32 {
@@ -452,7 +458,9 @@ impl NativeGameState {
                 cooldown_ms,
                 duration_ms,
             } if *player_id == self.local_player_id => {
+                self.ability_visual_sequence = self.ability_visual_sequence.saturating_add(1);
                 self.last_ability = Some(NativeAbilityState {
+                    sequence: self.ability_visual_sequence,
                     ability_id: ability_id.clone(),
                     cooldown_ms: *cooldown_ms,
                     duration_ms: *duration_ms,

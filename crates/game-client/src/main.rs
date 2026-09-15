@@ -19,8 +19,11 @@ mod network;
 mod state;
 mod version;
 // TIBIAGAME_V36_11_NATIVE_INTERACTION_FOUNDATION
+mod actor_sprites;
 mod creature_sprites;
+mod npc_sprites;
 mod player_sprites;
+// TIBIAGAME_V36_80_UNIFIED_ACTOR_SPRITE_SYSTEM
 // TIBIAGAME_V36_78_1_EIGHT_DIRECTION_2D_ACTORS
 // TIBIAGAME_V36_7_NATIVE_SPRITE_CREATURE_PIPELINE
 mod collision;
@@ -60,7 +63,6 @@ mod world_visuals;
 // TIBIAGAME_V36_8_1_NATIVE_WORLD_DETAILS
 // TIBIAGAME_V36_8_NATIVE_WORLD_VISUAL_FOUNDATION
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -68,7 +70,6 @@ use std::sync::{Mutex, mpsc::Receiver};
 
 use anyhow::Result;
 use bevy::{
-    animation::{AnimatedBy, AnimationTargetId},
     asset::AssetPlugin,
     camera::ScalingMode,
     diagnostic::FrameTimeDiagnosticsPlugin,
@@ -98,33 +99,9 @@ const WORLD_OCCLUDER_FADE_RADIUS: f32 = 2.25;
 #[derive(Component)]
 struct LocalPlayer;
 
-#[derive(Component)]
-struct PlayerModelRoot;
-
-#[derive(Component)]
-pub(crate) struct NpcModelRoot;
-
-#[derive(Component)]
-struct AnimationTemplateRig;
-
-#[derive(Resource)]
-struct PlayerAnimationSources {
-    general: Handle<Gltf>,
-    movement: Handle<Gltf>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PlayerAnimationState {
-    Idle,
-    Walk,
-}
-
-#[derive(Component)]
-struct PlayerAnimationController {
-    idle: AnimationNodeIndex,
-    walk: AnimationNodeIndex,
-    state: PlayerAnimationState,
-}
+// TIBIAGAME_V36_82_REMOVE_LEGACY_3D_ACTOR_PIPELINE
+// Player/NPC presentation is now exclusively handled by the unified 2D actor
+// sprite pipeline. The old KayKit skeletal actor pipeline has been retired.
 
 #[derive(Component)]
 struct MainCamera;
@@ -306,6 +283,9 @@ impl Plugin for SingleWindowGameplayPlugin {
                     player_sprites::update_local_player_sprite.after(interpolate_player),
                     player_sprites::face_local_player_sprite_to_camera
                         .after(player_sprites::update_local_player_sprite),
+                    npc_sprites::animate_npc_sprites.after(interpolate_player),
+                    npc_sprites::face_npc_sprites_to_camera
+                        .after(npc_sprites::animate_npc_sprites),
                     streaming::apply_streamed_region.after(pump_network),
                     native_loading::update
                         .after(streaming::apply_streamed_region)
@@ -483,12 +463,7 @@ impl Plugin for SingleWindowGameplayPlugin {
                 )
                     .distributive_run_if(single_window_game_active),
             )
-            .add_systems(
-                Update,
-                face_nearby_npcs
-                    .after(interpolate_player)
-                    .run_if(single_window_game_active),
-            )
+
             .add_systems(
                 Update,
                 player_sprites::sync_local_player_outfit
@@ -679,6 +654,17 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                 update_hud.after(frame_pacing_probe),
             ),
         )
+        // TIBIAGAME_V36_80_1_SPLIT_DIRECT_NPC_SPRITE_SCHEDULE
+        // Keep NPC sprite facing/animation out of the already-full direct
+        // Update tuple. Bevy 0.19 tuple schedule configs have a finite arity.
+        .add_systems(
+            Update,
+            (
+                npc_sprites::animate_npc_sprites.after(interpolate_player),
+                npc_sprites::face_npc_sprites_to_camera
+                    .after(npc_sprites::animate_npc_sprites),
+            ),
+        )
         .add_systems(
             Update,
             (
@@ -760,7 +746,7 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                 .after(native_map_ui::handle_input)
                 .before(native_map_ui::update_ui),
         )
-        .add_systems(Update, face_nearby_npcs.after(interpolate_player))
+
         .add_systems(Update, player_sprites::sync_local_player_outfit.after(pump_network))
         .add_systems(Update, update_day_night_cycle)
         // TIBIAGAME_V36_58_1_SPLIT_DIRECT_DRAG_SCHEDULE
@@ -935,6 +921,8 @@ fn setup(
         creature_sprites::CreatureSpriteCatalog::new(&asset_server, &mut meshes);
     let player_sprite_catalog =
         player_sprites::PlayerSpriteCatalog::new(&asset_server, &mut meshes);
+    let npc_sprite_catalog =
+        npc_sprites::NpcSpriteCatalog::new(&asset_server, &mut meshes);
     creature_sprites::spawn_creature_render_warmup(
         &mut commands,
         &mut materials,
@@ -947,8 +935,10 @@ fn setup(
     let creature_warmup = warmup_creature_assets(&asset_server);
     world_architecture::describe();
     world_details::describe();
+    actor_sprites::describe();
     creature_sprites::describe_catalog();
     player_sprites::describe_catalog();
+    npc_sprites::describe_catalog();
 
     // V36.17: Welcome already contains region_floor_radius data. Start building
     // the complete current/adjacent floor cache immediately at startup.
@@ -968,6 +958,7 @@ fn setup(
         &mut materials,
         &asset_server,
         &creature_sprite_catalog,
+        &npc_sprite_catalog,
         &world_detail_catalog,
         &architecture_catalog,
         &welcome,
@@ -975,6 +966,7 @@ fn setup(
 
     commands.insert_resource(creature_warmup);
     commands.insert_resource(creature_sprite_catalog);
+    commands.insert_resource(npc_sprite_catalog);
     commands.insert_resource(world_detail_catalog);
     commands.insert_resource(architecture_catalog);
     // TIBIAGAME_V36_78_1_EIGHT_DIRECTION_2D_ACTORS
@@ -1060,6 +1052,7 @@ fn spawn_live_world(
     materials: &mut Assets<StandardMaterial>,
     asset_server: &AssetServer,
     creature_sprite_catalog: &creature_sprites::CreatureSpriteCatalog,
+    npc_sprite_catalog: &npc_sprites::NpcSpriteCatalog,
     world_detail_catalog: &world_details::WorldDetailCatalog,
     architecture_catalog: &world_architecture::ArchitectureCatalog,
     welcome: &WelcomePayload,
@@ -1283,23 +1276,7 @@ fn spawn_live_world(
     }
 
     for npc in welcome.npcs.iter().filter(|npc| npc.position.z == floor) {
-        commands
-            .spawn((
-                Name::new(format!("NPC · {}", npc.name)),
-                NpcActor(npc.id.clone()),
-                Visibility::default(),
-                Transform::from_translation(position_to_world(npc.position)),
-            ))
-            .with_child((
-                WorldAssetRoot(
-                    asset_server.load(
-                        GltfAssetLabel::Scene(0).from_asset(player_model_path(npc_outfit(npc))),
-                    ),
-                ),
-                Transform::from_translation(Vec3::new(0.0, -0.575, 0.0))
-                    .with_scale(Vec3::splat(player_model_scale(npc_outfit(npc))))
-                    .with_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
-            ));
+        npc_sprites::spawn_npc_sprite(commands, materials, npc_sprite_catalog, npc);
     }
 
     for resource in welcome
@@ -1759,40 +1736,6 @@ fn schedule_tile_movement(
     movement.duration = duration;
 }
 
-fn update_player_facing(
-    movement: Res<MovementState>,
-    mut model: Query<&mut Transform, With<PlayerModelRoot>>,
-) {
-    // TIBIAGAME_V36_6_1_NATIVE_PLAYER_FACING_DIRECTION
-    let delta = movement.to - movement.from;
-    let dx = delta.x;
-    let dz = delta.z;
-
-    // Keep the last facing direction while idle or during purely vertical
-    // floor transitions.
-    if dx.abs() < 0.001 && dz.abs() < 0.001 {
-        return;
-    }
-
-    let yaw = dx.atan2(dz);
-
-    for mut transform in &mut model {
-        transform.rotation = Quat::from_rotation_y(yaw);
-    }
-}
-
-fn face_nearby_npcs(movement: Res<MovementState>, mut npcs: Query<&mut Transform, With<NpcActor>>) {
-    for mut transform in &mut npcs {
-        let delta = movement.visual - transform.translation;
-        let horizontal = Vec2::new(delta.x, delta.z);
-        // NPCs idle in place, but acknowledge players who approach them.
-        if horizontal.length_squared() > 5.5 * 5.5 || horizontal.length_squared() < 0.001 {
-            continue;
-        }
-        transform.rotation = Quat::from_rotation_y(delta.x.atan2(delta.z));
-    }
-}
-
 fn interpolate_player(
     time: Res<Time>,
     mut movement: ResMut<MovementState>,
@@ -1813,148 +1756,6 @@ fn interpolate_player(
     // TIBIAGAME_V36_6_NATIVE_PLAYER_IDLE_WALK_ANIMATION
     // Skeletal Idle_A now supplies idle motion; keep the entity origin stable.
     transform.translation = movement.visual;
-}
-
-fn setup_player_animation(
-    mut commands: Commands,
-    sources: Res<PlayerAnimationSources>,
-    gltfs: Res<Assets<Gltf>>,
-    mut graphs: ResMut<Assets<AnimationGraph>>,
-    children: Query<&Children>,
-    names: Query<&Name>,
-    animation_targets: Query<&AnimationTargetId>,
-    model_roots: Query<
-        Entity,
-        (
-            Or<(With<PlayerModelRoot>, With<NpcModelRoot>)>,
-            Without<PlayerAnimationController>,
-        ),
-    >,
-    template_roots: Query<Entity, With<AnimationTemplateRig>>,
-) {
-    let Some(general) = gltfs.get(&sources.general) else {
-        return;
-    };
-    let Some(movement) = gltfs.get(&sources.movement) else {
-        return;
-    };
-
-    let Some(idle_clip) = general.named_animations.get("Idle_A").cloned() else {
-        return;
-    };
-    let Some(walk_clip) = movement.named_animations.get("Walking_A").cloned() else {
-        return;
-    };
-
-    let Some(template_root) = template_roots.iter().next() else {
-        return;
-    };
-
-    let mut targets_by_name = HashMap::<String, AnimationTargetId>::new();
-    for entity in children.iter_descendants(template_root) {
-        let (Ok(name), Ok(target)) = (names.get(entity), animation_targets.get(entity)) else {
-            continue;
-        };
-        targets_by_name.insert(name.as_str().to_owned(), *target);
-    }
-
-    if targets_by_name.is_empty() {
-        return;
-    }
-
-    for model_root in &model_roots {
-        let mut matched_targets = Vec::new();
-
-        for entity in children.iter_descendants(model_root) {
-            let Ok(name) = names.get(entity) else {
-                continue;
-            };
-            let Some(target) = targets_by_name.get(name.as_str()).copied() else {
-                continue;
-            };
-            matched_targets.push((entity, target));
-        }
-
-        // Do not mark the model as configured until the spawned glTF hierarchy
-        // actually contains enough corresponding rig bones.
-        if matched_targets.len() < 8 {
-            continue;
-        }
-
-        let mut graph = AnimationGraph::new();
-        let idle = graph.add_clip(idle_clip.clone(), 1.0, graph.root);
-        let walk = graph.add_clip(walk_clip.clone(), 1.0, graph.root);
-        let graph_handle = graphs.add(graph);
-
-        let mut player = AnimationPlayer::default();
-        let mut transitions = AnimationTransitions::new();
-        transitions.play(&mut player, idle, Duration::ZERO).repeat();
-
-        commands.entity(model_root).insert((
-            player,
-            AnimationGraphHandle(graph_handle),
-            transitions,
-            PlayerAnimationController {
-                idle,
-                walk,
-                state: PlayerAnimationState::Idle,
-            },
-        ));
-
-        for (entity, target) in matched_targets.iter().copied() {
-            commands
-                .entity(entity)
-                .insert((target, AnimatedBy(model_root)));
-        }
-
-        info!(
-            "ALDORIA PLAYER ANIMATION BOUND · Idle_A + Walking_A · {} matched targets",
-            matched_targets.len(),
-        );
-    }
-}
-
-fn update_player_animation(
-    time: Res<Time>,
-    movement: Res<MovementState>,
-    mut animations: Query<
-        (
-            &mut AnimationPlayer,
-            &mut AnimationTransitions,
-            &mut PlayerAnimationController,
-        ),
-        Without<NpcModelRoot>,
-    >,
-) {
-    let moving = movement.from != movement.to
-        && time.elapsed_secs_f64() < movement.started_at + movement.duration + 0.045;
-
-    let desired = if moving {
-        PlayerAnimationState::Walk
-    } else {
-        PlayerAnimationState::Idle
-    };
-
-    for (mut player, mut transitions, mut controller) in &mut animations {
-        if controller.state == desired {
-            continue;
-        }
-
-        let node = match desired {
-            PlayerAnimationState::Idle => controller.idle,
-            PlayerAnimationState::Walk => controller.walk,
-        };
-
-        let active = transitions.play(&mut player, node, Duration::from_millis(140));
-        active.repeat();
-
-        if desired == PlayerAnimationState::Walk {
-            // Preserve the established visual walk cadence.
-            active.set_speed(1.08);
-        }
-
-        controller.state = desired;
-    }
 }
 
 fn update_building_roofs(
@@ -2360,64 +2161,6 @@ fn update_hud(
         probe.last_max_ms,
         probe.fps,
     );
-}
-
-fn player_model_path(outfit: &str) -> &'static str {
-    match outfit {
-        "mage" => "models/kaykit-adventurers/Mage.glb",
-        "ranger" => "models/kaykit-adventurers/Ranger.glb",
-        "rogue" => "models/kaykit-adventurers/Rogue_Hooded.glb",
-        _ => "models/kaykit-adventurers/Knight.glb",
-    }
-}
-
-fn sync_local_player_outfit(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    game_state: Res<state::NativeGameState>,
-    mut identity: ResMut<LocalIdentity>,
-    mut model: Query<(Entity, &mut WorldAssetRoot, &mut Transform), With<PlayerModelRoot>>,
-) {
-    let Some(player) = game_state.local_player() else {
-        return;
-    };
-    if player.outfit == identity.outfit {
-        return;
-    }
-    identity.outfit = player.outfit.clone();
-    for (entity, mut root, mut transform) in &mut model {
-        root.0 = asset_server
-            .load(GltfAssetLabel::Scene(0).from_asset(player_model_path(&identity.outfit)));
-        transform.scale = Vec3::splat(player_model_scale(&identity.outfit));
-        commands.entity(entity).remove::<(
-            AnimationPlayer,
-            AnimationGraphHandle,
-            AnimationTransitions,
-            PlayerAnimationController,
-        )>();
-    }
-}
-
-fn npc_outfit(npc: &game_types::NpcView) -> &'static str {
-    let role = format!("{} {} {}", npc.id, npc.title, npc.service).to_ascii_lowercase();
-    if role.contains("mage") || role.contains("wizard") || role.contains("healer") {
-        "mage"
-    } else if role.contains("ranger") || role.contains("hunter") || role.contains("archer") {
-        "ranger"
-    } else if role.contains("rogue") || role.contains("thief") || role.contains("merchant") {
-        "rogue"
-    } else {
-        "knight"
-    }
-}
-
-fn player_model_scale(outfit: &str) -> f32 {
-    match outfit {
-        "mage" => 0.697,
-        "ranger" => 0.814,
-        "rogue" => 0.852,
-        _ => 0.727,
-    }
 }
 
 fn position_to_world(position: Position) -> Vec3 {

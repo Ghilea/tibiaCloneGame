@@ -5,7 +5,13 @@ use bevy::{
 };
 use game_types::{CreatureView, Position};
 
-use crate::{CreatureActor, MainCamera, MovementState, state::NativeGameState};
+use crate::{
+    CreatureActor, MainCamera, MovementState,
+    actor_sprites::{
+        ActorAnimation, ActorSpriteDefinition, AnimationSpec, atlas_uv, billboard_rotation,
+    },
+    state::NativeGameState,
+};
 
 const CARDINAL_MOVE_SECONDS: f64 = 0.165;
 const DIAGONAL_FACTOR: f64 = std::f64::consts::SQRT_2;
@@ -30,70 +36,39 @@ const CASTLE_RAT_DEATH_NORMAL: &str =
     "monsters/castle_rat/atlases/castle_rat_death_normal_8dir_v36_79.png";
 const PLACEHOLDER_TEXTURE: &str = "monsters/native_sprite_placeholder_v36_7.png";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SpriteDirection {
-    North,
-    NorthEast,
-    East,
-    SouthEast,
-    South,
-    SouthWest,
-    West,
-    NorthWest,
-}
+const CASTLE_RAT_SPRITE_DEFINITION: ActorSpriteDefinition = ActorSpriteDefinition {
+    id: "creature.castle_rat",
+    authored_directions: 8,
+    atlas_rows: 8,
+    render_width: 0.95,
+    render_height: 1.05,
+    idle: AnimationSpec::looping(12, 12, 10.0),
+    walk: Some(AnimationSpec::looping(8, 8, 12.0)),
+    attack: Some(AnimationSpec::once(8, 8, 14.0)),
+    hit: Some(AnimationSpec::once(5, 5, 14.0)),
+    death: Some(AnimationSpec::terminal(10, 10, 10.0)),
+    cast: None,
+    use_action: None,
+};
 
-impl SpriteDirection {
-    pub(crate) fn from_delta(dx: i32, dy: i32, fallback: Self) -> Self {
-        match (dx.signum(), dy.signum()) {
-            (0, -1) => Self::North,
-            (1, -1) => Self::NorthEast,
-            (1, 0) => Self::East,
-            (1, 1) => Self::SouthEast,
-            (0, 1) => Self::South,
-            (-1, 1) => Self::SouthWest,
-            (-1, 0) => Self::West,
-            (-1, -1) => Self::NorthWest,
-            _ => fallback,
-        }
-    }
+const PLACEHOLDER_SPRITE_DEFINITION: ActorSpriteDefinition = ActorSpriteDefinition {
+    id: "creature.placeholder",
+    authored_directions: 1,
+    atlas_rows: 1,
+    render_width: 0.95,
+    render_height: 1.15,
+    idle: AnimationSpec::looping(1, 1, 1.0),
+    walk: None,
+    attack: None,
+    hit: None,
+    death: None,
+    cast: None,
+    use_action: None,
+};
 
-    // Four-direction sheets retain the historical rows 0/2/4/6. New sheets
-    // can author all eight rows and use the same runtime direction state.
-    pub(crate) fn atlas_row(self, authored_directions: usize) -> usize {
-        if authored_directions >= 8 {
-            return self.index8();
-        }
+pub use crate::actor_sprites::SpriteDirection;
 
-        match self {
-            Self::North => 0,
-            Self::NorthEast | Self::East | Self::SouthEast => 2,
-            Self::South => 4,
-            Self::SouthWest | Self::West | Self::NorthWest => 6,
-        }
-    }
-
-    pub fn index8(self) -> usize {
-        match self {
-            Self::North => 0,
-            Self::NorthEast => 1,
-            Self::East => 2,
-            Self::SouthEast => 3,
-            Self::South => 4,
-            Self::SouthWest => 5,
-            Self::West => 6,
-            Self::NorthWest => 7,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SpriteAnimation {
-    Idle,
-    Walk,
-    Attack,
-    Hit,
-    Death,
-}
+type SpriteAnimation = ActorAnimation;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CreatureSpriteKind {
@@ -102,11 +77,10 @@ enum CreatureSpriteKind {
 }
 
 impl CreatureSpriteKind {
-    fn authored_directions(self) -> usize {
+    fn definition(self) -> &'static ActorSpriteDefinition {
         match self {
-            // V36.79 supplies all eight authored directions.
-            Self::CastleRat => 8,
-            Self::Placeholder => 1,
+            Self::CastleRat => &CASTLE_RAT_SPRITE_DEFINITION,
+            Self::Placeholder => &PLACEHOLDER_SPRITE_DEFINITION,
         }
     }
 }
@@ -668,12 +642,9 @@ pub fn face_creature_sprites_to_camera(
     let camera_position = camera_transform.translation();
 
     for mut transform in &mut creatures {
-        let to_camera = camera_position - transform.translation;
-        if to_camera.x.abs() < 0.0001 && to_camera.z.abs() < 0.0001 {
-            continue;
+        if let Some(rotation) = billboard_rotation(transform.translation, camera_position) {
+            transform.rotation = rotation;
         }
-        let yaw = to_camera.x.atan2(to_camera.z);
-        transform.rotation = Quat::from_rotation_y(yaw);
     }
 }
 
@@ -717,56 +688,36 @@ pub fn animate_creature_sprites(
 
         advance_animation_state(&mut sprite, now);
 
-        let (albedo, normal, columns, rows, frames, fps) = match sprite.animation {
+        let (albedo, normal) = match sprite.animation {
             SpriteAnimation::Idle => (
                 &catalog.castle_rat_idle_albedo,
                 &catalog.castle_rat_idle_normal,
-                12usize,
-                8usize,
-                12usize,
-                10.0f64,
             ),
             SpriteAnimation::Walk => (
                 &catalog.castle_rat_walk_albedo,
                 &catalog.castle_rat_walk_normal,
-                8,
-                8,
-                8,
-                12.0,
             ),
             SpriteAnimation::Attack => (
                 &catalog.castle_rat_attack_albedo,
                 &catalog.castle_rat_attack_normal,
-                8,
-                8,
-                8,
-                14.0,
             ),
             SpriteAnimation::Hit => (
                 &catalog.castle_rat_hit_albedo,
                 &catalog.castle_rat_hit_normal,
-                5,
-                8,
-                5,
-                14.0,
             ),
             SpriteAnimation::Death => (
                 &catalog.castle_rat_death_albedo,
                 &catalog.castle_rat_death_normal,
-                10,
-                8,
-                10,
-                10.0,
             ),
+            SpriteAnimation::Cast | SpriteAnimation::Use => continue,
+        };
+        let definition = *sprite.kind.definition();
+        let Some(spec) = definition.spec(sprite.animation) else {
+            continue;
         };
 
         let elapsed = (now - sprite.animation_started_at).max(0.0);
-        let raw_frame = (elapsed * fps).floor() as usize;
-        let frame = if sprite.animation == SpriteAnimation::Death {
-            raw_frame.min(frames - 1)
-        } else {
-            raw_frame % frames
-        };
+        let frame = spec.frame_at(elapsed);
         let direction = sprite.direction;
 
         if sprite.last_frame == frame
@@ -784,10 +735,10 @@ pub fn animate_creature_sprites(
         material.base_color_texture = Some(albedo.clone());
         material.normal_map_texture = Some(normal.clone());
         material.uv_transform = atlas_uv(
-            columns,
-            rows,
+            spec.columns,
+            definition.atlas_rows,
             frame,
-            direction.atlas_row(sprite.kind.authored_directions()),
+            direction.atlas_row(definition.authored_directions),
         );
 
         sprite.last_frame = frame;
@@ -815,11 +766,13 @@ fn combat_entity_position(
 fn advance_animation_state(sprite: &mut CreatureSprite, now: f64) {
     let elapsed = (now - sprite.animation_started_at).max(0.0);
 
-    match sprite.animation {
-        SpriteAnimation::Death => return,
-        SpriteAnimation::Attack if elapsed < 8.0 / 14.0 => return,
-        SpriteAnimation::Hit if elapsed < 5.0 / 14.0 => return,
-        _ => {}
+    if sprite.animation == SpriteAnimation::Death {
+        return;
+    }
+
+    let definition = *sprite.kind.definition();
+    if definition.animation_locked(sprite.animation, elapsed) {
+        return;
     }
 
     let desired = if now < sprite.walk_until {
@@ -843,17 +796,6 @@ fn set_animation(sprite: &mut CreatureSprite, animation: SpriteAnimation, now: f
     sprite.last_frame = usize::MAX;
 }
 
-fn atlas_uv(columns: usize, rows: usize, frame: usize, row: usize) -> Affine2 {
-    let columns = columns.max(1) as f32;
-    let rows = rows.max(1) as f32;
-
-    Affine2::from_scale_angle_translation(
-        Vec2::new(1.0 / columns, 1.0 / rows),
-        0.0,
-        Vec2::new(frame as f32 / columns, row as f32 / rows),
-    )
-}
-
 fn sprite_world_position(position: Position, render_height: f32) -> Vec3 {
     Vec3::new(
         position.x as f32,
@@ -864,7 +806,11 @@ fn sprite_world_position(position: Position, render_height: f32) -> Vec3 {
 
 fn creature_visual_style(definition_id: &str) -> (f32, f32, Color) {
     match definition_id {
-        "castle_rat" => (0.95, 1.05, Color::WHITE),
+        "castle_rat" => (
+            CASTLE_RAT_SPRITE_DEFINITION.render_width,
+            CASTLE_RAT_SPRITE_DEFINITION.render_height,
+            Color::WHITE,
+        ),
         "mireling" => (0.90, 1.05, Color::srgb(0.44, 0.68, 0.35)),
         "mire_skulker" => (1.00, 1.12, Color::srgb(0.27, 0.52, 0.34)),
         "reed_stalker" => (0.95, 1.28, Color::srgb(0.48, 0.58, 0.25)),
@@ -878,6 +824,6 @@ fn creature_visual_style(definition_id: &str) -> (f32, f32, Color) {
 
 pub fn describe_catalog() {
     info!(
-        "ALDORIA SPRITE CREATURES · castle_rat=8dir atlas+normal idle/walk/attack/hit/death · remaining monsters=solid tinted native fallback billboards"
+        "ALDORIA SPRITE CREATURES · shared ActorSpriteDefinition · castle_rat=8dir idle/walk/attack/hit/death · remaining monsters=2D fallback billboards"
     );
 }

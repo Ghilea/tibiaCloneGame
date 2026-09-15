@@ -326,7 +326,6 @@ pub(crate) fn update(
         Entity,
         &WorldAssetRoot,
         Option<&bevy::world_serialization::WorldInstance>,
-        Option<&crate::AnimationTemplateRig>,
     )>,
     // TIBIAGAME_V36_78_4_PLAYER_SPRITE_LOADING_GATE
     // V36.78 replaced the local GLTF/KayKit PlayerModelRoot with a Mesh3d
@@ -429,7 +428,7 @@ pub(crate) fn update(
     let mut world_asset_roots_with_mesh = 0usize;
     let mut world_asset_dependencies_ready = true;
 
-    for (entity, root, instance, animation_template) in &world_asset_roots {
+    for (entity, root, instance) in &world_asset_roots {
         world_asset_root_count += 1;
 
         let dependencies_ready = asset_server.is_loaded_with_dependencies(root.0.id());
@@ -440,29 +439,28 @@ pub(crate) fn update(
             world_asset_instance_count += 1;
         }
 
-        // AnimationTemplateRig is deliberately hidden and exists only to
-        // provide animation sources. Every other WorldAssetRoot represents
-        // presentation that should have produced at least one mesh.
-        if animation_template.is_none() {
-            world_asset_render_root_count += 1;
+        // V36.82: actor animation templates no longer exist. Every remaining
+        // WorldAssetRoot is real world presentation and should produce a mesh.
+        world_asset_render_root_count += 1;
 
-            if count_descendant_meshes(entity, &children, &mesh_visibility) > 0 {
-                world_asset_roots_with_mesh += 1;
-            }
+        if count_descendant_meshes(entity, &children, &mesh_visibility) > 0 {
+            world_asset_roots_with_mesh += 1;
         }
     }
 
-    if world_asset_root_count == state.last_world_asset_root_count && world_asset_root_count >= 2 {
+    // TIBIAGAME_V36_80_UNIFIED_ACTOR_SPRITE_SYSTEM
+    // Actor presentation is sprite-based now, so the world may legitimately
+    // have zero GLTF WorldAssetRoot entities. Stability is about the count
+    // remaining unchanged, not about reaching a historical minimum of two.
+    if world_asset_root_count == state.last_world_asset_root_count {
         state.stable_world_asset_frames = state.stable_world_asset_frames.saturating_add(1);
     } else {
         state.stable_world_asset_frames = 0;
         state.last_world_asset_root_count = world_asset_root_count;
     }
 
-    let world_assets_ready = world_asset_root_count >= 2
-        && world_asset_dependencies_ready
+    let world_assets_ready = world_asset_dependencies_ready
         && world_asset_instance_count == world_asset_root_count
-        && world_asset_render_root_count > 0
         && world_asset_roots_with_mesh == world_asset_render_root_count
         && state.stable_world_asset_frames >= 4;
 

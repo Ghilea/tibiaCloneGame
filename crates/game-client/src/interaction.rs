@@ -75,6 +75,13 @@ impl Default for MiningAction {
     }
 }
 
+impl MiningAction {
+    pub(crate) fn active_target_position(&self) -> Option<Position> {
+        self.node_id.as_ref()?;
+        self.node_position
+    }
+}
+
 pub fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
