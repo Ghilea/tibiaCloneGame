@@ -11,23 +11,23 @@ const CARDINAL_MOVE_SECONDS: f64 = 0.165;
 const DIAGONAL_FACTOR: f64 = std::f64::consts::SQRT_2;
 
 const CASTLE_RAT_IDLE_ALBEDO: &str =
-    "monsters/castle_rat/atlases/castle_rat_idle_albedo_perf_v2.webp";
+    "monsters/castle_rat/atlases/castle_rat_idle_albedo_8dir_v36_79.png";
 const CASTLE_RAT_IDLE_NORMAL: &str =
-    "monsters/castle_rat/atlases/castle_rat_idle_normal_perf_v2.webp";
-const CASTLE_RAT_WALK_ALBEDO: &str = "monsters/castle_rat/atlases/castle_rat_walk_albedo_v5.webp";
-const CASTLE_RAT_WALK_NORMAL: &str = "monsters/castle_rat/atlases/castle_rat_walk_normal_v5.webp";
+    "monsters/castle_rat/atlases/castle_rat_idle_normal_8dir_v36_79.png";
+const CASTLE_RAT_WALK_ALBEDO: &str = "monsters/castle_rat/atlases/castle_rat_walk_albedo_8dir_v36_79.png";
+const CASTLE_RAT_WALK_NORMAL: &str = "monsters/castle_rat/atlases/castle_rat_walk_normal_8dir_v36_79.png";
 const CASTLE_RAT_ATTACK_ALBEDO: &str =
-    "monsters/castle_rat/atlases/castle_rat_attack_albedo_perf_v2.webp";
+    "monsters/castle_rat/atlases/castle_rat_attack_albedo_8dir_v36_79.png";
 const CASTLE_RAT_ATTACK_NORMAL: &str =
-    "monsters/castle_rat/atlases/castle_rat_attack_normal_perf_v2.webp";
+    "monsters/castle_rat/atlases/castle_rat_attack_normal_8dir_v36_79.png";
 const CASTLE_RAT_HIT_ALBEDO: &str =
-    "monsters/castle_rat/atlases/castle_rat_hit_albedo_perf_v2.webp";
+    "monsters/castle_rat/atlases/castle_rat_hit_albedo_8dir_v36_79.png";
 const CASTLE_RAT_HIT_NORMAL: &str =
-    "monsters/castle_rat/atlases/castle_rat_hit_normal_perf_v2.webp";
+    "monsters/castle_rat/atlases/castle_rat_hit_normal_8dir_v36_79.png";
 const CASTLE_RAT_DEATH_ALBEDO: &str =
-    "monsters/castle_rat/atlases/castle_rat_death_albedo_perf_v2.webp";
+    "monsters/castle_rat/atlases/castle_rat_death_albedo_8dir_v36_79.png";
 const CASTLE_RAT_DEATH_NORMAL: &str =
-    "monsters/castle_rat/atlases/castle_rat_death_normal_perf_v2.webp";
+    "monsters/castle_rat/atlases/castle_rat_death_normal_8dir_v36_79.png";
 const PLACEHOLDER_TEXTURE: &str = "monsters/native_sprite_placeholder_v36_7.png";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,8 +104,8 @@ enum CreatureSpriteKind {
 impl CreatureSpriteKind {
     fn authored_directions(self) -> usize {
         match self {
-            // Existing production art has four authored views.
-            Self::CastleRat => 4,
+            // V36.79 supplies all eight authored directions.
+            Self::CastleRat => 8,
             Self::Placeholder => 1,
         }
     }
@@ -679,15 +679,40 @@ pub fn face_creature_sprites_to_camera(
 
 pub fn animate_creature_sprites(
     time: Res<Time>,
+    game_state: Res<NativeGameState>,
     catalog: Res<CreatureSpriteCatalog>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut creatures: Query<&mut CreatureSprite>,
+    mut creatures: Query<(&CreatureActor, &mut CreatureSprite)>,
 ) {
     let now = time.elapsed_secs_f64();
 
-    for mut sprite in &mut creatures {
+    for (actor, mut sprite) in &mut creatures {
         if sprite.kind != CreatureSpriteKind::CastleRat {
             continue;
+        }
+
+        // V36.79: the authoritative network path already starts the creature
+        // attack/hit clip. Use the newest matching combat event only for
+        // facing, so diagonal combat also uses the correct authored row.
+        let animation = sprite.animation;
+        let actor_id = actor.0;
+        let combat = game_state.combat_visuals.iter().rev().find(|combat| {
+            (animation == SpriteAnimation::Attack && combat.source_id == actor_id)
+                || (animation == SpriteAnimation::Hit && combat.target_id == actor_id)
+        });
+        if let Some(combat) = combat {
+            let opponent_id = if animation == SpriteAnimation::Attack {
+                combat.target_id
+            } else {
+                combat.source_id
+            };
+            if let Some(opponent) = combat_entity_position(&game_state, opponent_id) {
+                sprite.direction = SpriteDirection::from_delta(
+                    opponent.x - sprite.logical_position.x,
+                    opponent.y - sprite.logical_position.y,
+                    sprite.direction,
+                );
+            }
         }
 
         advance_animation_state(&mut sprite, now);
@@ -771,6 +796,22 @@ pub fn animate_creature_sprites(
     }
 }
 
+fn combat_entity_position(
+    game_state: &NativeGameState,
+    entity_id: game_types::EntityId,
+) -> Option<Position> {
+    game_state
+        .players
+        .get(&entity_id)
+        .map(|player| player.position)
+        .or_else(|| {
+            game_state
+                .creatures
+                .get(&entity_id)
+                .map(|creature| creature.position)
+        })
+}
+
 fn advance_animation_state(sprite: &mut CreatureSprite, now: f64) {
     let elapsed = (now - sprite.animation_started_at).max(0.0);
 
@@ -837,6 +878,6 @@ fn creature_visual_style(definition_id: &str) -> (f32, f32, Color) {
 
 pub fn describe_catalog() {
     info!(
-        "ALDORIA SPRITE CREATURES · castle_rat=atlas+normal idle/walk/attack/hit/death · remaining monsters=solid tinted native fallback billboards"
+        "ALDORIA SPRITE CREATURES · castle_rat=8dir atlas+normal idle/walk/attack/hit/death · remaining monsters=solid tinted native fallback billboards"
     );
 }

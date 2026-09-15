@@ -56,6 +56,16 @@ pub struct NativeTelegraphState {
     pub duration_ms: u64,
 }
 
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
+pub struct NativeCombatVisualState {
+    pub sequence: u64,
+    pub source_id: EntityId,
+    pub target_id: EntityId,
+    pub damage: u16,
+}
+
+// TIBIAGAME_V36_79_COMBAT_VISUAL_STATE
 #[derive(Debug, Clone)]
 pub struct NativeTradeState {
     pub trade_id: EntityId,
@@ -94,6 +104,8 @@ pub struct NativeGameState {
     pub crafting: Option<NativeCraftingState>,
     pub last_ability: Option<NativeAbilityState>,
     pub last_telegraph: Option<NativeTelegraphState>,
+    pub combat_visual_sequence: u64,
+    pub combat_visuals: VecDeque<NativeCombatVisualState>,
     pub trade: Option<NativeTradeState>,
     pub attack_target_id: Option<EntityId>,
     pub focused_npc_id: Option<String>,
@@ -173,6 +185,8 @@ impl NativeGameState {
             crafting: None,
             last_ability: None,
             last_telegraph: None,
+            combat_visual_sequence: 0,
+            combat_visuals: VecDeque::new(),
             trade: None,
             attack_target_id: None,
             focused_npc_id: None,
@@ -409,6 +423,17 @@ impl NativeGameState {
                 damage,
                 ..
             } => {
+                self.combat_visual_sequence = self.combat_visual_sequence.saturating_add(1);
+                self.combat_visuals.push_back(NativeCombatVisualState {
+                    sequence: self.combat_visual_sequence,
+                    source_id: *source_id,
+                    target_id: *target_id,
+                    damage: *damage,
+                });
+                while self.combat_visuals.len() > 32 {
+                    self.combat_visuals.pop_front();
+                }
+
                 if *source_id == self.local_player_id {
                     self.push_message(
                         NativeMessageKind::Combat,

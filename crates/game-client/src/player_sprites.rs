@@ -1,9 +1,10 @@
-// TIBIAGAME_V36_78_2_PLAYER_SPRITE_RUST_FIX
+// TIBIAGAME_V36_79_EIGHT_DIRECTION_COMBAT_SPRITES
 use bevy::{
     camera::visibility::NoFrustumCulling,
     math::Affine2,
     prelude::*,
 };
+use game_types::{EntityId, Position};
 
 use crate::{
     LocalIdentity, MainCamera, MovementState,
@@ -13,6 +14,9 @@ use crate::{
 
 const PLAYER_IDLE_ATLAS: &str = "players/default/atlases/player_idle_8dir_v1.png";
 const PLAYER_WALK_ATLAS: &str = "players/default/atlases/player_walk_8dir_v1.png";
+const PLAYER_ATTACK_ATLAS: &str = "players/default/atlases/player_attack_8dir_v1.png";
+const PLAYER_HIT_ATLAS: &str = "players/default/atlases/player_hit_8dir_v1.png";
+const PLAYER_DEATH_ATLAS: &str = "players/default/atlases/player_death_8dir_v1.png";
 
 const PLAYER_RENDER_WIDTH: f32 = 1.02;
 const PLAYER_RENDER_HEIGHT: f32 = 1.36;
@@ -21,6 +25,9 @@ const PLAYER_RENDER_HEIGHT: f32 = 1.36;
 enum PlayerSpriteAnimation {
     Idle,
     Walk,
+    Attack,
+    Hit,
+    Death,
 }
 
 #[derive(Component)]
@@ -28,6 +35,7 @@ pub struct LocalPlayerSprite {
     direction: SpriteDirection,
     animation: PlayerSpriteAnimation,
     animation_started_at: f64,
+    last_combat_sequence: u64,
     last_frame: usize,
     last_direction: SpriteDirection,
     last_animation: PlayerSpriteAnimation,
@@ -39,6 +47,9 @@ pub struct PlayerSpriteCatalog {
     quad: Handle<Mesh>,
     idle: Handle<Image>,
     walk: Handle<Image>,
+    attack: Handle<Image>,
+    hit: Handle<Image>,
+    death: Handle<Image>,
 }
 
 impl PlayerSpriteCatalog {
@@ -52,6 +63,9 @@ impl PlayerSpriteCatalog {
             quad: meshes.add(quad),
             idle: asset_server.load(PLAYER_IDLE_ATLAS),
             walk: asset_server.load(PLAYER_WALK_ATLAS),
+            attack: asset_server.load(PLAYER_ATTACK_ATLAS),
+            hit: asset_server.load(PLAYER_HIT_ATLAS),
+            death: asset_server.load(PLAYER_DEATH_ATLAS),
         }
     }
 }
@@ -81,9 +95,10 @@ pub fn local_player_sprite_bundle(
             direction: SpriteDirection::South,
             animation: PlayerSpriteAnimation::Idle,
             animation_started_at: 0.0,
+            last_combat_sequence: 0,
             last_frame: usize::MAX,
             last_direction: SpriteDirection::North,
-            last_animation: PlayerSpriteAnimation::Walk,
+            last_animation: PlayerSpriteAnimation::Death,
             material: material.clone(),
         },
         Mesh3d(catalog.quad.clone()),
@@ -100,6 +115,7 @@ pub fn local_player_sprite_bundle(
 pub fn update_local_player_sprite(
     time: Res<Time>,
     movement: Res<MovementState>,
+    game_state: Res<NativeGameState>,
     catalog: Res<PlayerSpriteCatalog>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut sprites: Query<&mut LocalPlayerSprite>,
@@ -107,36 +123,85 @@ pub fn update_local_player_sprite(
     let now = time.elapsed_secs_f64();
     let delta = movement.to - movement.from;
     let moving = delta.x.abs() >= 0.001 || delta.z.abs() >= 0.001;
-    let actively_moving =
-        moving && now < movement.started_at + movement.duration + 0.045;
+    let actively_moving = moving && now < movement.started_at + movement.duration + 0.045;
+    let local_dead = game_state
+        .local_player()
+        .is_some_and(|player| player.health == 0);
 
     for mut sprite in &mut sprites {
-        if moving {
-            sprite.direction = SpriteDirection::from_delta(
-                delta.x.round() as i32,
-                delta.z.round() as i32,
-                sprite.direction,
-            );
-        }
-
-        let desired = if actively_moving {
-            PlayerSpriteAnimation::Walk
+        if local_dead {
+            sprite.last_combat_sequence = game_state.combat_visual_sequence;
+            if sprite.animation != PlayerSpriteAnimation::Death {
+                set_animation(&mut sprite, PlayerSpriteAnimation::Death, now);
+            }
         } else {
-            PlayerSpriteAnimation::Idle
-        };
-        if sprite.animation != desired {
-            sprite.animation = desired;
-            sprite.animation_started_at = now;
-            sprite.last_frame = usize::MAX;
+            if sprite.animation == PlayerSpriteAnimation::Death {
+                set_animation(&mut sprite, PlayerSpriteAnimation::Idle, now);
+            }
+
+            let previous_combat_sequence = sprite.last_combat_sequence;
+            let mut newest_combat_sequence = previous_combat_sequence;
+            for combat in game_state
+                .combat_visuals
+                .iter()
+                .filter(|combat| combat.sequence > previous_combat_sequence)
+            {
+                newest_combat_sequence = newest_combat_sequence.max(combat.sequence);
+
+                if combat.source_id == game_state.local_player_id {
+                    if let Some(target) = entity_position(&game_state, combat.target_id) {
+                        face_position(&mut sprite, movement.logical, target);
+                    }
+                    trigger_animation(&mut sprite, PlayerSpriteAnimation::Attack, now);
+                } else if combat.target_id == game_state.local_player_id {
+                    if let Some(source) = entity_position(&game_state, combat.source_id) {
+                        face_position(&mut sprite, movement.logical, source);
+                    }
+                    trigger_animation(&mut sprite, PlayerSpriteAnimation::Hit, now);
+                }
+            }
+            sprite.last_combat_sequence = newest_combat_sequence;
+
+            let locked = animation_locked(&sprite, now);
+            if !locked {
+                if actively_moving {
+                    sprite.direction = SpriteDirection::from_delta(
+                        delta.x.round() as i32,
+                        delta.z.round() as i32,
+                        sprite.direction,
+                    );
+                } else if let Some(target_id) = game_state.attack_target_id
+                    && let Some(target) = entity_position(&game_state, target_id)
+                {
+                    face_position(&mut sprite, movement.logical, target);
+                }
+
+                let desired = if actively_moving {
+                    PlayerSpriteAnimation::Walk
+                } else {
+                    PlayerSpriteAnimation::Idle
+                };
+                if sprite.animation != desired {
+                    set_animation(&mut sprite, desired, now);
+                }
+            }
         }
 
-        let (texture, columns, frames, fps) = match sprite.animation {
-            PlayerSpriteAnimation::Idle => (&catalog.idle, 4usize, 4usize, 5.0f64),
-            PlayerSpriteAnimation::Walk => (&catalog.walk, 8usize, 8usize, 12.0f64),
+        let (texture, columns, frames, fps, looping) = match sprite.animation {
+            PlayerSpriteAnimation::Idle => (&catalog.idle, 4usize, 4usize, 5.0f64, true),
+            PlayerSpriteAnimation::Walk => (&catalog.walk, 8usize, 8usize, 12.0f64, true),
+            PlayerSpriteAnimation::Attack => (&catalog.attack, 6usize, 6usize, 12.0f64, false),
+            PlayerSpriteAnimation::Hit => (&catalog.hit, 4usize, 4usize, 12.0f64, false),
+            PlayerSpriteAnimation::Death => (&catalog.death, 8usize, 8usize, 8.0f64, false),
         };
 
         let elapsed = (now - sprite.animation_started_at).max(0.0);
-        let frame = ((elapsed * fps).floor() as usize) % frames;
+        let raw_frame = (elapsed * fps).floor() as usize;
+        let frame = if looping {
+            raw_frame % frames
+        } else {
+            raw_frame.min(frames - 1)
+        };
         let direction = sprite.direction;
 
         if sprite.last_frame == frame
@@ -156,6 +221,55 @@ pub fn update_local_player_sprite(
         sprite.last_direction = direction;
         sprite.last_animation = sprite.animation;
     }
+}
+
+fn animation_locked(sprite: &LocalPlayerSprite, now: f64) -> bool {
+    let elapsed = (now - sprite.animation_started_at).max(0.0);
+    match sprite.animation {
+        PlayerSpriteAnimation::Attack => elapsed < 6.0 / 12.0,
+        PlayerSpriteAnimation::Hit => elapsed < 4.0 / 12.0,
+        PlayerSpriteAnimation::Death => true,
+        PlayerSpriteAnimation::Idle | PlayerSpriteAnimation::Walk => false,
+    }
+}
+
+fn set_animation(sprite: &mut LocalPlayerSprite, animation: PlayerSpriteAnimation, now: f64) {
+    if sprite.animation == animation {
+        return;
+    }
+
+    trigger_animation(sprite, animation, now);
+}
+
+fn trigger_animation(sprite: &mut LocalPlayerSprite, animation: PlayerSpriteAnimation, now: f64) {
+    sprite.animation = animation;
+    sprite.animation_started_at = now;
+    sprite.last_frame = usize::MAX;
+}
+
+fn entity_position(game_state: &NativeGameState, entity_id: EntityId) -> Option<Position> {
+    game_state
+        .players
+        .get(&entity_id)
+        .map(|player| player.position)
+        .or_else(|| {
+            game_state
+                .creatures
+                .get(&entity_id)
+                .map(|creature| creature.position)
+        })
+}
+
+fn face_position(sprite: &mut LocalPlayerSprite, origin: Position, target: Position) {
+    if origin.z != target.z {
+        return;
+    }
+
+    sprite.direction = SpriteDirection::from_delta(
+        target.x - origin.x,
+        target.y - origin.y,
+        sprite.direction,
+    );
 }
 
 pub fn face_local_player_sprite_to_camera(
@@ -225,6 +339,6 @@ fn atlas_uv(columns: usize, rows: usize, frame: usize, row: usize) -> Affine2 {
 
 pub fn describe_catalog() {
     info!(
-        "ALDORIA PLAYER SPRITE · 8-direction native 2D · idle=4 frames · walk=8 frames"
+        "ALDORIA PLAYER SPRITE · 8-direction native 2D · idle/walk/attack/hit/death"
     );
 }
