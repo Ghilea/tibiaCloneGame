@@ -1,6 +1,8 @@
 // TIBIAGAME_V36_83_PRODUCTION_SPRITE_PIPELINE
 // TIBIAGAME_V36_81_CAST_USE_GATHERING_ACTIONS
 // TIBIAGAME_V36_90_PLAYER_EQUIPMENT_LAYERS
+// TIBIAGAME_V36_91_REMOTE_PLAYER_SPRITES
+// TIBIAGAME_V36_92_REMOTE_EQUIPMENT_REPLICATION
 use std::collections::HashMap;
 
 use bevy::{camera::visibility::NoFrustumCulling, prelude::*};
@@ -51,6 +53,18 @@ pub struct PlayerSpriteCatalog {
 }
 
 impl PlayerSpriteCatalog {
+    pub(crate) fn body_actor(&self) -> &ActorSpriteAssets {
+        &self.actor
+    }
+
+    pub(crate) fn body_quad(&self) -> Handle<Mesh> {
+        self.quad.clone()
+    }
+
+    pub(crate) fn equipment_actor(&self, key: &str) -> Option<&ActorSpriteAssets> {
+        self.equipment.get(key)
+    }
+
     pub fn new(asset_server: &AssetServer, meshes: &mut Assets<Mesh>) -> Self {
         let mut quad = Rectangle::new(1.0, 1.0).mesh().build();
         if let Err(error) = quad.generate_tangents() {
@@ -283,7 +297,7 @@ fn equipment_visual_key_for_item(
     }
 }
 
-fn equipment_layer_depth_bias(key: &str) -> f32 {
+pub(crate) fn equipment_layer_depth_bias(key: &str) -> f32 {
     match key {
         "back" => -30.0,
         "backpack" => -20.0,
@@ -538,7 +552,7 @@ pub fn sync_local_player_outfit(
     );
 }
 
-fn outfit_tint(outfit: &str) -> Color {
+pub(crate) fn outfit_tint(outfit: &str) -> Color {
     match outfit {
         "mage" => Color::srgb(0.72, 0.78, 1.0),
         "ranger" => Color::srgb(0.72, 0.92, 0.70),

@@ -1,6 +1,7 @@
 // TIBIAGAME_STREAMING_FIX_V9
 // TIBIAGAME_V34_FRIEND_FEEDBACK
-export const PROTOCOL_VERSION = 30;
+// TIBIAGAME_V36_92_REMOTE_EQUIPMENT_REPLICATION
+export const PROTOCOL_VERSION = 31;
 export const CLIENT_VERSION = "0.1.2";
 
 export type Position = { x: number; y: number; z: number };
@@ -117,6 +118,7 @@ export type ServerMessage =
   | { type: "player_outfit_changed"; player_id: string; outfit: CharacterOutfit }
   | { type: "player_secondary_skills_changed"; player_id: string; skills: SecondarySkill[] }
   | { type: "inventory_changed"; player_id: string; inventory: ItemInstance[]; inventory_weight: number; max_capacity: number }
+  | { type: "player_equipment_changed"; player_id: string; visual_keys: string[] }
   | { type: "depot_changed"; player_id: string; depot: ItemInstance[] }
   | { type: "spells_changed"; player_id: string; learned_spell_ids: string[] }
   | { type: "recipes_changed"; player_id: string; learned_recipe_ids: string[] }

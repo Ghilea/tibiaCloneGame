@@ -1,3 +1,4 @@
+// TIBIAGAME_V36_92_REMOTE_EQUIPMENT_REPLICATION
 mod auth;
 mod content;
 mod persistence;
@@ -908,6 +909,22 @@ async fn session(mut socket: WebSocket, state: AppState) {
         },
     )
     .await;
+
+    let equipment_snapshots = {
+        let world = state.world.read().await;
+        world.equipment_visual_snapshots()
+    };
+    for (equipment_player_id, visual_keys) in equipment_snapshots {
+        send(
+            &mut socket,
+            &ServerMessage::PlayerEquipmentChanged {
+                player_id: equipment_player_id,
+                visual_keys,
+            },
+        )
+        .await;
+    }
+
     if let Some((remaining_ms, _, _)) = player.food_state() {
         send(
             &mut socket,
@@ -926,6 +943,14 @@ async fn session(mut socket: WebSocket, state: AppState) {
             },
         )
         .await;
+
+    if let Some(visual_keys) = state.world.read().await.equipment_visuals(id) {
+        state.broadcast(ServerMessage::PlayerEquipmentChanged {
+            player_id: id,
+            visual_keys,
+        });
+    }
+
     let mut streamed_region_center = position;
     // TIBIAGAME_STREAMING_FIX_V2
     // Region construction is speculative prefetch work. It must never sit on
@@ -2720,6 +2745,9 @@ async fn mutate_item_state(state: &AppState, player_id: Uuid, mutation: ItemMuta
     }
     let (inventory, inventory_weight, max_capacity) =
         world.inventory_state(player_id).expect("active player");
+    let equipment_visuals = world
+        .equipment_visuals(player_id)
+        .unwrap_or_default();
     let ground_items = world.ground_items().to_vec();
     if let Some(database) = &state.database
         && let Err(error) = database
@@ -2738,6 +2766,10 @@ async fn mutate_item_state(state: &AppState, player_id: Uuid, mutation: ItemMuta
         return;
     }
     drop(world);
+    state.broadcast(ServerMessage::PlayerEquipmentChanged {
+        player_id,
+        visual_keys: equipment_visuals,
+    });
     state.private(
         player_id,
         ServerMessage::InventoryChanged {

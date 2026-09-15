@@ -1,3 +1,4 @@
+// TIBIAGAME_V36_92_REMOTE_EQUIPMENT_REPLICATION
 // TIBIAGAME_V36_88_CELLAR_WARDEN_AREA_TELEGRAPH
 // TIBIAGAME_V36_10_NATIVE_GAMEPLAY_CORE
 // TIBIAGAME_V36_11_NATIVE_INTERACTION_FOUNDATION
@@ -85,6 +86,7 @@ pub struct NativeTradeState {
 pub struct NativeGameState {
     pub local_player_id: EntityId,
     pub players: HashMap<EntityId, PlayerView>,
+    pub player_equipment_visuals: HashMap<EntityId, Vec<String>>,
     pub region_center: Position,
     pub region_radius: i32,
     pub region_floor_radius: i16,
@@ -133,6 +135,7 @@ impl NativeGameState {
         let mut state = Self {
             local_player_id: welcome.player.id,
             players,
+            player_equipment_visuals: HashMap::new(),
             region_center: welcome.region_center,
             region_radius: welcome.region_radius,
             region_floor_radius: welcome.region_floor_radius,
@@ -292,6 +295,7 @@ impl NativeGameState {
                 );
             }
             ServerMessage::PlayerLeft { player_id } => {
+                self.player_equipment_visuals.remove(player_id);
                 if let Some(player) = self.players.remove(player_id) {
                     self.push_message(
                         NativeMessageKind::System,
@@ -327,6 +331,13 @@ impl NativeGameState {
                 if let Some(player) = self.players.get_mut(player_id) {
                     player.secondary_skills = skills.clone();
                 }
+            }
+            ServerMessage::PlayerEquipmentChanged {
+                player_id,
+                visual_keys,
+            } => {
+                self.player_equipment_visuals
+                    .insert(*player_id, visual_keys.clone());
             }
             ServerMessage::InventoryChanged {
                 player_id,

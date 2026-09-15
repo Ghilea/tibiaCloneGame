@@ -23,6 +23,9 @@ mod actor_sprites;
 mod creature_sprites;
 mod npc_sprites;
 mod player_sprites;
+mod remote_player_sprites;
+// TIBIAGAME_V36_91_REMOTE_PLAYER_SPRITES
+// TIBIAGAME_V36_92_REMOTE_EQUIPMENT_REPLICATION
 mod telegraph_visuals;
 // TIBIAGAME_V36_88_CELLAR_WARDEN_AREA_TELEGRAPH
 // TIBIAGAME_V36_80_UNIFIED_ACTOR_SPRITE_SYSTEM
@@ -485,6 +488,25 @@ impl Plugin for SingleWindowGameplayPlugin {
                     .after(player_sprites::update_local_player_sprite)
                     .run_if(single_window_game_active),
             )
+            .add_systems(
+                Update,
+                remote_player_sprites::sync_remote_player_sprites
+                    .after(pump_network)
+                    .after(player_sprites::update_local_player_sprite)
+                    .run_if(single_window_game_active),
+            )
+            .add_systems(
+                Update,
+                remote_player_sprites::sync_remote_player_equipment_layers
+                    .after(remote_player_sprites::sync_remote_player_sprites)
+                    .run_if(single_window_game_active),
+            )
+            .add_systems(
+                Update,
+                remote_player_sprites::face_remote_player_sprites_to_camera
+                    .after(remote_player_sprites::sync_remote_player_sprites)
+                    .run_if(single_window_game_active),
+            )
             // TIBIAGAME_V36_90_PLAYER_EQUIPMENT_LAYERS
             .add_systems(
                 Update,
@@ -781,6 +803,22 @@ fn run_game(session: network::NativeSession) -> Result<()> {
             player_sprites::sync_local_player_equipment_layers
                 .after(player_sprites::ensure_local_player_equipment_layers)
                 .after(player_sprites::update_local_player_sprite),
+        )
+        .add_systems(
+            Update,
+            remote_player_sprites::sync_remote_player_sprites
+                .after(pump_network)
+                .after(player_sprites::update_local_player_sprite),
+        )
+        .add_systems(
+            Update,
+            remote_player_sprites::sync_remote_player_equipment_layers
+                .after(remote_player_sprites::sync_remote_player_sprites),
+        )
+        .add_systems(
+            Update,
+            remote_player_sprites::face_remote_player_sprites_to_camera
+                .after(remote_player_sprites::sync_remote_player_sprites),
         )
         .add_systems(
             Update,

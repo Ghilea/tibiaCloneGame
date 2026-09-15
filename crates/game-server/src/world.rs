@@ -1,3 +1,4 @@
+// TIBIAGAME_V36_92_REMOTE_EQUIPMENT_REPLICATION
 // TIBIAGAME_V36_76_0_HOUSE_LIGHT_STACK_DEPOT_CLARITY
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -2415,6 +2416,70 @@ impl World {
             .retain(|item| item.instance_id != instance_id);
         player.learned_recipes.insert(recipe_id.clone());
         Ok(recipe_id)
+    }
+
+
+    pub fn equipment_visuals(&self, id: EntityId) -> Option<Vec<String>> {
+        let player = self.players.get(&id)?;
+        let mut visual_keys = Vec::new();
+
+        for item in &player.inventory {
+            let Some(slot) = item.equipped_slot.as_deref() else {
+                continue;
+            };
+
+            let visual_key = match slot {
+                "helmet" | "head" => Some("helmet"),
+                "chest" | "armor" | "body" => Some("chest"),
+                "legs" | "pants" => Some("legs"),
+                "feet" | "boots" | "shoes" => Some("feet"),
+                "back" | "cape" => Some("back"),
+                "backpack" | "bag" => Some("backpack"),
+                "amulet" | "neck" => Some("amulet"),
+                "ring" | "ring1" | "ring2" => Some("ring"),
+                "weapon" | "right_hand" | "righthand" | "main_hand" | "mainhand" => {
+                    let ranged = self
+                        .content
+                        .item(&item.definition_id)
+                        .is_some_and(|definition| definition.distance_weapon.is_some());
+                    Some(if ranged {
+                        "weapon_ranged"
+                    } else {
+                        "weapon_melee"
+                    })
+                }
+                "offhand" | "off_hand" | "left_hand" | "lefthand" => {
+                    let light = self
+                        .content
+                        .item(&item.definition_id)
+                        .is_some_and(|definition| definition.light_source.is_some());
+                    Some(if light {
+                        "offhand_light"
+                    } else {
+                        "offhand_guard"
+                    })
+                }
+                _ => None,
+            };
+
+            if let Some(visual_key) = visual_key
+                && !visual_keys.iter().any(|existing| existing == visual_key)
+            {
+                visual_keys.push(visual_key.to_owned());
+            }
+        }
+
+        Some(visual_keys)
+    }
+
+    pub fn equipment_visual_snapshots(&self) -> Vec<(EntityId, Vec<String>)> {
+        self.players
+            .keys()
+            .filter_map(|player_id| {
+                self.equipment_visuals(*player_id)
+                    .map(|visual_keys| (*player_id, visual_keys))
+            })
+            .collect()
     }
 
     pub fn depot_state(&self, id: EntityId) -> Option<Vec<ItemInstance>> {
