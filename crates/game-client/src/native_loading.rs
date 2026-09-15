@@ -328,7 +328,11 @@ pub(crate) fn update(
         Option<&bevy::world_serialization::WorldInstance>,
         Option<&crate::AnimationTemplateRig>,
     )>,
-    player_model_roots: Query<Entity, With<crate::PlayerModelRoot>>,
+    // TIBIAGAME_V36_78_4_PLAYER_SPRITE_LOADING_GATE
+    // V36.78 replaced the local GLTF/KayKit PlayerModelRoot with a Mesh3d
+    // sprite entity. Startup readiness must therefore inspect that sprite,
+    // otherwise visible_player_meshes stays at zero forever.
+    player_sprite_roots: Query<Entity, With<crate::player_sprites::LocalPlayerSprite>>,
     actor_roots: Query<
         Entity,
         Or<(
@@ -376,7 +380,7 @@ pub(crate) fn update(
         })
         .count();
 
-    let visible_player_meshes = player_model_roots
+    let visible_player_meshes = player_sprite_roots
         .iter()
         .map(|root| count_visible_descendant_meshes(root, &children, &mesh_visibility))
         .sum::<usize>();

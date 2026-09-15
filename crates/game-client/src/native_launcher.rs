@@ -391,7 +391,7 @@ fn spawn_launcher_world_loading_overlay(commands: &mut Commands, asset_server: &
                 ));
 
                 card.spawn((
-                    Text::new("Connection | world | actors | models | renderer"),
+                    Text::new("Connection | world | actors | sprites | renderer"),
                     TextFont {
                         font_size: FontSize::Px(10.5),
                         ..default()

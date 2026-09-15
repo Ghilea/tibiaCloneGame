@@ -20,6 +20,8 @@ mod state;
 mod version;
 // TIBIAGAME_V36_11_NATIVE_INTERACTION_FOUNDATION
 mod creature_sprites;
+mod player_sprites;
+// TIBIAGAME_V36_78_1_EIGHT_DIRECTION_2D_ACTORS
 // TIBIAGAME_V36_7_NATIVE_SPRITE_CREATURE_PIPELINE
 mod collision;
 mod streaming;
@@ -301,7 +303,9 @@ impl Plugin for SingleWindowGameplayPlugin {
                         .after(creature_sprites::reconcile_creature_visuals),
                     creature_sprites::face_creature_sprites_to_camera
                         .after(creature_sprites::interpolate_creature_motion),
-                    setup_player_animation,
+                    player_sprites::update_local_player_sprite.after(interpolate_player),
+                    player_sprites::face_local_player_sprite_to_camera
+                        .after(player_sprites::update_local_player_sprite),
                     streaming::apply_streamed_region.after(pump_network),
                     native_loading::update
                         .after(streaming::apply_streamed_region)
@@ -323,9 +327,7 @@ impl Plugin for SingleWindowGameplayPlugin {
                         .run_if(native_game_menu::menu_closed)
                         .after(native_loading::update)
                         .after(pump_network),
-                    update_player_facing.after(schedule_tile_movement),
                     interpolate_player.after(schedule_tile_movement),
-                    update_player_animation.after(interpolate_player),
                     update_building_roofs.after(interpolate_player),
                     follow_camera.after(interpolate_player),
                     toggle_present_mode,
@@ -489,7 +491,7 @@ impl Plugin for SingleWindowGameplayPlugin {
             )
             .add_systems(
                 Update,
-                sync_local_player_outfit
+                player_sprites::sync_local_player_outfit
                     .after(pump_network)
                     .run_if(single_window_game_active),
             )
@@ -653,7 +655,9 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                     .after(creature_sprites::reconcile_creature_visuals),
                 creature_sprites::face_creature_sprites_to_camera
                     .after(creature_sprites::interpolate_creature_motion),
-                setup_player_animation,
+                player_sprites::update_local_player_sprite.after(interpolate_player),
+                player_sprites::face_local_player_sprite_to_camera
+                    .after(player_sprites::update_local_player_sprite),
                 streaming::apply_streamed_region.after(pump_network),
                 native_loading::update
                     .after(streaming::apply_streamed_region)
@@ -667,9 +671,7 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                     .run_if(native_loading::gameplay_ready)
                     .after(native_loading::update)
                     .after(pump_network),
-                update_player_facing.after(schedule_tile_movement),
                 interpolate_player.after(schedule_tile_movement),
-                update_player_animation.after(interpolate_player),
                 update_building_roofs.after(interpolate_player),
                 follow_camera.after(interpolate_player),
                 toggle_present_mode,
@@ -759,7 +761,7 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                 .before(native_map_ui::update_ui),
         )
         .add_systems(Update, face_nearby_npcs.after(interpolate_player))
-        .add_systems(Update, sync_local_player_outfit.after(pump_network))
+        .add_systems(Update, player_sprites::sync_local_player_outfit.after(pump_network))
         .add_systems(Update, update_day_night_cycle)
         // TIBIAGAME_V36_58_1_SPLIT_DIRECT_DRAG_SCHEDULE
         // Keep this separate from the already-full UI tuple. Bevy's tuple
@@ -868,12 +870,28 @@ fn collect_creature_textures(
     }
 }
 
+// TIBIAGAME_V36_78_3_DX12_RESIZE_SURFACE_FIX
+// DX12/wgpu can fail ResizeBuffers on Windows with DXGI_ERROR_INVALID_CALL
+// while Bevy reconfigures the surface during an interactive window resize.
+// Prefer Vulkan on Windows for the native client, while keeping an explicit
+// environment override for diagnostics or machines without a Vulkan driver.
+fn native_render_backend() -> (&'static str, Backends) {
+    let requested = std::env::var("ALDORIA_RENDER_BACKEND")
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+
+    match requested.as_str() {
+        "dx12" | "d3d12" => ("DX12", Backends::DX12),
+        "vulkan" | "vk" => ("Vulkan", Backends::VULKAN),
+        "auto" | "primary" => ("Auto", Backends::PRIMARY),
+        _ if cfg!(target_os = "windows") => ("Vulkan", Backends::VULKAN),
+        _ => ("Primary", Backends::PRIMARY),
+    }
+}
+
 fn native_render_plugin() -> RenderPlugin {
-    let backends = if cfg!(target_os = "windows") {
-        Backends::DX12
-    } else {
-        Backends::PRIMARY
-    };
+    let (_, backends) = native_render_backend();
 
     RenderPlugin {
         render_creation: WgpuSettings {
@@ -900,10 +918,12 @@ fn setup(
         .take()
         .expect("V36.2 BootstrapWelcome must exist exactly once");
 
+    let (render_backend_name, _) = native_render_backend();
     info!(
-        "ALDORIA NATIVE V{} · Bevy 0.19.1 · protocol {} · DX12 · LIVE SERVER",
+        "ALDORIA NATIVE V{} · Bevy 0.19.1 · protocol {} · {} · LIVE SERVER",
         version::MIGRATION_VERSION,
         PROTOCOL_VERSION,
+        render_backend_name,
     );
     info!("ALDORIA ASSET ROOT · {}", native_asset_root());
     info!(
@@ -913,6 +933,8 @@ fn setup(
 
     let creature_sprite_catalog =
         creature_sprites::CreatureSpriteCatalog::new(&asset_server, &mut meshes);
+    let player_sprite_catalog =
+        player_sprites::PlayerSpriteCatalog::new(&asset_server, &mut meshes);
     creature_sprites::spawn_creature_render_warmup(
         &mut commands,
         &mut materials,
@@ -926,6 +948,7 @@ fn setup(
     world_architecture::describe();
     world_details::describe();
     creature_sprites::describe_catalog();
+    player_sprites::describe_catalog();
 
     // V36.17: Welcome already contains region_floor_radius data. Start building
     // the complete current/adjacent floor cache immediately at startup.
@@ -954,35 +977,9 @@ fn setup(
     commands.insert_resource(creature_sprite_catalog);
     commands.insert_resource(world_detail_catalog);
     commands.insert_resource(architecture_catalog);
-    // TIBIAGAME_V36_5_NATIVE_PLAYER_MODEL
-    let general_animation_path = "models/kaykit-adventurers/Rig_Medium_General.glb";
-    let movement_animation_path = "models/kaykit-adventurers/Rig_Medium_MovementBasic.glb";
-
-    let general_gltf: Handle<Gltf> = asset_server.load(general_animation_path);
-    let movement_gltf: Handle<Gltf> = asset_server.load(movement_animation_path);
-
-    commands.insert_resource(PlayerAnimationSources {
-        general: general_gltf,
-        movement: movement_gltf,
-    });
-
-    // The KayKit animation clips live in separate rig-only GLBs. Spawn the
-    // General rig invisibly so Bevy creates the exact AnimationTargetId values
-    // used by those clips. V36.6 copies those IDs to the matching model bones.
-    commands.spawn((
-        Name::new("KayKit animation target template"),
-        AnimationTemplateRig,
-        WorldAssetRoot(
-            asset_server.load(GltfAssetLabel::Scene(0).from_asset(general_animation_path)),
-        ),
-        Transform::from_xyz(0.0, -10_000.0, 0.0),
-        Visibility::Hidden,
-    ));
-
-    let model_path = player_model_path(&identity.outfit);
-    let model_scale = player_model_scale(&identity.outfit);
-    let model_scene = asset_server.load(GltfAssetLabel::Scene(0).from_asset(model_path));
-
+    // TIBIAGAME_V36_78_1_EIGHT_DIRECTION_2D_ACTORS
+    // The local player is now rendered as a camera-facing sprite. World movement,
+    // collision and floor coordinates remain unchanged.
     commands
         .spawn((
             Name::new(format!("Local Player · {}", identity.name)),
@@ -991,13 +988,10 @@ fn setup(
             Visibility::default(),
         ))
         .with_children(|player| {
-            player.spawn((
-                Name::new(format!("{} model", identity.outfit)),
-                PlayerModelRoot,
-                WorldAssetRoot(model_scene),
-                Transform::from_translation(Vec3::new(0.0, -0.575, 0.0))
-                    .with_scale(Vec3::splat(model_scale))
-                    .with_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
+            player.spawn(player_sprites::local_player_sprite_bundle(
+                &mut materials,
+                &player_sprite_catalog,
+                &identity.outfit,
             ));
             player.spawn((
                 Name::new("Player light aura"),
@@ -1012,6 +1006,8 @@ fn setup(
                 Transform::from_xyz(0.0, 1.35, 0.0),
             ));
         });
+
+    commands.insert_resource(player_sprite_catalog);
 
     commands.spawn((
         Name::new("Sun"),

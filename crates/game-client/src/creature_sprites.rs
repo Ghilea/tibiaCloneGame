@@ -43,7 +43,7 @@ pub enum SpriteDirection {
 }
 
 impl SpriteDirection {
-    fn from_delta(dx: i32, dy: i32, fallback: Self) -> Self {
+    pub(crate) fn from_delta(dx: i32, dy: i32, fallback: Self) -> Self {
         match (dx.signum(), dy.signum()) {
             (0, -1) => Self::North,
             (1, -1) => Self::NorthEast,
@@ -57,10 +57,13 @@ impl SpriteDirection {
         }
     }
 
-    // Castle rat's current production atlas contains four authored directions
-    // in rows 0/2/4/6. The runtime still stores all eight directions so future
-    // creature sheets can use diagonal rows without changing movement code.
-    fn castle_rat_row(self) -> usize {
+    // Four-direction sheets retain the historical rows 0/2/4/6. New sheets
+    // can author all eight rows and use the same runtime direction state.
+    pub(crate) fn atlas_row(self, authored_directions: usize) -> usize {
+        if authored_directions >= 8 {
+            return self.index8();
+        }
+
         match self {
             Self::North => 0,
             Self::NorthEast | Self::East | Self::SouthEast => 2,
@@ -69,7 +72,6 @@ impl SpriteDirection {
         }
     }
 
-    #[allow(dead_code)]
     pub fn index8(self) -> usize {
         match self {
             Self::North => 0,
@@ -97,6 +99,16 @@ enum SpriteAnimation {
 enum CreatureSpriteKind {
     CastleRat,
     Placeholder,
+}
+
+impl CreatureSpriteKind {
+    fn authored_directions(self) -> usize {
+        match self {
+            // Existing production art has four authored views.
+            Self::CastleRat => 4,
+            Self::Placeholder => 1,
+        }
+    }
 }
 
 #[derive(Component)]
@@ -746,7 +758,12 @@ pub fn animate_creature_sprites(
 
         material.base_color_texture = Some(albedo.clone());
         material.normal_map_texture = Some(normal.clone());
-        material.uv_transform = atlas_uv(columns, rows, frame, direction.castle_rat_row());
+        material.uv_transform = atlas_uv(
+            columns,
+            rows,
+            frame,
+            direction.atlas_row(sprite.kind.authored_directions()),
+        );
 
         sprite.last_frame = frame;
         sprite.last_direction = direction;
