@@ -11,6 +11,9 @@ mod native_loading;
 mod native_map_ui;
 mod native_modal;
 mod native_settings;
+mod native_appearance;
+// TIBIAGAME_V36_94_CHARACTER_CUSTOMIZATION_UI
+// TIBIAGAME_V36_94_1_CHARACTER_CUSTOMIZATION_RECOVERY
 mod native_trade_ui;
 mod native_ui;
 mod native_ui_theme;
@@ -253,6 +256,7 @@ impl Plugin for SingleWindowGameplayPlugin {
             .init_resource::<native_map_ui::NativeMapUiState>()
             .init_resource::<native_trade_ui::NativeTradeUiState>()
             .init_resource::<native_settings::NativeSettingsState>()
+        .init_resource::<native_appearance::NativeAppearanceUiState>()
             .init_resource::<native_ui::NativePingState>()
             .init_resource::<MoveSequence>()
             .init_resource::<FrameProbe>()
@@ -266,6 +270,7 @@ impl Plugin for SingleWindowGameplayPlugin {
                     native_map_ui::setup,
                     native_trade_ui::setup,
                     native_settings::setup,
+                native_appearance::setup,
                     native_game_menu::setup,
                     native_loading::setup,
                     finish_single_window_bootstrap,
@@ -498,6 +503,28 @@ impl Plugin for SingleWindowGameplayPlugin {
             )
             .add_systems(
                 Update,
+                (
+                    native_appearance::hydrate_saved_appearance
+                        .after(player_sprites::sync_local_character_appearance_resource),
+                    native_appearance::handle_input
+                        .run_if(native_game_menu::menu_closed)
+                        .after(native_appearance::hydrate_saved_appearance)
+                        .after(native_settings::handle_input)
+                        .before(schedule_tile_movement),
+                    native_appearance::handle_buttons
+                        .after(native_appearance::handle_input),
+                    native_appearance::apply_preview_direction
+                        .after(native_appearance::handle_buttons)
+                        .after(player_sprites::update_local_player_sprite)
+                        .before(player_sprites::sync_local_player_appearance_layers)
+                        .before(player_sprites::sync_local_player_equipment_layers),
+                    native_appearance::update_ui
+                        .after(native_appearance::handle_buttons),
+                )
+                    .distributive_run_if(single_window_game_active),
+            )
+            .add_systems(
+                Update,
                 player_sprites::ensure_local_player_equipment_layers
                     .after(player_sprites::update_local_player_sprite)
                     .run_if(single_window_game_active),
@@ -647,6 +674,7 @@ fn run_game(session: network::NativeSession) -> Result<()> {
         .init_resource::<native_map_ui::NativeMapUiState>()
         .init_resource::<native_trade_ui::NativeTradeUiState>()
         .init_resource::<native_settings::NativeSettingsState>()
+            .init_resource::<native_appearance::NativeAppearanceUiState>()
         .init_resource::<native_ui::NativePingState>()
         .init_resource::<native_loading::NativeLoadingState>()
         .init_resource::<MoveSequence>()
@@ -680,6 +708,7 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                 native_map_ui::setup,
                 native_trade_ui::setup,
                 native_settings::setup,
+                    native_appearance::setup,
                 native_loading::setup.after(native_settings::setup),
             ),
         )
@@ -830,6 +859,26 @@ fn run_game(session: network::NativeSession) -> Result<()> {
                 .after(player_sprites::ensure_local_player_appearance_layers)
                 .after(player_sprites::update_local_player_sprite)
                 .after(player_sprites::sync_local_character_appearance_resource),
+        )
+        .add_systems(
+            Update,
+            (
+                native_appearance::hydrate_saved_appearance
+                    .after(player_sprites::sync_local_character_appearance_resource),
+                native_appearance::handle_input
+                    .after(native_appearance::hydrate_saved_appearance)
+                    .after(native_settings::handle_input)
+                    .before(schedule_tile_movement),
+                native_appearance::handle_buttons
+                    .after(native_appearance::handle_input),
+                native_appearance::apply_preview_direction
+                    .after(native_appearance::handle_buttons)
+                    .after(player_sprites::update_local_player_sprite)
+                    .before(player_sprites::sync_local_player_appearance_layers)
+                    .before(player_sprites::sync_local_player_equipment_layers),
+                native_appearance::update_ui
+                    .after(native_appearance::handle_buttons),
+            ),
         )
         .add_systems(
             Update,

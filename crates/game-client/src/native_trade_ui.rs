@@ -1,4 +1,6 @@
 // TIBIAGAME_V36_27_NATIVE_DIRECT_TRADE
+// TIBIAGAME_V36_94_CHARACTER_CUSTOMIZATION_UI
+// TIBIAGAME_V36_94_1_CHARACTER_CUSTOMIZATION_RECOVERY
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use game_protocol::ClientMessage;
@@ -6,6 +8,7 @@ use game_types::EntityId;
 
 use crate::{
     NativeNetwork,
+    native_appearance::NativeAppearanceUiState,
     native_map_ui::NativeMapUiState,
     native_settings::NativeSettingsState,
     native_ui::{NativeChatState, NativePanelState},
@@ -17,11 +20,15 @@ pub(crate) struct MovementUiLocks<'w> {
     map_ui: Res<'w, NativeMapUiState>,
     trade_ui: Res<'w, NativeTradeUiState>,
     settings_ui: Res<'w, NativeSettingsState>,
+    appearance_ui: Res<'w, NativeAppearanceUiState>,
 }
 
 impl MovementUiLocks<'_> {
     pub(crate) fn blocks_movement(&self) -> bool {
-        self.map_ui.world_map_open || self.trade_ui.block_movement || self.settings_ui.options_open
+        self.map_ui.world_map_open
+            || self.trade_ui.block_movement
+            || self.settings_ui.options_open
+            || self.appearance_ui.open
     }
 }
 

@@ -4,6 +4,8 @@
 // TIBIAGAME_V36_91_REMOTE_PLAYER_SPRITES
 // TIBIAGAME_V36_92_REMOTE_EQUIPMENT_REPLICATION
 // TIBIAGAME_V36_93_CHARACTER_APPEARANCE_COMPOSER
+// TIBIAGAME_V36_94_CHARACTER_CUSTOMIZATION_UI
+// TIBIAGAME_V36_94_1_CHARACTER_CUSTOMIZATION_RECOVERY
 use std::collections::HashMap;
 
 use bevy::{camera::visibility::NoFrustumCulling, prelude::*};
@@ -119,6 +121,25 @@ impl LocalCharacterAppearance {
         value.last_legacy_outfit = outfit.to_owned();
         value
     }
+
+    pub(crate) fn customization_default(outfit: &str) -> Self {
+        let mut value = Self::legacy_preset(outfit);
+        value.body = "body_01".to_owned();
+        value.head = "head_01".to_owned();
+        value.face = "face_01".to_owned();
+        value.hair = "hair_01".to_owned();
+        value.facial_hair = None;
+        value.torso = "torso_01".to_owned();
+        value.legs = "legs_01".to_owned();
+        value.feet = "feet_01".to_owned();
+        value.skin_tone = "skin_warm".to_owned();
+        value.hair_color = "hair_brown".to_owned();
+        value.torso_color = "cloth_burgundy".to_owned();
+        value.legs_color = "cloth_charcoal".to_owned();
+        value.feet_color = "leather_brown".to_owned();
+        value.customized = true;
+        value
+    }
 }
 
 #[derive(Component)]
@@ -145,6 +166,12 @@ pub struct LocalPlayerSprite {
     last_animation: ActorAnimation,
     material: Handle<StandardMaterial>,
 }
+impl LocalPlayerSprite {
+    pub(crate) fn set_preview_direction(&mut self, direction: SpriteDirection) {
+        self.direction = direction;
+    }
+}
+
 
 
 #[derive(Component)]
