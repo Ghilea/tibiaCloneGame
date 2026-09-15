@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "actors": [
+    {
+      "game_definition_id": "castle_rat",
+      "manifest": "actors/creatures/castle_rat/actor.json"
+    }
+  ]
+}

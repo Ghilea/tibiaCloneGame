@@ -28,7 +28,8 @@
     "native": "cargo run -p game-client --bin game-client",
     "native:release": "cargo run --release -p game-client --bin game-client",
     "native:check": "cargo check -p game-client --bin game-client",
-    "native:connect": "cargo run --release -p game-client --bin native-connect"
+    "native:connect": "cargo run --release -p game-client --bin native-connect",
+    "actors:validate": "node scripts/validate-actor-sprites.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4"

@@ -1,35 +1,17 @@
-// TIBIAGAME_V36_80_UNIFIED_ACTOR_SPRITE_SYSTEM
-use bevy::{
-    camera::visibility::NoFrustumCulling,
-    prelude::*,
-};
+// TIBIAGAME_V36_83_PRODUCTION_SPRITE_PIPELINE
+use bevy::{camera::visibility::NoFrustumCulling, prelude::*};
 use game_types::{NpcView, Position};
 
 use crate::{
     MainCamera, MovementState, NpcActor,
     actor_sprites::{
-        ActorAnimation, ActorSpriteDefinition, AnimationSpec, SpriteDirection, atlas_uv,
-        billboard_rotation, face_direction,
+        ActorAnimation, ActorSpriteAssets, SpriteDirection, atlas_uv, billboard_rotation,
+        face_direction,
     },
     state::NativeGameState,
 };
 
-const NPC_IDLE_ATLAS: &str = "npcs/default/atlases/npc_idle_8dir_v36_80.png";
-
-pub const NPC_SPRITE_DEFINITION: ActorSpriteDefinition = ActorSpriteDefinition {
-    id: "npc.default",
-    authored_directions: 8,
-    atlas_rows: 8,
-    render_width: 0.94,
-    render_height: 1.38,
-    idle: AnimationSpec::looping(4, 4, 4.0),
-    walk: None,
-    attack: None,
-    hit: None,
-    death: None,
-    cast: None,
-    use_action: None,
-};
+const NPC_MANIFEST: &str = "actors/npcs/default/actor.json";
 
 #[derive(Component)]
 pub struct NpcSprite {
@@ -46,7 +28,7 @@ pub struct NpcSprite {
 #[derive(Resource)]
 pub struct NpcSpriteCatalog {
     quad: Handle<Mesh>,
-    idle: Handle<Image>,
+    actor: ActorSpriteAssets,
 }
 
 impl NpcSpriteCatalog {
@@ -58,7 +40,7 @@ impl NpcSpriteCatalog {
 
         Self {
             quad: meshes.add(quad),
-            idle: asset_server.load(NPC_IDLE_ATLAS),
+            actor: ActorSpriteAssets::load(asset_server, NPC_MANIFEST),
         }
     }
 }
@@ -69,14 +51,24 @@ pub fn spawn_npc_sprite(
     catalog: &NpcSpriteCatalog,
     npc: &NpcView,
 ) -> Entity {
+    let definition = &catalog.actor.definition;
+    let idle = definition
+        .spec(ActorAnimation::Idle)
+        .expect("validated NPC manifest must define idle");
+    let idle_texture = catalog
+        .actor
+        .texture(ActorAnimation::Idle)
+        .expect("validated NPC manifest must load idle texture");
+
     let material = materials.add(StandardMaterial {
         base_color: npc_tint(npc),
-        base_color_texture: Some(catalog.idle.clone()),
+        base_color_texture: Some(idle_texture.clone()),
+        normal_map_texture: catalog.actor.normal(ActorAnimation::Idle).cloned(),
         uv_transform: atlas_uv(
-            NPC_SPRITE_DEFINITION.idle.columns,
-            NPC_SPRITE_DEFINITION.atlas_rows,
+            idle.columns,
+            definition.atlas_rows,
             0,
-            SpriteDirection::South.atlas_row(NPC_SPRITE_DEFINITION.authored_directions),
+            SpriteDirection::South.atlas_row(definition.authored_directions),
         ),
         perceptual_roughness: 0.9,
         metallic: 0.0,
@@ -105,13 +97,9 @@ pub fn spawn_npc_sprite(
             Mesh3d(catalog.quad.clone()),
             MeshMaterial3d(material),
             Transform {
-                translation: sprite_world_position(npc.position),
+                translation: sprite_world_position(npc.position, definition.render_height),
                 rotation: Quat::from_rotation_y(std::f32::consts::PI),
-                scale: Vec3::new(
-                    NPC_SPRITE_DEFINITION.render_width,
-                    NPC_SPRITE_DEFINITION.render_height,
-                    1.0,
-                ),
+                scale: Vec3::new(definition.render_width, definition.render_height, 1.0),
             },
             Visibility::default(),
         ))
@@ -127,18 +115,24 @@ pub fn animate_npc_sprites(
     mut npcs: Query<(&NpcActor, &mut NpcSprite, &mut Transform)>,
 ) {
     let now = time.elapsed_secs_f64();
-    let spec = NPC_SPRITE_DEFINITION.idle;
+    let definition = &catalog.actor.definition;
+    let spec = definition
+        .spec(ActorAnimation::Idle)
+        .expect("validated NPC manifest must define idle");
+    let idle_texture = catalog
+        .actor
+        .texture(ActorAnimation::Idle)
+        .expect("validated NPC manifest must load idle texture");
 
     for (actor, mut sprite, mut transform) in &mut npcs {
         if let Some(npc) = game_state.npcs.get(&actor.0) {
             if sprite.logical_position != npc.position {
                 sprite.logical_position = npc.position;
-                transform.translation = sprite_world_position(npc.position);
+                transform.translation = sprite_world_position(npc.position, definition.render_height);
             }
 
             if npc.position.z == movement.logical.z {
-                sprite.direction =
-                    face_direction(npc.position, movement.logical, sprite.direction);
+                sprite.direction = face_direction(npc.position, movement.logical, sprite.direction);
             }
         }
 
@@ -162,12 +156,13 @@ pub fn animate_npc_sprites(
         let Some(mut material) = materials.get_mut(&sprite.material) else {
             continue;
         };
-        material.base_color_texture = Some(catalog.idle.clone());
+        material.base_color_texture = Some(idle_texture.clone());
+        material.normal_map_texture = catalog.actor.normal(ActorAnimation::Idle).cloned();
         material.uv_transform = atlas_uv(
             spec.columns,
-            NPC_SPRITE_DEFINITION.atlas_rows,
+            definition.atlas_rows,
             frame,
-            direction.atlas_row(NPC_SPRITE_DEFINITION.authored_directions),
+            direction.atlas_row(definition.authored_directions),
         );
 
         sprite.last_frame = frame;
@@ -192,10 +187,10 @@ pub fn face_npc_sprites_to_camera(
     }
 }
 
-fn sprite_world_position(position: Position) -> Vec3 {
+fn sprite_world_position(position: Position, render_height: f32) -> Vec3 {
     Vec3::new(
         position.x as f32,
-        NPC_SPRITE_DEFINITION.render_height * 0.5 + 0.025,
+        render_height * 0.5 + 0.025,
         position.y as f32,
     )
 }
@@ -226,9 +221,7 @@ fn npc_tint(npc: &NpcView) -> Color {
 
 pub fn describe_catalog() {
     info!(
-        "ALDORIA NPC SPRITES · definition={} · {} directions · idle={} frames",
-        NPC_SPRITE_DEFINITION.id,
-        NPC_SPRITE_DEFINITION.authored_directions,
-        NPC_SPRITE_DEFINITION.idle.frames,
+        "ALDORIA NPC SPRITES · manifest={} · data-driven 8-direction presentation",
+        NPC_MANIFEST,
     );
 }

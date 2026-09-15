@@ -1,98 +1,33 @@
-use std::collections::HashSet;
+// TIBIAGAME_V36_83_PRODUCTION_SPRITE_PIPELINE
+use std::collections::{HashMap, HashSet};
 
-use bevy::{
-    camera::visibility::NoFrustumCulling, image::ImageLoaderSettings, math::Affine2, prelude::*,
-};
+use bevy::{camera::visibility::NoFrustumCulling, math::Affine2, prelude::*};
 use game_types::{CreatureView, Position};
 
 use crate::{
     CreatureActor, MainCamera, MovementState,
     actor_sprites::{
-        ActorAnimation, ActorSpriteDefinition, AnimationSpec, atlas_uv, billboard_rotation,
+        ActorAnimation, ActorSpriteAssets, ActorSpriteDefinition, atlas_uv, billboard_rotation,
+        load_actor_index,
     },
     state::NativeGameState,
 };
 
 const CARDINAL_MOVE_SECONDS: f64 = 0.165;
 const DIAGONAL_FACTOR: f64 = std::f64::consts::SQRT_2;
-
-const CASTLE_RAT_IDLE_ALBEDO: &str =
-    "monsters/castle_rat/atlases/castle_rat_idle_albedo_8dir_v36_79.png";
-const CASTLE_RAT_IDLE_NORMAL: &str =
-    "monsters/castle_rat/atlases/castle_rat_idle_normal_8dir_v36_79.png";
-const CASTLE_RAT_WALK_ALBEDO: &str = "monsters/castle_rat/atlases/castle_rat_walk_albedo_8dir_v36_79.png";
-const CASTLE_RAT_WALK_NORMAL: &str = "monsters/castle_rat/atlases/castle_rat_walk_normal_8dir_v36_79.png";
-const CASTLE_RAT_ATTACK_ALBEDO: &str =
-    "monsters/castle_rat/atlases/castle_rat_attack_albedo_8dir_v36_79.png";
-const CASTLE_RAT_ATTACK_NORMAL: &str =
-    "monsters/castle_rat/atlases/castle_rat_attack_normal_8dir_v36_79.png";
-const CASTLE_RAT_HIT_ALBEDO: &str =
-    "monsters/castle_rat/atlases/castle_rat_hit_albedo_8dir_v36_79.png";
-const CASTLE_RAT_HIT_NORMAL: &str =
-    "monsters/castle_rat/atlases/castle_rat_hit_normal_8dir_v36_79.png";
-const CASTLE_RAT_DEATH_ALBEDO: &str =
-    "monsters/castle_rat/atlases/castle_rat_death_albedo_8dir_v36_79.png";
-const CASTLE_RAT_DEATH_NORMAL: &str =
-    "monsters/castle_rat/atlases/castle_rat_death_normal_8dir_v36_79.png";
+const CREATURE_INDEX: &str = "actors/creatures/index.json";
 const PLACEHOLDER_TEXTURE: &str = "monsters/native_sprite_placeholder_v36_7.png";
-
-const CASTLE_RAT_SPRITE_DEFINITION: ActorSpriteDefinition = ActorSpriteDefinition {
-    id: "creature.castle_rat",
-    authored_directions: 8,
-    atlas_rows: 8,
-    render_width: 0.95,
-    render_height: 1.05,
-    idle: AnimationSpec::looping(12, 12, 10.0),
-    walk: Some(AnimationSpec::looping(8, 8, 12.0)),
-    attack: Some(AnimationSpec::once(8, 8, 14.0)),
-    hit: Some(AnimationSpec::once(5, 5, 14.0)),
-    death: Some(AnimationSpec::terminal(10, 10, 10.0)),
-    cast: None,
-    use_action: None,
-};
-
-const PLACEHOLDER_SPRITE_DEFINITION: ActorSpriteDefinition = ActorSpriteDefinition {
-    id: "creature.placeholder",
-    authored_directions: 1,
-    atlas_rows: 1,
-    render_width: 0.95,
-    render_height: 1.15,
-    idle: AnimationSpec::looping(1, 1, 1.0),
-    walk: None,
-    attack: None,
-    hit: None,
-    death: None,
-    cast: None,
-    use_action: None,
-};
 
 pub use crate::actor_sprites::SpriteDirection;
 
 type SpriteAnimation = ActorAnimation;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CreatureSpriteKind {
-    CastleRat,
-    Placeholder,
-}
-
-impl CreatureSpriteKind {
-    fn definition(self) -> &'static ActorSpriteDefinition {
-        match self {
-            Self::CastleRat => &CASTLE_RAT_SPRITE_DEFINITION,
-            Self::Placeholder => &PLACEHOLDER_SPRITE_DEFINITION,
-        }
-    }
-}
 
 #[derive(Component)]
 pub struct PersistentCreatureVisual;
 
 #[derive(Component)]
 pub struct CreatureSprite {
-    // TIBIAGAME_V36_7_2_UNUSED_DEFINITION_ID_CLEANUP
-    // TIBIAGAME_V36_15_1_OPENING_FACADE_RAT_GPU_PREWARM
-    kind: CreatureSpriteKind,
+    definition_id: String,
     logical_position: Position,
     direction: SpriteDirection,
     animation: SpriteAnimation,
@@ -117,16 +52,7 @@ pub struct CreatureMotion {
 pub struct CreatureSpriteCatalog {
     quad: Handle<Mesh>,
     placeholder: Handle<Image>,
-    castle_rat_idle_albedo: Handle<Image>,
-    castle_rat_idle_normal: Handle<Image>,
-    castle_rat_walk_albedo: Handle<Image>,
-    castle_rat_walk_normal: Handle<Image>,
-    castle_rat_attack_albedo: Handle<Image>,
-    castle_rat_attack_normal: Handle<Image>,
-    castle_rat_hit_albedo: Handle<Image>,
-    castle_rat_hit_normal: Handle<Image>,
-    castle_rat_death_albedo: Handle<Image>,
-    castle_rat_death_normal: Handle<Image>,
+    actors: HashMap<String, ActorSpriteAssets>,
 }
 
 impl CreatureSpriteCatalog {
@@ -136,20 +62,35 @@ impl CreatureSpriteCatalog {
             warn!("ALDORIA SPRITE QUAD · tangent generation failed: {error}");
         }
 
+        let mut actors = HashMap::new();
+        for entry in load_actor_index(CREATURE_INDEX) {
+            let assets = ActorSpriteAssets::load(asset_server, &entry.manifest);
+            if actors
+                .insert(entry.game_definition_id.clone(), assets)
+                .is_some()
+            {
+                panic!(
+                    "ALDORIA CREATURE MANIFEST DUPLICATE · {}",
+                    entry.game_definition_id,
+                );
+            }
+        }
+
+        info!(
+            "ALDORIA CREATURE MANIFEST CATALOG · {} registered definitions · {}",
+            actors.len(),
+            CREATURE_INDEX,
+        );
+
         Self {
             quad: meshes.add(quad),
             placeholder: asset_server.load(PLACEHOLDER_TEXTURE),
-            castle_rat_idle_albedo: asset_server.load(CASTLE_RAT_IDLE_ALBEDO),
-            castle_rat_idle_normal: load_linear_image(asset_server, CASTLE_RAT_IDLE_NORMAL),
-            castle_rat_walk_albedo: asset_server.load(CASTLE_RAT_WALK_ALBEDO),
-            castle_rat_walk_normal: load_linear_image(asset_server, CASTLE_RAT_WALK_NORMAL),
-            castle_rat_attack_albedo: asset_server.load(CASTLE_RAT_ATTACK_ALBEDO),
-            castle_rat_attack_normal: load_linear_image(asset_server, CASTLE_RAT_ATTACK_NORMAL),
-            castle_rat_hit_albedo: asset_server.load(CASTLE_RAT_HIT_ALBEDO),
-            castle_rat_hit_normal: load_linear_image(asset_server, CASTLE_RAT_HIT_NORMAL),
-            castle_rat_death_albedo: asset_server.load(CASTLE_RAT_DEATH_ALBEDO),
-            castle_rat_death_normal: load_linear_image(asset_server, CASTLE_RAT_DEATH_NORMAL),
+            actors,
         }
+    }
+
+    fn actor(&self, definition_id: &str) -> Option<&ActorSpriteAssets> {
+        self.actors.get(definition_id)
     }
 }
 
@@ -158,60 +99,54 @@ pub fn spawn_creature_render_warmup(
     materials: &mut Assets<StandardMaterial>,
     catalog: &CreatureSpriteCatalog,
 ) {
-    let probes: [(&str, &Handle<Image>, &Handle<Image>); 5] = [
-        (
-            "idle",
-            &catalog.castle_rat_idle_albedo,
-            &catalog.castle_rat_idle_normal,
-        ),
-        (
-            "walk",
-            &catalog.castle_rat_walk_albedo,
-            &catalog.castle_rat_walk_normal,
-        ),
-        (
-            "attack",
-            &catalog.castle_rat_attack_albedo,
-            &catalog.castle_rat_attack_normal,
-        ),
-        (
-            "hit",
-            &catalog.castle_rat_hit_albedo,
-            &catalog.castle_rat_hit_normal,
-        ),
-        (
-            "death",
-            &catalog.castle_rat_death_albedo,
-            &catalog.castle_rat_death_normal,
-        ),
-    ];
+    let mut probe_index = 0usize;
 
-    for (index, (label, albedo, normal)) in probes.into_iter().enumerate() {
-        let material = materials.add(StandardMaterial {
-            base_color: Color::WHITE,
-            base_color_texture: Some(albedo.clone()),
-            normal_map_texture: Some(normal.clone()),
-            uv_transform: atlas_uv(12, 8, 0, 4),
-            perceptual_roughness: 0.9,
-            metallic: 0.0,
-            unlit: true,
-            alpha_mode: AlphaMode::Mask(0.05),
-            double_sided: true,
-            cull_mode: None,
-            ..default()
-        });
+    for (game_definition_id, actor) in &catalog.actors {
+        for animation in ActorAnimation::ALL {
+            let Some(spec) = actor.definition.spec(animation) else {
+                continue;
+            };
+            let Some(texture) = actor.texture(animation) else {
+                continue;
+            };
 
-        // Do not mark these as CreatureActor/WorldStatic. They are permanent
-        // off-camera render probes and must not enter combat, interaction or
-        // streamed-region cleanup queries.
-        commands.spawn((
-            Name::new(format!("Castle rat GPU warmup · {label}")),
-            NoFrustumCulling,
-            Mesh3d(catalog.quad.clone()),
-            MeshMaterial3d(material),
-            Transform::from_xyz(-10_000.0 - index as f32 * 2.0, -10_000.0, -10_000.0),
-            Visibility::default(),
-        ));
+            let material = materials.add(StandardMaterial {
+                base_color: Color::WHITE,
+                base_color_texture: Some(texture.clone()),
+                normal_map_texture: actor.normal(animation).cloned(),
+                uv_transform: atlas_uv(
+                    spec.columns,
+                    actor.definition.atlas_rows,
+                    0,
+                    SpriteDirection::South.atlas_row(actor.definition.authored_directions),
+                ),
+                perceptual_roughness: 0.9,
+                metallic: 0.0,
+                unlit: true,
+                alpha_mode: AlphaMode::Mask(0.05),
+                double_sided: true,
+                cull_mode: None,
+                ..default()
+            });
+
+            commands.spawn((
+                Name::new(format!(
+                    "Creature GPU warmup · {} · {}",
+                    game_definition_id,
+                    animation.as_str(),
+                )),
+                NoFrustumCulling,
+                Mesh3d(catalog.quad.clone()),
+                MeshMaterial3d(material),
+                Transform::from_xyz(
+                    -10_000.0 - probe_index as f32 * 2.0,
+                    -10_000.0,
+                    -10_000.0,
+                ),
+                Visibility::default(),
+            ));
+            probe_index += 1;
+        }
     }
 
     let placeholder_material = materials.add(StandardMaterial {
@@ -235,38 +170,20 @@ pub fn spawn_creature_render_warmup(
     ));
 
     info!(
-        "ALDORIA CREATURE GPU WARMUP · castle rat idle/walk/attack/hit/death + placeholder probes queued"
+        "ALDORIA CREATURE GPU WARMUP · {} manifest animation probes + placeholder queued",
+        probe_index,
     );
-}
-
-fn load_linear_image(asset_server: &AssetServer, path: &'static str) -> Handle<Image> {
-    asset_server
-        .load_builder()
-        .with_settings(|settings: &mut ImageLoaderSettings| {
-            settings.is_srgb = false;
-        })
-        .load(path)
 }
 
 pub fn floor_transition_creature_assets_ready(
     asset_server: &AssetServer,
     catalog: &CreatureSpriteCatalog,
 ) -> bool {
-    [
-        &catalog.placeholder,
-        &catalog.castle_rat_idle_albedo,
-        &catalog.castle_rat_idle_normal,
-        &catalog.castle_rat_walk_albedo,
-        &catalog.castle_rat_walk_normal,
-        &catalog.castle_rat_attack_albedo,
-        &catalog.castle_rat_attack_normal,
-        &catalog.castle_rat_hit_albedo,
-        &catalog.castle_rat_hit_normal,
-        &catalog.castle_rat_death_albedo,
-        &catalog.castle_rat_death_normal,
-    ]
-    .into_iter()
-    .all(|handle| asset_server.is_loaded_with_dependencies(handle.id()))
+    asset_server.is_loaded_with_dependencies(catalog.placeholder.id())
+        && catalog
+            .actors
+            .values()
+            .all(|actor| actor.is_loaded(asset_server))
 }
 
 pub fn spawn_creature_sprite(
@@ -275,13 +192,16 @@ pub fn spawn_creature_sprite(
     catalog: &CreatureSpriteCatalog,
     creature: &CreatureView,
 ) -> Entity {
-    let kind = if creature.definition_id == "castle_rat" {
-        CreatureSpriteKind::CastleRat
+    let authored = catalog.actor(&creature.definition_id);
+    let (render_width, render_height, tint) = if let Some(actor) = authored {
+        (
+            actor.definition.render_width,
+            actor.definition.render_height,
+            Color::WHITE,
+        )
     } else {
-        CreatureSpriteKind::Placeholder
+        creature_visual_style(&creature.definition_id)
     };
-
-    let (render_width, render_height, tint) = creature_visual_style(&creature.definition_id);
 
     let mut material = StandardMaterial {
         base_color: tint,
@@ -294,15 +214,26 @@ pub fn spawn_creature_sprite(
         ..default()
     };
 
-    if kind == CreatureSpriteKind::CastleRat {
+    if let Some(actor) = authored {
+        let idle = actor
+            .definition
+            .spec(ActorAnimation::Idle)
+            .expect("validated creature manifest must define idle");
+        let idle_texture = actor
+            .texture(ActorAnimation::Idle)
+            .expect("validated creature manifest must load idle texture");
         material.base_color = Color::WHITE;
-        material.base_color_texture = Some(catalog.castle_rat_idle_albedo.clone());
-        material.normal_map_texture = Some(catalog.castle_rat_idle_normal.clone());
-        material.uv_transform = atlas_uv(12, 8, 0, 4);
+        material.base_color_texture = Some(idle_texture.clone());
+        material.normal_map_texture = actor.normal(ActorAnimation::Idle).cloned();
+        material.uv_transform = atlas_uv(
+            idle.columns,
+            actor.definition.atlas_rows,
+            0,
+            SpriteDirection::South.atlas_row(actor.definition.authored_directions),
+        );
     } else {
-        // V36.19: an authoritative hostile must never be visually transparent.
-        // The remaining production sprite sheets are not authored yet, so use
-        // the per-definition tint as a solid billboard fallback.
+        // Unregistered server creatures remain visible as opaque tinted
+        // billboards. Adding production art requires only actor.json + index.json.
         material.base_color_texture = None;
         material.normal_map_texture = None;
         material.alpha_mode = AlphaMode::Opaque;
@@ -321,7 +252,7 @@ pub fn spawn_creature_sprite(
             PersistentCreatureVisual,
             NoFrustumCulling,
             CreatureSprite {
-                kind,
+                definition_id: creature.definition_id.clone(),
                 logical_position: creature.position,
                 direction: SpriteDirection::South,
                 animation: SpriteAnimation::Idle,
@@ -376,15 +307,20 @@ pub fn reconcile_creature_visuals(
     let mut existing_ids = HashSet::new();
 
     for (entity, actor, mut sprite, mut motion, mut transform, mut visibility) in &mut visuals {
-        if !existing_ids.insert(actor.0) {
-            commands.entity(entity).despawn();
-            continue;
-        }
-
         let Some(creature) = game_state.creatures.get(&actor.0) else {
             commands.entity(entity).despawn();
             continue;
         };
+
+        if sprite.definition_id != creature.definition_id {
+            commands.entity(entity).despawn();
+            continue;
+        }
+
+        if !existing_ids.insert(actor.0) {
+            commands.entity(entity).despawn();
+            continue;
+        }
 
         if sprite.logical_position != creature.position {
             let world = sprite_world_position(creature.position, sprite.render_height);
@@ -397,9 +333,6 @@ pub fn reconcile_creature_visuals(
         }
 
         if creature.position.z == visible_floor {
-            // Explicit Visible is deliberate. These actors may have spent many
-            // seconds cached as Hidden on an adjacent floor. Reassert the
-            // active render state instead of relying on inherited visibility.
             *visibility = Visibility::Visible;
 
             if floor_changed {
@@ -427,11 +360,12 @@ pub fn reconcile_creature_visuals(
 
         existing_ids.insert(creature.id);
         info!(
-            "ALDORIA CREATURE VISUAL CACHE · spawned {} · {} · floor {} · hidden={}",
+            "ALDORIA CREATURE VISUAL CACHE · spawned {} · {} · floor {} · hidden={} · manifest={}",
             creature.id,
             creature.definition_id,
             creature.position.z,
             creature.position.z != visible_floor,
+            catalog.actor(&creature.definition_id).is_some(),
         );
     }
 
@@ -480,26 +414,30 @@ fn refresh_creature_material(
 
     material.unlit = true;
 
-    match sprite.kind {
-        CreatureSpriteKind::CastleRat => {
-            material.base_color = Color::WHITE;
-            material.base_color_texture = Some(catalog.castle_rat_idle_albedo.clone());
-            material.normal_map_texture = Some(catalog.castle_rat_idle_normal.clone());
-            material.uv_transform = atlas_uv(12, 8, 0, 4);
-            material.alpha_mode = AlphaMode::Mask(0.05);
-        }
-        CreatureSpriteKind::Placeholder => {
-            let (_, _, tint) = creature_visual_style(&creature.definition_id);
-            material.base_color = tint;
-            material.base_color_texture = None;
-            material.normal_map_texture = None;
-            material.uv_transform = Affine2::IDENTITY;
-            material.alpha_mode = AlphaMode::Opaque;
-        }
+    if let Some(actor) = catalog.actor(&sprite.definition_id) {
+        let idle = actor
+            .definition
+            .spec(ActorAnimation::Idle)
+            .expect("validated creature manifest must define idle");
+        material.base_color = Color::WHITE;
+        material.base_color_texture = actor.texture(ActorAnimation::Idle).cloned();
+        material.normal_map_texture = actor.normal(ActorAnimation::Idle).cloned();
+        material.uv_transform = atlas_uv(
+            idle.columns,
+            actor.definition.atlas_rows,
+            0,
+            SpriteDirection::South.atlas_row(actor.definition.authored_directions),
+        );
+        material.alpha_mode = AlphaMode::Mask(0.05);
+    } else {
+        let (_, _, tint) = creature_visual_style(&creature.definition_id);
+        material.base_color = tint;
+        material.base_color_texture = None;
+        material.normal_map_texture = None;
+        material.uv_transform = Affine2::IDENTITY;
+        material.alpha_mode = AlphaMode::Opaque;
     }
 
-    // animate_creature_sprites will bind the exact current animation frame on
-    // this update because the cache key is deliberately invalidated.
     sprite.last_frame = usize::MAX;
     sprite.last_direction = SpriteDirection::North;
     sprite.last_animation = SpriteAnimation::Death;
@@ -529,28 +467,30 @@ pub fn begin_creature_move(
 
     if !matches!(
         sprite.animation,
-        SpriteAnimation::Attack | SpriteAnimation::Hit | SpriteAnimation::Death
+        SpriteAnimation::Attack
+            | SpriteAnimation::Hit
+            | SpriteAnimation::Death
+            | SpriteAnimation::Cast
+            | SpriteAnimation::Use
     ) {
         set_animation(sprite, SpriteAnimation::Walk, now);
     }
 }
 
 pub fn trigger_attack(sprite: &mut CreatureSprite, now: f64) {
-    if sprite.kind == CreatureSpriteKind::CastleRat && sprite.animation != SpriteAnimation::Death {
+    if sprite.animation != SpriteAnimation::Death {
         set_animation(sprite, SpriteAnimation::Attack, now);
     }
 }
 
 pub fn trigger_hit(sprite: &mut CreatureSprite, now: f64) {
-    if sprite.kind == CreatureSpriteKind::CastleRat && sprite.animation != SpriteAnimation::Death {
+    if sprite.animation != SpriteAnimation::Death {
         set_animation(sprite, SpriteAnimation::Hit, now);
     }
 }
 
 pub fn trigger_death(sprite: &mut CreatureSprite, now: f64) {
-    if sprite.kind == CreatureSpriteKind::CastleRat {
-        set_animation(sprite, SpriteAnimation::Death, now);
-    }
+    set_animation(sprite, SpriteAnimation::Death, now);
 }
 
 pub fn report_creature_render_visibility(
@@ -658,13 +598,21 @@ pub fn animate_creature_sprites(
     let now = time.elapsed_secs_f64();
 
     for (actor, mut sprite) in &mut creatures {
-        if sprite.kind != CreatureSpriteKind::CastleRat {
+        let Some(actor_assets) = catalog.actor(&sprite.definition_id) else {
+            if sprite.animation != SpriteAnimation::Death {
+                let desired = if now < sprite.walk_until {
+                    SpriteAnimation::Walk
+                } else {
+                    SpriteAnimation::Idle
+                };
+                if sprite.animation != desired {
+                    set_animation(&mut sprite, desired, now);
+                }
+            }
             continue;
-        }
+        };
+        let definition = &actor_assets.definition;
 
-        // V36.79: the authoritative network path already starts the creature
-        // attack/hit clip. Use the newest matching combat event only for
-        // facing, so diagonal combat also uses the correct authored row.
         let animation = sprite.animation;
         let actor_id = actor.0;
         let combat = game_state.combat_visuals.iter().rev().find(|combat| {
@@ -686,35 +634,21 @@ pub fn animate_creature_sprites(
             }
         }
 
-        advance_animation_state(&mut sprite, now);
+        advance_animation_state(&mut sprite, definition, now);
 
-        let (albedo, normal) = match sprite.animation {
-            SpriteAnimation::Idle => (
-                &catalog.castle_rat_idle_albedo,
-                &catalog.castle_rat_idle_normal,
-            ),
-            SpriteAnimation::Walk => (
-                &catalog.castle_rat_walk_albedo,
-                &catalog.castle_rat_walk_normal,
-            ),
-            SpriteAnimation::Attack => (
-                &catalog.castle_rat_attack_albedo,
-                &catalog.castle_rat_attack_normal,
-            ),
-            SpriteAnimation::Hit => (
-                &catalog.castle_rat_hit_albedo,
-                &catalog.castle_rat_hit_normal,
-            ),
-            SpriteAnimation::Death => (
-                &catalog.castle_rat_death_albedo,
-                &catalog.castle_rat_death_normal,
-            ),
-            SpriteAnimation::Cast | SpriteAnimation::Use => continue,
-        };
-        let definition = *sprite.kind.definition();
-        let Some(spec) = definition.spec(sprite.animation) else {
-            continue;
-        };
+        if definition.spec(sprite.animation).is_none()
+            || actor_assets.texture(sprite.animation).is_none()
+        {
+            set_animation(&mut sprite, SpriteAnimation::Idle, now);
+        }
+
+        let animation = sprite.animation;
+        let spec = definition
+            .spec(animation)
+            .expect("validated creature manifest must define idle");
+        let texture = actor_assets
+            .texture(animation)
+            .expect("validated creature manifest texture missing");
 
         let elapsed = (now - sprite.animation_started_at).max(0.0);
         let frame = spec.frame_at(elapsed);
@@ -727,13 +661,14 @@ pub fn animate_creature_sprites(
             continue;
         }
 
-        // TIBIAGAME_V36_7_1_SPRITE_MATERIAL_MUT_FIX
         let Some(mut material) = materials.get_mut(&sprite.material) else {
             continue;
         };
 
-        material.base_color_texture = Some(albedo.clone());
-        material.normal_map_texture = Some(normal.clone());
+        material.base_color = Color::WHITE;
+        material.base_color_texture = Some(texture.clone());
+        material.normal_map_texture = actor_assets.normal(animation).cloned();
+        material.alpha_mode = AlphaMode::Mask(0.05);
         material.uv_transform = atlas_uv(
             spec.columns,
             definition.atlas_rows,
@@ -763,19 +698,18 @@ fn combat_entity_position(
         })
 }
 
-fn advance_animation_state(sprite: &mut CreatureSprite, now: f64) {
+fn advance_animation_state(
+    sprite: &mut CreatureSprite,
+    definition: &ActorSpriteDefinition,
+    now: f64,
+) {
     let elapsed = (now - sprite.animation_started_at).max(0.0);
 
-    if sprite.animation == SpriteAnimation::Death {
-        return;
-    }
-
-    let definition = *sprite.kind.definition();
     if definition.animation_locked(sprite.animation, elapsed) {
         return;
     }
 
-    let desired = if now < sprite.walk_until {
+    let desired = if now < sprite.walk_until && definition.spec(SpriteAnimation::Walk).is_some() {
         SpriteAnimation::Walk
     } else {
         SpriteAnimation::Idle
@@ -806,11 +740,6 @@ fn sprite_world_position(position: Position, render_height: f32) -> Vec3 {
 
 fn creature_visual_style(definition_id: &str) -> (f32, f32, Color) {
     match definition_id {
-        "castle_rat" => (
-            CASTLE_RAT_SPRITE_DEFINITION.render_width,
-            CASTLE_RAT_SPRITE_DEFINITION.render_height,
-            Color::WHITE,
-        ),
         "mireling" => (0.90, 1.05, Color::srgb(0.44, 0.68, 0.35)),
         "mire_skulker" => (1.00, 1.12, Color::srgb(0.27, 0.52, 0.34)),
         "reed_stalker" => (0.95, 1.28, Color::srgb(0.48, 0.58, 0.25)),
@@ -824,6 +753,7 @@ fn creature_visual_style(definition_id: &str) -> (f32, f32, Color) {
 
 pub fn describe_catalog() {
     info!(
-        "ALDORIA SPRITE CREATURES · shared ActorSpriteDefinition · castle_rat=8dir idle/walk/attack/hit/death · remaining monsters=2D fallback billboards"
+        "ALDORIA SPRITE CREATURES · manifest index={} · add creatures with JSON + sprite sheets, no Rust registration",
+        CREATURE_INDEX,
     );
 }
