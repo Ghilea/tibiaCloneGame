@@ -272,6 +272,12 @@ const playerEquipmentIndex = path.join(actorsRoot, 'players', 'equipment', 'inde
 if (!fs.existsSync(playerEquipmentIndex)) fail(relative(playerEquipmentIndex) + ' is missing');
 else validateCreatureIndex(playerEquipmentIndex);
 
+
+// TIBIAGAME_V36_93_CHARACTER_APPEARANCE_COMPOSER
+const playerAppearanceIndex = path.join(actorsRoot, 'players', 'appearance', 'index.json');
+if (!fs.existsSync(playerAppearanceIndex)) fail(relative(playerAppearanceIndex) + ' is missing');
+else validateCreatureIndex(playerAppearanceIndex);
+
 if (errors.length > 0) {
   console.error('ACTOR SPRITE VALIDATION FAILED');
   for (const error of errors) console.error(`- ${error}`);

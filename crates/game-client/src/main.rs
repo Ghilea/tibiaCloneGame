@@ -26,6 +26,7 @@ mod player_sprites;
 mod remote_player_sprites;
 // TIBIAGAME_V36_91_REMOTE_PLAYER_SPRITES
 // TIBIAGAME_V36_92_REMOTE_EQUIPMENT_REPLICATION
+// TIBIAGAME_V36_93_CHARACTER_APPEARANCE_COMPOSER
 mod telegraph_visuals;
 // TIBIAGAME_V36_88_CELLAR_WARDEN_AREA_TELEGRAPH
 // TIBIAGAME_V36_80_UNIFIED_ACTOR_SPRITE_SYSTEM
@@ -477,6 +478,26 @@ impl Plugin for SingleWindowGameplayPlugin {
             )
             .add_systems(
                 Update,
+                player_sprites::sync_local_character_appearance_resource
+                    .after(player_sprites::sync_local_player_outfit)
+                    .run_if(single_window_game_active),
+            )
+            .add_systems(
+                Update,
+                player_sprites::ensure_local_player_appearance_layers
+                    .after(player_sprites::update_local_player_sprite)
+                    .run_if(single_window_game_active),
+            )
+            .add_systems(
+                Update,
+                player_sprites::sync_local_player_appearance_layers
+                    .after(player_sprites::ensure_local_player_appearance_layers)
+                    .after(player_sprites::update_local_player_sprite)
+                    .after(player_sprites::sync_local_character_appearance_resource)
+                    .run_if(single_window_game_active),
+            )
+            .add_systems(
+                Update,
                 player_sprites::ensure_local_player_equipment_layers
                     .after(player_sprites::update_local_player_sprite)
                     .run_if(single_window_game_active),
@@ -793,6 +814,23 @@ fn run_game(session: network::NativeSession) -> Result<()> {
         )
 
         .add_systems(Update, player_sprites::sync_local_player_outfit.after(pump_network))
+        .add_systems(
+            Update,
+            player_sprites::sync_local_character_appearance_resource
+                .after(player_sprites::sync_local_player_outfit),
+        )
+        .add_systems(
+            Update,
+            player_sprites::ensure_local_player_appearance_layers
+                .after(player_sprites::update_local_player_sprite),
+        )
+        .add_systems(
+            Update,
+            player_sprites::sync_local_player_appearance_layers
+                .after(player_sprites::ensure_local_player_appearance_layers)
+                .after(player_sprites::update_local_player_sprite)
+                .after(player_sprites::sync_local_character_appearance_resource),
+        )
         .add_systems(
             Update,
             player_sprites::ensure_local_player_equipment_layers

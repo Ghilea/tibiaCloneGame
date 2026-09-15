@@ -1,0 +1,93 @@
+{
+  "schema": 1,
+  "actors": [
+    {
+      "game_definition_id": "body_01",
+      "manifest": "actors/players/appearance/body/body_01/actor.json"
+    },
+    {
+      "game_definition_id": "body_02",
+      "manifest": "actors/players/appearance/body/body_02/actor.json"
+    },
+    {
+      "game_definition_id": "head_01",
+      "manifest": "actors/players/appearance/head/head_01/actor.json"
+    },
+    {
+      "game_definition_id": "head_02",
+      "manifest": "actors/players/appearance/head/head_02/actor.json"
+    },
+    {
+      "game_definition_id": "head_03",
+      "manifest": "actors/players/appearance/head/head_03/actor.json"
+    },
+    {
+      "game_definition_id": "face_01",
+      "manifest": "actors/players/appearance/face/face_01/actor.json"
+    },
+    {
+      "game_definition_id": "face_02",
+      "manifest": "actors/players/appearance/face/face_02/actor.json"
+    },
+    {
+      "game_definition_id": "face_03",
+      "manifest": "actors/players/appearance/face/face_03/actor.json"
+    },
+    {
+      "game_definition_id": "hair_01",
+      "manifest": "actors/players/appearance/hair/hair_01/actor.json"
+    },
+    {
+      "game_definition_id": "hair_02",
+      "manifest": "actors/players/appearance/hair/hair_02/actor.json"
+    },
+    {
+      "game_definition_id": "hair_03",
+      "manifest": "actors/players/appearance/hair/hair_03/actor.json"
+    },
+    {
+      "game_definition_id": "hair_04",
+      "manifest": "actors/players/appearance/hair/hair_04/actor.json"
+    },
+    {
+      "game_definition_id": "beard_01",
+      "manifest": "actors/players/appearance/facial_hair/beard_01/actor.json"
+    },
+    {
+      "game_definition_id": "beard_02",
+      "manifest": "actors/players/appearance/facial_hair/beard_02/actor.json"
+    },
+    {
+      "game_definition_id": "torso_01",
+      "manifest": "actors/players/appearance/torso/torso_01/actor.json"
+    },
+    {
+      "game_definition_id": "torso_02",
+      "manifest": "actors/players/appearance/torso/torso_02/actor.json"
+    },
+    {
+      "game_definition_id": "torso_03",
+      "manifest": "actors/players/appearance/torso/torso_03/actor.json"
+    },
+    {
+      "game_definition_id": "legs_01",
+      "manifest": "actors/players/appearance/legs/legs_01/actor.json"
+    },
+    {
+      "game_definition_id": "legs_02",
+      "manifest": "actors/players/appearance/legs/legs_02/actor.json"
+    },
+    {
+      "game_definition_id": "legs_03",
+      "manifest": "actors/players/appearance/legs/legs_03/actor.json"
+    },
+    {
+      "game_definition_id": "feet_01",
+      "manifest": "actors/players/appearance/feet/feet_01/actor.json"
+    },
+    {
+      "game_definition_id": "feet_02",
+      "manifest": "actors/players/appearance/feet/feet_02/actor.json"
+    }
+  ]
+}

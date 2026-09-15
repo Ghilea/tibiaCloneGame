@@ -3,6 +3,7 @@
 // TIBIAGAME_V36_90_PLAYER_EQUIPMENT_LAYERS
 // TIBIAGAME_V36_91_REMOTE_PLAYER_SPRITES
 // TIBIAGAME_V36_92_REMOTE_EQUIPMENT_REPLICATION
+// TIBIAGAME_V36_93_CHARACTER_APPEARANCE_COMPOSER
 use std::collections::HashMap;
 
 use bevy::{camera::visibility::NoFrustumCulling, prelude::*};
@@ -19,6 +20,116 @@ use crate::{
 
 const PLAYER_MANIFEST: &str = "actors/players/default/actor.json";
 const PLAYER_EQUIPMENT_INDEX: &str = "actors/players/equipment/index.json";
+
+const PLAYER_APPEARANCE_INDEX: &str = "actors/players/appearance/index.json";
+const APPEARANCE_LAYER_CATEGORIES: [&str; 7] =
+    ["head", "face", "hair", "facial_hair", "torso", "legs", "feet"];
+
+#[derive(Resource, Clone)]
+pub(crate) struct LocalCharacterAppearance {
+    pub(crate) body: String,
+    pub(crate) head: String,
+    pub(crate) face: String,
+    pub(crate) hair: String,
+    pub(crate) facial_hair: Option<String>,
+    pub(crate) torso: String,
+    pub(crate) legs: String,
+    pub(crate) feet: String,
+    pub(crate) skin_tone: String,
+    pub(crate) hair_color: String,
+    pub(crate) torso_color: String,
+    pub(crate) legs_color: String,
+    pub(crate) feet_color: String,
+    pub(crate) customized: bool,
+    last_legacy_outfit: String,
+}
+
+impl LocalCharacterAppearance {
+    fn legacy_preset(outfit: &str) -> Self {
+        let mut value = match outfit {
+            "mage" => Self {
+                body: "body_01".to_owned(),
+                head: "head_03".to_owned(),
+                face: "face_03".to_owned(),
+                hair: "hair_04".to_owned(),
+                facial_hair: None,
+                torso: "torso_03".to_owned(),
+                legs: "legs_03".to_owned(),
+                feet: "feet_01".to_owned(),
+                skin_tone: "skin_light".to_owned(),
+                hair_color: "hair_black".to_owned(),
+                torso_color: "cloth_violet".to_owned(),
+                legs_color: "cloth_navy".to_owned(),
+                feet_color: "leather_dark".to_owned(),
+                customized: false,
+                last_legacy_outfit: String::new(),
+            },
+            "ranger" => Self {
+                body: "body_01".to_owned(),
+                head: "head_02".to_owned(),
+                face: "face_02".to_owned(),
+                hair: "hair_03".to_owned(),
+                facial_hair: Some("beard_02".to_owned()),
+                torso: "torso_01".to_owned(),
+                legs: "legs_01".to_owned(),
+                feet: "feet_02".to_owned(),
+                skin_tone: "skin_tan".to_owned(),
+                hair_color: "hair_auburn".to_owned(),
+                torso_color: "cloth_forest".to_owned(),
+                legs_color: "cloth_earth".to_owned(),
+                feet_color: "leather_brown".to_owned(),
+                customized: false,
+                last_legacy_outfit: String::new(),
+            },
+            "rogue" => Self {
+                body: "body_01".to_owned(),
+                head: "head_02".to_owned(),
+                face: "face_02".to_owned(),
+                hair: "hair_01".to_owned(),
+                facial_hair: None,
+                torso: "torso_02".to_owned(),
+                legs: "legs_03".to_owned(),
+                feet: "feet_01".to_owned(),
+                skin_tone: "skin_warm".to_owned(),
+                hair_color: "hair_black".to_owned(),
+                torso_color: "cloth_charcoal".to_owned(),
+                legs_color: "cloth_charcoal".to_owned(),
+                feet_color: "leather_dark".to_owned(),
+                customized: false,
+                last_legacy_outfit: String::new(),
+            },
+            _ => Self {
+                body: "body_02".to_owned(),
+                head: "head_01".to_owned(),
+                face: "face_01".to_owned(),
+                hair: "hair_02".to_owned(),
+                facial_hair: Some("beard_01".to_owned()),
+                torso: "torso_02".to_owned(),
+                legs: "legs_02".to_owned(),
+                feet: "feet_02".to_owned(),
+                skin_tone: "skin_warm".to_owned(),
+                hair_color: "hair_brown".to_owned(),
+                torso_color: "cloth_burgundy".to_owned(),
+                legs_color: "cloth_charcoal".to_owned(),
+                feet_color: "leather_brown".to_owned(),
+                customized: false,
+                last_legacy_outfit: String::new(),
+            },
+        };
+        value.last_legacy_outfit = outfit.to_owned();
+        value
+    }
+}
+
+#[derive(Component)]
+pub(crate) struct PlayerAppearanceLayer {
+    category: String,
+    material: Handle<StandardMaterial>,
+}
+
+#[derive(Component)]
+pub(crate) struct PlayerAppearanceLayersReady;
+
 
 const EQUIPMENT_LAYER_ORDER: [&str; 12] = ["back","backpack","chest","legs","feet","helmet","amulet","ring","weapon_melee","weapon_ranged","offhand_guard","offhand_light"];
 
@@ -50,6 +161,7 @@ pub struct PlayerSpriteCatalog {
     quad: Handle<Mesh>,
     actor: ActorSpriteAssets,
     equipment: HashMap<String, ActorSpriteAssets>,
+    appearance: HashMap<String, ActorSpriteAssets>,
 }
 
 impl PlayerSpriteCatalog {
@@ -65,11 +177,28 @@ impl PlayerSpriteCatalog {
         self.equipment.get(key)
     }
 
+    pub(crate) fn appearance_actor(&self, key: &str) -> Option<&ActorSpriteAssets> {
+        self.appearance.get(key)
+    }
+
     pub fn new(asset_server: &AssetServer, meshes: &mut Assets<Mesh>) -> Self {
         let mut quad = Rectangle::new(1.0, 1.0).mesh().build();
         if let Err(error) = quad.generate_tangents() {
             warn!("ALDORIA PLAYER SPRITE · tangent generation failed: {error}");
         }
+
+        let mut appearance = HashMap::new();
+        for entry in load_actor_index(PLAYER_APPEARANCE_INDEX) {
+            let key = entry.game_definition_id;
+            let actor = ActorSpriteAssets::load(asset_server, &entry.manifest);
+            appearance.insert(key, actor);
+        }
+
+        info!(
+            "ALDORIA CHARACTER APPEARANCE · {} composable actor variants · index={}",
+            appearance.len(),
+            PLAYER_APPEARANCE_INDEX,
+        );
 
         let mut equipment = HashMap::new();
         for entry in load_actor_index(PLAYER_EQUIPMENT_INDEX) {
@@ -88,6 +217,7 @@ impl PlayerSpriteCatalog {
             quad: meshes.add(quad),
             actor: ActorSpriteAssets::load(asset_server, PLAYER_MANIFEST),
             equipment,
+            appearance,
         }
     }
 }
@@ -149,6 +279,216 @@ pub fn local_player_sprite_bundle(
     )
 }
 
+
+
+pub(crate) fn sync_local_character_appearance_resource(
+    mut commands: Commands,
+    identity: Res<LocalIdentity>,
+    appearance: Option<ResMut<LocalCharacterAppearance>>,
+) {
+    let Some(mut appearance) = appearance else {
+        commands.insert_resource(LocalCharacterAppearance::legacy_preset(&identity.outfit));
+        return;
+    };
+
+    if !appearance.customized && appearance.last_legacy_outfit != identity.outfit {
+        *appearance = LocalCharacterAppearance::legacy_preset(&identity.outfit);
+    }
+}
+
+pub(crate) fn ensure_local_player_appearance_layers(
+    mut commands: Commands,
+    catalog: Res<PlayerSpriteCatalog>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    roots: Query<Entity, (With<LocalPlayerSprite>, Without<PlayerAppearanceLayersReady>)>,
+) {
+    for root in &roots {
+        for category in APPEARANCE_LAYER_CATEGORIES {
+            let material = materials.add(StandardMaterial {
+                base_color: Color::WHITE,
+                perceptual_roughness: 0.9,
+                metallic: 0.0,
+                unlit: true,
+                alpha_mode: AlphaMode::Mask(0.05),
+                double_sided: true,
+                cull_mode: None,
+                depth_bias: appearance_layer_depth_bias(category),
+                ..default()
+            });
+
+            commands.spawn((
+                Name::new(format!("Player Appearance Layer · {category}")),
+                PlayerAppearanceLayer {
+                    category: category.to_owned(),
+                    material: material.clone(),
+                },
+                NoFrustumCulling,
+                ChildOf(root),
+                Mesh3d(catalog.quad.clone()),
+                MeshMaterial3d(material),
+                Transform::default(),
+                Visibility::Hidden,
+            ));
+        }
+        commands.entity(root).insert(PlayerAppearanceLayersReady);
+    }
+}
+
+pub(crate) fn sync_local_player_appearance_layers(
+    time: Res<Time>,
+    appearance: Option<Res<LocalCharacterAppearance>>,
+    catalog: Res<PlayerSpriteCatalog>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    bodies: Query<&LocalPlayerSprite>,
+    mut layers: Query<(&PlayerAppearanceLayer, &mut Visibility)>,
+) {
+    let Some(appearance) = appearance else {
+        return;
+    };
+    let Some(body) = bodies.iter().next() else {
+        return;
+    };
+
+    let now = time.elapsed_secs_f64();
+
+    if let Some(actor) = catalog.appearance_actor(&appearance.body) {
+        if let (Some(spec), Some(texture)) = (
+            actor.definition.spec(body.animation),
+            actor.texture(body.animation),
+        ) {
+            if let Some(mut material) = materials.get_mut(&body.material) {
+                let frame = spec.frame_at((now - body.animation_started_at).max(0.0));
+                material.base_color = appearance_color(&appearance.skin_tone);
+                material.base_color_texture = Some(texture.clone());
+                material.normal_map_texture = actor.normal(body.animation).cloned();
+                material.uv_transform = atlas_uv(
+                    spec.columns,
+                    actor.definition.atlas_rows,
+                    frame,
+                    body.direction
+                        .atlas_row(actor.definition.authored_directions),
+                );
+            }
+        }
+    }
+
+    for (layer, mut visibility) in &mut layers {
+        let Some(variant) = appearance_variant(&appearance, &layer.category) else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        let Some(actor) = catalog.appearance_actor(variant) else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+
+        let animation = if actor.definition.spec(body.animation).is_some()
+            && actor.texture(body.animation).is_some()
+        {
+            body.animation
+        } else {
+            ActorAnimation::Idle
+        };
+
+        let Some(spec) = actor.definition.spec(animation) else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        let Some(texture) = actor.texture(animation) else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+
+        let frame = spec.frame_at((now - body.animation_started_at).max(0.0));
+        let Some(mut material) = materials.get_mut(&layer.material) else {
+            continue;
+        };
+
+        material.base_color = appearance_layer_color(&appearance, &layer.category);
+        material.base_color_texture = Some(texture.clone());
+        material.normal_map_texture = actor.normal(animation).cloned();
+        material.uv_transform = atlas_uv(
+            spec.columns,
+            actor.definition.atlas_rows,
+            frame,
+            body.direction
+                .atlas_row(actor.definition.authored_directions),
+        );
+        *visibility = Visibility::Visible;
+    }
+}
+
+fn appearance_variant<'a>(
+    appearance: &'a LocalCharacterAppearance,
+    category: &str,
+) -> Option<&'a str> {
+    match category {
+        "head" => Some(&appearance.head),
+        "face" => Some(&appearance.face),
+        "hair" => Some(&appearance.hair),
+        "facial_hair" => appearance.facial_hair.as_deref(),
+        "torso" => Some(&appearance.torso),
+        "legs" => Some(&appearance.legs),
+        "feet" => Some(&appearance.feet),
+        _ => None,
+    }
+}
+
+fn appearance_layer_color(
+    appearance: &LocalCharacterAppearance,
+    category: &str,
+) -> Color {
+    match category {
+        "head" => appearance_color(&appearance.skin_tone),
+        "face" => Color::WHITE,
+        "hair" | "facial_hair" => appearance_color(&appearance.hair_color),
+        "torso" => appearance_color(&appearance.torso_color),
+        "legs" => appearance_color(&appearance.legs_color),
+        "feet" => appearance_color(&appearance.feet_color),
+        _ => Color::WHITE,
+    }
+}
+
+pub(crate) fn appearance_color(id: &str) -> Color {
+    match id {
+        "skin_light" => Color::srgb(1.00, 0.82, 0.69),
+        "skin_warm" => Color::srgb(0.88, 0.66, 0.50),
+        "skin_tan" => Color::srgb(0.72, 0.50, 0.35),
+        "skin_deep" => Color::srgb(0.48, 0.31, 0.23),
+
+        "hair_black" => Color::srgb(0.18, 0.16, 0.17),
+        "hair_brown" => Color::srgb(0.39, 0.25, 0.17),
+        "hair_auburn" => Color::srgb(0.52, 0.24, 0.15),
+        "hair_blonde" => Color::srgb(0.78, 0.66, 0.40),
+        "hair_gray" => Color::srgb(0.55, 0.55, 0.55),
+
+        "cloth_burgundy" => Color::srgb(0.52, 0.20, 0.25),
+        "cloth_forest" => Color::srgb(0.25, 0.42, 0.25),
+        "cloth_violet" => Color::srgb(0.39, 0.27, 0.53),
+        "cloth_charcoal" => Color::srgb(0.25, 0.25, 0.28),
+        "cloth_navy" => Color::srgb(0.22, 0.30, 0.43),
+        "cloth_earth" => Color::srgb(0.42, 0.33, 0.24),
+        "cloth_cream" => Color::srgb(0.75, 0.70, 0.58),
+
+        "leather_brown" => Color::srgb(0.39, 0.26, 0.17),
+        "leather_dark" => Color::srgb(0.21, 0.17, 0.15),
+        "leather_tan" => Color::srgb(0.55, 0.39, 0.23),
+        _ => Color::WHITE,
+    }
+}
+
+fn appearance_layer_depth_bias(category: &str) -> f32 {
+    match category {
+        "torso" => 2.0,
+        "legs" => 3.0,
+        "feet" => 4.0,
+        "head" => 5.0,
+        "face" => 6.0,
+        "hair" => 7.0,
+        "facial_hair" => 8.0,
+        _ => 1.0,
+    }
+}
 
 pub(crate) fn ensure_local_player_equipment_layers(
     mut commands: Commands,
@@ -528,8 +868,6 @@ pub fn face_local_player_sprite_to_camera(
 pub fn sync_local_player_outfit(
     game_state: Res<NativeGameState>,
     mut identity: ResMut<LocalIdentity>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    sprites: Query<&LocalPlayerSprite>,
 ) {
     let Some(player) = game_state.local_player() else {
         return;
@@ -539,15 +877,8 @@ pub fn sync_local_player_outfit(
     }
 
     identity.outfit = player.outfit.clone();
-    let tint = outfit_tint(&identity.outfit);
-    for sprite in &sprites {
-        if let Some(mut material) = materials.get_mut(&sprite.material) {
-            material.base_color = tint;
-        }
-    }
-
     info!(
-        "ALDORIA PLAYER SPRITE OUTFIT · {} · 2D tint updated",
+        "ALDORIA CHARACTER APPEARANCE · legacy preset seed changed to {}",
         identity.outfit,
     );
 }
